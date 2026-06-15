@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SparkLM 架构深度分析与重构方案</title>
+<style>
+  :root{--bg:#f7f8fa;--card:#fff;--ink:#1f2330;--sub:#5b6472;--line:#e6e9ef;--brand:#3b5bdb;--ok:#2b8a3e;--warn:#e8590c;--bad:#c92a2a;--mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;line-height:1.7;font-size:15px;}
+  .wrap{max-width:980px;margin:0 auto;padding:48px 24px 80px;}
+  header{border-bottom:3px solid var(--brand);padding-bottom:24px;margin-bottom:8px;}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.5px;}
+  .meta{color:var(--sub);font-size:13px;}
+  h2{font-size:22px;margin:44px 0 14px;padding-left:12px;border-left:5px solid var(--brand);}
+  h3{font-size:17px;margin:26px 0 10px;}
+  p{margin:10px 0;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 24px;margin:16px 0;box-shadow:0 1px 3px rgba(20,30,60,.04);}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
+  .stat b{display:block;font-size:26px;color:var(--brand);}
+  .stat span{color:var(--sub);font-size:13px;}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;}
+  th{background:#eef1f8;font-weight:600;}
+  code{font-family:var(--mono);background:#eef1f6;padding:1px 6px;border-radius:5px;font-size:13px;}
+  pre{background:#1f2330;color:#e8ecf4;padding:16px 18px;border-radius:10px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.55;}
+  pre .c{color:#7d8aa3;}
+  .tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:20px;margin-right:6px;}
+  .t-bad{background:#ffe3e3;color:var(--bad);} .t-warn{background:#ffe8cc;color:var(--warn);} .t-ok{background:#d3f9d8;color:var(--ok);} .t-info{background:#dbe4ff;color:var(--brand);}
+  ul{margin:8px 0;padding-left:22px;} li{margin:5px 0;}
+  .sev{font-weight:700;}
+  .P0{color:var(--bad)} .P1{color:var(--warn)} .P2{color:#1971c2}
+  blockquote{margin:14px 0;padding:12px 18px;background:#fff8f0;border-left:4px solid var(--warn);border-radius:0 8px 8px 0;color:#7a4b1a;}
+  .tree{font-family:var(--mono);font-size:13px;background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:16px 18px;white-space:pre;overflow-x:auto;}
+  .ok-tree{color:var(--ok);font-weight:600;}
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--sub);font-size:13px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>SparkLM 架构深度分析与重构方案</h1>
+  <div class="meta">目标项目：<code>/Users/gatilin/PycharmProjects/spark-git</code> · v0.3.0 · ~42.5K LOC · 分析日期 2026-06-14</div>
+</header>
+
+<div class="grid" style="margin-top:24px">
+  <div class="stat"><b>42.5K</b><span>Python 代码行数（核心目录）</span></div>
+  <div class="stat"><b>5</b><span>平铺的顶层包（无命名空间）</span></div>
+  <div class="stat"><b>144</b><span>跨包 <code>from trainer/dataset/...</code> 硬导入</span></div>
+  <div class="stat"><b>5</b><span>指向已删除 <code>model/</code> 的死代码路径</span></div>
+</div>
+
+<h2>一、结论摘要</h2>
+<div class="card">
+<p>SparkLM 是一个功能极其丰富的小语言模型训练框架（MLA / MoE / MTP / VLM / Diffusion / 投机解码 / 专家并行 等），<b>研究价值高、测试覆盖好（585+ 用例）</b>。但当前的<b>工程架构是“扁平堆叠”而非“分层设计”</b>，且<b>无法以标准方式 pip 安装</b>。核心症结有三：</p>
+<ul>
+  <li><span class="sev P0">P0</span> <b>四个并列顶层包污染全局命名空间</b>：<code>sparklm/</code>、<code>trainer/</code>、<code>dataset/</code>、<code>evaluation/</code>、<code>scripts/</code> 全部被打进 wheel，安装后会与用户环境里的同名模块冲突，<code>pip install</code> 后 <code>import dataset</code> 可能命中别人的包。</li>
+  <li><span class="sev P0">P0</span> <b>HF 包装器引用了已不存在的 <code>model.*</code> 命名空间</b>：<code>modeling_sparklm.py</code> / <code>configuration_sparklm.py</code> 里有 5 处 <code>import_module("model.model_sparklm")</code> 等回退路径，而 <code>model/</code> 目录早已被重命名为 <code>sparklm/</code> —— 这是历史重构遗留的死代码/隐患。</li>
+  <li><span class="sev P1">P1</span> <b>分层缺失</b>：模型层（model）、数据层（data）、训练层（train）、评测层（eval）、推理层（inference）、CLI 层混在同一层级，没有清晰的依赖方向；<code>sparklm/__init__.py</code> 用 268 行手写 <code>__getattr__</code> 懒加载来弥补缺乏分层导致的导入开销。</li>
+</ul>
+<p><b>整改方向</b>：收敛为<b>单一顶层包 <code>sparklm/</code></b>，内部按 <code>models / data / training / eval / inference / cli / integrations</code> 分层；用 <code>src/</code> 布局 + 现代 <code>pyproject.toml</code> 实现干净的 <code>pip install</code>；HF 导出文件改为生成式产物而非源码根级文件。</p>
+</div>
+
+<h2>二、现状架构画像</h2>
+<h3>2.1 当前目录（问题视角）</h3>
+<div class="tree">spark-git/
+├── <span class="P0">configuration_sparklm.py</span>   <span class="c"># 根级 HF 包装器（散落，引用死的 model.*）</span>
+├── <span class="P0">modeling_sparklm.py</span>         <span class="c"># 根级 HF 包装器</span>
+├── <span class="P0">tokenization_sparklm.py</span>     <span class="c"># 根级 HF 包装器</span>
+├── <span class="P1">sparklm/</span>      <span class="c"># 模型实现 — 但内部又是 30+ 文件平铺</span>
+│   ├── attention.py / attention_saha.py / attention_utils.py / attention_v4/
+│   ├── model_sparklm.py / config.py(39KB!) / components.py / feedforward.py
+│   ├── moe_v4.py / expert_parallel.py / expert_kv_compression.py
+│   ├── vision.py / vlm.py / vlm_config.py / diffusion/ / mtp/ / inference/
+│   └── __init__.py  <span class="c"># 268 行手写懒加载，弥补无分层</span>
+├── <span class="P0">trainer/</span>     <span class="c"># 顶层包 → 进 wheel，命名空间冲突</span>
+├── <span class="P0">dataset/</span>     <span class="c"># 顶层包 → 进 wheel，命名空间冲突</span>
+├── <span class="P0">evaluation/</span>  <span class="c"># 顶层包 → 进 wheel</span>
+├── <span class="P0">scripts/</span>     <span class="c"># 顶层包 → 进 wheel（脚本不该是 import 包）</span>
+├── tests/  docs/  data/  results/  output/
+└── pyproject.toml  <span class="c"># packages.find include=["sparklm*","dataset*","trainer*",...]</span></div>
+
+<h3>2.2 关键度量</h3>
+<table>
+<tr><th>维度</th><th>现状</th><th>问题</th></tr>
+<tr><td>顶层可导入包</td><td>5 个（sparklm/trainer/dataset/evaluation/scripts）</td><td><span class="t-bad">命名空间污染</span></td></tr>
+<tr><td>跨包硬编码导入</td><td><code>from trainer.</code>×69, <code>from dataset.</code>×50, <code>from scripts.</code>×25, <code>from evaluation.</code>×8</td><td><span class="t-bad">强耦合，无法独立发布</span></td></tr>
+<tr><td>巨石文件</td><td><code>train_grpo.py</code> 42KB、<code>config.py</code> 39KB、<code>trainer_utils.py</code> 30KB、<code>train_pretrain.py</code> 49KB</td><td><span class="t-warn">单文件职责过载</span></td></tr>
+<tr><td>HF 导出</td><td>3 个根级 <code>*_sparklm.py</code>，含 <code>sys.path.insert</code> + <code>import_module("model.*")</code></td><td><span class="t-bad">死路径 + 源码污染根目录</span></td></tr>
+<tr><td>打包后端</td><td>setuptools + <code>packages.find</code> 平铺扫描</td><td><span class="t-warn">无 src 布局，易把测试/脚本打包</span></td></tr>
+<tr><td>测试</td><td>585+ 用例，覆盖充分</td><td><span class="t-ok">资产，重构时是安全网</span></td></tr>
+</table>
+
+<h2>三、问题逐项剖析</h2>
+
+<h3>P0-1 · 多顶层包导致无法干净安装</h3>
+<div class="card">
+<p><code>pyproject.toml</code> 显式声明：</p>
+<pre>[tool.setuptools.packages.find]
+include = ["sparklm*", "dataset*", "trainer*", "evaluation*", "scripts*"]</pre>
+<p>这意味着 <code>pip install sparklm</code> 后，用户的 <code>site-packages</code> 里会出现顶层 <code>dataset</code>、<code>trainer</code>、<code>scripts</code> 模块。这些是<b>极常见的通用名字</b>，会与用户自己的代码或其它库直接冲突 —— 这是“不能直接 pip 安装”的根因。</p>
+<blockquote>判定：这不是写法瑕疵，而是<b>打包契约错误</b>。一个库只应暴露<b>一个</b>顶层命名空间。</blockquote>
+</div>
+
+<h3>P0-2 · HF 包装器引用已删除的 <code>model.*</code></h3>
+<div class="card">
+<p><code>modeling_sparklm.py</code> / <code>configuration_sparklm.py</code> 中：</p>
+<pre><span class="c"># configuration_sparklm.py</span>
+try:
+    from .config import SparkLMConfig as NativeSparkLMConfig   <span class="c"># 仅当作为包导入才成立</span>
+except ImportError:
+    NativeSparkLMConfig = import_module(<span style="color:#ff8787">"model.config"</span>).SparkLMConfig  <span class="c"># ← model/ 已不存在</span></pre>
+<p>项目历史上 <code>model/</code> 已重命名为 <code>sparklm/</code>，但回退分支仍写 <code>model.*</code>（共 5 处）。当 transformers 通过 <code>trust_remote_code</code> 复制这些文件并以扁平方式加载时，<code>from .config</code> 会失败，回退到 <code>model.config</code> 又必然 ImportError。<b>当前能跑只是因为恰好命中了第一分支</b>，一旦导出路径变化即崩。</p>
+</div>
+
+<h3>P1-3 · 缺乏分层，依赖方向混乱</h3>
+<div class="card">
+<p>理想的训练框架应是<b>单向依赖金字塔</b>：<code>cli → training/eval/inference → models → core(components)</code>。当前所有层平铺，且 <code>sparklm/__init__.py</code> 不得不用 268 行 <code>__getattr__</code> 懒加载来避免“一次性 import 全家桶”的启动开销 —— 这正是分层缺失的<b>代偿症状</b>，而非好设计。</p>
+</div>
+
+<h3>P1-4 · 巨石文件与 scripts 当包用</h3>
+<div class="card">
+<p><code>train_pretrain.py</code>(49KB)、<code>train_grpo.py</code>(42KB) 单文件承担配置解析+数据装配+循环+评测+checkpoint。同时 <code>scripts/</code> 既是 CLI 入口又被 <code>from scripts.xxx import</code> 当库引用（25 处），职责双重。脚本应通过 <code>[project.scripts]</code> entry-points 暴露，而非作为可导入包。</p>
+</div>
+
+<h2>四、目标架构（src 布局 + 单一命名空间）</h2>
+<div class="tree">spark-git/
+├── pyproject.toml            <span class="c"># 唯一构建契约，hatchling/setuptools src 布局</span>
+├── README.md  LICENSE  Makefile
+├── <span class="ok-tree">src/sparklm/</span>             <span class="c"># ← 唯一顶层包</span>
+│   ├── __init__.py           <span class="c"># 精简公共 API（保留懒加载但收敛）</span>
+│   ├── <span class="ok-tree">core/</span>                 <span class="c"># 无依赖底座：RMSNorm/RoPE/工具/类型</span>
+│   ├── <span class="ok-tree">configs/</span>              <span class="c"># config.py 拆分：base/presets/attention/moe/vlm</span>
+│   ├── <span class="ok-tree">models/</span>               <span class="c"># 纯模型实现</span>
+│   │   ├── attention/        <span class="c"># gqa / mla / saha / v4(csa,hca)</span>
+│   │   ├── moe/              <span class="c"># moe_v4 / expert_parallel / kv_compression</span>
+│   │   ├── feedforward.py  components.py  model_sparklm.py
+│   │   ├── mtp/  diffusion/  vision/  vlm/
+│   │   └── kv_cache/        <span class="c"># cache + quant</span>
+│   ├── <span class="ok-tree">data/</span>                 <span class="c"># ← 原 dataset/ 收进来</span>
+│   ├── <span class="ok-tree">training/</span>             <span class="c"># ← 原 trainer/，按算法分子模块</span>
+│   │   ├── base.py  utils.py
+│   │   ├── pretrain/ sft/ dpo/ grpo/ ppo/ vlm/ lora/ distill/  <span class="c"># 巨石拆分</span>
+│   │   └── optim/           <span class="c"># muonclip 等</span>
+│   ├── <span class="ok-tree">eval/</span>                 <span class="c"># ← 原 evaluation/</span>
+│   ├── <span class="ok-tree">inference/</span>            <span class="c"># generation / speculative / profiling</span>
+│   ├── <span class="ok-tree">integrations/</span>         <span class="c"># 第三方桥接 + HF export</span>
+│   │   └── hf/              <span class="c"># configuration/modeling/tokenization 模板</span>
+│   └── <span class="ok-tree">cli/</span>                  <span class="c"># ← 原 scripts/ 中的入口，entry-points</span>
+├── tests/                    <span class="c"># 不打包</span>
+└── docs/  data/  results/    <span class="c"># 不打包</span></div>
+
+<p><b>依赖规则（单向）：</b><code>core</code> ← <code>configs</code> ← <code>models</code> ← <code>{training, inference, eval}</code> ← <code>cli</code>。<code>integrations</code> 旁挂、可选。任何反向导入在 CI 用 import-linter 拦截。</p>
+
+<h2>五、可落地重构方案（分阶段）</h2>
+
+<h3>阶段 0 · 仓库卫生（0.5 天，零风险）</h3>
+<table>
+<tr><th>动作</th><th>说明</th></tr>
+<tr><td>清理缓存/产物</td><td>从工作区移除 <code>.mypy_cache/ .ruff_cache/ .pytest_cache/ __pycache__/ .DS_Store .session_tmps/ output/ results/</code> 的误入文件，确认 <code>.gitignore</code> 已覆盖（已基本覆盖）。</td></tr>
+<tr><td>固化测试基线</td><td>跑全量 <code>pytest</code> 记录 585+ 绿，作为重构安全网。</td></tr>
+</table>
+
+<h3>阶段 1 · 单一命名空间 + src 布局（1–2 天，P0）</h3>
+<ul>
+  <li>新建 <code>src/sparklm/</code>，把现有 <code>sparklm/*</code> 移入；<code>dataset/ → src/sparklm/data/</code>，<code>trainer/ → src/sparklm/training/</code>，<code>evaluation/ → src/sparklm/eval/</code>，<code>scripts/ → src/sparklm/cli/</code>。</li>
+  <li>全局改写导入：<code>from dataset.</code>→<code>from sparklm.data.</code>、<code>from trainer.</code>→<code>from sparklm.training.</code> 等（共 ~144 处，用脚本批量 + 测试验证）。</li>
+  <li>HF 三件套移入 <code>src/sparklm/integrations/hf/</code>，删除所有 <code>import_module("model.*")</code> 死分支，导出时由 <code>export_hf.py</code> 把模板拷到产物目录。</li>
+</ul>
+<p>新的 <code>pyproject.toml</code> 关键段：</p>
+<pre>[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sparklm"
+version = "0.4.0"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.1.0","numpy>=1.24.0","tiktoken>=0.5.1",
+                "transformers>=4.38.0","tqdm>=4.66.0"]
+
+[project.optional-dependencies]
+train = ["wandb>=0.16.0","accelerate>=0.26.0","datasets>=2.16.0","tensorboard>=2.14.0"]
+eval  = ["rouge-score>=0.1.2","sacrebleu>=2.3.1"]
+flash = ["flash-attn>=2.4.0"]
+dev   = ["pytest>=7.4.0","pytest-timeout>=2.1.0","ruff>=0.4.0","mypy>=1.9.0,&lt;2.2.0"]
+
+[project.scripts]                       <span class="c"># scripts/ 改为命令行入口，而非可导入包</span>
+sparklm-train     = "sparklm.cli.train:main"
+sparklm-eval      = "sparklm.cli.evaluate:main"
+sparklm-infer     = "sparklm.cli.inference:main"
+sparklm-export-hf = "sparklm.cli.export_hf:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sparklm"]              <span class="c"># 只发布一个顶层命名空间</span></pre>
+<p>验证：<code>pip install -e .</code> 后 <code>python -c "import sparklm; from sparklm.training import ...; sparklm-train --help"</code> 全通过，且 <code>site-packages</code> 内<b>不再出现</b> dataset/trainer/scripts。</p>
+
+<h3>阶段 2 · 内部分层与巨石拆分（2–4 天，P1）</h3>
+<ul>
+  <li><code>models/</code> 下按 <code>attention/ moe/ kv_cache/</code> 分子包，文件从平铺收进语义目录。</li>
+  <li>拆分 <code>config.py</code>(39KB)→<code>configs/{base,presets,attention,moe,vlm}.py</code>；拆分 <code>train_pretrain.py</code>/<code>train_grpo.py</code> 为「config 解析 / 数据装配 / 训练循环 / 评测钩子」。</li>
+  <li>抽象 <code>BaseTrainer</code> 模板方法，各算法 Trainer 继承，消除重复样板。</li>
+  <li>收敛 <code>__init__.py</code>：按子包重导出，懒加载仅保留给真正重量级可选模块（flash-attn/vision）。</li>
+</ul>
+
+<h3>阶段 3 · 工程护栏（1 天，P2）</h3>
+<ul>
+  <li>引入 <code>import-linter</code> 在 CI 校验单向依赖；<code>ruff</code> 增加 <code>TID</code>(相对导入约束)。</li>
+  <li>补 <code>py.typed</code> 标记，发布带类型信息的包。</li>
+  <li>README「安装」节统一为 <code>pip install sparklm[train,eval]</code>。</li>
+</ul>
+
+<h2>六、风险与收益</h2>
+<table>
+<tr><th>项</th><th>评估</th></tr>
+<tr><td>主要风险</td><td>144 处跨包导入改写 + HF 导出路径变化。<b>缓解</b>：脚本化批量改写 + 585 用例回归 + 分阶段小步提交。</td></tr>
+<tr><td>兼容性</td><td>对外 API <code>from sparklm import SparkLMForCausalLM, ...</code> <b>保持不变</b>；仅内部 <code>dataset./trainer.</code> 路径变化，影响下游脚本（提供迁移说明）。</td></tr>
+<tr><td>收益</td><td>① 可 <code>pip install</code> 且零命名空间污染；② 清晰分层、可独立测试每层；③ 巨石拆分后可维护性显著提升；④ HF 导出从“源码污染根目录”变为“构建产物”。</td></tr>
+</table>
+
+<h2>七、建议执行顺序</h2>
+<div class="card">
+<p><b>1)</b> 阶段 0 卫生 + 测试基线 → <b>2)</b> 阶段 1 单命名空间 / src 布局 / 修 HF 死路径（这一步直接解决“不能 pip 安装”）→ <b>3)</b> 验证 <code>pip install -e .</code> 与全量测试 → <b>4)</b> 阶段 2 分层与巨石拆分 → <b>5)</b> 阶段 3 护栏。</p>
+<p>阶段 1 完成即达成你最核心的诉求（可安装 + 有命名空间边界）；阶段 2 解决“不优雅、没层次”。</p>
+</div>
+
+<footer>
+SparkLM 架构深度分析 · 基于 v0.3.0 源码静态分析（目录结构、pyproject、__init__、HF 包装器、跨包导入统计）生成。<br>
+若确认方案，我可以直接从阶段 0/1 开始实施重构。
+</footer>
+</div>
+</body>
+</html>

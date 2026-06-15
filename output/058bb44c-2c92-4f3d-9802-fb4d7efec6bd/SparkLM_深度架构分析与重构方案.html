@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SparkLM 深度架构分析与重构方案</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Helvetica Neue", sans-serif; background: #f7f8fa; color: #1a1a2e; line-height: 1.7; }
+  .hero { background: linear-gradient(135deg, #0f3460 0%, #16213e 60%, #1a1a2e 100%); color: #fff; padding: 60px 40px 50px; }
+  .hero h1 { font-size: 2.4rem; font-weight: 800; letter-spacing: -0.5px; }
+  .hero .subtitle { margin-top: 10px; font-size: 1.05rem; color: #a0b4cc; }
+  .hero .meta { margin-top: 18px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .hero .badge { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 20px; padding: 4px 14px; font-size: 0.82rem; color: #cce; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+  .toc { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); padding: 28px 32px; margin-bottom: 32px; }
+  .toc h2 { font-size: 1.1rem; color: #0f3460; margin-bottom: 14px; font-weight: 700; }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin: 6px 0; font-size: 0.92rem; }
+  .toc a { color: #0f3460; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); padding: 32px 36px; margin-bottom: 28px; }
+  .card h2 { font-size: 1.45rem; font-weight: 800; color: #0f3460; border-left: 4px solid #e94560; padding-left: 14px; margin-bottom: 20px; }
+  .card h3 { font-size: 1.08rem; font-weight: 700; color: #16213e; margin: 20px 0 10px; }
+  .card h4 { font-size: 0.95rem; font-weight: 700; color: #0f3460; margin: 14px 0 6px; }
+  p { margin-bottom: 10px; font-size: 0.95rem; color: #333; }
+  .severity { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 0.78rem; font-weight: 700; margin-left: 8px; }
+  .s-critical { background: #fde8e8; color: #c00; }
+  .s-high { background: #fdf3e0; color: #b86b00; }
+  .s-medium { background: #e8f3fd; color: #0057b8; }
+  .s-low { background: #e8fded; color: #007030; }
+  .problem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 700px) { .problem-grid { grid-template-columns: 1fr; } }
+  .problem-item { background: #f7f8fa; border-radius: 8px; padding: 16px 18px; border: 1px solid #e2e8f0; }
+  .problem-item .title { font-weight: 700; font-size: 0.93rem; color: #1a1a2e; margin-bottom: 6px; }
+  .problem-item .desc { font-size: 0.87rem; color: #555; }
+  code { background: #f1f3f7; border: 1px solid #dde3ed; border-radius: 4px; padding: 1px 5px; font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace; font-size: 0.88em; color: #c0392b; }
+  pre { background: #1a1a2e; color: #e8eaf6; border-radius: 8px; padding: 20px; overflow-x: auto; font-size: 0.85rem; line-height: 1.6; margin: 14px 0; }
+  pre code { background: none; border: none; color: inherit; font-size: inherit; }
+  .arch-diagram { background: #f7f8fa; border: 2px dashed #c4cdd6; border-radius: 10px; padding: 24px; font-family: monospace; font-size: 0.82rem; line-height: 1.9; color: #2d3748; white-space: pre; overflow-x: auto; margin: 16px 0; }
+  .compare-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.88rem; }
+  .compare-table th { background: #0f3460; color: #fff; padding: 10px 14px; text-align: left; }
+  .compare-table td { padding: 9px 14px; border-bottom: 1px solid #eef0f4; }
+  .compare-table tr:nth-child(even) td { background: #f7f8fa; }
+  .compare-table .bad { color: #c00; font-weight: 600; }
+  .compare-table .good { color: #007030; font-weight: 600; }
+  .roadmap { margin-top: 16px; }
+  .phase { border-left: 3px solid #e94560; margin-bottom: 24px; padding-left: 20px; }
+  .phase-title { font-weight: 800; font-size: 1.05rem; color: #0f3460; margin-bottom: 8px; }
+  .phase-title .phase-label { background: #e94560; color: #fff; border-radius: 4px; padding: 2px 8px; font-size: 0.78rem; margin-left: 10px; }
+  ul.checklist { list-style: none; padding-left: 4px; }
+  ul.checklist li { padding: 4px 0; font-size: 0.9rem; }
+  ul.checklist li::before { content: "→ "; color: #e94560; font-weight: 700; }
+  .score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+  @media (max-width: 600px) { .score-grid { grid-template-columns: 1fr 1fr; } }
+  .score-card { background: #f7f8fa; border-radius: 8px; padding: 14px 16px; text-align: center; border: 1px solid #e2e8f0; }
+  .score-card .dim { font-size: 0.78rem; color: #666; margin-bottom: 6px; }
+  .score-card .val { font-size: 1.7rem; font-weight: 800; color: #0f3460; }
+  .score-card.ok .val { color: #007030; }
+  .score-card.warn .val { color: #b86b00; }
+  .score-card.bad .val { color: #c00; }
+  .highlight-box { background: linear-gradient(135deg, #e8f3fd, #f0f8ff); border: 1px solid #b3d4f5; border-radius: 8px; padding: 16px 20px; margin: 14px 0; }
+  .highlight-box strong { color: #0057b8; }
+  .footer { text-align: center; padding: 32px; color: #888; font-size: 0.82rem; }
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>SparkLM 深度架构分析与重构方案</h1>
+  <div class="subtitle">代码质量审计 · 架构层次设计 · PyPI 发布就绪改造</div>
+  <div class="meta">
+    <span class="badge">版本 v0.4.0</span>
+    <span class="badge">分析日期 2026-06-14</span>
+    <span class="badge">src/ layout · setuptools</span>
+    <span class="badge">11 个核心问题 · 5 个优化层次</span>
+  </div>
+</div>
+
+<div class="container">
+  <div class="toc">
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#overview">整体架构概览</a></li>
+      <li><a href="#score">架构健康评分</a></li>
+      <li><a href="#problems">核心问题诊断（11项）</a></li>
+      <li><a href="#current-arch">当前架构层次图</a></li>
+      <li><a href="#target-arch">目标架构设计</a></li>
+      <li><a href="#pypi">PyPI 发布障碍与修复</a></li>
+      <li><a href="#refactor">重构方案与代码示例</a></li>
+      <li><a href="#roadmap">落地路线图</a></li>
+    </ol>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ===== 1. 整体概览 ===== -->
+<div class="card" id="overview">
+  <h2>1. 整体架构概览</h2>
+  <p>SparkLM 是一个多模态/多范式小型语言模型框架，融合了 DeepSeek V4 的 MLA/CSA/HCA/MoE/MTP、NanoGPT 极简风格与 SmolLM 设计哲学。项目已采用 <code>src/</code> 布局和 <code>pyproject.toml</code>，整体方向正确。但随着功能快速扩张，出现了大量架构层次不清晰、模块边界模糊、包发布机制残缺的问题。</p>
+
+  <h3>项目规模快照</h3>
+  <div class="problem-grid">
+    <div class="problem-item">
+      <div class="title">📦 源码文件</div>
+      <div class="desc">src/sparklm/ 下 <strong>~50+ .py 文件</strong>，总代码量 ≈ 700KB，混杂在同一扁平命名空间</div>
+    </div>
+    <div class="problem-item">
+      <div class="title">🔗 CLI 入口</div>
+      <div class="desc">11 个 console_scripts，但 CLI 目录下有 <strong>20+ 脚本</strong>，部分未注册为 entry_point</div>
+    </div>
+    <div class="problem-item">
+      <div class="title">🧠 注意力变体</div>
+      <div class="desc">MLA / GQA / CSA / HCA / Hybrid / SAHA — <strong>6 种机制</strong>散落在 4+ 文件中，缺少统一 Protocol</div>
+    </div>
+    <div class="problem-item">
+      <div class="title">🏋️ 训练脚本</div>
+      <div class="desc">pretrain / sft / dpo / grpo / ppo / vlm / agent / distillation / lora — <strong>9 个 train_*.py</strong>，共享逻辑高度重复</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 2. 健康评分 ===== -->
+<div class="card" id="score">
+  <h2>2. 架构健康评分</h2>
+  <div class="score-grid">
+    <div class="score-card ok"><div class="dim">包发布结构</div><div class="val">72</div></div>
+    <div class="score-card warn"><div class="dim">模块层次性</div><div class="val">45</div></div>
+    <div class="score-card bad"><div class="dim">PyPI 可安装</div><div class="val">30</div></div>
+    <div class="score-card warn"><div class="dim">公开 API 设计</div><div class="val">58</div></div>
+    <div class="score-card bad"><div class="dim">依赖边界</div><div class="val">38</div></div>
+    <div class="score-card warn"><div class="dim">可扩展性</div><div class="val">55</div></div>
+  </div>
+  <div class="highlight-box" style="margin-top:18px;">
+    <strong>核心结论：</strong> 项目已初步具备 src-layout + entry_points 骨架（良好起点），但 <strong>硬依赖 torch 导致 pip install 在无 GPU/轻量环境必然失败</strong>；模块内部存在双向循环依赖与"巨石文件"；训练层 9 个几乎等价的入口脚本违反 DRY 原则，造成维护地狱。
+  </div>
+</div>
+
+<!-- ===== 3. 问题诊断 ===== -->
+<div class="card" id="problems">
+  <h2>3. 核心问题诊断</h2>
+
+  <h3>P1 — PyPI 发布障碍</h3>
+
+  <h4>问题 1：torch 作为硬依赖，PyPI 安装不可用 <span class="severity s-critical">Critical</span></h4>
+  <p><code>pyproject.toml</code> 把 <code>torch>=2.1.0</code> 列为 <code>dependencies</code>（核心依赖），但 PyPI 上的 torch 版本与 CUDA 版本强绑定。用户在不同 CUDA 环境下 <code>pip install sparklm</code> 会：</p>
+  <ul class="checklist">
+    <li>CPU 环境装到 CPU-only torch（不可用于 GPU 训练）</li>
+    <li>CUDA 12.x 环境装到错误版本</li>
+    <li>苹果 MPS 环境 torch 无法通过 PyPI 正常解析</li>
+  </ul>
+  <p><strong>正确做法：</strong>参考 HuggingFace transformers/trl，将 torch 降为 <code>[project.optional-dependencies]</code> 或在文档中标注"请先按官方指引安装 PyTorch"。</p>
+
+  <h4>问题 2：<code>requirements.txt</code> 与 <code>pyproject.toml</code> 双重真相 <span class="severity s-high">High</span></h4>
+  <p>同时维护两个依赖声明文件，版本极易漂移，自动化 CI/CD 会随机拉到不同版本树。</p>
+
+  <h4>问题 3：版本号硬编码 + <code>__version__</code> fallback 错误 <span class="severity s-medium">Medium</span></h4>
+  <p><code>__init__.py</code> 的 fallback 写的是 <code>"0.3.0"</code> 但 <code>pyproject.toml</code> 版本是 <code>"0.4.0"</code>，开发态 editable install 时二者不一致，<code>importlib.metadata</code> 查不到会静默使用错误版本号。</p>
+
+  <h3>P2 — 架构层次问题</h3>
+
+  <h4>问题 4：顶层命名空间过于扁平，无层次 <span class="severity s-critical">Critical</span></h4>
+  <p>50+ 文件全部平铺在 <code>sparklm/</code> 下，其中技术上无关的模块（<code>mobilellm_innovations.py</code>、<code>sparklm_tiny.py</code>、<code>innovations.py</code>、<code>causal_routing_smoothing.py</code>、<code>muonclip.py</code>）与核心模型平级共存，没有任何子包分组。</p>
+
+  <h4>问题 5："巨石"文件 <span class="severity s-high">High</span></h4>
+  <table class="compare-table">
+    <tr><th>文件</th><th>行数</th><th>问题</th></tr>
+    <tr><td>config.py</td><td>969</td><td class="bad">单一 dataclass 承载所有架构变体的全部参数，验证逻辑与业务逻辑耦合</td></tr>
+    <tr><td>training/train_pretrain.py</td><td>~1200+</td><td class="bad">单文件包含数据加载 + 模型构建 + 优化器 + 训练循环 + 评估 + 保存</td></tr>
+    <tr><td>data/common.py</td><td>905</td><td class="bad">通用工具函数与格式转换逻辑混杂，难以单独测试</td></tr>
+    <tr><td>training/train_grpo.py</td><td>~1300+</td><td class="bad">GRPO 算法、奖励、采样全混在一个文件</td></tr>
+    <tr><td>vlm.py</td><td>29KB</td><td class="bad">VLM 模型定义与训练辅助逻辑共存</td></tr>
+  </table>
+
+  <h4>问题 6：双向依赖与导入副作用 <span class="severity s-high">High</span></h4>
+  <p><code>model_sparklm.py</code> 直接在顶层 import <code>ECKVCLayer</code>（from <code>expert_kv_compression.py</code>），而 <code>expert_kv_compression.py</code> 又依赖 <code>moe_v4.py</code> 中的 MoE 抽象，形成横向耦合。任何一处修改都可能引起连锁失败。</p>
+
+  <h4>问题 7：两套 MoE 实现共存，废弃路径不清晰 <span class="severity s-high">High</span></h4>
+  <p><code>feedforward.py</code> 中的 <code>MoEFeedForward</code> 被标注为 deprecated，但仍出现在 <code>__all__</code> 和 <code>__init__.py</code> 公开 API 中。<code>moe_v4.py</code> 的 <code>HybridMoELayer</code> 才是当前路径，但文档和示例没有同步更新。</p>
+
+  <h4>问题 8：Config 职责过重 <span class="severity s-medium">Medium</span></h4>
+  <p><code>SparkLMConfig</code> 是一个 <code>@dataclass</code>，但同时负责：参数存储、多架构变体验证（200+ 行 validate()）、参数量估算、硬件需求估算、launch profile 生成。违反单一职责原则，且验证逻辑中 <code>import warnings</code> 在函数体内部——说明最初没有预料到这里会变成一个"大杂烩"。</p>
+
+  <h4>问题 9：训练入口脚本高度重复 <span class="severity s-high">High</span></h4>
+  <p>9 个 <code>train_*.py</code> 每个都各自重复：argparse 解析、设备初始化、分布式设置、优化器创建、LR 调度、checkpoint 保存。<code>training/base.py</code> 已经提取了部分共享代码，但各 trainer 仍然大量 copy-paste 其 <code>main()</code> 结构。</p>
+
+  <h3>P3 — 可维护性问题</h3>
+
+  <h4>问题 10：<code>sparklm_tiny.py</code> 是孤立的平行实现 <span class="severity s-medium">Medium</span></h4>
+  <p><code>TinyRMSNorm</code> 继承 <code>RMSNorm</code>，<code>TinyRoPE</code> 继承 <code>RotaryEmbedding</code>，但整个 <code>sparklm_tiny.py</code> 中仍然有大量从 <code>components.py</code> 独立 copy 出来的代码。这个文件应该成为一个 <code>zoo/</code> 或 <code>experimental/</code> 子包，而不是和主模型平级。</p>
+
+  <h4>问题 11：eval 子包几乎是空壳 <span class="severity s-medium">Medium</span></h4>
+  <p><code>eval/__init__.py</code> 只导出 <code>EvalRunner</code>，<code>eval/metrics/</code> 是空目录，<code>eval/report.py</code> 仅 1KB。但 CLI 中有 4 个不同的 eval 脚本（<code>evaluate.py</code>、<code>eval_benchmark.py</code>、<code>eval_adv_cot_ppl.py</code>、<code>eval_toolcall.py</code>），形成"两套评估系统"并行的局面。</p>
+</div>
+
+<!-- ===== 4. 当前架构层次图 ===== -->
+<div class="card" id="current-arch">
+  <h2>4. 当前架构层次图（问题可视化）</h2>
+  <div class="arch-diagram">sparklm/                         ← ⚠️ 所有内容平铺在同一层
+├── __init__.py                  ← 500+ 行，巨型 lazy-import 分发中心
+├── config.py                    ← ⚠️ 969 行，职责过重
+├── model_sparklm.py             ← 主模型（OK，但直接 import 了 ECKVC 等重模块）
+├── attention.py                 ← MLA + GQA（两种机制在一文件）
+├── attention_saha.py            ← SAHA（独立文件）
+├── attention_utils.py           ← 小工具
+├── attention_v4/                ← CSA + HCA（子包，这部分结构相对好）
+├── feedforward.py               ← ⚠️ 同时含新旧两套 MoE，deprecated 未清理
+├── moe_v4.py                    ← HybridMoELayer（当前路径）
+├── components.py                ← RMSNorm + RoPE（OK）
+├── kv_cache.py / kv_cache_quant.py ← KV 缓存（应合并）
+├── expert_kv_compression.py     ← ECKVC（横向耦合 moe_v4）
+├── expert_parallel.py           ← 分布式专家并行
+├── causal_routing_smoothing.py  ← ⚠️ 孤立的实验特性，无归属
+├── mobilellm_innovations.py     ← ⚠️ 25KB 实验代码，应移入 experimental/
+├── sparklm_tiny.py              ← ⚠️ 平行实现，应移入 zoo/ 或 experimental/
+├── innovations.py               ← ⚠️ 仅 2.8KB，概念性占位文件
+├── muonclip.py                  ← MuonClip 优化器
+├── lora.py                      ← LoRA（独立，OK）
+├── tokenizer.py / tokenizer_compat.py ← ⚠️ 两个 tokenizer 文件，边界不清
+├── flash_attention.py           ← Flash Attn wrapper
+├── vlm.py / vlm_config.py / vision.py ← VLM（应合并为子包）
+├── diffusion/                   ← MDLM + RDT（子包，OK）
+├── inference/                   ← 生成/推测解码（子包，OK）
+├── mtp/                         ← MTP（子包，OK）
+├── integrations/                ← 外部集成（子包，OK）
+├── data/                        ← ⚠️ common.py 905 行，职责过重
+├── training/                    ← ⚠️ 9 个 train_*.py 重复逻辑
+├── eval/                        ← ⚠️ 空壳子包 vs 4 个 CLI 评估脚本
+└── cli/                         ← ⚠️ 20+ 脚本，大量未注册为 entry_points
+</div>
+  <p>核心问题一目了然：<strong>约 15 个顶层文件没有语义归属</strong>，应拆入子包；多个"历史遗留"路径与当前路径共存。</p>
+</div>
+
+<!-- ===== 5. 目标架构 ===== -->
+<div class="card" id="target-arch">
+  <h2>5. 目标架构设计（重构后）</h2>
+  <div class="arch-diagram">sparklm/                         ← 顶层只暴露稳定公开 API
+├── __init__.py                  ← 精简：仅导出 core 层公开符号
+├── version.py                   ← 单一版本真相（由 setuptools-scm 或 __version__.py 管理）
+│
+├── core/                        ← ✅ 核心神经网络组件（无训练依赖）
+│   ├── __init__.py
+│   ├── config.py                ← SparkLMConfig（仅参数存储 + 基础校验）
+│   ├── config_presets.py        ← sparklm_31m() 等预定义配置函数
+│   ├── config_validators.py     ← 独立的验证逻辑（可单独测试）
+│   ├── model.py                 ← SparkLMModel + SparkLMForCausalLM
+│   ├── block.py                 ← SparkLMBlock（使用 Attention Registry）
+│   ├── components.py            ← RMSNorm, RotaryEmbedding 等基元
+│   └── registry.py              ← 注意力/FFN 全局 Registry
+│
+├── nn/                          ← ✅ 神经网络模块层（纯 torch.nn）
+│   ├── __init__.py
+│   ├── attention/               ← 所有注意力变体
+│   │   ├── __init__.py          ← register_all() 一键注册
+│   │   ├── base.py              ← BaseAttention Protocol/ABC
+│   │   ├── gqa.py               ← GroupedQueryAttention
+│   │   ├── mla.py               ← MultiHeadLatentAttention
+│   │   ├── saha.py              ← SharedKAttention
+│   │   └── v4/                  ← CSA + HCA（已有子包，保留）
+│   ├── feedforward/
+│   │   ├── __init__.py
+│   │   ├── swiglu.py            ← SwiGLUFeedForward
+│   │   └── moe/                 ← 所有 MoE 实现（删除旧版 feedforward.py）
+│   │       ├── __init__.py
+│   │       ├── gate.py          ← MoEGate, V4MoEGate
+│   │       ├── layer.py         ← HybridMoELayer（当前主路径）
+│   │       └── expert_parallel.py
+│   ├── cache.py                 ← 合并 kv_cache.py + kv_cache_quant.py
+│   ├── lora.py                  ← LoRA（不变）
+│   └── optimizers/              ← MuonClip 等训练优化器
+│
+├── tokenizer/                   ← ✅ 分词器层（合并两个 tokenizer 文件）
+│   ├── __init__.py
+│   ├── base.py
+│   └── compat.py
+│
+├── multimodal/                  ← ✅ 多模态（合并 vlm.py/vlm_config.py/vision.py）
+│   ├── __init__.py
+│   ├── config.py
+│   ├── vision.py
+│   └── projector.py
+│
+├── diffusion/                   ← 保留现有结构（已是子包）
+├── inference/                   ← 保留现有结构
+├── mtp/                         ← 保留现有结构
+├── integrations/                ← 保留现有结构
+│
+├── training/                    ← ✅ 训练层重构
+│   ├── __init__.py
+│   ├── base.py                  ← BaseTrainer 基类（已有，强化）
+│   ├── config.py                ← TrainingConfig dataclass（从各 train_*.py 提取）
+│   ├── pretrain.py              ← PretrainTrainer(BaseTrainer)
+│   ├── sft.py                   ← SFTTrainer(BaseTrainer)
+│   ├── dpo.py                   ← DPOTrainer(BaseTrainer)
+│   ├── grpo.py                  ← GRPOTrainer(BaseTrainer)  ← RL 算法拆分
+│   ├── rl/
+│   │   ├── rewards.py           ← grpo_rewards.py
+│   │   └── ppo.py
+│   └── utils/
+│       ├── optimizer.py
+│       ├── scheduler.py
+│       └── checkpoint.py
+│
+├── data/                        ← ✅ 数据层重构
+│   ├── __init__.py
+│   ├── base.py                  ← 基础 Record 类型定义
+│   ├── loaders.py               ← 提取 common.py 中的 I/O 函数
+│   ├── formats.py               ← 聊天/预训练格式转换
+│   ├── pretrain.py / sft.py / dpo.py / grpo.py  ← 保留，引用 loaders
+│   ├── registry.py              ← 保留
+│   └── streaming.py             ← 保留
+│
+├── eval/                        ← ✅ 评估层统一
+│   ├── __init__.py
+│   ├── runner.py                ← EvalRunner（统一入口）
+│   ├── metrics/                 ← 各 metric 实现
+│   └── benchmarks/              ← 迁移 CLI eval_*.py 到此处
+│
+├── experimental/                ← ✅ 实验性特性隔离
+│   ├── __init__.py
+│   ├── mobilellm.py             ← 原 mobilellm_innovations.py
+│   ├── tiny.py                  ← 原 sparklm_tiny.py
+│   └── causal_routing.py        ← 原 causal_routing_smoothing.py
+│
+└── cli/                         ← CLI 入口（精简，只保留 entry_points 脚本）
+    ├── __init__.py
+    ├── train.py                 ← 统一训练入口（dispatch 到各 Trainer）
+    ├── eval.py                  ← 统一评估入口
+    ├── infer.py                 ← 推理
+    ├── serve.py                 ← API Server
+    └── export.py                ← HF 导出
+</div>
+</div>
+
+<!-- ===== 6. PyPI 修复 ===== -->
+<div class="card" id="pypi">
+  <h2>6. PyPI 发布障碍与修复</h2>
+
+  <h3>修复 pyproject.toml — 核心改动</h3>
+  <pre><code>[project]
+name = "sparklm"
+version = "0.4.0"            # 或用 dynamic = ["version"] + setuptools-scm
+
+# ⚠️ 去除 torch 硬依赖，改为 optional
+dependencies = [
+    "numpy>=1.24.0",
+    "tiktoken>=0.5.1",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+# 用户需先按 pytorch.org 安装对应 CUDA 版本的 torch
+torch  = ["torch>=2.1.0"]
+train  = ["torch>=2.1.0", "wandb>=0.16.0", "accelerate>=0.26.0",
+          "datasets>=2.16.0", "tensorboard>=2.14.0", "pyyaml>=6.0",
+          "scipy>=1.11.0"]
+eval   = ["torch>=2.1.0", "rouge-score>=0.1.2", "sacrebleu>=2.3.1"]
+flash  = ["torch>=2.1.0", "flash-attn>=2.4.0"]
+tokenizer = ["sentencepiece>=0.1.99", "tokenizers>=0.15.0"]
+all    = ["sparklm[train,eval,tokenizer]"]
+dev    = ["sparklm[all]", "pytest>=7.4.0", "pytest-timeout>=2.1.0",
+          "ruff>=0.4.0", "mypy>=1.9.0,&lt;2.2.0"]
+
+# ✅ 精简 entry_points，统一为 5 个顶层命令
+[project.scripts]
+sparklm = "sparklm.cli.main:main"   # 统一调度器: sparklm train/eval/infer/serve/export
+# 保留向后兼容的具名命令：
+sparklm-pretrain = "sparklm.training.pretrain:main"
+sparklm-infer    = "sparklm.cli.infer:main"
+sparklm-serve    = "sparklm.cli.serve:main"</code></pre>
+
+  <h3>修复 <code>__init__.py</code> 版本一致性</h3>
+  <pre><code># src/sparklm/version.py — 单一版本真相
+__version__ = "0.4.0"
+
+# src/sparklm/__init__.py
+from sparklm.version import __version__
+try:
+    from importlib.metadata import version as _pkg_version
+    __version__ = _pkg_version("sparklm")
+except Exception:
+    pass   # 开发态 editable install 回退到 version.py</code></pre>
+
+  <h3>requirements.txt → 废弃，统一到 pyproject.toml</h3>
+  <pre><code># requirements.txt 改为：
+# ⚠️ 此文件仅供 CI/CD 锁定环境使用，项目依赖声明以 pyproject.toml 为准
+# 生成方式：pip-compile pyproject.toml --extra=dev -o requirements-dev.txt
+-r requirements-dev.txt</code></pre>
+
+  <h3>发布前检查清单</h3>
+  <ul class="checklist">
+    <li><code>pip install twine build</code> → <code>python -m build</code> → <code>twine check dist/*</code></li>
+    <li>确认 <code>SOURCES.txt</code> 包含 <code>py.typed</code>（已有，OK）</li>
+    <li>在无 torch 环境 <code>pip install sparklm</code> → 验证 <code>import sparklm</code> 不报错（需延迟 torch import）</li>
+    <li>在 torch-only 环境 <code>pip install sparklm[train]</code> → 验证完整功能</li>
+    <li>配置 GitHub Actions 自动发布到 TestPyPI → PyPI</li>
+  </ul>
+</div>
+
+<!-- ===== 7. 重构代码示例 ===== -->
+<div class="card" id="refactor">
+  <h2>7. 重构方案与代码示例</h2>
+
+  <h3>7.1 Config 职责拆分</h3>
+  <pre><code># core/config.py — 只管参数存储
+@dataclass
+class SparkLMConfig:
+    """纯数据类：只存储超参数，不含业务逻辑。"""
+    hidden_size: int = 768
+    num_hidden_layers: int = 12
+    # ... 其他参数
+    attention_type: str = "mla"
+    use_moe: bool = False
+    # ... etc
+
+# core/config_validators.py — 独立验证器
+class SparkLMConfigValidator:
+    @staticmethod
+    def validate(cfg: SparkLMConfig) -> SparkLMConfig:
+        SparkLMConfigValidator._validate_attention(cfg)
+        SparkLMConfigValidator._validate_moe(cfg)
+        SparkLMConfigValidator._validate_mtp(cfg)
+        return cfg
+
+    @staticmethod
+    def _validate_attention(cfg): ...
+    @staticmethod
+    def _validate_moe(cfg): ...
+
+# core/config_utils.py — 硬件估算（只在需要时 import）
+class SparkLMHardwareEstimator:
+    @staticmethod
+    def estimate_params(cfg: SparkLMConfig) -> dict: ...
+    @staticmethod
+    def estimate_hardware(cfg: SparkLMConfig, gpu_gb=80.0) -> dict: ...</code></pre>
+
+  <h3>7.2 统一 Attention Registry Protocol</h3>
+  <pre><code># nn/attention/base.py
+from typing import Protocol, runtime_checkable, Optional, Any, Tuple
+import torch
+from torch import Tensor
+
+@runtime_checkable
+class AttentionProtocol(Protocol):
+    """所有注意力实现必须满足的接口契约。"""
+    def forward(
+        self,
+        hidden_states: Tensor,
+        cos: Optional[Tensor],
+        sin: Optional[Tensor],
+        past_key_value: Optional[Any] = None,
+        use_cache: bool = False,
+        attention_mask: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Optional[Any]]: ...
+
+# nn/attention/__init__.py — 统一注册点
+from sparklm.core.registry import ATTENTION_REGISTRY
+
+def register_all_attention_types():
+    """在包 import 时一次性注册所有注意力类型。"""
+    from .gqa import GroupedQueryAttention
+    from .mla import MultiHeadLatentAttention
+    from .saha import SharedKAttention
+    from .v4.csa import CompressedSparseAttention
+    from .v4.hca import HeavilyCompressedAttention
+
+    ATTENTION_REGISTRY.register("gqa",  lambda idx, cfg: GroupedQueryAttention(cfg))
+    ATTENTION_REGISTRY.register("mla",  lambda idx, cfg: MultiHeadLatentAttention(cfg))
+    ATTENTION_REGISTRY.register("saha", lambda idx, cfg: SharedKAttention(idx, cfg))
+    ATTENTION_REGISTRY.register("csa",  lambda idx, cfg: CompressedSparseAttention.from_config(cfg))
+    ATTENTION_REGISTRY.register("hca",  lambda idx, cfg: HeavilyCompressedAttention.from_config(cfg))
+
+register_all_attention_types()</code></pre>
+
+  <h3>7.3 BaseTrainer 抽象（消灭 9 个重复的 train_*.py）</h3>
+  <pre><code># training/base.py（强化现有骨架）
+class BaseTrainer(ABC):
+    """所有 SparkLM 训练器的基类。
+    
+    子类只需实现：build_dataset(), build_model(), compute_loss(), step_log()
+    其余（设备初始化、DDP、优化器、LR 调度、checkpoint、进度显示）由基类统一处理。
+    """
+    def __init__(self, args: Namespace): ...
+    
+    @abstractmethod
+    def build_dataset(self) -> torch.utils.data.Dataset: ...
+    
+    @abstractmethod
+    def compute_loss(self, batch) -> dict: ...
+    
+    def train(self) -> None:
+        """通用训练循环。"""
+        self._setup()
+        dataset = self.build_dataset()
+        loader = self._build_loader(dataset)
+        model = self._build_model()
+        optimizer, scheduler = self._build_optimizer(model)
+        for step, batch in enumerate(self._epoch_iter(loader)):
+            loss_dict = self.compute_loss(batch)
+            self._backward(loss_dict["loss"], optimizer, scheduler)
+            if self._should_log(step): self._log(step, loss_dict)
+            if self._should_ckpt(step): self._save(step, model)
+
+# training/pretrain.py — 只需 60 行
+class PretrainTrainer(BaseTrainer):
+    def build_dataset(self):
+        return PretrainDataset(self.args.data_path, ...)
+    
+    def compute_loss(self, batch):
+        out = self.model(batch["input_ids"], labels=batch["labels"])
+        return {"loss": out["loss"], "aux_loss": out["aux_loss"]}
+
+def main():
+    args = parse_pretrain_args()
+    PretrainTrainer(args).train()</code></pre>
+
+  <h3>7.4 延迟 torch import（支持无 GPU 环境安装）</h3>
+  <pre><code># src/sparklm/__init__.py — 精简版本
+"""SparkLM: Next-generation small language model framework."""
+from sparklm.version import __version__
+
+# 不在顶层 import torch！
+# 用户代码需要 torch 时才触发实际导入：
+#   from sparklm.core import SparkLMForCausalLM  ← 此时才 import torch
+
+def __getattr__(name: str):
+    """按需 lazy-load，避免 import sparklm 触发 torch 加载。"""
+    _CORE = {"SparkLMConfig", "SparkLMModel", "SparkLMForCausalLM", ...}
+    if name in _CORE:
+        from sparklm.core import model as _m
+        return getattr(_m, name)
+    # ... 其他 lazy 分组
+    raise AttributeError(f"module 'sparklm' has no attribute {name!r}")</code></pre>
+</div>
+
+<!-- ===== 8. 路线图 ===== -->
+<div class="card" id="roadmap">
+  <h2>8. 落地路线图</h2>
+  <div class="roadmap">
+
+    <div class="phase">
+      <div class="phase-title">Phase 1：PyPI 可安装 <span class="phase-label">优先级最高 · 预计 1-2 天</span></div>
+      <ul class="checklist">
+        <li>将 <code>torch</code> 从 <code>dependencies</code> 移到 <code>[train]</code> optional-dep</li>
+        <li>添加 <code>src/sparklm/version.py</code>，统一版本号来源，修复 fallback 错误</li>
+        <li>删除 <code>requirements.txt</code> 或将其改为 <code>pip-compile</code> 生成的锁文件</li>
+        <li>验证：在干净虚拟环境 <code>pip install sparklm</code> → <code>python -c "import sparklm; print(sparklm.__version__)"</code> 成功</li>
+        <li>配置 GitHub Actions 自动发布 workflow（<code>on: push tags: 'v*'</code>）</li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <div class="phase-title">Phase 2：架构层次化 — nn/ 子包 <span class="phase-label">高优先 · 预计 3-5 天</span></div>
+      <ul class="checklist">
+        <li>创建 <code>nn/attention/</code> 子包，迁移 MLA/GQA/SAHA，统一 <code>BaseAttention Protocol</code></li>
+        <li>清理 <code>feedforward.py</code>：删除 deprecated <code>MoEFeedForward</code>，将 MoE 迁入 <code>nn/feedforward/moe/</code></li>
+        <li>合并 <code>kv_cache.py</code> + <code>kv_cache_quant.py</code> → <code>nn/cache.py</code></li>
+        <li>将 <code>muonclip.py</code> 迁入 <code>nn/optimizers/muonclip.py</code></li>
+        <li>确保 <code>model_sparklm.py</code> 对 MoE/ECKVC 仅做条件 lazy import（不在模块顶层）</li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <div class="phase-title">Phase 3：Config 职责拆分 <span class="phase-label">中优先 · 预计 2-3 天</span></div>
+      <ul class="checklist">
+        <li>提取 <code>validate()</code> 逻辑到 <code>core/config_validators.py</code></li>
+        <li>提取 <code>estimate_params / estimate_hardware / launch_profile</code> 到 <code>core/config_utils.py</code></li>
+        <li>将预设函数（<code>sparklm_31m()</code> 等）迁移到 <code>core/config_presets.py</code></li>
+        <li>为 <code>SparkLMConfig</code> 添加 <code>__repr__</code> 友好输出和 <code>to_json() / from_json()</code> 方法</li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <div class="phase-title">Phase 4：训练层统一 + 多模态子包 <span class="phase-label">中优先 · 预计 5-7 天</span></div>
+      <ul class="checklist">
+        <li>强化 <code>BaseTrainer</code>：提取公共 argparse、device init、checkpoint、logging</li>
+        <li>将 9 个 <code>train_*.py</code> 重构为 <code>XxxTrainer(BaseTrainer)</code>，消除重复</li>
+        <li>合并 <code>vlm.py / vlm_config.py / vision.py</code> → <code>multimodal/</code> 子包</li>
+        <li>统一 eval 层：将 4 个 CLI eval 脚本纳入 <code>eval/benchmarks/</code></li>
+        <li>统一 CLI：创建 <code>sparklm train --task pretrain/sft/dpo/grpo</code> 单一入口</li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <div class="phase-title">Phase 5：实验性特性隔离 + 文档更新 <span class="phase-label">低优先 · 预计 2-3 天</span></div>
+      <ul class="checklist">
+        <li>创建 <code>experimental/</code> 子包，迁入 <code>mobilellm_innovations.py / sparklm_tiny.py / causal_routing_smoothing.py</code></li>
+        <li>在顶层 <code>__all__</code> 中明确标注"Stable API"与"Experimental API"边界</li>
+        <li>更新 README：添加 PyPI 安装说明（含 torch 预安装步骤）</li>
+        <li>添加 CHANGELOG.md，记录 API 破坏性变更</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 对比表 ===== -->
+<div class="card">
+  <h2>重构前后对比总览</h2>
+  <table class="compare-table">
+    <tr>
+      <th>维度</th>
+      <th>当前（v0.4.0）</th>
+      <th>目标（重构后）</th>
+    </tr>
+    <tr>
+      <td>PyPI 安装</td>
+      <td class="bad">❌ pip install sparklm 必然失败（torch 硬依赖）</td>
+      <td class="good">✅ 轻量安装 + sparklm[train] 完整安装</td>
+    </tr>
+    <tr>
+      <td>顶层模块数</td>
+      <td class="bad">50+ 文件平铺</td>
+      <td class="good">~10 文件 + 有层次的子包</td>
+    </tr>
+    <tr>
+      <td>注意力扩展</td>
+      <td class="bad">4 个散落文件 + 1 个子包</td>
+      <td class="good">统一 nn/attention/ 子包 + Protocol</td>
+    </tr>
+    <tr>
+      <td>MoE 路径</td>
+      <td class="bad">feedforward.py (deprecated) + moe_v4.py 双轨</td>
+      <td class="good">单一 nn/feedforward/moe/ 路径</td>
+    </tr>
+    <tr>
+      <td>训练入口</td>
+      <td class="bad">9 个 train_*.py 大量重复</td>
+      <td class="good">BaseTrainer + 9 个精简子类（各 &lt;100 行）</td>
+    </tr>
+    <tr>
+      <td>Config 行数</td>
+      <td class="bad">969 行，5 种职责混杂</td>
+      <td class="good">~200 行纯数据类 + 3 个独立工具模块</td>
+    </tr>
+    <tr>
+      <td>版本号</td>
+      <td class="bad">2 处不同步（pyproject vs __init__ fallback）</td>
+      <td class="good">version.py 单一真相</td>
+    </tr>
+    <tr>
+      <td>eval 层</td>
+      <td class="bad">空壳子包 + 4 个并行 CLI 脚本</td>
+      <td class="good">统一 EvalRunner + benchmarks 子包</td>
+    </tr>
+  </table>
+</div>
+
+</div><!-- end .container -->
+<div class="footer">SparkLM Architecture Analysis Report · Generated 2026-06-14 · BoxAI</div>
+</body>
+</html>
