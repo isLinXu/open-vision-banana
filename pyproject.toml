@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-vision-banana"
+version = "0.2.0"
+description = "Image Generators are Generalist Vision Learners — Open-source implementation"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Open Vision Banana Contributors"},
+]
+keywords = ["vision", "diffusion", "flux", "lora", "depth", "segmentation", "normals"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "pyyaml>=6.0",
+    "pillow>=9.0",
+]
+
+[project.optional-dependencies]
+inference = [
+    "diffusers>=0.30",
+    "transformers>=4.40",
+    "accelerate>=0.25",
+]
+training = [
+    "diffusers>=0.30",
+    "transformers>=4.40",
+    "accelerate>=0.25",
+    "peft>=0.10",
+    "wandb>=0.16",
+]
+export = [
+    "onnx>=1.15",
+    "onnxruntime>=1.16",
+]
+evaluation = [
+    "scipy>=1.10",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1",
+]
+all = [
+    "open-vision-banana[inference,training,export,evaluation,dev]",
+]
+
+[project.urls]
+Repository = "https://github.com/user/open-vision-banana"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["open_vision_banana*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+ignore = ["E501", "B008", "N806", "N812"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["open_vision_banana"]

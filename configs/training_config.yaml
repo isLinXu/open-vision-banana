@@ -1,0 +1,94 @@
+# Vision Banana Training Configuration
+# ================================
+# Instruction-tuning FLUX.1 [schnell] for vision understanding
+
+# Base Model
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+# LoRA Configuration (rsLoRA scaling)
+lora:
+  rank: 64          # 0.5%-1% of total params
+  alpha: 128        # rsLoRA: alpha / sqrt(rank) scaling
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# Optimizer Configuration
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 500
+  max_grad_norm: 1.0
+
+# Training Loop
+training:
+  epochs: 10
+  gradient_accumulation_steps: 1
+  use_amp: true
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 1000
+  eval_every: 500
+  max_keep: 5
+  seed: 42
+
+# Data Mixture (9:1 visual-to-language ratio)
+data:
+  vision_ratio: 0.1    # 10% vision task data
+  generation_ratio: 0.9  # 90% generation data
+  resolution: 512
+  batch_size: 8
+  num_workers: 4
+  augmentation: true
+
+  # Vision task datasets
+  tasks:
+    semantic_segmentation:
+      datasets:
+        - name: "Cityscapes"
+          split: "train"
+          classes: 19
+    instance_segmentation:
+      datasets:
+        - name: "SA-Co"
+          split: "train"
+    referring_segmentation:
+      datasets:
+        - name: "RefCOCOg"
+          split: "train"
+    depth_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "Virtual_KITTI_2"
+          split: "train"
+    normal_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "ScanNet"
+          split: "train"
+
+# Depth RGB Mapping Parameters (from paper)
+depth_mapping:
+  lam: -3.0       # Power transform shape parameter (key: lam, not lambda)
+  c: 3.333        # Scale parameter (10/3)
+
+# Normal RGB Mapping (identity — no tunable params)
+normal_mapping: {}
+
+# Segmentation Decoding Parameters (from paper Appendix A)
+segmentation:
+  color_tolerance: 14.0        # τ for background init
+  min_area_fraction: 2.0e-4    # θ_size for noise pruning
+  erosion_threshold: 0.1       # θ_erosion for boundary elimination
+  bbox_expansion_factor: 5.0   # γ for spatial merging
+
+# Output
+output_dir: "output/checkpoints"

@@ -1,0 +1,172 @@
+"""Checkpoint management for Vision Banana training.
+
+Handles saving and loading of:
+- LoRA weights (via PEFT)
+- EMA shadow parameters
+- Optimizer state
+- Training step / epoch metadata
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+
+import torch
+
+logger = logging.getLogger(__name__)
+
+
+class CheckpointManager:
+    """Manages training checkpoint save/load with metadata.
+
+    Each checkpoint directory contains:
+    - adapter_model.safetensors / adapter_config.json (PEFT LoRA)
+    - ema_weights.pt (EMA shadow parameters, if available)
+    - optimizer.pt (optimizer state dict)
+    - metadata.json (step, epoch, loss, lr)
+    """
+
+    def __init__(self, output_dir: str, max_keep: int = 5) -> None:
+        self.output_dir = Path(output_dir)
+        self.max_keep = max_keep
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def save(
+        self,
+        peft_model,
+        optimizer: torch.optim.Optimizer,
+        step: int,
+        epoch: int,
+        loss: float,
+        lr: float,
+        ema=None,
+        scheduler=None,
+    ) -> None:
+        """Save a training checkpoint."""
+        ckpt_dir = self.output_dir / f"checkpoint-{step}"
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save LoRA weights
+        peft_model.save_pretrained(ckpt_dir)
+
+        # Save EMA weights
+        if ema is not None:
+            ema_path = ckpt_dir / "ema_weights.pt"
+            torch.save(ema.shadow_params, ema_path)
+
+        # Save optimizer state
+        opt_path = ckpt_dir / "optimizer.pt"
+        torch.save(optimizer.state_dict(), opt_path)
+
+        # Save scheduler state
+        if scheduler is not None:
+            sched_path = ckpt_dir / "scheduler.pt"
+            torch.save(scheduler.state_dict(), sched_path)
+
+        # Save metadata
+        metadata = {
+            "step": step,
+            "epoch": epoch,
+            "loss": loss,
+            "lr": lr,
+        }
+        with open(ckpt_dir / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        logger.info(f"Checkpoint saved to {ckpt_dir}")
+
+        # Prune old checkpoints
+        self._prune_old_checkpoints()
+
+    def load(
+        self,
+        peft_model,
+        optimizer: torch.optim.Optimizer | None = None,
+        ema=None,
+        scheduler=None,
+        step: int | None = None,
+    ) -> dict:
+        """Load a training checkpoint.
+
+        Args:
+            peft_model: PEFT model to load LoRA weights into.
+            optimizer: Optimizer to load state into.
+            ema: EMA model to load shadow params into.
+            scheduler: LR scheduler to load state into.
+            step: Specific step to load. If None, loads latest.
+
+        Returns:
+            Metadata dict with step, epoch, loss, lr.
+        """
+        if step is not None:
+            ckpt_dir = self.output_dir / f"checkpoint-{step}"
+        else:
+            ckpt_dir = self._latest_checkpoint()
+
+        if ckpt_dir is None or not ckpt_dir.exists():
+            raise FileNotFoundError(f"No checkpoint found in {self.output_dir}")
+
+        # Load LoRA weights
+        from peft import PeftModel
+        if isinstance(peft_model, PeftModel):
+            # PEFT load expects the directory containing adapter_model
+            PeftModel.from_pretrained(
+                peft_model.base_model, str(ckpt_dir)
+            )
+            logger.info(f"LoRA weights loaded from {ckpt_dir}")
+
+        # Load EMA weights
+        if ema is not None:
+            ema_path = ckpt_dir / "ema_weights.pt"
+            if ema_path.exists():
+                ema.shadow_params = torch.load(ema_path, weights_only=True)
+                logger.info(f"EMA weights loaded from {ema_path}")
+
+        # Load optimizer state
+        if optimizer is not None:
+            opt_path = ckpt_dir / "optimizer.pt"
+            if opt_path.exists():
+                optimizer.load_state_dict(
+                    torch.load(opt_path, weights_only=True)
+                )
+                logger.info(f"Optimizer state loaded from {opt_path}")
+
+        # Load scheduler state
+        if scheduler is not None:
+            sched_path = ckpt_dir / "scheduler.pt"
+            if sched_path.exists():
+                scheduler.load_state_dict(
+                    torch.load(sched_path, weights_only=True)
+                )
+
+        # Load metadata
+        metadata_path = ckpt_dir / "metadata.json"
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+        else:
+            metadata = {"step": 0, "epoch": 0, "loss": 0.0, "lr": 0.0}
+
+        logger.info(f"Checkpoint loaded from {ckpt_dir}")
+        return metadata
+
+    def _latest_checkpoint(self) -> Path | None:
+        """Find the latest checkpoint directory."""
+        checkpoints = sorted(self.output_dir.glob("checkpoint-*"))
+        if not checkpoints:
+            return None
+        return checkpoints[-1]
+
+    def _prune_old_checkpoints(self) -> None:
+        """Remove oldest checkpoints beyond max_keep."""
+        checkpoints = sorted(self.output_dir.glob("checkpoint-*"))
+        while len(checkpoints) > self.max_keep:
+            oldest = checkpoints.pop(0)
+            import shutil
+            shutil.rmtree(oldest, ignore_errors=True)
+            logger.info(f"Pruned old checkpoint: {oldest}")
+
+
+__all__ = ["CheckpointManager"]
