@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Box AI session files
+.box-desens/
+.session_tmps/
+
+# Build outputs
+output/
+
+# Desktop app (separate repo)
+desktop/
