@@ -226,3 +226,6 @@ output/
 
 # Desktop app (separate repo)
 desktop/
+
+# macOS
+.DS_Store
