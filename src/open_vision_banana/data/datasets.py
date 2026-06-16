@@ -192,16 +192,29 @@ class CityscapesSegDataset(BaseVisionDataset):
         prompt = PromptBuilder.build_semantic_prompt(self.CITYSCAPES_COLORS)
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
+    # Build a [num_classes, 3] color palette tensor at class level (lazy, cached).
+    _COLOR_PALETTE: torch.Tensor | None = None
+
+    @classmethod
+    def _get_palette(cls) -> torch.Tensor:
+        """Return cached [C, 3] float32 palette tensor (values in [0, 1])."""
+        if cls._COLOR_PALETTE is None:
+            colors = list(cls.CITYSCAPES_COLORS.values())
+            cls._COLOR_PALETTE = torch.tensor(colors, dtype=torch.float32) / 255.0
+        return cls._COLOR_PALETTE
+
     def _label_to_rgb(self, label: torch.Tensor) -> torch.Tensor:
+        """Vectorized label → RGB using palette gather.
+
+        Replaces the per-class Python loop with a single index_select operation.
+        Unknown label indices are clamped to the last palette entry (harmless).
+        """
+        palette = self._get_palette().to(label.device)           # [C, 3]
+        n_cls = palette.shape[0]
+        flat = label.reshape(-1).clamp(0, n_cls - 1).long()     # [H*W]
+        rgb_flat = palette[flat]                                  # [H*W, 3]
         H, W = label.shape
-        rgb = torch.zeros(3, H, W, device=label.device)
-        class_names = list(self.CITYSCAPES_COLORS.keys())
-        for cls_idx, cls_name in enumerate(class_names):
-            color = self.CITYSCAPES_COLORS[cls_name]
-            mask = label == cls_idx
-            for ch, c_val in enumerate(color):
-                rgb[ch][mask] = c_val / 255.0
-        return rgb
+        return rgb_flat.reshape(H, W, 3).permute(2, 0, 1)       # [3, H, W]
 
 
 class SACoInstanceDataset(BaseVisionDataset):
@@ -241,7 +254,20 @@ class SACoInstanceDataset(BaseVisionDataset):
 
 
 class RefCOCOgDataset(BaseVisionDataset):
-    """RefCOCOg dataset for referring expression segmentation."""
+    """RefCOCOg dataset for referring expression segmentation.
+
+    Expected directory layout::
+
+        root_dir/
+          images/          ← COCO images (*.jpg)
+          refs(g).p        ← RefCOCOg annotation pickle
+          instances.json   ← COCO instances annotation (optional, for RLE masks)
+
+    Each sample returns a binary white-on-black mask: the referred region is
+    rendered solid white (1.0) and the rest is black (0.0).  If a segmentation
+    annotation is available (via ``instances.json``) it is used directly;
+    otherwise a filled bounding-box is used as a coarse substitute.
+    """
 
     TASK_TYPE = "referring"
 
@@ -252,32 +278,142 @@ class RefCOCOgDataset(BaseVisionDataset):
         if not self.root_dir.exists():
             logger.warning(f"RefCOCOg directory not found: {self.root_dir}")
             return
+
         ann_file = self.root_dir / "refs(g).p"
-        if ann_file.exists():
+        if not ann_file.exists():
+            logger.warning(f"RefCOCOg annotation not found: {ann_file}")
+            return
+
+        # Load COCO instances for mask decoding (optional)
+        instances_file = self.root_dir / "instances.json"
+        self._coco = None
+        if instances_file.exists():
             try:
-                import pickle
-                with open(ann_file, "rb") as f:
-                    refs = pickle.load(f)
-                for ref in refs:
-                    img_id = ref.get("image_id", ref.get("file_name", ""))
-                    expressions = ref.get("sentences", [ref.get("sent", "")])
-                    if expressions:
-                        expr = expressions[0] if isinstance(expressions, list) else expressions
-                        expr = expr.get("sent", expr) if isinstance(expr, dict) else expr
-                        img_path = self.root_dir / "images" / f"{img_id}.jpg"
-                        if img_path.exists():
-                            self.samples.append({"image": img_path, "expression": expr})
+                import json
+                with open(instances_file) as f:
+                    coco_data = json.load(f)
+                # Build ann_id → annotation lookup
+                self._ann_lookup: dict[int, dict] = {
+                    ann["id"]: ann for ann in coco_data.get("annotations", [])
+                }
             except Exception as e:
-                logger.warning(f"Failed to load RefCOCOg annotations: {e}")
+                logger.warning(f"Failed to load COCO instances: {e}")
+                self._ann_lookup = {}
+        else:
+            self._ann_lookup = {}
+
+        try:
+            import pickle
+            with open(ann_file, "rb") as f:
+                refs = pickle.load(f)
+
+            for ref in refs:
+                image_id = ref.get("image_id", "")
+                ann_id = ref.get("ann_id")
+                expressions = ref.get("sentences", [ref.get("sent", "")])
+                if not expressions:
+                    continue
+
+                # Pick the first expression
+                expr = expressions[0] if isinstance(expressions, list) else expressions
+                if isinstance(expr, dict):
+                    expr = expr.get("sent", "")
+
+                # Locate image file
+                img_path = self.root_dir / "images" / f"{image_id}.jpg"
+                if not img_path.exists():
+                    # Try zero-padded COCO naming
+                    img_path = self.root_dir / "images" / f"COCO_train2014_{image_id:012d}.jpg"
+                    if not img_path.exists():
+                        continue
+
+                self.samples.append({
+                    "image": img_path,
+                    "expression": str(expr),
+                    "ann_id": ann_id,
+                })
+
+        except Exception as e:
+            logger.warning(f"Failed to load RefCOCOg annotations: {e}")
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
         expression = sample["expression"]
-        target_rgb = torch.zeros(3, self.resolution, self.resolution)
-        target_rgb[0] = 1.0
+
+        # Try to decode the segmentation mask from COCO annotation
+        target_rgb = self._load_mask(sample.get("ann_id"))
+
         prompt = PromptBuilder.build_referring_prompt(expression)
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+
+    def _load_mask(self, ann_id: int | None) -> torch.Tensor:
+        """Decode segmentation mask for a COCO annotation.
+
+        Returns a [3, H, W] tensor in [0, 1] where:
+        - White (1, 1, 1) = referred region
+        - Black (0, 0, 0) = background
+
+        Falls back to an all-black mask if the annotation is unavailable.
+        """
+        target_rgb = torch.zeros(3, self.resolution, self.resolution)
+
+        if ann_id is None or ann_id not in getattr(self, "_ann_lookup", {}):
+            return target_rgb
+
+        ann = self._ann_lookup[ann_id]
+        seg = ann.get("segmentation")
+        if seg is None:
+            return target_rgb
+
+        try:
+            import numpy as np
+
+            # Determine original image size from the annotation bbox
+            bbox = ann.get("bbox", [0, 0, self.resolution, self.resolution])
+            img_w = ann.get("width", int(bbox[0] + bbox[2]) + 1)
+            img_h = ann.get("height", int(bbox[1] + bbox[3]) + 1)
+
+            mask = np.zeros((img_h, img_w), dtype=np.uint8)
+
+            if isinstance(seg, list):
+                # Polygon format
+                import cv2  # optional dependency
+                for poly in seg:
+                    pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
+                    cv2.fillPoly(mask, [pts.astype(np.int32)], 1)
+            elif isinstance(seg, dict):
+                # RLE format (requires pycocotools or manual decode)
+                try:
+                    from pycocotools import mask as coco_mask
+                    mask = coco_mask.decode(seg)
+                except ImportError:
+                    # Manual RLE decode (uncompressed)
+                    counts = seg.get("counts", [])
+                    size = seg.get("size", [img_h, img_w])
+                    if isinstance(counts, list):
+                        flat = np.zeros(size[0] * size[1], dtype=np.uint8)
+                        idx = 0
+                        val = 0
+                        for c in counts:
+                            flat[idx : idx + c] = val
+                            idx += c
+                            val = 1 - val
+                        mask = flat.reshape(size[0], size[1])
+
+            # Resize to model resolution
+            mask_tensor = torch.from_numpy(mask).float().unsqueeze(0).unsqueeze(0)
+            mask_resized = torch.nn.functional.interpolate(
+                mask_tensor, size=(self.resolution, self.resolution), mode="nearest"
+            ).squeeze(0).squeeze(0)
+
+            # Binary white/black encoding
+            target_rgb = mask_resized.unsqueeze(0).expand(3, -1, -1).clone()
+
+        except Exception as e:
+            logger.debug(f"Mask decode failed for ann_id={ann_id}: {e}")
+
+        return target_rgb
 
 
 def build_dataset(
