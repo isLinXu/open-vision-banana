@@ -103,7 +103,8 @@ def export_mapper_onnx(
     """Export an RGB mapper to ONNX format.
 
     Args:
-        mapper_type: One of "depth_to_rgb", "normal_to_rgb".
+        mapper_type: One of "depth_to_rgb", "normal_to_rgb",
+            "rgb_to_depth", "rgb_to_normal".
         output_path: Path to save the ONNX model.
         input_shape: Input tensor shape for tracing.
         opset_version: ONNX opset version.
@@ -114,14 +115,54 @@ def export_mapper_onnx(
     if mapper_type == "depth_to_rgb":
         model = DepthRGBMapperONNX()
         model.eval()
-        dummy_input = torch.randn(1, 1, 256, 256)
+        dummy_input = torch.rand(*input_shape).clamp(0, 100)   # depth in metres
+
     elif mapper_type == "normal_to_rgb":
         model = NormalRGBMapperONNX()
         model.eval()
-        dummy_input = torch.randn(1, 3, 256, 256)
+        shape = (input_shape[0], 3, *input_shape[2:])
+        dummy_input = torch.randn(*shape)
         dummy_input = dummy_input / dummy_input.norm(dim=1, keepdim=True).clamp(min=1e-8)
+
+    elif mapper_type == "rgb_to_depth":
+        # Export the inverse: RGB visualisation → metric depth
+        class RGBToDepthONNX(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mapper = DepthRGBMapperONNX()
+
+            def forward(self, rgb: torch.Tensor) -> torch.Tensor:
+                # Use DepthRGBMapper (non-ONNX) for the inverse since it's
+                # not used in hot-path inference — only needed for evaluation.
+                from ..core.depth_mapper import DepthRGBMapper
+                dm = DepthRGBMapper(self.mapper.lam, self.mapper.c)
+                return dm.rgb_to_depth(rgb)
+
+        model = RGBToDepthONNX()
+        model.eval()
+        shape = (input_shape[0], 3, *input_shape[2:])
+        dummy_input = torch.rand(*shape)
+
+    elif mapper_type == "rgb_to_normal":
+        class RGBToNormalONNX(nn.Module):
+            def forward(self, rgb: torch.Tensor) -> torch.Tensor:
+                r, g, b = rgb[:, 0:1], rgb[:, 1:2], rgb[:, 2:3]
+                x = 1.0 - 2.0 * r
+                y = 2.0 * g - 1.0
+                z = 2.0 * b - 1.0
+                normal = torch.cat([x, y, z], dim=1)
+                return normal / normal.norm(dim=1, keepdim=True).clamp(min=1e-8)
+
+        model = RGBToNormalONNX()
+        model.eval()
+        shape = (input_shape[0], 3, *input_shape[2:])
+        dummy_input = torch.rand(*shape)
+
     else:
-        raise ValueError(f"Unsupported mapper type for ONNX: {mapper_type}")
+        raise ValueError(
+            f"Unsupported mapper type: {mapper_type!r}. "
+            "Choose from: depth_to_rgb, normal_to_rgb, rgb_to_depth, rgb_to_normal"
+        )
 
     import warnings
     with warnings.catch_warnings():
@@ -135,7 +176,7 @@ def export_mapper_onnx(
             output_names=["output"],
             dynamo=False,
             dynamic_axes={
-                "input": {0: "batch", 2: "height", 3: "width"},
+                "input":  {0: "batch", 2: "height", 3: "width"},
                 "output": {0: "batch", 2: "height", 3: "width"},
             },
         )

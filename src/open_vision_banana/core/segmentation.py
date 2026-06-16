@@ -127,6 +127,8 @@ class SegmentationDecoder:
         """Stage 2: Vectorized connected-component color similarity grouping.
 
         Uses iterative label propagation with 8-connectivity shifts.
+        Seed color propagation is fully vectorized via scatter operations,
+        eliminating per-component Python loops.
         Converges quickly (typically 5-10 iterations for natural images).
         """
         H, W, C = img.shape
@@ -176,21 +178,38 @@ class SegmentationDecoder:
                 if can_merge.any():
                     merge_y = cand_y[can_merge]
                     merge_x = cand_x[can_merge]
-                    winner_labels = torch.minimum(cand_labels[can_merge], neighbor_labels[can_merge])
+                    cand_lbl = cand_labels[can_merge]
+                    neigh_lbl = neighbor_labels[can_merge]
+
+                    winner_labels = torch.minimum(cand_lbl, neigh_lbl)
+                    loser_labels = torch.maximum(cand_lbl, neigh_lbl)
 
                     labels[merge_y, merge_x] = winner_labels
 
-                    # Vectorized seed color propagation
-                    loser_labels = torch.maximum(cand_labels[can_merge], neighbor_labels[can_merge])
-                    unique_losers = loser_labels.unique()
+                    # ── Fully-vectorized seed color propagation ──────────────
+                    # Build a loser→winner lookup table of size N.
+                    # For pixels still carrying a loser label, remap them and
+                    # update their seed colors in one scatter operation.
+                    lut = torch.arange(N, device=device)
+                    # Multiple merges may chain; keep taking the minimum winner
+                    # for each loser by scatter-min (approximate with scatter).
+                    lut.scatter_(0, loser_labels, winner_labels)
 
-                    for loser in unique_losers.tolist():
-                        if loser == winner_labels[loser_labels == loser][0].item():
-                            continue
-                        winner = winner_labels[loser_labels == loser][0]
-                        loser_mask = labels == loser
-                        labels[loser_mask] = winner
-                        seed_colors[loser_mask.reshape(N)] = seed_colors[winner]
+                    # Propagate until stable (handles transitive chains)
+                    for _ in range(4):  # bounded depth; labels are flat arange so depth≤2
+                        lut = lut[lut]
+
+                    # Re-label all pixels via the lookup table
+                    flat_labels = labels.reshape(N)
+                    valid = flat_labels >= 0
+                    flat_labels[valid] = lut[flat_labels[valid]]
+                    labels = flat_labels.reshape(H, W)
+
+                    # Update seed colors: each label takes the color of its winner
+                    new_seed_colors = seed_colors.clone()
+                    valid_idx = torch.where(flat_labels >= 0)[0]
+                    new_seed_colors[valid_idx] = seed_colors[lut[valid_idx]]
+                    seed_colors = new_seed_colors
 
                     changed = True
 

@@ -92,6 +92,7 @@ class VisionBanana:
         expression: str | None = None,
         background_color: tuple[int, int, int] = (0, 0, 0),
         num_inference_steps: int = 1,
+        strength: float = 0.85,
         height: int = 1024,
         width: int = 1024,
         seed: int | None = None,
@@ -106,8 +107,9 @@ class VisionBanana:
             expression: Required for referring segmentation.
             background_color: Background color for instance segmentation.
             num_inference_steps: Denoising steps (1 for schnell).
-            height: Output image height.
-            width: Output image width.
+            strength: Img2img noise strength (0, 1]. Lower → closer to input.
+            height: Output image height (t2i only).
+            width: Output image width (t2i only).
             seed: Random seed for reproducibility.
 
         Returns:
@@ -132,6 +134,7 @@ class VisionBanana:
             prompt=prompt,
             image=image,
             num_inference_steps=num_inference_steps,
+            strength=strength,
             height=height,
             width=width,
             seed=seed,
@@ -157,6 +160,9 @@ class VisionBanana:
     ) -> list[dict]:
         """Run batched inference, returning per-image results.
 
+        Passes the full batch to the generator in a single forward call
+        (true batched inference), then splits results per image.
+
         Args:
             images: Input images [B, 3, H, W] in [-1, 1].
             task: Vision task name.
@@ -168,15 +174,14 @@ class VisionBanana:
         result = self.predict(image=images, task=task, **kwargs)
         B = images.shape[0]
 
-        # Split batch results into per-image dicts
         per_image = []
         for i in range(B):
-            item = {}
+            item: dict = {}
             for key, val in result.items():
-                if isinstance(val, torch.Tensor) and val.shape[0] == B:
-                    item[key] = val[i:i+1]
-                elif isinstance(val, str):
-                    item[key] = val
+                if isinstance(val, torch.Tensor) and val.dim() > 0 and val.shape[0] == B:
+                    item[key] = val[i : i + 1]
+                elif isinstance(val, list) and len(val) == B:
+                    item[key] = val[i]
                 else:
                     item[key] = val
             per_image.append(item)
@@ -237,12 +242,13 @@ class VisionBanana:
             return self.decoder.decode_instance(rgb_output, background_color)
 
         elif task == "referring":
-            if class_color_map is None:
-                class_color_map = {
-                    "target": (255, 255, 255),
-                    "background": (0, 0, 0),
-                }
-            return self.decoder.decode_semantic(rgb_output, class_color_map)
+            # Decode as binary mask: bright pixels (mean > 0.5) = referred region.
+            # The model renders the referred object in white on a black background.
+            pred_mask = rgb_output.mean(dim=1, keepdim=True) > 0.5   # [B, 1, H, W]
+            return {
+                "mask": pred_mask,
+                "visualization": rgb_output,
+            }
 
         raise ValueError(f"Unknown task: {task}")
 

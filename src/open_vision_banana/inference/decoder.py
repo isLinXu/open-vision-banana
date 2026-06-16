@@ -78,6 +78,31 @@ class VisualizationDecoder:
         )
         return {"instances": instances}
 
+    def decode_referring(
+        self,
+        rgb_image: torch.Tensor,
+        threshold: float = 0.5,
+    ) -> dict:
+        """Decode referring expression segmentation from RGB visualization.
+
+        The model renders the referred object as white pixels on a black
+        background.  This method binarises the result.
+
+        Args:
+            rgb_image: Generated RGB image [B, 3, H, W] in [0, 1].
+            threshold: Mean channel threshold for foreground classification.
+
+        Returns:
+            Dict with keys:
+            - "mask": bool tensor [B, 1, H, W], True = referred region.
+            - "visualization": original rgb_image for display.
+        """
+        mask = rgb_image.mean(dim=1, keepdim=True) > threshold
+        return {
+            "mask": mask,
+            "visualization": rgb_image,
+        }
+
     @staticmethod
     def _depth_colormap(depth: torch.Tensor) -> torch.Tensor:
         """Apply viridis-like colormap to depth for visualization."""

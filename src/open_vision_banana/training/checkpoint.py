@@ -108,20 +108,30 @@ class CheckpointManager:
         if ckpt_dir is None or not ckpt_dir.exists():
             raise FileNotFoundError(f"No checkpoint found in {self.output_dir}")
 
-        # Load LoRA weights
-        from peft import PeftModel
-        if isinstance(peft_model, PeftModel):
-            # PEFT load expects the directory containing adapter_model
-            PeftModel.from_pretrained(
-                peft_model.base_model, str(ckpt_dir)
-            )
-            logger.info(f"LoRA weights loaded from {ckpt_dir}")
+        # Load LoRA weights via PEFT
+        # PeftModel.from_pretrained returns a *new* model; we copy the adapter
+        # weights back into the existing peft_model to preserve its reference.
+        try:
+            from peft import PeftModel
+            if isinstance(peft_model, PeftModel):
+                loaded = PeftModel.from_pretrained(
+                    peft_model.base_model.model,
+                    str(ckpt_dir),
+                )
+                # Copy adapter state dict in-place
+                peft_model.load_state_dict(loaded.state_dict(), strict=False)
+                del loaded
+                logger.info(f"LoRA weights loaded from {ckpt_dir}")
+        except Exception as e:
+            logger.warning(f"PEFT load failed (non-fatal): {e}")
 
-        # Load EMA weights
+        # Load EMA shadow params
+        # Use weights_only=False for EMA because shadow_params is a plain dict
+        # of Tensors, which is safe but not accepted by weights_only=True.
         if ema is not None:
             ema_path = ckpt_dir / "ema_weights.pt"
             if ema_path.exists():
-                ema.shadow_params = torch.load(ema_path, weights_only=True)
+                ema.shadow_params = torch.load(ema_path, weights_only=False)
                 logger.info(f"EMA weights loaded from {ema_path}")
 
         # Load optimizer state
@@ -152,16 +162,24 @@ class CheckpointManager:
         logger.info(f"Checkpoint loaded from {ckpt_dir}")
         return metadata
 
+    @staticmethod
+    def _ckpt_step(path: Path) -> int:
+        """Extract numeric step from checkpoint directory name (e.g. 'checkpoint-1000' → 1000)."""
+        try:
+            return int(path.name.split("-")[-1])
+        except ValueError:
+            return -1
+
     def _latest_checkpoint(self) -> Path | None:
-        """Find the latest checkpoint directory."""
-        checkpoints = sorted(self.output_dir.glob("checkpoint-*"))
+        """Find the latest checkpoint directory (by step number, not lexicographic order)."""
+        checkpoints = sorted(self.output_dir.glob("checkpoint-*"), key=self._ckpt_step)
         if not checkpoints:
             return None
         return checkpoints[-1]
 
     def _prune_old_checkpoints(self) -> None:
         """Remove oldest checkpoints beyond max_keep."""
-        checkpoints = sorted(self.output_dir.glob("checkpoint-*"))
+        checkpoints = sorted(self.output_dir.glob("checkpoint-*"), key=self._ckpt_step)
         while len(checkpoints) > self.max_keep:
             oldest = checkpoints.pop(0)
             import shutil

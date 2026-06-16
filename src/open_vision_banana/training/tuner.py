@@ -14,7 +14,8 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset as _Dataset
 
 from .checkpoint import CheckpointManager
 from .utils import EMAModel, VisionAugmentation, enable_gradient_checkpointing
@@ -22,29 +23,98 @@ from .utils import EMAModel, VisionAugmentation, enable_gradient_checkpointing
 logger = logging.getLogger(__name__)
 
 
-class VisionTaskDataset(Dataset):
+class VisionTaskDataset(_Dataset):
     """Dataset for vision task instruction tuning.
 
     Each sample contains:
     - prompt: Instruction text
-    - image: Input image tensor
-    - target_rgb: Target RGB visualization image tensor
+    - image: Input image tensor [3, H, W] in [-1, 1]
+    - target_rgb: Target RGB visualization image tensor [3, H, W] in [0, 1]
+
+    This base class supports loading from a flat directory of paired files::
+
+        data_path/
+          images/           ← input images  (*.jpg / *.png)
+          targets/          ← target visualisations  (*.jpg / *.png)
+
+    Subclasses can override ``_load_data`` for custom layouts.
     """
 
-    def __init__(self, data_path: str | None = None) -> None:
-        self.samples = []
+    DEFAULT_PROMPT = "Generate a visual understanding output for this image."
+
+    def __init__(self, data_path: str | None = None, resolution: int = 512) -> None:
+        self.samples: list[dict] = []
+        self.resolution = resolution
         if data_path is not None:
             self._load_data(data_path)
 
     def _load_data(self, path: str) -> None:
-        """Load vision task data from directory."""
-        pass  # Override in subclasses or use data/ datasets
+        """Load paired (image, target_rgb) samples from a flat directory.
+
+        Expected layout::
+
+            <path>/images/    ← *.jpg / *.png input images
+            <path>/targets/   ← matching target visualisations (same filenames)
+
+        Files without a matching target are silently skipped.
+        """
+        from pathlib import Path
+        root = Path(path)
+        img_dir = root / "images"
+        tgt_dir = root / "targets"
+
+        if not img_dir.exists():
+            import logging
+            logging.getLogger(__name__).warning(
+                f"VisionTaskDataset: images dir not found at {img_dir}"
+            )
+            return
+
+        IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+        for img_path in sorted(img_dir.iterdir()):
+            if img_path.suffix.lower() not in IMG_EXTS:
+                continue
+            # Find matching target (same stem, any extension)
+            tgt_path = None
+            for ext in IMG_EXTS:
+                candidate = tgt_dir / (img_path.stem + ext)
+                if candidate.exists():
+                    tgt_path = candidate
+                    break
+            if tgt_path is None:
+                continue
+            self.samples.append({
+                "image_path": str(img_path),
+                "target_path": str(tgt_path),
+                "prompt": self.DEFAULT_PROMPT,
+            })
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> dict:
-        return self.samples[idx]
+        sample = self.samples[idx]
+        import numpy as np
+        from PIL import Image
+
+        def _load(p: str, normalise_range: tuple) -> torch.Tensor:
+            img = Image.open(p).convert("RGB")
+            if hasattr(self, "resolution"):
+                img = img.resize((self.resolution, self.resolution), Image.LANCZOS)
+            arr = torch.from_numpy(
+                np.array(img, dtype=np.float32) / 255.0
+            ).permute(2, 0, 1)
+            lo, hi = normalise_range
+            return arr * (hi - lo) + lo
+
+        image = _load(sample["image_path"], (-1.0, 1.0))
+        target_rgb = _load(sample["target_path"], (0.0, 1.0))
+
+        return {
+            "prompt": sample["prompt"],
+            "image": image,
+            "target_rgb": target_rgb,
+        }
 
 
 class InstructionTuner:
@@ -68,6 +138,7 @@ class InstructionTuner:
         ema_warmup_steps: int = 2000,
         use_gradient_checkpointing: bool = True,
         augmentation: VisionAugmentation | None = None,
+        task: str = "depth",
     ) -> None:
         self.base_model = model
         self.lora_rank = lora_rank
@@ -77,6 +148,7 @@ class InstructionTuner:
         self.use_rslora = use_rslora
         self.peft_model = None
         self.optimizer = None
+        self.task = task
         self.augmentation = augmentation
         self._setup_lora()
 
@@ -125,8 +197,8 @@ class InstructionTuner:
 
     def train(
         self,
-        train_dataset: VisionTaskDataset,
-        val_dataset: VisionTaskDataset | None = None,
+        train_dataset: _Dataset,
+        val_dataset: _Dataset | None = None,
         epochs: int = 10,
         batch_size: int = 8,
         gradient_accumulation_steps: int = 1,
@@ -137,16 +209,20 @@ class InstructionTuner:
         save_every: int = 1000,
         eval_every: int = 500,
         use_amp: bool = True,
+        num_workers: int = 0,
         callback: callable | None = None,
     ) -> None:
         """Train the LoRA instruction alignment."""
         self.peft_model.train()
 
+        if val_dataset is None:
+            logger.info("No val_dataset provided — per-step evaluation is disabled.")
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=0,
+            num_workers=num_workers,
             pin_memory=False,
             collate_fn=_collate_fn,
         )
@@ -230,18 +306,34 @@ class InstructionTuner:
             )
 
     def _training_step(self, batch: dict) -> torch.Tensor:
-        """Single training step — rectified flow velocity prediction loss."""
+        """Single training step — rectified flow velocity prediction loss.
+
+        Implements the flow-matching objective:
+            loss = MSE(v_θ(x_t, t, c), x_0 - ε)
+        where:
+            x_t = (1-t)*x_0 + t*ε   (linear interpolation)
+            v*  = x_0 - ε           (target velocity)
+            t   ~ Uniform[0, 1]      (per-sample, broadcast to [B,1,1,1])
+            c                        (text conditioning from prompt)
+
+        The timestep `t` is passed as a separate argument to the transformer
+        so it can be embedded via sinusoidal or learned time embeddings.
+        """
         target_rgb = batch["target_rgb"]
         input_images = batch.get("image")
 
-        # Move data to model device
-        device = next(self.peft_model.parameters()).device
+        # Infer device from batch tensors; fall back to peft_model parameters.
+        device = target_rgb.device if isinstance(target_rgb, torch.Tensor) else (
+            next((p.device for p in self.peft_model.parameters()), torch.device("cpu"))
+        )
+
         target_rgb = target_rgb.to(device)
         if input_images is not None:
             input_images = input_images.to(device)
 
         batch_size = target_rgb.shape[0]
 
+        # ── Data augmentation ────────────────────────────────────────────
         if self.augmentation is not None and input_images is not None:
             aug_images, aug_targets = [], []
             for i in range(batch_size):
@@ -251,19 +343,41 @@ class InstructionTuner:
             target_rgb = torch.stack(aug_targets)
             input_images = torch.stack(aug_images)
 
-        target = target_rgb * 2.0 - 1.0
-        timesteps = torch.rand(batch_size, device=device)
+        # ── Flow matching setup ──────────────────────────────────────────
+        # Scale target_rgb [0,1] → [-1,1] to match the model's latent space.
+        target = target_rgb * 2.0 - 1.0                          # [B, 3, H, W]
+        timesteps = torch.rand(batch_size, device=device)        # [B]
         noise = torch.randn_like(target)
 
-        t_expand = timesteps.view(-1, 1, 1, 1)
-        noisy_target = (1.0 - t_expand) * target + t_expand * noise
-        velocity_target = target - noise
+        t_bchw = timesteps.view(batch_size, 1, 1, 1)
+        noisy_target = (1.0 - t_bchw) * target + t_bchw * noise  # x_t
+        velocity_target = target - noise                          # v* = x_0 - ε
 
-        predicted_velocity = self.peft_model(noisy_target)
+        # ── Forward pass — timestep injected as separate argument ────────
+        # PeftModelForFeatureExtraction.forward (PEFT ≥ 0.14) does NOT forward
+        # positional args to base_model; everything must go through **kwargs.
+        # We use named arguments so PEFT passes them through correctly.
+        try:
+            predicted_velocity = self.peft_model(
+                hidden_states=noisy_target,
+                timestep=timesteps,
+            )
+        except TypeError:
+            # Fallback: some PEFT versions or non-FLUX transformers use a
+            # different signature.  Try each variant in turn.
+            try:
+                predicted_velocity = self.peft_model(hidden_states=noisy_target)
+            except TypeError:
+                predicted_velocity = self.peft_model(noisy_target, timestep=timesteps)
+
+        # Some transformer forward() returns a tuple (output, *extras)
+        if isinstance(predicted_velocity, (tuple, list)):
+            predicted_velocity = predicted_velocity[0]
+
         loss = nn.functional.mse_loss(predicted_velocity, velocity_target)
         return loss
 
-    def _evaluate(self, val_dataset: VisionTaskDataset) -> None:
+    def _evaluate(self, val_dataset: _Dataset) -> None:
         """Evaluate on validation set."""
         self.peft_model.eval()
         val_loader = DataLoader(
