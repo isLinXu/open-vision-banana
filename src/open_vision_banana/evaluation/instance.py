@@ -35,20 +35,22 @@ def compute_iou_mask(mask1: torch.Tensor, mask2: torch.Tensor) -> float:
 def evaluate_instance(
     pred_instances: list[dict],
     gt_instances: list[dict],
-    iou_thresholds: list[float] = None,
+    iou_thresholds: list[float] | None = None,
 ) -> dict[str, float]:
     """Compute instance segmentation AP metrics.
 
     Args:
         pred_instances: List of predicted instance dicts with 'mask' key.
         gt_instances: List of ground truth instance dicts with 'mask' key.
-        iou_thresholds: IoU thresholds for AP computation.
+        iou_thresholds: IoU thresholds for AP computation.  Defaults to the
+            standard COCO set [0.50, 0.55, …, 0.95].
 
     Returns:
         Dictionary with AP at various thresholds.
     """
     if iou_thresholds is None:
-        iou_thresholds = [0.5, 0.75] + [0.5 + 0.05 * i for i in range(10)]
+        # COCO: 0.50, 0.55, …, 0.95 (10 thresholds)
+        iou_thresholds = [round(0.50 + 0.05 * i, 2) for i in range(10)]
 
     if len(gt_instances) == 0:
         return {"AP@0.5": 0.0, "AP@0.75": 0.0, "mAP@[0.5:0.95]": 0.0}
@@ -91,7 +93,7 @@ def evaluate_instance(
         "AP@0.5": aps.get("AP@0.50", 0.0),
         "AP@0.75": aps.get("AP@0.75", 0.0),
     }
-    coco_thresholds = [0.5 + 0.05 * i for i in range(10)]
+    coco_thresholds = [round(0.50 + 0.05 * i, 2) for i in range(10)]
     coco_aps = [aps.get(f"AP@{t:.2f}", 0.0) for t in coco_thresholds]
     result["mAP@[0.5:0.95]"] = sum(coco_aps) / len(coco_aps)
 

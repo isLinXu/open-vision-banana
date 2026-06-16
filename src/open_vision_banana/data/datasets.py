@@ -31,6 +31,41 @@ def _pil_to_tensor(img: Image.Image) -> torch.Tensor:
     return torch.from_numpy(arr.transpose(2, 0, 1)).copy()
 
 
+def _fill_polygon(mask: "np.ndarray", pts: "np.ndarray") -> None:
+    """Scanline polygon fill — pure NumPy, no cv2 required.
+
+    Args:
+        mask: uint8 2-D array [H, W] to fill in-place.
+        pts:  float32 array [N, 2] of (x, y) polygon vertices.
+    """
+    import numpy as np
+
+    if len(pts) < 3:
+        return
+
+    h, w = mask.shape
+    xs, ys = pts[:, 0].astype(np.float32), pts[:, 1].astype(np.float32)
+    y_min = max(int(np.floor(ys.min())), 0)
+    y_max = min(int(np.ceil(ys.max())), h - 1)
+
+    n = len(pts)
+    for y in range(y_min, y_max + 1):
+        intersections = []
+        for i in range(n):
+            x0, y0 = xs[i], ys[i]
+            x1, y1 = xs[(i + 1) % n], ys[(i + 1) % n]
+            if (y0 <= y < y1) or (y1 <= y < y0):
+                if y1 != y0:
+                    xi = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
+                    intersections.append(xi)
+        intersections.sort()
+        for k in range(0, len(intersections) - 1, 2):
+            x_start = max(int(np.ceil(intersections[k])), 0)
+            x_end = min(int(np.floor(intersections[k + 1])), w - 1)
+            if x_start <= x_end:
+                mask[y, x_start : x_end + 1] = 1
+
+
 class BaseVisionDataset(Dataset):
     """Abstract base class for vision task datasets."""
 
@@ -378,10 +413,18 @@ class RefCOCOgDataset(BaseVisionDataset):
 
             if isinstance(seg, list):
                 # Polygon format
-                import cv2  # optional dependency
-                for poly in seg:
-                    pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
-                    cv2.fillPoly(mask, [pts.astype(np.int32)], 1)
+                # Prefer cv2.fillPoly (fast); fall back to pure-numpy scanline
+                # fill so that cv2 remains an optional dependency.
+                try:
+                    import cv2  # optional
+                    for poly in seg:
+                        pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
+                        cv2.fillPoly(mask, [pts.astype(np.int32)], 1)
+                except ImportError:
+                    # Pure-numpy scanline polygon fill (no extra dependencies)
+                    for poly in seg:
+                        pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
+                        _fill_polygon(mask, pts)
             elif isinstance(seg, dict):
                 # RLE format (requires pycocotools or manual decode)
                 try:
