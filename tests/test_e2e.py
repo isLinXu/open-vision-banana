@@ -1,9 +1,7 @@
 """End-to-end tests for ONNX export and import verification."""
 
-import pytest
+
 import torch
-import tempfile
-from pathlib import Path
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.core.normal_mapper import NormalRGBMapper

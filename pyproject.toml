@@ -54,7 +54,8 @@ evaluation = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "ruff>=0.1",
+    "ruff>=0.4",
+    "mypy>=1.10",
 ]
 all = [
     "open-vision-banana[inference,training,export,evaluation,dev]",
@@ -84,3 +85,13 @@ ignore = ["E501", "B008", "N806", "N812"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["open_vision_banana"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+no_strict_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+show_error_codes = true

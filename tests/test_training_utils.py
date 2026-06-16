@@ -4,10 +4,9 @@ import pytest
 import torch
 import torch.nn as nn
 
-from open_vision_banana.training.utils import EMAModel, VisionAugmentation, DDPWrapper
 from open_vision_banana.evaluation.depth import evaluate_depth
 from open_vision_banana.evaluation.referring import evaluate_referring
-
+from open_vision_banana.training.utils import DDPWrapper, EMAModel, VisionAugmentation
 
 # ──────────────────────────────────────────────────────────────
 # EMAModel Tests
@@ -27,7 +26,7 @@ class TestEMAModel:
         for _ in range(50):
             ema.update(model)
 
-        for name, param in model.named_parameters():
+        for name, _param in model.named_parameters():
             shadow_val = ema.shadow_params[name]
             assert abs(shadow_val.mean().item() - 1.0) < 0.1
 

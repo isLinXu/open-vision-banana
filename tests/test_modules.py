@@ -8,21 +8,22 @@ Tests cover:
 - Config: YAML serialization, defaults, overrides
 """
 
-import pytest
-import torch
 import tempfile
-import yaml
 from pathlib import Path
 
+import pytest
+import torch
+
+from open_vision_banana.config import (
+    DepthMappingConfig,
+    SegmentationConfig,
+    VisionBananaConfig,
+)
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.core.normal_mapper import NormalRGBMapper
-from open_vision_banana.core.segmentation import SegmentationDecoder
 from open_vision_banana.core.rgb_mapper import RGBMapper
+from open_vision_banana.core.segmentation import SegmentationDecoder
 from open_vision_banana.inference.prompt import PromptBuilder
-from open_vision_banana.config import (
-    VisionBananaConfig, DepthMappingConfig, SegmentationConfig,
-)
-
 
 # ──────────────────────────────────────────────────────────────
 # DepthRGBMapper Tests
@@ -342,7 +343,7 @@ class TestPerformance:
         depth = torch.rand(1, 1, 512, 512) * 50.0
         start = time.time()
         for _ in range(10):
-            rgb = mapper.depth_to_rgb(depth)
+            mapper.depth_to_rgb(depth)
         elapsed = (time.time() - start) / 10
         assert elapsed < 0.1, f"Depth encoding too slow: {elapsed:.3f}s"
 
@@ -354,7 +355,7 @@ class TestPerformance:
         normal = normal / norms
         start = time.time()
         for _ in range(10):
-            rgb = mapper.normal_to_rgb(normal)
+            mapper.normal_to_rgb(normal)
         elapsed = (time.time() - start) / 10
         assert elapsed < 0.05, f"Normal encoding too slow: {elapsed:.3f}s"
 
@@ -363,6 +364,6 @@ class TestPerformance:
         decoder = SegmentationDecoder()
         rgb = torch.rand(1, 3, 64, 64)
         start = time.time()
-        instances = decoder.decode_instance(rgb)
+        decoder.decode_instance(rgb)
         elapsed = time.time() - start
         assert elapsed < 5.0, f"Segmentation decode too slow: {elapsed:.3f}s"

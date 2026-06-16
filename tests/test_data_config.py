@@ -1,26 +1,26 @@
 """Tests for data loading and configuration."""
 
-import pytest
-import torch
 import tempfile
 from pathlib import Path
 
+import pytest
+
+from open_vision_banana.config import (
+    DataConfig,
+    DepthMappingConfig,
+    LoRAConfig,
+    ModelConfig,
+    NormalMappingConfig,
+    OptimizerConfig,
+    SegmentationConfig,
+    TrainingConfig,
+    VisionBananaConfig,
+)
 from open_vision_banana.data.datasets import (
     BaseVisionDataset,
     build_dataset,
 )
 from open_vision_banana.data.mixed import MixedVisionDataset
-from open_vision_banana.config import (
-    VisionBananaConfig,
-    ModelConfig,
-    LoRAConfig,
-    OptimizerConfig,
-    DataConfig,
-    TrainingConfig,
-    DepthMappingConfig,
-    NormalMappingConfig,
-    SegmentationConfig,
-)
 
 
 class TestBaseVisionDataset:

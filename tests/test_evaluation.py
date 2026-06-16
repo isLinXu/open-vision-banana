@@ -4,10 +4,9 @@ import pytest
 import torch
 
 from open_vision_banana.evaluation.depth import evaluate_depth
+from open_vision_banana.evaluation.instance import compute_iou_mask
 from open_vision_banana.evaluation.normal import evaluate_normals
 from open_vision_banana.evaluation.semantic import evaluate_semantic
-from open_vision_banana.evaluation.instance import evaluate_instance, compute_iou_mask
-from open_vision_banana.evaluation.referring import evaluate_referring
 
 
 class TestDepthMetrics:
