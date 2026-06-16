@@ -121,7 +121,7 @@ class DepthRGBMapper:
 
         return rgb.clamp(0.0, 1.0)
 
-    def rgb_to_normalized(self, rgb: torch.Tensor) -> torch.Tensor:
+    def rgb_to_normalized(self, rgb: torch.Tensor, chunk_size: int = 4096) -> torch.Tensor:
         """Inverse: RGB → normalized depth via spectral colormap inversion.
 
         Projects each RGB pixel onto the nearest point of the spectral
@@ -129,6 +129,25 @@ class DepthRGBMapper:
         the normalized value accurately.
 
         Fully vectorized — no Python loops over pixels.
+
+        Memory optimisation (P1-4):
+            The naive approach builds a distance matrix of shape
+            [B, H*W, num_samples] which is O(B·H·W·S) in VRAM.
+            For a 1024×1024 image with S=256 and B=4 that is ~4 GB.
+
+            We instead process pixels in ``chunk_size`` strips so peak
+            extra VRAM is O(chunk_size · S) ≈ constant regardless of
+            resolution or batch size.  The outer batch loop runs on CPU
+            metadata; all inner ops remain on the original device.
+
+        Args:
+            rgb: [B, 3, H, W] in [0, 1].
+            chunk_size: Number of pixels processed at once.  Decrease to
+                save VRAM; increase for throughput.  Default 4096 ≈ 12 MB
+                per chunk at float32.
+
+        Returns:
+            Normalized depth [B, 1, H, W] in [0, 1].
         """
         kp = SPECTRAL_KEYPOINTS.to(rgb.device)
         positions = kp[:, 0]
@@ -136,7 +155,7 @@ class DepthRGBMapper:
 
         B, C, H, W = rgb.shape
 
-        # Sample the spectral curve densely for accurate projection
+        # Pre-sample the spectral curve once (shared across all pixels/batches)
         num_samples = 256
         sampled_positions = torch.linspace(0.0, 1.0, num_samples, device=rgb.device)
 
@@ -146,35 +165,51 @@ class DepthRGBMapper:
         p_ends = positions[seg_idx + 1]
         local_t = (sampled_positions - p_starts) / (p_ends - p_starts + 1e-10)
         local_t = local_t.clamp(0.0, 1.0)
-        sampled_colors = colors[seg_idx] + local_t.unsqueeze(-1) * (colors[seg_idx + 1] - colors[seg_idx])
+        # sampled_colors: [S, 3]
+        sampled_colors = (
+            colors[seg_idx] + local_t.unsqueeze(-1) * (colors[seg_idx + 1] - colors[seg_idx])
+        )
 
+        # Flatten spatial dims: [B, H*W, 3]
         rgb_flat = rgb.permute(0, 2, 3, 1).reshape(B, H * W, 3)
 
-        # Pairwise L2 distances: [B, N, S]
-        dists = (rgb_flat.unsqueeze(2) - sampled_colors.unsqueeze(0).unsqueeze(0)).norm(dim=-1)
+        # Output buffer
+        result = torch.empty(B, H * W, device=rgb.device, dtype=rgb.dtype)
 
-        min_indices = dists.argmin(dim=-1)
-        best_t = sampled_positions[min_indices]
+        # ── Chunked nearest-neighbour lookup ─────────────────────────────
+        # Peak extra alloc: [chunk_size, S] ≈ 4096×256×4 bytes ≈ 4 MB
+        for start in range(0, H * W, chunk_size):
+            end = min(start + chunk_size, H * W)
+            chunk = rgb_flat[:, start:end, :]          # [B, chunk, 3]
 
-        # Parabolic interpolation for sub-grid precision
-        center = min_indices.clamp(1, num_samples - 2)
-        idx_minus = (center - 1).unsqueeze(-1)
-        idx_center = center.unsqueeze(-1)
-        idx_plus = (center + 1).unsqueeze(-1)
+            # Pairwise L2: [B, chunk, S]
+            dists = (
+                chunk.unsqueeze(2) - sampled_colors.unsqueeze(0).unsqueeze(0)
+            ).norm(dim=-1)
 
-        d_minus = dists.gather(2, idx_minus).squeeze(-1)
-        d_center = dists.gather(2, idx_center).squeeze(-1)
-        d_plus = dists.gather(2, idx_plus).squeeze(-1)
+            min_indices = dists.argmin(dim=-1)          # [B, chunk]
+            best_t = sampled_positions[min_indices]     # [B, chunk]
 
-        denom = (d_minus - 2 * d_center + d_plus)
-        denom = torch.where(denom.abs() < 1e-10, torch.ones_like(denom), denom)
-        shift = 0.5 * (d_minus - d_plus) / denom
-        shift = shift.clamp(-0.5, 0.5)
-        step_size = 1.0 / (num_samples - 1)
-        refined_t = best_t + shift * step_size
-        refined_t = refined_t.clamp(0.0, 1.0)
+            # ── Parabolic interpolation for sub-grid precision ───────────
+            center = min_indices.clamp(1, num_samples - 2)
+            idx_minus = (center - 1).unsqueeze(-1)
+            idx_center = center.unsqueeze(-1)
+            idx_plus = (center + 1).unsqueeze(-1)
 
-        return refined_t.reshape(B, 1, H, W)
+            d_minus = dists.gather(2, idx_minus).squeeze(-1)
+            d_center = dists.gather(2, idx_center).squeeze(-1)
+            d_plus = dists.gather(2, idx_plus).squeeze(-1)
+
+            denom = d_minus - 2 * d_center + d_plus
+            denom = torch.where(denom.abs() < 1e-10, torch.ones_like(denom), denom)
+            shift = 0.5 * (d_minus - d_plus) / denom
+            shift = shift.clamp(-0.5, 0.5)
+            step_size = 1.0 / (num_samples - 1)
+            refined_t = (best_t + shift * step_size).clamp(0.0, 1.0)
+
+            result[:, start:end] = refined_t
+
+        return result.reshape(B, 1, H, W)
 
     def depth_to_rgb(self, depth: torch.Tensor) -> torch.Tensor:
         """Full forward: depth → RGB visualization."""

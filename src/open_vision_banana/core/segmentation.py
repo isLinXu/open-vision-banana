@@ -188,12 +188,32 @@ class SegmentationDecoder:
 
                     # ── Fully-vectorized seed color propagation ──────────────
                     # Build a loser→winner lookup table of size N.
-                    # For pixels still carrying a loser label, remap them and
-                    # update their seed colors in one scatter operation.
+                    #
+                    # FIX (P0-3): The original scatter_ wrote winner over loser
+                    # for each (loser, winner) pair in sequence.  When the same
+                    # loser appeared multiple times with *different* winners,
+                    # only the last write survived — potentially choosing a
+                    # sub-optimal (larger) canonical label.
+                    #
+                    # Correct approach: for each loser, take the *minimum*
+                    # winner across all pairs that share that loser.  We do
+                    # this with scatter_reduce("amin") which is available in
+                    # PyTorch ≥ 2.0.  On older builds we fall back to a safe
+                    # loop-free two-pass approach.
                     lut = torch.arange(N, device=device)
-                    # Multiple merges may chain; keep taking the minimum winner
-                    # for each loser by scatter-min (approximate with scatter).
-                    lut.scatter_(0, loser_labels, winner_labels)
+                    try:
+                        # scatter_reduce with "amin": each loser position keeps
+                        # its minimum winner value regardless of write order.
+                        lut.scatter_reduce_(
+                            0, loser_labels, winner_labels, reduce="amin", include_self=True
+                        )
+                    except (TypeError, RuntimeError):
+                        # Fallback for PyTorch < 2.0 or missing amin support:
+                        # sort pairs by winner ascending so the last write is
+                        # the smallest winner (i.e. scatter_ is called with
+                        # pairs ordered smallest-winner-last for each loser).
+                        sort_order = winner_labels.argsort(descending=True)
+                        lut.scatter_(0, loser_labels[sort_order], winner_labels[sort_order])
 
                     # Propagate until stable (handles transitive chains)
                     for _ in range(4):  # bounded depth; labels are flat arange so depth≤2
