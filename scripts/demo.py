@@ -12,9 +12,8 @@ Shows:
 """
 
 import torch
-import numpy as np
 
-from open_vision_banana import DepthRGBMapper, NormalRGBMapper, SegmentationDecoder, RGBMapper
+from open_vision_banana import DepthRGBMapper, NormalRGBMapper, SegmentationDecoder
 from open_vision_banana.inference.prompt import PromptBuilder
 
 

@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 
 from open_vision_banana import VisionBananaConfig
-from open_vision_banana.data import build_dataset, MixedVisionDataset
+from open_vision_banana.data import MixedVisionDataset, build_dataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,10 +113,27 @@ def main():
     logger.info(f"Data mix: {cfg.data.vision_ratio:.0%} vision data")
     logger.info(f"Output: {output_dir}")
 
+    # Device-specific adjustments
+    # MPS doesn't support bfloat16 autocast; num_workers > 0 causes hangs on macOS.
+    use_amp = cfg.training.use_amp
+    num_workers = cfg.data.num_workers
+    if device in ("mps", "cpu"):
+        if use_amp:
+            logger.warning(
+                f"AMP not supported on {device} — disabling use_amp automatically."
+            )
+            use_amp = False
+        if num_workers > 0:
+            logger.warning(
+                f"num_workers={num_workers} may cause hangs on {device} — forcing 0."
+            )
+            num_workers = 0
+
     # Load base FLUX.1 model
-    logger.info("Loading base FLUX.1 model...")
+    logger.info("Loading base FLUX.1 model…")
     from open_vision_banana.inference.generator import BaseGenerator
     from open_vision_banana.training.tuner import InstructionTuner
+    from open_vision_banana.training.utils import VisionAugmentation
 
     generator = BaseGenerator(
         model_name=cfg.model.name,
@@ -124,23 +141,41 @@ def main():
         dtype=get_dtype(cfg.model.dtype),
     )
 
+    # Augmentation (task-agnostic default; pass task= for normal-specific fix)
+    augmentation = VisionAugmentation(
+        resolution=cfg.data.resolution,
+        hflip_prob=0.5,
+        crop_scale=(0.8, 1.0),
+        color_jitter={"brightness": 0.1, "contrast": 0.1},
+        task="depth",
+    )
+
     # Set up instruction tuner with rsLoRA
-    logger.info("Setting up LoRA instruction alignment...")
+    logger.info("Setting up LoRA instruction alignment…")
     tuner = InstructionTuner(
-        model=generator.pipe,
+        model=generator,
         lora_rank=cfg.lora.rank,
         lora_alpha=cfg.lora.alpha,
         use_rslora=cfg.lora.rs_lora,
         lr=cfg.optimizer.lr,
+        augmentation=augmentation,
     )
 
     # Resume from checkpoint if specified
     if args.resume:
         logger.info(f"Resuming from {args.resume}")
-        from peft import PeftModel
-        tuner.peft_model = PeftModel.from_pretrained(
-            tuner.peft_model, args.resume
-        )
+        from open_vision_banana.training.checkpoint import CheckpointManager
+        resume_path = Path(args.resume)
+        # Support two calling conventions:
+        #   --resume output/checkpoints/checkpoint-1000   (exact checkpoint dir)
+        #   --resume output/checkpoints                   (parent dir → load latest)
+        if resume_path.name.startswith("checkpoint-"):
+            ckpt_parent = resume_path.parent
+        else:
+            ckpt_parent = resume_path
+        ckpt = CheckpointManager(str(ckpt_parent))
+        meta = ckpt.load(tuner.peft_model)
+        logger.info(f"Resumed from step={meta.get('step', 0)}, epoch={meta.get('epoch', 0)}")
 
     # Build datasets
     vision_datasets = []
@@ -181,7 +216,7 @@ def main():
         output_dir=output_dir,
         save_every=cfg.training.save_every,
         eval_every=cfg.training.eval_every,
-        use_amp=cfg.training.use_amp,
+        use_amp=use_amp,
     )
 
     logger.info("Training complete!")

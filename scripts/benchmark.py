@@ -16,7 +16,7 @@ import time
 
 import torch
 
-from open_vision_banana import DepthRGBMapper, NormalRGBMapper, SegmentationDecoder, RGBMapper
+from open_vision_banana import DepthRGBMapper, NormalRGBMapper, RGBMapper, SegmentationDecoder
 
 
 def benchmark_fn(fn, *args, warmup=5, iterations=50, label=""):
@@ -87,7 +87,7 @@ def main():
     res = args.resolution
     iters = args.iterations
 
-    print(f"Vision Banana Benchmark Suite")
+    print("Vision Banana Benchmark Suite")
     print(f"Resolution: {res}×{res}, Device: {device}, Iterations: {iters}")
 
     # ── Depth Mapping ──
@@ -104,7 +104,7 @@ def main():
         mapper_d.rgb_to_depth, rgb_d,
         iterations=iters, label="RGB → Depth Decoding",
     )
-    mem_dec = measure_memory(mapper_d.rgb_to_depth, rgb_d, label="depth_dec")
+    measure_memory(mapper_d.rgb_to_depth, rgb_d, label="depth_dec")
 
     # Roundtrip accuracy
     recovered = mapper_d.rgb_to_depth(rgb_d)

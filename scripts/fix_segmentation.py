@@ -7,7 +7,6 @@ This script applies both fixes at once:
 """
 
 import re
-import sys
 from pathlib import Path
 
 FILE = Path("src/open_vision_banana/core/segmentation.py")

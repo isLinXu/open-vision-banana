@@ -13,14 +13,8 @@ import argparse
 import logging
 from pathlib import Path
 
-import torch
-
-from open_vision_banana import VisionBananaConfig
 from open_vision_banana.export import (
-    DepthRGBMapperONNX,
-    NormalRGBMapperONNX,
     export_mapper_onnx,
-    export_full_pipeline_onnx,
 )
 
 logging.basicConfig(

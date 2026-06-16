@@ -177,6 +177,10 @@ class VisionAugmentation:
 
     Applies consistent geometric transforms to both input image and
     target RGB visualization, plus color augmentations only to the input.
+
+    For normal estimation tasks, horizontal flip must also negate the x-component
+    of the normal (the R channel in the (1-x)/2 encoding), ensuring the
+    flipped image and its ground-truth normal map remain consistent.
     """
 
     def __init__(
@@ -185,21 +189,38 @@ class VisionAugmentation:
         hflip_prob: float = 0.5,
         crop_scale: tuple[float, float] = (0.8, 1.0),
         color_jitter: dict | None = None,
+        task: str = "depth",
     ) -> None:
         self.resolution = resolution
         self.hflip_prob = hflip_prob
         self.crop_scale = crop_scale
         self.color_jitter = color_jitter or {}
+        self.task = task
 
     def __call__(
         self,
         image: torch.Tensor,
         target_rgb: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Apply augmentations consistently to image-target pair."""
-        if torch.rand(1).item() < self.hflip_prob:
+        """Apply augmentations consistently to image-target pair.
+
+        Args:
+            image: Input image [C, H, W] in [-1, 1].
+            target_rgb: Target visualization [C, H, W] in [0, 1].
+
+        Returns:
+            Augmented (image, target_rgb) tuple.
+        """
+        do_flip = torch.rand(1).item() < self.hflip_prob
+
+        if do_flip:
             image = torch.flip(image, [-1])
             target_rgb = torch.flip(target_rgb, [-1])
+            # Fix normal map consistency: horizontal flip negates the x-component
+            # In NormalRGBMapper encoding: R = (1-x)/2, so flipped-x means R → 1-R
+            if self.task == "normal":
+                target_rgb = target_rgb.clone()
+                target_rgb[0] = 1.0 - target_rgb[0]
 
         if self.crop_scale[0] < 1.0:
             _, H, W = image.shape
@@ -232,6 +253,9 @@ class VisionAugmentation:
                 mean = image.mean(dim=(-2, -1), keepdim=True)
                 factor = 1.0 + torch.FloatTensor(1).uniform_(-contrast, contrast).item()
                 image = (image - mean) * factor + mean
+
+            # Clamp to valid range after color augmentation to prevent NaN/Inf in loss.
+            image = image.clamp(-1.0, 1.0)
 
         return image, target_rgb
 

@@ -320,8 +320,8 @@ def main() -> None:
     logger.info("Phase 4: Setup training components")
     logger.info("=" * 60)
 
-    from open_vision_banana.training.utils import EMAModel, VisionAugmentation
     from open_vision_banana.training.checkpoint import CheckpointManager
+    from open_vision_banana.training.utils import EMAModel, VisionAugmentation
 
     # Collect all trainable params (model + projections)
     all_params = list(model.parameters()) + list(input_proj.parameters()) + list(output_proj.parameters())
@@ -350,12 +350,12 @@ def main() -> None:
 
     # Checkpoint manager
     ckpt_dir = tempfile.mkdtemp(prefix="ovb_verify_")
-    ckpt_manager = CheckpointManager(ckpt_dir, max_keep=3)
+    CheckpointManager(ckpt_dir, max_keep=3)
 
     # AMP — MPS doesn't support bfloat16 autocast well
     device_type = str(device)
     use_amp = device_type == "cuda"
-    scaler = torch.amp.GradScaler(device_type, enabled=use_amp)
+    torch.amp.GradScaler(device_type, enabled=use_amp)
 
     # Collate function
     def collate_fn(batch: list[dict]) -> dict:
@@ -379,8 +379,8 @@ def main() -> None:
     )
 
     logger.info(f"Optimizer: AdamW (lr={args.lr}, wd=0.01)")
-    logger.info(f"EMA: decay=0.999, warmup=10 steps")
-    logger.info(f"Augmentation: hflip=0.5, crop=(0.8,1.0), jitter=(0.1,0.1)")
+    logger.info("EMA: decay=0.999, warmup=10 steps")
+    logger.info("Augmentation: hflip=0.5, crop=(0.8,1.0), jitter=(0.1,0.1)")
     logger.info(f"AMP: {'enabled' if use_amp else 'disabled'} (device={device_type})")
     logger.info(f"Scheduler: cosine with {warmup_steps} warmup steps")
     logger.info(f"Checkpoint dir: {ckpt_dir}")
@@ -543,10 +543,9 @@ def main() -> None:
 
     # Apply EMA shadow weights and verify they differ from online weights
     backup = ema.apply_shadow(model)
-    ema_applied = True
     ema.restore_shadow(model, backup)
     logger.info(f"EMA step count: {ema.step}")
-    logger.info(f"EMA apply/restore round-trip: ✅ OK")
+    logger.info("EMA apply/restore round-trip: ✅ OK")
 
     # ------------------------------------------------------------------
     # 9. Results summary
@@ -558,14 +557,14 @@ def main() -> None:
     loss_decreased = len(loss_history) > 1 and loss_history[-1] < loss_history[0]
     logger.info(f"Device: {device}")
     logger.info(f"Epochs: {args.epochs}")
-    logger.info(f"Loss history: {[f'{l:.6f}' for l in loss_history]}")
+    logger.info(f"Loss history: {[f'{loss:.6f}' for loss in loss_history]}")
     logger.info(f"Loss decreased: {'✅ YES' if loss_decreased else '❌ NO'}")
     logger.info(f"Validation loss: {avg_val_loss:.6f}")
-    logger.info(f"Checkpoint round-trip: ✅ OK")
+    logger.info("Checkpoint round-trip: ✅ OK")
     logger.info(f"EMA updates: ✅ OK ({ema.step} steps)")
     logger.info(f"LoRA rsLoRA injection: ✅ OK (rank={args.lora_rank}, alpha={args.lora_alpha})")
-    logger.info(f"Augmentation pipeline: ✅ OK")
-    logger.info(f"LR scheduler: ✅ OK (warmup + cosine)")
+    logger.info("Augmentation pipeline: ✅ OK")
+    logger.info("LR scheduler: ✅ OK (warmup + cosine)")
     logger.info(f"Gradient accumulation: ✅ OK (steps={args.gradient_accumulation_steps})")
 
     if loss_decreased:

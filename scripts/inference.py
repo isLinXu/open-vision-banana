@@ -24,12 +24,16 @@ Usage:
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 import torch
 
-from open_vision_banana import VisionBananaConfig, DepthRGBMapper, NormalRGBMapper, SegmentationDecoder
+from open_vision_banana import (
+    DepthRGBMapper,
+    NormalRGBMapper,
+    SegmentationDecoder,
+    VisionBananaConfig,
+)
 from open_vision_banana.inference.prompt import PromptBuilder
 
 logging.basicConfig(
@@ -79,8 +83,8 @@ def load_image(path: str, resolution: int = 512) -> torch.Tensor:
 
 def save_visualization(tensor: torch.Tensor, path: Path, task: str):
     """Save a tensor as an image file with task-appropriate processing."""
-    from PIL import Image
     import numpy as np
+    from PIL import Image
 
     # Clamp to [0, 1]
     vis = tensor.squeeze(0).permute(1, 2, 0).cpu().clamp(0, 1).numpy()
