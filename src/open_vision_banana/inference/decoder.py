@@ -6,6 +6,8 @@ for visualization and evaluation.
 
 from __future__ import annotations
 
+import math
+
 import torch
 
 from ..core.rgb_mapper import RGBMapper
@@ -111,7 +113,7 @@ class VisualizationDecoder:
         d_norm = (depth - d_min) / (d_max - d_min + 1e-8)
 
         r = torch.clamp(2.0 * d_norm - 0.5, 0, 1)
-        g = torch.clamp(torch.sin(d_norm * 3.14159), 0, 1)
+        g = torch.clamp(torch.sin(d_norm * math.pi), 0, 1)
         b = torch.clamp(1.5 - 2.0 * d_norm, 0, 1)
 
         return torch.cat([r, g, b], dim=1)

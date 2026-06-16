@@ -188,10 +188,21 @@ def export_full_pipeline_onnx(
     output_dir: str,
     opset_version: int = 17,
 ) -> None:
-    """Export the full trained pipeline (transformer + VAE) to ONNX."""
+    """Export the full trained pipeline (transformer + VAE) to ONNX.
+
+    Args:
+        model: A VisionBanana instance whose ``.transformer`` attribute is
+            a FLUX transformer (nn.Module).
+        output_dir: Directory to write ``transformer.onnx`` into.
+        opset_version: ONNX opset version (default 17).
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Dummy tensors matching FLUX transformer's expected input shapes:
+    #   hidden_states      [B, 16, H/8, W/8]  — VAE latent (16-channel)
+    #   timestep           [B]                  — continuous timestep in [0, 1]
+    #   encoder_hidden_states [B, seq, 4096]   — T5 text embeddings
     dummy_hidden = torch.randn(1, 16, 64, 64)
     dummy_timestep = torch.tensor([0.5])
     dummy_text_emb = torch.randn(1, 77, 4096)
@@ -203,6 +214,12 @@ def export_full_pipeline_onnx(
         opset_version=opset_version,
         input_names=["hidden_states", "timestep", "encoder_hidden_states"],
         output_names=["output"],
+        dynamic_axes={
+            "hidden_states":          {0: "batch", 2: "latent_h", 3: "latent_w"},
+            "timestep":               {0: "batch"},
+            "encoder_hidden_states":  {0: "batch", 1: "seq_len"},
+            "output":                 {0: "batch"},
+        },
     )
     logger.info(f"Exported transformer to {output_dir / 'transformer.onnx'}")
 

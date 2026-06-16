@@ -252,6 +252,30 @@ class VisionBanana:
 
         raise ValueError(f"Unknown task: {task}")
 
+    def eval(self) -> "VisionBanana":
+        """Set underlying generator pipelines to eval mode (no-op for diffusers).
+
+        This method exists so that ``VisionEvaluator`` can call
+        ``model.eval()`` without checking whether the model is a plain
+        nn.Module or a VisionBanana wrapper.
+
+        Returns:
+            self (for chaining).
+        """
+        # diffusers Pipeline objects do not expose .eval() / .train() in the
+        # nn.Module sense; calling them is a no-op.  We still propagate to any
+        # sub-module that does support it.
+        for pipe in [
+            getattr(self.generator, "_t2i_pipe", None),
+            getattr(self.generator, "_i2i_pipe", None),
+        ]:
+            if pipe is not None and hasattr(pipe, "eval"):
+                try:
+                    pipe.eval()
+                except Exception:
+                    pass
+        return self
+
     def save(self, output_dir: str | Path) -> None:
         """Save Vision Banana model (LoRA weights)."""
         self.generator.save_lora(output_dir)

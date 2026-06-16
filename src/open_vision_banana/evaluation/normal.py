@@ -8,6 +8,8 @@ Standard metrics from the normal estimation literature:
 
 from __future__ import annotations
 
+import math
+
 import torch
 
 
@@ -28,7 +30,7 @@ def evaluate_normals(pred: torch.Tensor, gt: torch.Tensor) -> dict[str, float]:
     cos_sim = cos_sim.clamp(-1.0, 1.0)
 
     angle_rad = torch.acos(cos_sim)
-    angle_deg = angle_rad * 180.0 / 3.14159265
+    angle_deg = angle_rad * (180.0 / math.pi)
 
     return {
         "Mean Angular Error (°)": angle_deg.mean().item(),
