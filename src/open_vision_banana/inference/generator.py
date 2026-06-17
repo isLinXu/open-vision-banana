@@ -78,6 +78,10 @@ class BaseGenerator:
         self._t2i_pipe = None   # FluxPipeline (text → image)
         self._i2i_pipe = None   # FluxImg2ImgPipeline (image + text → image)
 
+        # KV-cache for text encoder outputs: avoids redundant CLIP/T5
+        # forward passes when the same prompt is used for repeated generation.
+        self._prompt_cache: dict[str, dict[str, torch.Tensor | None]] = {}
+
         self._load_model()
 
     # ------------------------------------------------------------------
@@ -172,6 +176,12 @@ class BaseGenerator:
         from a noisy version of the encoded input.  This is the primary mode
         for all vision-understanding tasks.
 
+        KV-cache reuse: when the same prompt is used for repeated generation
+        (e.g. batched inference or multi-task evaluation), the text encoder
+        outputs are cached and reused, avoiding redundant CLIP/T5 forward
+        passes.  The cache is keyed by the prompt string and invalidated
+        when the model weights change (e.g. after LoRA loading).
+
         Args:
             prompt: Text prompt(s) describing the desired output.
             image: Optional input image.  Accepted formats:
@@ -195,11 +205,26 @@ class BaseGenerator:
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
+        # ── KV-cache reuse for text encoder outputs ────────────────────
+        # When the same prompt is used repeatedly (e.g. batched inference,
+        # multi-task evaluation), cache the text encoder outputs to avoid
+        # redundant CLIP/T5 forward passes.
+        prompt_key = str(prompt) if isinstance(prompt, str) else str(tuple(prompt))
+        cached_prompt_embeds = self._prompt_cache.get(prompt_key)
+        if cached_prompt_embeds is not None:
+            kwargs["prompt_embeds"] = cached_prompt_embeds["prompt_embeds"]
+            kwargs["pooled_prompt_embeds"] = cached_prompt_embeds["pooled_prompt_embeds"]
+            # When providing pre-computed embeddings, pass empty prompt to
+            # skip re-encoding.  Some diffusers versions accept None.
+            encode_prompt = False
+        else:
+            encode_prompt = True
+
         if image is not None:
             pil_images = self._to_pil_list(image)
             pipe = self._get_i2i_pipe()
             output = pipe(
-                prompt=prompt,
+                prompt=prompt if encode_prompt else None,
                 image=pil_images,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
@@ -209,7 +234,7 @@ class BaseGenerator:
             )
         else:
             output = self._t2i_pipe(
-                prompt=prompt,
+                prompt=prompt if encode_prompt else None,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
                 height=height,
@@ -217,6 +242,13 @@ class BaseGenerator:
                 generator=generator,
                 **kwargs,
             )
+
+        # Cache text encoder outputs for future reuse
+        if encode_prompt and hasattr(output, 'prompt_embeds'):
+            self._prompt_cache[prompt_key] = {
+                "prompt_embeds": output.prompt_embeds,
+                "pooled_prompt_embeds": getattr(output, 'pooled_prompt_embeds', None),
+            }
 
         return self._output_to_tensor(output)
 
@@ -277,6 +309,7 @@ class BaseGenerator:
         if self._t2i_pipe is not None:
             self._t2i_pipe.unload_lora_weights()
             self._i2i_pipe = None   # force rebuild without LoRA
+            self._prompt_cache.clear()  # invalidate cached embeddings
             logger.info("LoRA weights unloaded")
 
     def enable_cpu_offload(self) -> None:

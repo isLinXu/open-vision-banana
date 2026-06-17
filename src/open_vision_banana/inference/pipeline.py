@@ -282,8 +282,9 @@ class VisionBanana:
         logger.info(f"Vision Banana saved to {output_dir}")
 
     def clear_cache(self) -> None:
-        """Clear the prompt embedding cache."""
+        """Clear the prompt embedding cache and generator KV-cache."""
         self._cache.clear()
+        self.generator._prompt_cache.clear()
 
     def export_torchscript(
         self,
