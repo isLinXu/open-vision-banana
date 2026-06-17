@@ -236,9 +236,12 @@ class VisionAugmentation:
                 image.unsqueeze(0), size=(self.resolution, self.resolution),
                 mode='bilinear', align_corners=False,
             ).squeeze(0)
+            # Use nearest interpolation for target_rgb to preserve
+            # sharp boundaries in depth maps and segmentation masks.
+            # Bilinear would blur depth discontinuities and class boundaries.
             target_rgb = F.interpolate(
                 target_rgb.unsqueeze(0), size=(self.resolution, self.resolution),
-                mode='bilinear', align_corners=False,
+                mode='nearest',
             ).squeeze(0)
 
         if self.color_jitter:

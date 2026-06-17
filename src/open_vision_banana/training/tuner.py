@@ -166,6 +166,11 @@ class InstructionTuner:
         if use_gradient_checkpointing:
             enable_gradient_checkpointing(self.peft_model)
 
+        # ── Interface probing: detect forward() signature at init time ────
+        # Instead of a try/except fallback chain at every training step,
+        # probe the model's forward() signature once and store the result.
+        self._forward_mode = self._probe_forward_signature()
+
     @staticmethod
     def _detect_device_type() -> str:
         """Detect the best available device type: cuda, mps, or cpu."""
@@ -174,6 +179,52 @@ class InstructionTuner:
         if torch.backends.mps.is_available():
             return "mps"
         return "cpu"
+
+    def _probe_forward_signature(self) -> str:
+        """Probe the model's forward() signature at init time.
+
+        Returns one of:
+        - "full": accepts hidden_states, timestep, encoder_hidden_states,
+                  pooled_projections (full FLUX signature)
+        - "partial": accepts hidden_states, timestep, encoder_hidden_states
+        - "minimal": accepts hidden_states, timestep only
+        - "positional": accepts positional args only (smoke-test mocks)
+        """
+        dummy_hidden = torch.zeros(1, 3, 2, 2)
+        dummy_timestep = torch.tensor([0.5])
+        dummy_encoder = torch.zeros(1, 1, 4)
+
+        try:
+            self.peft_model(
+                hidden_states=dummy_hidden,
+                timestep=dummy_timestep,
+                encoder_hidden_states=dummy_encoder,
+                pooled_projections=torch.zeros(1, 4),
+            )
+            return "full"
+        except TypeError:
+            pass
+
+        try:
+            self.peft_model(
+                hidden_states=dummy_hidden,
+                timestep=dummy_timestep,
+                encoder_hidden_states=dummy_encoder,
+            )
+            return "partial"
+        except TypeError:
+            pass
+
+        try:
+            self.peft_model(
+                hidden_states=dummy_hidden,
+                timestep=dummy_timestep,
+            )
+            return "minimal"
+        except TypeError:
+            pass
+
+        return "positional"
 
     def _setup_lora(self) -> None:
         """Set up LoRA with rsLoRA scaling on the pipeline's transformer."""
@@ -477,40 +528,26 @@ class InstructionTuner:
         prompt_embeds = text_cond["prompt_embeds"]                # [B, seq_len, D_t5]
         pooled_prompt_embeds = text_cond["pooled_prompt_embeds"]  # [B, D_clip] | None
 
-        # ── Forward pass — pass all FLUX-required kwargs ─────────────────
-        # FluxTransformer2DModel.forward signature (diffusers ≥ 0.30):
-        #   hidden_states, timestep, encoder_hidden_states,
-        #   pooled_projections, [txt_ids, img_ids, guidance, ...]
-        #
-        # We attempt the full signature first; fall back gracefully if the
-        # wrapped model (e.g. a mock in unit tests) has a different interface.
+        # ── Forward pass — use probed signature ────────────────────────
+        # The forward mode was detected at init time via _probe_forward_signature,
+        # eliminating the per-step try/except fallback chain.
         forward_kwargs: dict = {
             "hidden_states": noisy_latents,
             "timestep": timesteps,
             "encoder_hidden_states": prompt_embeds,
         }
-        if pooled_prompt_embeds is not None:
+        if self._forward_mode == "full":
             forward_kwargs["pooled_projections"] = pooled_prompt_embeds
-
-        try:
             predicted_velocity = self.peft_model(**forward_kwargs)
-        except TypeError:
-            # Fallback 1: drop pooled_projections (some non-FLUX transformers)
-            try:
-                predicted_velocity = self.peft_model(
-                    hidden_states=noisy_latents,
-                    timestep=timesteps,
-                    encoder_hidden_states=prompt_embeds,
-                )
-            except TypeError:
-                # Fallback 2: positional-only (smoke-test mocks)
-                try:
-                    predicted_velocity = self.peft_model(
-                        hidden_states=noisy_latents,
-                        timestep=timesteps,
-                    )
-                except TypeError:
-                    predicted_velocity = self.peft_model(noisy_latents, timestep=timesteps)
+        elif self._forward_mode == "partial":
+            predicted_velocity = self.peft_model(**forward_kwargs)
+        elif self._forward_mode == "minimal":
+            predicted_velocity = self.peft_model(
+                hidden_states=noisy_latents,
+                timestep=timesteps,
+            )
+        else:  # "positional"
+            predicted_velocity = self.peft_model(noisy_latents, timestep=timesteps)
 
         # Some transformer forward() returns a tuple (output, *extras)
         if isinstance(predicted_velocity, (tuple, list)):
