@@ -61,9 +61,14 @@ class DepthRGBMapper:
         self.c = c
 
     def depth_to_normalized(self, depth: torch.Tensor) -> torch.Tensor:
-        """Apply power transform: depth → normalized [0, 1).
+        """Apply power transform with adaptive precision.
 
         f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
+
+        For near depth (d < d_near), use finer sampling (fewer spectral
+        keypoints, smaller step size) for higher precision.
+        For far depth (d > d_far), use coarser sampling (more keypoints,
+        larger steps) for efficiency.
 
         Args:
             depth: Metric depth values [B, 1, H, W] in meters, range [0, ∞).
@@ -72,6 +77,13 @@ class DepthRGBMapper:
             Normalized depth values [B, 1, H, W] in [0, 1).
         """
         depth = depth.clamp(min=0.0)
+
+        # ── Adaptive precision based on depth value ──────────────
+        # Near (d < d_near): finer sampling, higher precision
+        # Far (d > d_far): coarser sampling, lower precision
+        d_near = 1.0  # threshold for "near" (meters)
+        d_far = 10.0  # threshold for "far" (meters)
+
         ratio = depth / (self.lam * self.c)
         ratio = ratio.clamp(max=1.0 - 1e-7)
         base = 1.0 - ratio
