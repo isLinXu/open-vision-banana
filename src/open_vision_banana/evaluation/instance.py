@@ -32,12 +32,50 @@ def compute_iou_mask(mask1: torch.Tensor, mask2: torch.Tensor) -> float:
     return intersection / union if union > 0 else 0.0
 
 
+def compute_iou_matrix_batched(
+    pred_instances: list[dict],
+    gt_instances: list[dict],
+) -> torch.Tensor:
+    """Compute IoU matrix between all pred and GT instances.
+
+    Vectorized: stacks all masks into tensors and computes intersection
+    and union via matrix multiplication.
+
+    Returns:
+        IoU matrix [n_pred, n_gt].
+    """
+    n_pred = len(pred_instances)
+    n_gt = len(gt_instances)
+    if n_pred == 0 or n_gt == 0:
+        return torch.zeros(n_pred, n_gt)
+
+    # Flatten all masks and stack
+    pred_masks = torch.stack([
+        p['mask'].reshape(-1).float() for p in pred_instances
+    ])  # [n_pred, H*W]
+    gt_masks = torch.stack([
+        g['mask'].reshape(-1).float() for g in gt_instances
+    ])  # [n_gt, H*W]
+
+    # Intersection: pred_masks @ gt_masks.T
+    intersection = pred_masks @ gt_masks.T  # [n_pred, n_gt]
+    # Union: |A| + |B| - |A∩B|
+    pred_areas = pred_masks.sum(dim=1).unsqueeze(1)  # [n_pred, 1]
+    gt_areas = gt_masks.sum(dim=1).unsqueeze(0)      # [1, n_gt]
+    union = pred_areas + gt_areas - intersection
+
+    iou_matrix = intersection / (union + 1e-8)
+    return iou_matrix
+
+
 def evaluate_instance(
     pred_instances: list[dict],
     gt_instances: list[dict],
     iou_thresholds: list[float] | None = None,
 ) -> dict[str, float]:
     """Compute instance segmentation AP metrics.
+
+    Uses vectorized IoU matrix computation for efficiency.
 
     Args:
         pred_instances: List of predicted instance dicts with 'mask' key.
@@ -57,11 +95,9 @@ def evaluate_instance(
 
     n_pred = len(pred_instances)
     n_gt = len(gt_instances)
-    iou_matrix = torch.zeros(n_pred, n_gt)
 
-    for i, pred in enumerate(pred_instances):
-        for j, gt in enumerate(gt_instances):
-            iou_matrix[i, j] = compute_iou_mask(pred['mask'], gt['mask'])
+    # Vectorized IoU matrix computation
+    iou_matrix = compute_iou_matrix_batched(pred_instances, gt_instances)
 
     aps = {}
     for thresh in iou_thresholds:
@@ -100,4 +136,4 @@ def evaluate_instance(
     return result
 
 
-__all__ = ["evaluate_instance", "compute_iou_mask", "compute_iou_box"]
+__all__ = ["evaluate_instance", "compute_iou_mask", "compute_iou_matrix_batched", "compute_iou_box"]
