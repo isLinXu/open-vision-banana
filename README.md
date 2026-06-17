@@ -189,6 +189,7 @@ open-vision-banana/
 │   │   ├── depth_mapper.py      # Power transform + spectral colormap
 │   │   ├── normal_mapper.py     # Linear normal ↔ RGB mapping
 │   │   ├── segmentation.py      # 5-stage instance segmentation decoder
+│   │   ├── union_find.py       # Union-Find (path compression + union by rank)
 │   │   └── rgb_mapper.py       # Unified encode/decode interface
 │   ├── inference/               # Model loading and generation
 │   │   ├── generator.py         # FLUX.1 + LoRA wrapper
@@ -254,7 +255,7 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 From Appendix A of the paper:
 
 1. **Background Initialization**: τ=14 color tolerance
-2. **Color Similarity Grouping**: Vectorized connected components (~100x faster than Python flood-fill)
+2. **Color Similarity Grouping**: Union-Find with 8-connectivity (O(E α(N)), ~100x faster than flood-fill)
 3. **Noise Pruning**: θ_size = 2×10⁻⁴
 4. **Boundary Artifact Elimination**: 3×3 erosion, θ_erosion=0.1
 5. **Spatially Constrained Merging**: γ=5.0
