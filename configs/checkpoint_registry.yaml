@@ -1,0 +1,74 @@
+# Vision Banana LoRA Checkpoint Registry
+#
+# Map friendly aliases to Hugging Face Hub repositories.
+# Status values:
+#   - placeholder: documented slot, weights not yet published
+#   - available: weights published and downloadable
+#
+# Usage:
+#   python scripts/download_checkpoint.py --alias vision-banana
+#   python scripts/inference.py --lora-path registry:vision-banana ...
+
+checkpoints:
+  vision-banana:
+    repo_id: "open-vision-banana/vision-banana-lora"
+    revision: main
+    status: placeholder
+    description: >
+      Official Vision Banana multi-task LoRA weights (depth, normal, segmentation).
+      Not yet published — train locally or watch this repo for releases.
+    tasks:
+      - depth
+      - normal
+      - semantic
+      - instance
+      - referring
+
+  vision-banana-depth:
+    repo_id: "open-vision-banana/vision-banana-depth-lora"
+    revision: main
+    status: placeholder
+    description: Depth-only LoRA checkpoint (placeholder).
+    tasks:
+      - depth
+
+  vision-banana-normal:
+    repo_id: "open-vision-banana/vision-banana-normal-lora"
+    revision: main
+    status: placeholder
+    description: Surface-normal LoRA checkpoint (placeholder).
+    tasks:
+      - normal
+
+  vision-banana-semantic:
+    repo_id: "open-vision-banana/vision-banana-semantic-lora"
+    revision: main
+    status: placeholder
+    description: Semantic segmentation LoRA checkpoint (placeholder).
+    tasks:
+      - semantic
+
+  vision-banana-instance:
+    repo_id: "open-vision-banana/vision-banana-instance-lora"
+    revision: main
+    status: placeholder
+    description: Instance segmentation LoRA checkpoint (placeholder).
+    tasks:
+      - instance
+
+  vision-banana-referring:
+    repo_id: "open-vision-banana/vision-banana-referring-lora"
+    revision: main
+    status: placeholder
+    description: Referring expression segmentation LoRA checkpoint (placeholder).
+    tasks:
+      - referring
+
+  # Published checkpoints (flip status to "available" after publishing)
+  # depth-v1:
+  #   repo_id: "open-vision-banana/vision-banana-depth-v1"
+  #   revision: main
+  #   status: available
+  #   description: Depth estimation LoRA v1, trained on Hypersim
+  #   tasks:
+  #     - depth
