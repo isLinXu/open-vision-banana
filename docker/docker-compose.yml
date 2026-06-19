@@ -1,0 +1,146 @@
+# Multi-service Docker Compose for Open-Vision-Banana
+#
+# Usage:
+#   # Development (CPU, with volume mounts for live code editing)
+#   docker compose -f docker/docker-compose.yml up dev
+#
+#   # Training (GPU, multi-node single-node simulation)
+#   docker compose -f docker/docker-compose.yml up training
+#
+#   # Inference server (GPU, detached)
+#   docker compose -f docker/docker-compose.yml up -d inference
+#
+#   # Jupyter notebook for experimentation
+#   docker compose -f docker/docker-compose.yml up notebook
+
+version: "3.8"
+
+services:
+  # ── Development environment (CPU, editable install) ───────────────
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: dev
+    image: open-vision-banana:dev
+    container_name: ovb-dev
+    volumes:
+      - ../src:/app/src:ro
+      - ../scripts:/app/scripts:ro
+      - ../configs:/app/configs:ro
+      - ../experiments:/app/experiments:ro
+      - ../tests:/app/tests:ro
+      - ../data:/data
+      - ../output:/app/output
+      - ovb-dev-cache:/root/.cache
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/root/.cache/huggingface
+    command: ["bash"]
+    stdin_open: true
+    tty: true
+
+  # ── Training environment (GPU) ──────────────────────────────────
+  training:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu
+    image: open-vision-banana:gpu
+    container_name: ovb-training
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - ../data:/data:ro
+      - ../output:/app/output
+      - ovb-training-cache:/root/.cache
+    working_dir: /app
+    command: >
+      bash -c "
+        echo 'Starting FSDP training...' &&
+        bash scripts/train_fsdp.sh
+          --config configs/training_config.yaml
+          --data-path /data
+          --output-dir /app/output/checkpoints
+          --epochs 10
+          --batch-size 2
+          --gradient-checkpointing
+      "
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ── Inference server (GPU) ────────────────────────────────────────
+  inference:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu
+    image: open-vision-banana:gpu
+    container_name: ovb-inference
+    runtime: nvidia
+    ports:
+      - "8000:8000"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - ../data:/data:ro
+      - ../output:/app/output
+      - ovb-inference-cache:/root/.cache
+    working_dir: /app
+    command: >
+      bash -c "
+        python scripts/inference.py
+          --task depth
+          --image /data/sample.jpg
+          --output /app/output
+          --optimize
+      "
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── Jupyter notebook ────────────────────────────────────────────
+  notebook:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: dev
+    image: open-vision-banana:dev
+    container_name: ovb-notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ../notebooks:/app/notebooks
+      - ../data:/data:ro
+      - ../output:/app/output
+      - ovb-notebook-cache:/root/.cache
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/root/.cache/huggingface
+    working_dir: /app
+    command: >
+      bash -c "
+        pip install jupyter jupyterlab &&
+        jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+          --NotebookApp.token='' --NotebookApp.password=''
+      "
+
+volumes:
+  ovb-dev-cache:
+  ovb-training-cache:
+  ovb-inference-cache:
+  ovb-notebook-cache:

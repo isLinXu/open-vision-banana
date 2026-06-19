@@ -1,0 +1,60 @@
+# Inference optimization presets for Open-Vision-Banana
+#
+# Usage:
+#   python scripts/optimize_inference.py --preset configs/optimization_presets.yaml --profile balanced
+
+profiles:
+  # Balanced: good quality, moderate speed, fits single A10 / RTX 3090
+  balanced:
+    dtype: float16
+    enable_model_cpu_offload: true
+    enable_vae_slicing: true
+    enable_attention_slicing: true
+    attention_slice_size: "auto"
+    enable_torch_compile: false
+    quantize_mappers_int8: false
+
+  # Speed: fastest inference, slight quality trade-off
+  speed:
+    dtype: float16
+    enable_model_cpu_offload: false
+    enable_vae_slicing: true
+    enable_vae_tiling: true
+    enable_attention_slicing: true
+    attention_slice_size: "auto"
+    enable_torch_compile: true
+    torch_compile_mode: "reduce-overhead"
+    quantize_mappers_int8: false
+
+  # Memory: minimum VRAM, for 12GB consumer GPUs
+  memory:
+    dtype: float16
+    enable_sequential_cpu_offload: true
+    enable_vae_slicing: true
+    enable_vae_tiling: true
+    enable_attention_slicing: true
+    attention_slice_size: "auto"
+    enable_torch_compile: false
+    quantize_mappers_int8: true
+
+  # Quality: maximum fidelity, for 80GB A100
+  quality:
+    dtype: bfloat16
+    enable_model_cpu_offload: false
+    enable_vae_slicing: false
+    enable_vae_tiling: false
+    enable_attention_slicing: false
+    enable_torch_compile: true
+    torch_compile_mode: "max-autotune"
+    quantize_mappers_int8: false
+
+  # CPU: no GPU required, very slow but universally compatible
+  cpu:
+    dtype: float32
+    enable_sequential_cpu_offload: true
+    enable_vae_slicing: true
+    enable_vae_tiling: true
+    enable_attention_slicing: true
+    attention_slice_size: "auto"
+    enable_torch_compile: false
+    quantize_mappers_int8: false

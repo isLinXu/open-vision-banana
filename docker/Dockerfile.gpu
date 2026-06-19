@@ -1,0 +1,73 @@
+# Open-Vision-Banana — GPU training & inference environment
+#
+# Build:
+#   docker build -t open-vision-banana:gpu -f docker/Dockerfile.gpu .
+#
+# Run training (FSDP, 8 GPUs):
+#   docker run --gpus all -v $(pwd)/data:/data -v $(pwd)/output:/app/output \
+#     open-vision-banana:gpu bash scripts/train_fsdp.sh --data-path /data
+#
+# Run inference:
+#   docker run --gpus all -v $(pwd)/data:/data \
+#     open-vision-banana:gpu python scripts/inference.py --image /data/input.jpg --task depth
+
+# ── Stage 1: Build dependencies ─────────────────────────────────────
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04 AS builder
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-dev python3-pip \
+    git \
+    libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY pyproject.toml README.md CHANGELOG.md MODEL_CARD.md ./
+COPY src ./src
+COPY configs ./configs
+COPY scripts ./scripts
+
+RUN pip3 install --upgrade pip setuptools wheel && \
+    pip3 install -e ".[all]" --target /install
+
+# ── Stage 2: Runtime image ──────────────────────────────────────────
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3-pip \
+    libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local/lib/python3.12/dist-packages
+COPY --from=builder /usr/local/bin/* /usr/local/bin/
+
+# Copy application code
+COPY pyproject.toml README.md CHANGELOG.md MODEL_CARD.md ./
+COPY src ./src
+COPY configs ./configs
+COPY scripts ./scripts
+COPY experiments ./experiments
+COPY notebooks ./notebooks
+COPY tests ./tests
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python3 -c "from open_vision_banana.core import DepthRGBMapper; print('ok')" || exit 1
+
+# Default: show help
+CMD ["python3", "-c", "
+import open_vision_banana
+print(\"Open-Vision-Banana GPU ready\")
+print(\"Usage: docker run --gpus all open-vision-banana:gpu <command>\")
+"]
