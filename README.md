@@ -102,40 +102,213 @@ instances = decoder.decode_instance(rgb)
 ```python
 from open_vision_banana import VisionBanana
 
-# Load model
-model = VisionBanana.from_pretrained(lora_path="path/to/checkpoint")
+# Load model (local path, hf:repo/id, or registry:alias)
+model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
+
+# 16GB GPU: enable CPU offload
+model = VisionBanana.from_pretrained(
+    lora_path="path/to/checkpoint",
+    enable_sequential_cpu_offload=True,
+)
 
 # Depth estimation
 result = model.predict(image=input_image, task="depth")
+```
 
-# Semantic segmentation
-result = model.predict(
-    image=input_image,
-    task="semantic",
-    class_color_map={"cat": (255, 255, 0), "background": (128, 0, 128)},
-)
+CLI with memory optimizations:
 
-# Normal estimation
-result = model.predict(image=input_image, task="normal")
+```bash
+# List registered checkpoints
+python scripts/download_checkpoint.py --list
 
-# Batched inference
-results = model.predict_batch(images=batch, task="depth")
+# Download LoRA from Hugging Face (when published)
+python scripts/download_checkpoint.py --alias vision-banana --output-dir checkpoints/
+
+# Inference on 16GB GPU
+python scripts/inference.py --image input.jpg --task depth \
+  --lora-path registry:vision-banana --cpu-offload --vae-slicing
+```
+
+### Data Validation (before training)
+
+Validate custom datasets in ``images/`` + ``targets/`` layout:
+
+```bash
+python scripts/validate_data.py --data-path my_tiny_data/
+python scripts/validate_data.py --data-path my_tiny_data/ --strict --min-pairs 10
+```
+
+Prepare Hypersim depth data for instruction tuning:
+
+```bash
+python scripts/prepare_hypersim.py \
+  --source /path/to/hypersim \
+  --output data/hypersim_depth/ \
+  --resolution 512 \
+  --validate
+```
+
+```python
+from open_vision_banana.data import validate_vision_dataset
+
+report = validate_vision_dataset("my_tiny_data/")
+print(report.summary())
+assert report.ok
+```
+
+### Inference Optimization
+
+```bash
+# Show available presets and VRAM impact
+python scripts/optimize_inference.py --list-presets
+
+# Use a preset profile (balanced | speed | memory | quality | cpu)
+python scripts/optimize_inference.py --profile balanced --run --image data/sample.jpg --task depth
+
+# Benchmark mapper throughput with preset
+python scripts/optimize_inference.py --profile speed --benchmark-mappers --resolution 512
+```
+
+| Preset | Target VRAM | Speed | Quality | Key Options |
+|--------|-------------|-------|---------|-------------|
+| `balanced` | ~16 GB (A10/RTX 3090) | ★★★ | ★★★★ | float16 + model_cpu_offload + VAE slicing |
+| `speed` | ~20 GB (A100/H100) | ★★★★★ | ★★★ | float16 + torch.compile + VAE tiling |
+| `memory` | ~8 GB (RTX 3060) | ★★ | ★★★ | float16 + sequential offload + INT8 mappers |
+| `quality` | ~40 GB (A100-80GB) | ★★★ | ★★★★★ | bfloat16 + max-autotune compile |
+| `cpu` | RAM only | ★ | ★★★ | float32 + sequential offload |
+
+### Attention Visualization
+
+```bash
+# Dry-run (synthetic attention, no model download)
+python scripts/visualize_attention.py --image input.jpg --prompt "depth estimation" --output output/attn/ --dry-run
+
+# Real attention extraction (requires FLUX weights)
+python scripts/visualize_attention.py --image input.jpg --prompt "segmentation of a dog" --output output/attn/
+```
+
+### Pipeline Benchmark
+
+```bash
+# Full pipeline benchmark (requires GPU + model)
+python scripts/benchmark_pipeline.py --profile balanced --tasks depth,normal
+
+# Mapper-only benchmark (no GPU required)
+python scripts/benchmark_pipeline.py --mapper-only --resolution 512 --num-samples 50
+
+# Export JSON results
+python scripts/benchmark_pipeline.py --mapper-only --output benchmark_results.json
+```
+
+### Data Preparation
+
+```bash
+# List all supported datasets with download instructions
+python scripts/download_data.py --list
+
+# Download and prepare a specific dataset
+python scripts/download_data.py --dataset hypersim-depth --output data/hypersim/
+
+# Prepare from existing raw download (for datasets requiring login)
+python scripts/prepare_hypersim.py \
+  --source /path/to/hypersim_raw \
+  --output data/hypersim_depth/ \
+  --resolution 512 --validate
+
+# Validate prepared dataset before training
+python scripts/validate_dataset.py --data-path data/hypersim_depth/ --task depth
+```
+
+### Publishing to Hugging Face
+
+```bash
+# Preview the model card before publishing
+python scripts/publish_to_hub.py \
+  --checkpoint output/checkpoints/best_model.pt \
+  --repo-id open-vision-banana/vision-banana-depth-v1 \
+  --task depth \
+  --description "Depth estimation LoRA trained on Hypersim" \
+  --dry-run
+
+# Publish and update local registry
+python scripts/publish_to_hub.py \
+  --checkpoint output/checkpoints/best_model.pt \
+  --repo-id open-vision-banana/vision-banana-depth-v1 \
+  --task depth \
+  --update-registry
 ```
 
 ### Training
 
+```bash
+# Basic training with validation + early stopping
+python scripts/train.py \
+  --data-path my_tiny_data/ \
+  --val-split 0.1 \
+  --early-stopping-patience 5 \
+  --epochs 10
+
+# 9:1 generation mix + W&B logging + checkpoint artifacts
+python scripts/train.py \
+  --data-path vision_data/ \
+  --generation-path generation_data/ \
+  --vision-ratio 0.1 \
+  --wandb --wandb-log-checkpoints
+
+# TensorBoard
+python scripts/train.py --data-path my_tiny_data/ --tensorboard
+tensorboard --logdir output/runs
+
+# Multi-GPU FSDP (8×A100 example)
+torchrun --nproc_per_node=8 scripts/train.py \
+  --data-path vision_data/ \
+  --fsdp --gradient-checkpointing \
+  --batch-size 2 --epochs 10
+
+# Multi-GPU DeepSpeed ZeRO-3
+deepspeed --num_gpus=8 scripts/train.py \
+  --deepspeed --deepspeed-config configs/deepspeed_zero3.json \
+  --data-path vision_data/ --gradient-checkpointing \
+  --batch-size 2 --epochs 10
+```
+
+Generation dataset layout for 9:1 mix:
+
+```bash
+# Build synthetic generation data (no GPU)
+python scripts/build_generation_dataset.py --output-dir gen_data/ --num-samples 200
+
+# Or from custom prompts
+python scripts/build_generation_dataset.py \
+  --output-dir gen_data/ --prompts-file prompts.txt --mode synthetic
+
+# FLUX mode (GPU + weights)
+python scripts/build_generation_dataset.py \
+  --output-dir gen_data/ --prompts-file prompts.txt --mode flux
+```
+
+```
+generation_data/
+  images/          ← RGB images
+  prompts.json     ← {"photo.jpg": "a cat on a windowsill", ...}
+```
+
 ```python
 from open_vision_banana.training import InstructionTuner, VisionTaskDataset
-from open_vision_banana.data import build_dataset, MixedVisionDataset
+from open_vision_banana.data import build_dataset, MixedVisionDataset, build_generation_dataset
 
 # Create datasets
 depth_ds = build_dataset("depth", root_dir="/path/to/hypersim")
-normal_ds = build_dataset("normal", root_dir="/path/to/scannet")
-mixed_ds = MixedVisionDataset(vision_datasets=[depth_ds, normal_ds])
+gen_ds = build_generation_dataset("/path/to/generation_data")
+mixed_ds = MixedVisionDataset(
+    vision_datasets=[depth_ds],
+    generation_dataset=gen_ds,
+    vision_ratio=0.1,
+)
 
 # Train
 tuner = InstructionTuner(model, lora_rank=64, lora_alpha=128)
-tuner.train(mixed_ds, epochs=10, batch_size=8)
+tuner.train(mixed_ds, val_dataset=val_ds, early_stopping_patience=5)
 ```
 
 ### Configuration
@@ -176,6 +349,13 @@ metrics = evaluate_depth(pred_depth, gt_depth)
 # Normal metrics
 metrics = evaluate_normals(pred_normals, gt_normals)
 # → {"Mean Angular Error (°)": 15.3, "Cosine Similarity": 0.96, ...}
+```
+
+CLI with SOTA comparison:
+
+```bash
+python scripts/evaluate.py --task depth --data-path /data/hypersim --compare-sota
+python scripts/evaluate.py --task semantic --data-path /data/cityscapes --output-json metrics.json
 ```
 
 ## Project Structure
@@ -219,9 +399,14 @@ open-vision-banana/
 │   ├── test_e2e.py              # ONNX export verification
 │   └── test_data_config.py      # Data + config tests
 ├── configs/
-│   └── training_config.yaml     # Default training configuration
+│   ├── training_config.yaml     # Default training configuration
+│   └── checkpoint_registry.yaml # Hugging Face LoRA checkpoint aliases
 ├── scripts/
 │   ├── demo.py                  # Algorithm demo (no GPU needed)
+│   ├── validate_data.py         # Dataset format validation
+│   ├── build_generation_dataset.py  # Synthetic / FLUX generation data builder
+│   ├── download_checkpoint.py   # Hugging Face LoRA download
+│   ├── optimize_inference.py    # Inference optimization helper
 │   ├── train.py                 # Training script
 │   ├── evaluate.py              # Evaluation script
 │   └── inference.py             # Inference script
@@ -277,6 +462,78 @@ From Appendix A of the paper:
 | Referring Seg | ReasonSeg | gIoU | 79.3 | 77.0 (SAM3+GPT) |
 | Depth | 6-dataset avg | δ1 | 0.882 | 0.823 (UniK3D) |
 | Normal | Indoor avg | mean ↓ | 15.05 | 15.72 (Lotus-2) |
+
+### Distributed Training (DDP / FSDP)
+
+```bash
+# DDP — single node, 4 GPUs
+bash scripts/train_ddp.sh --data-path vision_data/ --epochs 5
+
+# FSDP — single node, 8 GPUs (recommended for FLUX.1 12B)
+bash scripts/train_fsdp.sh --nodes 1 --gpus-per-node 8 \
+  --data-path vision_data/ --epochs 5 --gradient-checkpointing
+
+# Multi-node FSDP (2 nodes × 8 GPUs)
+# Node 0 (master):
+bash scripts/train_fsdp.sh --nodes 2 --node-rank 0 \
+  --master-addr 10.0.0.1 --data-path /shared/vision_data/
+# Node 1:
+bash scripts/train_fsdp.sh --nodes 2 --node-rank 1 \
+  --master-addr 10.0.0.1 --data-path /shared/vision_data/
+```
+
+### Data Validation (Pre-training)
+
+```bash
+# Validate dataset integrity before training
+python scripts/validate_dataset.py --data-path vision_data/ --task all --output validation_report.json
+
+# Checks: image/target pair integrity, corrupt files, depth/normal range sanity, resolution consistency
+```
+
+### Inference Optimization Presets
+
+```bash
+# Use a preset profile (balanced | speed | memory | quality | cpu)
+python scripts/optimize_inference.py --preset configs/optimization_presets.yaml --profile balanced
+
+# Profiles:
+#   balanced  — A10 / RTX 3090, model CPU offload + float16
+#   speed     — torch.compile + float16, fastest
+#   memory    — sequential CPU offload + VAE tiling, fits 12GB
+#   quality   — bfloat16 + max-autotune compile, A100-80GB
+#   cpu       — no GPU required, universally compatible
+```
+
+## Docker
+
+Build and run a reproducible environment:
+
+```bash
+# CPU image (core algorithms, inference)
+docker build -t open-vision-banana:latest -f docker/Dockerfile .
+
+# GPU image (training + CUDA inference, multi-stage build)
+docker build -t open-vision-banana:gpu -f docker/Dockerfile.gpu .
+
+# Docker Compose — development, training, or Jupyter
+docker compose -f docker/docker-compose.yml up dev      # editable CPU dev
+docker compose -f docker/docker-compose.yml up training # GPU FSDP training
+docker compose -f docker/docker-compose.yml up notebook # Jupyter on :8888
+```
+
+See `docker/README.md` for GPU requirements, troubleshooting, and multi-stage build details.
+
+# Core algorithms (CPU)
+docker run --rm open-vision-banana:latest \
+  python -c "from open_vision_banana.core import DepthRGBMapper; print('ok')"
+
+# GPU inference (requires nvidia-container-toolkit)
+docker run --gpus all -v $(pwd)/data:/data open-vision-banana:latest \
+  python scripts/inference.py --image /data/input.jpg --task depth
+```
+
+Interactive Colab demo: [`notebooks/colab_demo.ipynb`](notebooks/colab_demo.ipynb)
 
 ## Citation
 
