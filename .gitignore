@@ -229,3 +229,12 @@ desktop/
 
 # macOS
 .DS_Store
+
+# Project-specific runtime artifacts
+crablet.db
+crablet.db-shm
+crablet.db-wal
+wandb/
+.thumbs/
+.benchmarks/
+.box-desens/
