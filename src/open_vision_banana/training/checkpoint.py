@@ -43,7 +43,7 @@ class CheckpointManager:
         lr: float,
         ema=None,
         scheduler=None,
-    ) -> None:
+    ) -> Path:
         """Save a training checkpoint."""
         ckpt_dir = self.output_dir / f"checkpoint-{step}"
         ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +79,47 @@ class CheckpointManager:
 
         # Prune old checkpoints
         self._prune_old_checkpoints()
+        return ckpt_dir
+
+    def save_best(
+        self,
+        peft_model,
+        optimizer: torch.optim.Optimizer,
+        step: int,
+        epoch: int,
+        train_loss: float,
+        val_loss: float,
+        lr: float,
+        ema=None,
+        scheduler=None,
+    ) -> Path:
+        """Save the best validation checkpoint to ``checkpoint-best/``."""
+        ckpt_dir = self.output_dir / "checkpoint-best"
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+        peft_model.save_pretrained(ckpt_dir)
+
+        if ema is not None:
+            torch.save(ema.shadow_params, ckpt_dir / "ema_weights.pt")
+
+        torch.save(optimizer.state_dict(), ckpt_dir / "optimizer.pt")
+
+        if scheduler is not None:
+            torch.save(scheduler.state_dict(), ckpt_dir / "scheduler.pt")
+
+        metadata = {
+            "step": step,
+            "epoch": epoch,
+            "loss": train_loss,
+            "val_loss": val_loss,
+            "lr": lr,
+            "best": True,
+        }
+        with open(ckpt_dir / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        logger.info("Best checkpoint saved to %s (val_loss=%.6f)", ckpt_dir, val_loss)
+        return ckpt_dir
 
     def load(
         self,
@@ -171,15 +212,26 @@ class CheckpointManager:
             return -1
 
     def _latest_checkpoint(self) -> Path | None:
-        """Find the latest checkpoint directory (by step number, not lexicographic order)."""
-        checkpoints = sorted(self.output_dir.glob("checkpoint-*"), key=self._ckpt_step)
+        """Find the latest numbered checkpoint directory."""
+        checkpoints = self._numbered_checkpoints(self.output_dir)
         if not checkpoints:
             return None
         return checkpoints[-1]
 
+    @staticmethod
+    def _numbered_checkpoints(output_dir: Path | None = None) -> list[Path]:
+        """List checkpoint-* dirs with numeric step suffix (excludes checkpoint-best)."""
+        root = output_dir if output_dir is not None else Path(".")
+        result = []
+        for path in root.glob("checkpoint-*"):
+            suffix = path.name.split("-")[-1]
+            if suffix.isdigit():
+                result.append(path)
+        return sorted(result, key=CheckpointManager._ckpt_step)
+
     def _prune_old_checkpoints(self) -> None:
-        """Remove oldest checkpoints beyond max_keep."""
-        checkpoints = sorted(self.output_dir.glob("checkpoint-*"), key=self._ckpt_step)
+        """Remove oldest numbered checkpoints beyond max_keep."""
+        checkpoints = self._numbered_checkpoints(self.output_dir)
         while len(checkpoints) > self.max_keep:
             oldest = checkpoints.pop(0)
             import shutil

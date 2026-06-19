@@ -59,6 +59,59 @@ class VisionEvaluator:
     # ------------------------------------------------------------------
 
     @torch.no_grad()
+    def evaluate_batch(
+        self,
+        image: torch.Tensor,
+        target_rgb: torch.Tensor,
+        task: str,
+        class_color_map: dict | None = None,
+        object_name: str | None = None,
+        expression: str | None = None,
+        num_inference_steps: int = 1,
+        strength: float = 0.85,
+    ) -> dict[str, float]:
+        """Evaluate a single batch without iterating a DataLoader.
+
+        Convenience wrapper around ``evaluate()`` for ad-hoc batch evaluation.
+        Useful for interactive evaluation, debugging, or custom data pipelines
+        that do not use a DataLoader.
+
+        Args:
+            image: Input images [B, 3, H, W] in [-1, 1].
+            target_rgb: Target RGB visualizations [B, 3, H, W] in [0, 1].
+            task: One of "depth", "normal", "semantic", "instance", "referring".
+            class_color_map: Required for semantic segmentation.
+            object_name: Forwarded to predict() for instance segmentation.
+            expression: Forwarded to predict() for referring segmentation.
+            num_inference_steps: Diffusion steps forwarded to predict().
+            strength: img2img noise strength forwarded to predict().
+
+        Returns:
+            Dictionary of metric name to value for this batch.
+        """
+        batch = {
+            "image": image.to(self.device),
+            "target_rgb": target_rgb.to(self.device),
+        }
+        if class_color_map is not None:
+            batch["class_color_map"] = class_color_map
+
+        # Build a single-batch dataloader-like iterable
+        import itertools
+        single_batch_loader = [batch]
+
+        return self.evaluate(
+            dataloader=single_batch_loader,
+            task=task,
+            class_color_map=class_color_map,
+            object_name=object_name,
+            expression=expression,
+            num_inference_steps=num_inference_steps,
+            strength=strength,
+            max_batches=1,
+        )
+
+    @torch.no_grad()
     def evaluate(
         self,
         dataloader,

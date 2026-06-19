@@ -62,6 +62,29 @@ Vision Banana demonstrates that image generators are generalist vision learners.
 | A100 80GB | ~40GB | ~3s |
 | RTX 4090 | ~24GB | ~5s |
 | RTX 3090 | ~24GB | ~8s |
+| RTX 4080 (16GB) | ~16GB with `--cpu-offload --vae-slicing` | ~15–20s |
+
+### Checkpoint Registry
+
+LoRA weights can be loaded via registry aliases defined in
+``configs/checkpoint_registry.yaml``:
+
+| Alias | Hugging Face Repo | Status |
+|:------|:------------------|:-------|
+| ``vision-banana`` | ``open-vision-banana/vision-banana-lora`` | placeholder |
+| ``vision-banana-depth`` | ``open-vision-banana/vision-banana-depth-lora`` | placeholder |
+| ``vision-banana-normal`` | ``open-vision-banana/vision-banana-normal-lora`` | placeholder |
+
+```bash
+python scripts/download_checkpoint.py --list
+python scripts/download_checkpoint.py --alias vision-banana
+```
+
+Usage in Python:
+
+```python
+model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
+```
 
 ## Technical Specifications
 

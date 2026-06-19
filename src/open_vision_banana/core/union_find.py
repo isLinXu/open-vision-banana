@@ -46,8 +46,9 @@ class UnionFind:
         elif self.rank[rx] > self.rank[ry]:
             self.parent[ry] = rx
         else:
-            # Same rank: increment rank of one
-            self.rank[ry] += 1
+            # Same rank: attach ry under rx and increment rank
+            self.parent[ry] = rx
+            self.rank[rx] += 1
 
     def connected(self, x: int, y: int) -> bool:
         """Check if x and y are in the same set."""

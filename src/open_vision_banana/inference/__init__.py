@@ -7,8 +7,16 @@ Provides:
 - VisionBanana: Unified multi-task model (high-level API)
 """
 
+from .checkpoint import (
+    CheckpointNotAvailableError,
+    get_registry_entry,
+    is_registry_placeholder,
+    list_registry_checkpoints,
+    resolve_lora_path,
+)
 from .decoder import VisualizationDecoder
 from .generator import BaseGenerator
+from .optimization import InferenceOptions, apply_pipeline_optimizations
 from .pipeline import VisionBanana
 from .prompt import PromptBuilder
 
@@ -17,4 +25,11 @@ __all__ = [
     "PromptBuilder",
     "VisualizationDecoder",
     "VisionBanana",
+    "InferenceOptions",
+    "apply_pipeline_optimizations",
+    "CheckpointNotAvailableError",
+    "get_registry_entry",
+    "is_registry_placeholder",
+    "resolve_lora_path",
+    "list_registry_checkpoints",
 ]

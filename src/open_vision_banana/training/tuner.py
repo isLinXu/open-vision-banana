@@ -20,6 +20,8 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset as _Dataset
 
 from .checkpoint import CheckpointManager
+from .early_stopping import EarlyStopping
+from .logging import TrainingLogger
 from .utils import EMAModel, VisionAugmentation, enable_gradient_checkpointing
 
 logger = logging.getLogger(__name__)
@@ -42,11 +44,27 @@ class VisionTaskDataset(_Dataset):
     Subclasses can override ``_load_data`` for custom layouts.
     """
 
+    # Task-specific default prompts — more descriptive than a generic
+    # template, these align with the PromptBuilder used during inference.
+    TASK_PROMPTS = {
+        "depth": "Generate a metric depth visualization of this image.",
+        "normal": "Generate a surface normal estimation visualization of this image.",
+        "semantic": "Generate a semantic segmentation visualization of this image.",
+        "instance": "Generate an instance segmentation visualization of this image.",
+        "referring": "Generate a referring expression segmentation visualization of this image.",
+    }
+
     DEFAULT_PROMPT = "Generate a visual understanding output for this image."
 
-    def __init__(self, data_path: str | None = None, resolution: int = 512) -> None:
+    def __init__(
+        self,
+        data_path: str | None = None,
+        resolution: int = 512,
+        task: str | None = None,
+    ) -> None:
         self.samples: list[dict] = []
         self.resolution = resolution
+        self.task = task
         if data_path is not None:
             self._load_data(data_path)
 
@@ -88,7 +106,7 @@ class VisionTaskDataset(_Dataset):
             self.samples.append({
                 "image_path": str(img_path),
                 "target_path": str(tgt_path),
-                "prompt": self.DEFAULT_PROMPT,
+                "prompt": self.TASK_PROMPTS.get(self.task, self.DEFAULT_PROMPT),
             })
 
     def __len__(self) -> int:
@@ -150,6 +168,7 @@ class InstructionTuner:
         self.use_rslora = use_rslora
         self.peft_model = None
         self.optimizer = None
+        self.deepspeed_engine = None
         self.task = task
         self.augmentation = augmentation
         self._setup_lora()
@@ -226,6 +245,38 @@ class InstructionTuner:
 
         return "positional"
 
+    def enable_deepspeed(
+        self,
+        *,
+        config_path: str | Path | None = None,
+        micro_batch_size: int = 8,
+        gradient_accumulation_steps: int = 1,
+        max_grad_norm: float = 1.0,
+    ) -> None:
+        """Wrap the LoRA model with DeepSpeed ZeRO-3."""
+        from .deepspeed_utils import initialize_deepspeed
+
+        engine, optimizer = initialize_deepspeed(
+            self.peft_model,
+            self.optimizer,
+            config_path=config_path,
+            micro_batch_size=micro_batch_size,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            lr=self.lr,
+            max_grad_norm=max_grad_norm,
+        )
+        self.peft_model = engine
+        self.optimizer = optimizer
+        self.deepspeed_engine = engine
+        logger.info("DeepSpeed ZeRO-3 enabled")
+
+    def _ema_module(self) -> nn.Module:
+        """Return the underlying module for EMA updates (handles DeepSpeed/DDP)."""
+        model = self.peft_model
+        if self.deepspeed_engine is not None:
+            return getattr(model, "module", model)
+        return getattr(model, "module", model)
+
     def _setup_lora(self) -> None:
         """Set up LoRA with rsLoRA scaling on the pipeline's transformer."""
         from peft import LoraConfig, TaskType, get_peft_model
@@ -264,17 +315,34 @@ class InstructionTuner:
         use_amp: bool = True,
         num_workers: int = 0,
         callback: Callable[[int, float, float], Any] | None = None,
-    ) -> None:
-        """Train the LoRA instruction alignment."""
+        training_logger: TrainingLogger | None = None,
+        log_every: int = 10,
+        early_stopping_patience: int | None = None,
+        early_stopping_min_delta: float = 0.0,
+        train_sampler=None,
+        is_main_process: bool = True,
+    ) -> dict:
+        """Train the LoRA instruction alignment.
+
+        Returns:
+            Summary dict with ``epochs_run``, ``global_step``, ``best_val_loss``,
+            and ``stopped_early`` flag.
+        """
         self.peft_model.train()
 
         if val_dataset is None:
             logger.info("No val_dataset provided — per-step evaluation is disabled.")
+            if early_stopping_patience is not None:
+                logger.warning(
+                    "early_stopping_patience is set but no val_dataset — ignoring early stopping"
+                )
+                early_stopping_patience = None
 
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=(train_sampler is None),
+            sampler=train_sampler,
             num_workers=num_workers,
             pin_memory=False,
             collate_fn=_collate_fn,
@@ -286,47 +354,74 @@ class InstructionTuner:
         )
 
         device_type = self._detect_device_type()
-        scaler = torch.amp.GradScaler(device_type, enabled=use_amp and device_type == "cuda")
+        use_deepspeed = self.deepspeed_engine is not None
+        if use_deepspeed:
+            use_amp = False
+        scaler = torch.amp.GradScaler(
+            device_type, enabled=use_amp and device_type == "cuda" and not use_deepspeed
+        )
         ckpt_manager = CheckpointManager(output_dir) if output_dir else None
+        early_stopper = (
+            EarlyStopping(patience=early_stopping_patience, min_delta=early_stopping_min_delta)
+            if early_stopping_patience is not None
+            else None
+        )
 
         global_step = 0
+        best_val_loss: float | None = None
+        stopped_early = False
+
         for epoch in range(epochs):
+            if train_sampler is not None and hasattr(train_sampler, "set_epoch"):
+                train_sampler.set_epoch(epoch)
             epoch_loss = 0.0
             num_steps = 0
 
             for step, batch in enumerate(train_loader):
-                with torch.autocast(device_type, enabled=use_amp, dtype=torch.bfloat16):
+                if use_deepspeed:
                     loss = self._training_step(batch)
-
-                scaled_loss = scaler.scale(loss / gradient_accumulation_steps)
-                scaled_loss.backward()
+                    self.deepspeed_engine.backward(loss / gradient_accumulation_steps)
+                else:
+                    with torch.autocast(device_type, enabled=use_amp, dtype=torch.bfloat16):
+                        loss = self._training_step(batch)
+                    scaled_loss = scaler.scale(loss / gradient_accumulation_steps)
+                    scaled_loss.backward()
 
                 epoch_loss += loss.item()
                 num_steps += 1
 
                 if (step + 1) % gradient_accumulation_steps == 0:
-                    scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.peft_model.parameters(), max_grad_norm
-                    )
-                    scaler.step(self.optimizer)
-                    scaler.update()
+                    if use_deepspeed:
+                        self.deepspeed_engine.step()
+                    else:
+                        scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(
+                            self.peft_model.parameters(), max_grad_norm
+                        )
+                        scaler.step(self.optimizer)
+                        scaler.update()
                     scheduler.step()
-                    self.optimizer.zero_grad()
+                    self.optimizer.zero_grad(set_to_none=True)
                     global_step += 1
 
                     if self.ema is not None:
-                        self.ema.update(self.peft_model)
+                        self.ema.update(self._ema_module())
 
-                if callback and global_step > 0 and global_step % 10 == 0:
-                    callback(
-                        step=global_step,
-                        loss=epoch_loss / max(num_steps, 1),
-                        lr=scheduler.get_last_lr()[0],
-                    )
+                    running_loss = epoch_loss / max(num_steps, 1)
+                    current_lr = scheduler.get_last_lr()[0]
 
-                if ckpt_manager and global_step > 0 and global_step % save_every == 0:
-                    ckpt_manager.save(
+                    if training_logger and global_step % log_every == 0:
+                        training_logger.log_metrics(global_step, {
+                            "train/loss": running_loss,
+                            "train/lr": current_lr,
+                            "train/epoch": float(epoch + 1),
+                        })
+
+                    if callback and global_step % log_every == 0:
+                        callback(global_step, running_loss, current_lr)
+
+                if ckpt_manager and is_main_process and global_step > 0 and global_step % save_every == 0:
+                    ckpt_path = ckpt_manager.save(
                         peft_model=self.peft_model,
                         optimizer=self.optimizer,
                         step=global_step,
@@ -336,9 +431,53 @@ class InstructionTuner:
                         ema=self.ema,
                         scheduler=scheduler,
                     )
+                    if training_logger:
+                        training_logger.log_checkpoint(
+                            ckpt_path,
+                            alias=f"step-{global_step}",
+                            metadata={
+                                "step": global_step,
+                                "epoch": epoch,
+                                "train_loss": epoch_loss / max(num_steps, 1),
+                            },
+                            step=global_step,
+                        )
 
                 if val_dataset and global_step > 0 and global_step % eval_every == 0:
-                    self._evaluate(val_dataset)
+                    val_loss = self._evaluate(val_dataset)
+                    if training_logger:
+                        training_logger.log_metrics(global_step, {"val/loss": val_loss})
+
+                    if early_stopper is not None:
+                        is_best = early_stopper.step(val_loss)
+                        if is_best:
+                            best_val_loss = val_loss
+                            if ckpt_manager is not None and is_main_process:
+                                best_path = ckpt_manager.save_best(
+                                    peft_model=self.peft_model,
+                                    optimizer=self.optimizer,
+                                    step=global_step,
+                                    epoch=epoch,
+                                    train_loss=epoch_loss / max(num_steps, 1),
+                                    val_loss=val_loss,
+                                    lr=scheduler.get_last_lr()[0],
+                                    ema=self.ema,
+                                    scheduler=scheduler,
+                                )
+                                if training_logger:
+                                    training_logger.log_checkpoint(
+                                        best_path,
+                                        alias="best",
+                                        metadata={
+                                            "step": global_step,
+                                            "val_loss": val_loss,
+                                            "best": True,
+                                        },
+                                        step=global_step,
+                                    )
+                        if early_stopper.should_stop:
+                            stopped_early = True
+                            break
 
             avg_loss = epoch_loss / max(num_steps, 1)
             logger.info(
@@ -346,17 +485,44 @@ class InstructionTuner:
                 f"LR: {scheduler.get_last_lr()[0]:.2e}, Steps: {global_step}"
             )
 
-        if ckpt_manager:
-            ckpt_manager.save(
+            if training_logger:
+                training_logger.log_metrics(global_step, {
+                    "epoch/train_loss": avg_loss,
+                    "epoch/number": float(epoch + 1),
+                })
+
+            if stopped_early:
+                logger.info("Training stopped early at epoch %d", epoch + 1)
+                break
+
+        if ckpt_manager and is_main_process:
+            final_path = ckpt_manager.save(
                 peft_model=self.peft_model,
                 optimizer=self.optimizer,
                 step=global_step,
-                epoch=epochs,
+                epoch=epoch + 1 if stopped_early else epochs,
                 loss=epoch_loss / max(num_steps, 1),
                 lr=scheduler.get_last_lr()[0],
                 ema=self.ema,
                 scheduler=scheduler,
             )
+            if training_logger:
+                training_logger.log_checkpoint(
+                    final_path,
+                    alias="final",
+                    metadata={"step": global_step, "stopped_early": stopped_early},
+                    step=global_step,
+                )
+
+        if training_logger:
+            training_logger.finish()
+
+        return {
+            "epochs_run": epoch + 1,
+            "global_step": global_step,
+            "best_val_loss": best_val_loss if best_val_loss is not None else early_stopper.best_loss if early_stopper else None,
+            "stopped_early": stopped_early,
+        }
 
     def _encode_text(self, prompts: list[str], device: torch.device) -> dict[str, torch.Tensor]:
         """Encode text prompts to encoder_hidden_states using FLUX's text encoders.
@@ -569,8 +735,8 @@ class InstructionTuner:
         loss = nn.functional.mse_loss(predicted_velocity, velocity_target)
         return loss
 
-    def _evaluate(self, val_dataset: _Dataset) -> None:
-        """Evaluate on validation set."""
+    def _evaluate(self, val_dataset: _Dataset) -> float:
+        """Evaluate on validation set and return average loss."""
         self.peft_model.eval()
         val_loader = DataLoader(
             val_dataset,
@@ -589,6 +755,7 @@ class InstructionTuner:
         avg_loss = total_loss / max(num_steps, 1)
         logger.info(f"Validation loss: {avg_loss:.6f}")
         self.peft_model.train()
+        return avg_loss
 
     def _create_scheduler(
         self,
@@ -641,4 +808,4 @@ def _collate_fn(batch: list[dict]) -> dict:
     return result
 
 
-__all__ = ["InstructionTuner", "VisionTaskDataset"]
+__all__ = ["InstructionTuner", "VisionTaskDataset", "EarlyStopping", "TrainingLogger"]

@@ -13,12 +13,40 @@ FluxPipeline for unconditional/text-only generation.
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from pathlib import Path
 
 import torch
 from PIL import Image
 
+from .checkpoint import resolve_lora_path
+from .optimization import InferenceOptions, apply_pipeline_optimizations
+
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────
+# Bounded LRU cache for prompt embeddings
+# ──────────────────────────────────────────────────────────────
+
+class _PromptEmbedCache(OrderedDict):
+    """Bounded LRU cache for prompt encoder outputs.
+
+    Evicts least-recently-used entries when capacity is exceeded,
+    preventing unbounded VRAM growth during long-running sessions.
+    """
+
+    def __init__(self, maxsize: int = 64) -> None:
+        super().__init__()
+        self.maxsize = maxsize
+
+    def __setitem__(self, key, value) -> None:
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        while len(self) > self.maxsize:
+            evicted_key, _ = self.popitem(last=False)
+            logger.debug("Prompt cache evicted '%.60s…' (LRU)", evicted_key)
 
 
 def _tensor_to_pil(t: torch.Tensor) -> Image.Image:
@@ -67,12 +95,20 @@ class BaseGenerator:
         device: str = "auto",
         dtype: torch.dtype = torch.bfloat16,
         enable_sequential_cpu_offload: bool = False,
+        lora_revision: str | None = None,
+        inference_options: InferenceOptions | None = None,
     ) -> None:
         self.model_name = model_name
         self.lora_path = lora_path
+        self.lora_revision = lora_revision
         self.device = self._resolve_device(device)
         self.dtype = dtype
-        self.enable_sequential_cpu_offload = enable_sequential_cpu_offload
+        self.inference_options = inference_options or InferenceOptions(
+            enable_sequential_cpu_offload=enable_sequential_cpu_offload,
+        )
+        self.enable_sequential_cpu_offload = (
+            self.inference_options.enable_sequential_cpu_offload
+        )
 
         # Both pipelines are loaded lazily to save memory when only one is needed.
         self._t2i_pipe = None   # FluxPipeline (text → image)
@@ -80,8 +116,10 @@ class BaseGenerator:
 
         # KV-cache for text encoder outputs: avoids redundant CLIP/T5
         # forward passes when the same prompt is used for repeated generation.
-        self._prompt_cache: dict[str, dict[str, torch.Tensor | None]] = {}
+        # Bounded LRU to prevent unbounded VRAM growth.
+        self._prompt_cache: _PromptEmbedCache = _PromptEmbedCache(maxsize=64)
 
+        self._resolved_lora_path: str | None = None
         self._load_model()
 
     # ------------------------------------------------------------------
@@ -114,13 +152,17 @@ class BaseGenerator:
         )
 
         if self.lora_path is not None:
-            logger.info(f"Loading LoRA weights from {self.lora_path!r} …")
-            pipe.load_lora_weights(self.lora_path)
+            self._resolved_lora_path = resolve_lora_path(
+                self.lora_path,
+                revision=self.lora_revision,
+            )
+            logger.info(f"Loading LoRA weights from {self._resolved_lora_path!r} …")
+            pipe.load_lora_weights(self._resolved_lora_path)
 
-        if self.enable_sequential_cpu_offload:
-            pipe.enable_sequential_cpu_offload()
-            logger.info("Sequential CPU offload enabled (reduces VRAM at cost of speed)")
-        else:
+        applied = apply_pipeline_optimizations(pipe, self.inference_options)
+        if applied:
+            logger.info("Applied inference optimizations: %s", ", ".join(applied))
+        if not self.inference_options.enable_sequential_cpu_offload:
             pipe = pipe.to(self.device)
 
         self._t2i_pipe = pipe
@@ -212,6 +254,8 @@ class BaseGenerator:
         prompt_key = str(prompt) if isinstance(prompt, str) else str(tuple(prompt))
         cached_prompt_embeds = self._prompt_cache.get(prompt_key)
         if cached_prompt_embeds is not None:
+            # Move to end (most recently used) for LRU eviction order
+            self._prompt_cache.move_to_end(prompt_key)
             kwargs["prompt_embeds"] = cached_prompt_embeds["prompt_embeds"]
             kwargs["pooled_prompt_embeds"] = cached_prompt_embeds["pooled_prompt_embeds"]
             # When providing pre-computed embeddings, pass empty prompt to

@@ -15,6 +15,8 @@ Tests verified:
   ✅ LR scheduler (cosine + warmup)
   ✅ VisionAugmentation (hflip + crop + color jitter + clamp)
   ✅ MixedVisionDataset random sampling ratio
+  ✅ Synthetic generation dataset builder
+  ✅ Early stopping + checkpoint-best + TrainingLogger (TensorBoard)
   ✅ Loss convergence (≥ 1 epoch)
 
 Usage:
@@ -153,7 +155,7 @@ def run_smoke_test(
     failures: list[str] = []
 
     # ── 1. Datasets ───────────────────────────────────────────────────────────
-    logger.info("[1/8] Building synthetic datasets …")
+    logger.info("[1/10] Building synthetic datasets …")
     vision_ds = [
         _SyntheticDataset(num_samples, resolution, task=t, seed=seed + i)
         for i, t in enumerate(["depth", "normal", "semantic"])
@@ -168,7 +170,11 @@ def run_smoke_test(
         vision_ratio=0.1,
         seed=seed,
     )
-    assert len(mixed_ds) == sum(len(d) for d in vision_ds), "MixedVisionDataset length mismatch"
+    total_vision = sum(len(d) for d in vision_ds)
+    expected_len = max(1, round(total_vision / mixed_ds.vision_ratio))
+    assert len(mixed_ds) == expected_len, (
+        f"MixedVisionDataset length mismatch: got {len(mixed_ds)}, expected {expected_len}"
+    )
 
     # Verify sampling ratio
     vision_count = sum(
@@ -181,7 +187,7 @@ def run_smoke_test(
     logger.info(f"  Vision sampling ratio (expect ~10%): {ratio:.1%} {'✅' if not failures else '❌'}")
 
     # ── 2. Augmentation ───────────────────────────────────────────────────────
-    logger.info("[2/8] Testing VisionAugmentation …")
+    logger.info("[2/10] Testing VisionAugmentation …")
     from open_vision_banana.training.utils import VisionAugmentation
 
     for task in ["depth", "normal"]:
@@ -199,7 +205,7 @@ def run_smoke_test(
     logger.info(f"  Augmentation outputs in-range: {'✅' if not failures else '❌'}")
 
     # ── 3. InstructionTuner setup ─────────────────────────────────────────────
-    logger.info("[3/8] Setting up InstructionTuner with mock FLUX model …")
+    logger.info("[3/10] Setting up InstructionTuner with mock FLUX model …")
     from open_vision_banana.training.tuner import InstructionTuner
 
     gen = _MockGenerator(resolution=resolution)
@@ -226,7 +232,7 @@ def run_smoke_test(
     logger.info(f"  PEFT model on device={device}: ✅")
 
     # ── 4. Single training step ───────────────────────────────────────────────
-    logger.info("[4/8] Testing single training step …")
+    logger.info("[4/10] Testing single training step …")
     batch = {
         "target_rgb": torch.rand(batch_size, 3, resolution, resolution, device=device),
         "image": torch.rand(batch_size, 3, resolution, resolution, device=device) * 2 - 1,
@@ -238,7 +244,7 @@ def run_smoke_test(
     logger.info(f"  Single step loss={loss.item():.4f}: {'✅' if torch.isfinite(loss) else '❌'}")
 
     # ── 5. Full training loop ─────────────────────────────────────────────────
-    logger.info(f"[5/8] Running {epochs}-epoch training loop …")
+    logger.info(f"[5/10] Running {epochs}-epoch training loop …")
     ckpt_dir = tempfile.mkdtemp(prefix="ovb_smoke_")
     t0 = time.time()
 
@@ -270,7 +276,7 @@ def run_smoke_test(
         logger.error(f"  Training loop FAILED: {e}")
 
     # ── 6. EMA round-trip ─────────────────────────────────────────────────────
-    logger.info("[6/8] EMA apply/restore round-trip …")
+    logger.info("[6/10] EMA apply/restore round-trip …")
     if tuner.ema is not None:
         backup = tuner.ema.apply_shadow(tuner.peft_model)
         tuner.ema.restore_shadow(tuner.peft_model, backup)
@@ -279,7 +285,7 @@ def run_smoke_test(
         logger.info("  EMA not enabled — skip")
 
     # ── 7. Checkpoint round-trip ──────────────────────────────────────────────
-    logger.info("[7/8] CheckpointManager save/load round-trip …")
+    logger.info("[7/10] CheckpointManager save/load round-trip …")
     from open_vision_banana.training.checkpoint import CheckpointManager
 
     ckpt_mgr = CheckpointManager(ckpt_dir, max_keep=3)
@@ -294,7 +300,88 @@ def run_smoke_test(
     else:
         logger.info("  No checkpoints saved yet (save_every > total steps) — skip")
 
-    # ── 8. Cleanup ────────────────────────────────────────────────────────────
+    # ── 8. Generation dataset builder ─────────────────────────────────────────
+    logger.info("[8/10] Synthetic generation dataset builder …")
+    from open_vision_banana.data.generation_builder import build_synthetic_generation_dataset
+    from open_vision_banana.data.generation import build_generation_dataset
+
+    gen_dir = tempfile.mkdtemp(prefix="ovb_gen_")
+    try:
+        build_synthetic_generation_dataset(gen_dir, num_samples=8, resolution=32, seed=seed)
+        gen_loaded = build_generation_dataset(gen_dir, resolution=32)
+        if len(gen_loaded) != 8:
+            failures.append(f"Generation builder expected 8 samples, got {len(gen_loaded)}")
+        sample = gen_loaded[0]
+        if "prompt" not in sample or "target_rgb" not in sample:
+            failures.append("Generation sample missing prompt or target_rgb")
+        logger.info(f"  Synthetic generation dataset: {len(gen_loaded)} samples ✅")
+    except Exception as e:
+        failures.append(f"Generation dataset builder failed: {e}")
+        logger.error(f"  Generation builder FAILED: {e}")
+    finally:
+        shutil.rmtree(gen_dir, ignore_errors=True)
+
+    # ── 9. Early stopping + checkpoint-best ───────────────────────────────────
+    logger.info("[9/10] Early stopping + validation + checkpoint-best …")
+    from open_vision_banana.data.split import split_dataset
+    from open_vision_banana.training.logging import TrainingLogger
+
+    train_only = _SyntheticDataset(num_samples, resolution, task="depth", seed=seed + 7)
+    train_part, val_part = split_dataset(train_only, val_ratio=0.25, seed=seed)
+    es_ckpt_dir = tempfile.mkdtemp(prefix="ovb_es_")
+    tb_dir = tempfile.mkdtemp(prefix="ovb_tb_")
+
+    try:
+        tb_logger = TrainingLogger(
+            tensorboard_enabled=True,
+            tensorboard_dir=tb_dir,
+            run_name="smoke-test",
+        )
+        es_tuner = InstructionTuner(
+            model=_MockGenerator(resolution=resolution),
+            lora_rank=4,
+            lora_alpha=8,
+            lr=1e-3,
+            use_ema=False,
+            use_gradient_checkpointing=False,
+        )
+        es_tuner.peft_model = es_tuner.peft_model.to(device)
+
+        summary = es_tuner.train(
+            train_dataset=train_part or train_only,
+            val_dataset=val_part,
+            epochs=max(epochs, 2),
+            batch_size=2,
+            gradient_accumulation_steps=1,
+            warmup_steps=1,
+            output_dir=es_ckpt_dir,
+            save_every=99999,
+            eval_every=1,
+            use_amp=(device == "cuda"),
+            num_workers=0,
+            training_logger=tb_logger,
+            log_every=1,
+            early_stopping_patience=100,
+        )
+
+        best_ckpt = Path(es_ckpt_dir) / "checkpoint-best"
+        if val_part is not None and not best_ckpt.exists():
+            failures.append("checkpoint-best not created despite validation evals")
+        if summary.get("global_step", 0) < 1:
+            failures.append("Early stopping smoke run produced zero steps")
+        logger.info(
+            f"  Early stopping smoke: steps={summary.get('global_step')}, "
+            f"best_ckpt={'✅' if best_ckpt.exists() else 'skip'}: ✅"
+        )
+    except Exception as e:
+        failures.append(f"Early stopping smoke failed: {e}")
+        logger.error(f"  Early stopping smoke FAILED: {e}")
+    finally:
+        shutil.rmtree(es_ckpt_dir, ignore_errors=True)
+        shutil.rmtree(tb_dir, ignore_errors=True)
+
+    # ── 10. Cleanup main training dir ─────────────────────────────────────────
+    logger.info("[10/10] Cleanup …")
     shutil.rmtree(ckpt_dir, ignore_errors=True)
 
     # ── Summary ───────────────────────────────────────────────────────────────

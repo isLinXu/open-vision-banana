@@ -18,7 +18,15 @@ from .datasets import (
     ScanNetNormalDataset,
     build_dataset,
 )
+from .generation import GenerationDataset, build_generation_dataset
+from .generation_builder import (
+    build_flux_generation_dataset,
+    build_synthetic_generation_dataset,
+    load_prompts_file,
+)
 from .mixed import MixedVisionDataset
+from .split import split_dataset, split_vision_datasets
+from .validation import ValidationReport, validate_vision_dataset
 
 __all__ = [
     "BaseVisionDataset",
@@ -28,5 +36,14 @@ __all__ = [
     "SACoInstanceDataset",
     "RefCOCOgDataset",
     "MixedVisionDataset",
+    "GenerationDataset",
     "build_dataset",
+    "build_generation_dataset",
+    "build_synthetic_generation_dataset",
+    "build_flux_generation_dataset",
+    "load_prompts_file",
+    "split_dataset",
+    "split_vision_datasets",
+    "ValidationReport",
+    "validate_vision_dataset",
 ]

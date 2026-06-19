@@ -53,7 +53,19 @@ def parse_args():
     parser.add_argument("--config", type=str, default="configs/training_config.yaml",
                         help="Path to config file")
     parser.add_argument("--lora-path", type=str, default=None,
-                        help="Path to LoRA weights for inference")
+                        help="LoRA weights: local path, hf:repo/id, or registry:alias")
+    parser.add_argument("--lora-revision", type=str, default=None,
+                        help="Hugging Face revision for remote LoRA weights")
+    parser.add_argument("--cpu-offload", action="store_true",
+                        help="Enable sequential CPU offload (reduces VRAM)")
+    parser.add_argument("--vae-slicing", action="store_true",
+                        help="Enable VAE slicing to reduce memory")
+    parser.add_argument("--vae-tiling", action="store_true",
+                        help="Enable VAE tiling for high-resolution inference")
+    parser.add_argument("--attention-slicing", action="store_true",
+                        help="Enable attention slicing to reduce memory")
+    parser.add_argument("--torch-compile", action="store_true",
+                        help="Compile transformer with torch.compile (CUDA)")
     parser.add_argument("--output-dir", type=str, default="output",
                         help="Output directory")
     parser.add_argument("--device", type=str, default=None,
@@ -184,11 +196,23 @@ def main():
 
     # Load model
     from open_vision_banana.inference.generator import BaseGenerator
+    from open_vision_banana.inference.optimization import InferenceOptions
+
+    inference_options = InferenceOptions(
+        enable_sequential_cpu_offload=args.cpu_offload,
+        enable_vae_slicing=args.vae_slicing,
+        enable_vae_tiling=args.vae_tiling,
+        enable_attention_slicing=args.attention_slicing,
+        enable_torch_compile=args.torch_compile,
+    )
+
     generator = BaseGenerator(
         model_name=cfg.model.name,
         lora_path=args.lora_path,
+        lora_revision=args.lora_revision,
         device=device,
         dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+        inference_options=inference_options,
     )
 
     # Load class-color map if provided

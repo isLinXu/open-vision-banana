@@ -78,12 +78,21 @@ class ModelConfig:
         self,
         name: str = "black-forest-labs/FLUX.1-schnell",
         dtype: str = "bfloat16",
+        lora_path: str | None = None,
+        lora_revision: str | None = None,
     ):
         self.name = name
         self.dtype = dtype
+        self.lora_path = lora_path
+        self.lora_revision = lora_revision
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "dtype": self.dtype}
+        d = {"name": self.name, "dtype": self.dtype}
+        if self.lora_path is not None:
+            d["lora_path"] = self.lora_path
+        if self.lora_revision is not None:
+            d["lora_revision"] = self.lora_revision
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> ModelConfig:
@@ -172,6 +181,8 @@ class DataConfig:
         batch_size: int = 8,
         num_workers: int = 4,
         augmentation: bool = True,
+        generation_path: str | None = None,
+        val_split: float = 0.0,
     ):
         self.vision_ratio = vision_ratio
         self.generation_ratio = generation_ratio
@@ -179,16 +190,22 @@ class DataConfig:
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.augmentation = augmentation
+        self.generation_path = generation_path
+        self.val_split = val_split
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "vision_ratio": self.vision_ratio,
             "generation_ratio": self.generation_ratio,
             "resolution": self.resolution,
             "batch_size": self.batch_size,
             "num_workers": self.num_workers,
             "augmentation": self.augmentation,
+            "val_split": self.val_split,
         }
+        if self.generation_path is not None:
+            d["generation_path"] = self.generation_path
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> DataConfig:
@@ -213,6 +230,9 @@ class TrainingConfig:
         eval_every: int = 500,
         max_keep: int = 5,
         seed: int = 42,
+        early_stopping_patience: int | None = None,
+        early_stopping_min_delta: float = 0.0,
+        log_every: int = 10,
     ):
         self.epochs = epochs
         self.gradient_accumulation_steps = gradient_accumulation_steps
@@ -224,9 +244,12 @@ class TrainingConfig:
         self.eval_every = eval_every
         self.max_keep = max_keep
         self.seed = seed
+        self.early_stopping_patience = early_stopping_patience
+        self.early_stopping_min_delta = early_stopping_min_delta
+        self.log_every = log_every
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "epochs": self.epochs,
             "gradient_accumulation_steps": self.gradient_accumulation_steps,
             "use_amp": self.use_amp,
@@ -237,10 +260,62 @@ class TrainingConfig:
             "eval_every": self.eval_every,
             "max_keep": self.max_keep,
             "seed": self.seed,
+            "early_stopping_min_delta": self.early_stopping_min_delta,
+            "log_every": self.log_every,
         }
+        if self.early_stopping_patience is not None:
+            d["early_stopping_patience"] = self.early_stopping_patience
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> TrainingConfig:
+        import inspect
+        valid = inspect.signature(cls.__init__).parameters
+        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
+        return cls(**filtered)
+
+
+class LoggingConfig:
+    """Training observability configuration (W&B + TensorBoard)."""
+
+    def __init__(
+        self,
+        wandb_enabled: bool = False,
+        wandb_project: str = "open-vision-banana",
+        wandb_run_name: str | None = None,
+        wandb_entity: str | None = None,
+        wandb_log_checkpoints: bool = False,
+        tensorboard_enabled: bool = False,
+        tensorboard_dir: str = "output/runs",
+        run_name: str | None = None,
+    ):
+        self.wandb_enabled = wandb_enabled
+        self.wandb_project = wandb_project
+        self.wandb_run_name = wandb_run_name
+        self.wandb_entity = wandb_entity
+        self.wandb_log_checkpoints = wandb_log_checkpoints
+        self.tensorboard_enabled = tensorboard_enabled
+        self.tensorboard_dir = tensorboard_dir
+        self.run_name = run_name
+
+    def to_dict(self) -> dict:
+        d = {
+            "wandb_enabled": self.wandb_enabled,
+            "wandb_project": self.wandb_project,
+            "wandb_log_checkpoints": self.wandb_log_checkpoints,
+            "tensorboard_enabled": self.tensorboard_enabled,
+            "tensorboard_dir": self.tensorboard_dir,
+        }
+        if self.wandb_run_name is not None:
+            d["wandb_run_name"] = self.wandb_run_name
+        if self.wandb_entity is not None:
+            d["wandb_entity"] = self.wandb_entity
+        if self.run_name is not None:
+            d["run_name"] = self.run_name
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> LoggingConfig:
         import inspect
         valid = inspect.signature(cls.__init__).parameters
         filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
@@ -261,6 +336,7 @@ class VisionBananaConfig:
         optimizer: OptimizerConfig | None = None,
         data: DataConfig | None = None,
         training: TrainingConfig | None = None,
+        logging: LoggingConfig | None = None,
         depth_mapping: DepthMappingConfig | None = None,
         normal_mapping: NormalMappingConfig | None = None,
         segmentation: SegmentationConfig | None = None,
@@ -271,6 +347,7 @@ class VisionBananaConfig:
         self.optimizer = optimizer or OptimizerConfig()
         self.data = data or DataConfig()
         self.training = training or TrainingConfig()
+        self.logging = logging or LoggingConfig()
         self.depth_mapping = depth_mapping or DepthMappingConfig()
         self.normal_mapping = normal_mapping or NormalMappingConfig()
         self.segmentation = segmentation or SegmentationConfig()
@@ -283,6 +360,7 @@ class VisionBananaConfig:
             "optimizer": self.optimizer.to_dict(),
             "data": self.data.to_dict(),
             "training": self.training.to_dict(),
+            "logging": self.logging.to_dict(),
             "depth_mapping": self.depth_mapping.to_dict(),
             "normal_mapping": self.normal_mapping.to_dict(),
             "segmentation": self.segmentation.to_dict(),
@@ -297,6 +375,7 @@ class VisionBananaConfig:
             optimizer=OptimizerConfig.from_dict(d.get("optimizer", {})),
             data=DataConfig.from_dict(d.get("data", {})),
             training=TrainingConfig.from_dict(d.get("training", {})),
+            logging=LoggingConfig.from_dict(d.get("logging", {})),
             depth_mapping=DepthMappingConfig.from_dict(d.get("depth_mapping", {})),
             normal_mapping=NormalMappingConfig.from_dict(d.get("normal_mapping", {})),
             segmentation=SegmentationConfig.from_dict(d.get("segmentation", {})),
@@ -324,6 +403,7 @@ __all__ = [
     "OptimizerConfig",
     "DataConfig",
     "TrainingConfig",
+    "LoggingConfig",
     "DepthMappingConfig",
     "NormalMappingConfig",
     "SegmentationConfig",

@@ -98,7 +98,7 @@ def export_mapper_onnx(
     mapper_type: str,
     output_path: str,
     input_shape: tuple = (1, 1, 256, 256),
-    opset_version: int = 17,
+    opset_version: int = 18,
 ) -> None:
     """Export an RGB mapper to ONNX format.
 
@@ -186,7 +186,7 @@ def export_mapper_onnx(
 def export_full_pipeline_onnx(
     model,
     output_dir: str,
-    opset_version: int = 17,
+    opset_version: int = 18,
 ) -> None:
     """Export the full trained pipeline (transformer + VAE) to ONNX.
 

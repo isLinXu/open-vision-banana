@@ -55,6 +55,10 @@ def parse_args():
         "--output-json", type=str, default=None,
         help="If set, write metric dict to this JSON file",
     )
+    parser.add_argument(
+        "--compare-sota", action="store_true",
+        help="Print comparison table against published SOTA baselines",
+    )
     return parser.parse_args()
 
 
@@ -141,6 +145,11 @@ def main():
         with open(args.output_json, "w") as f:
             json.dump(out, f, indent=2)
         logger.info(f"Metrics written to {args.output_json}")
+
+    if args.compare_sota:
+        from open_vision_banana.evaluation.baselines import format_sota_comparison
+        print()
+        print(format_sota_comparison(args.task, metrics))
 
 
 if __name__ == "__main__":

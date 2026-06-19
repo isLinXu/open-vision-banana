@@ -12,16 +12,27 @@ Provides:
 - DDPTrainer: Multi-GPU DDP trainer
 - AccelerateTrainer: HuggingFace Accelerate trainer
 - create_trainer: Factory function for trainer creation
+- LRFinder: Learning rate range test utility (Smith, 2015)
 """
 
 from .checkpoint import CheckpointManager
+from .early_stopping import EarlyStopping
+from .logging import TrainingLogger, create_training_logger_from_config
+from .lr_finder import LRFinder
 from .trainer_interface import (
     AccelerateTrainer,
     DDPTrainer,
+    FSDPTrainer,
     NativeTrainer,
     TrainerInterface,
     create_trainer,
 )
+from .deepspeed_utils import (
+    DEFAULT_DEEPSPEED_CONFIG,
+    load_deepspeed_config,
+    merge_training_into_config,
+)
+from .fsdp_utils import FSDPWrapper
 from .tuner import InstructionTuner, VisionTaskDataset
 from .utils import DDPWrapper, EMAModel, VisionAugmentation
 
@@ -30,11 +41,21 @@ __all__ = [
     "VisionTaskDataset",
     "EMAModel",
     "DDPWrapper",
+    "FSDPWrapper",
+    "DEFAULT_DEEPSPEED_CONFIG",
+    "load_deepspeed_config",
+    "merge_training_into_config",
     "VisionAugmentation",
     "CheckpointManager",
+    "EarlyStopping",
+    "TrainingLogger",
+    "create_training_logger_from_config",
     "TrainerInterface",
     "NativeTrainer",
     "DDPTrainer",
+    "FSDPTrainer",
+    "DeepSpeedTrainer",
     "AccelerateTrainer",
     "create_trainer",
+    "LRFinder",
 ]

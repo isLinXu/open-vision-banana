@@ -77,3 +77,33 @@ jobs:
         run: pip install -e ".[export]"
       - name: Verify ONNX export
         run: python scripts/export_onnx.py --output-dir output/onnx
+
+  smoke-train:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package with training extras
+        run: pip install -e ".[training,dev]"
+      - name: Build synthetic generation dataset
+        run: |
+          python scripts/build_generation_dataset.py \
+            --output-dir /tmp/gen_data --num-samples 8 --resolution 32 --validate
+      - name: Run training smoke test
+        run: python scripts/train_smoke.py --device cpu --epochs 1 --batch-size 2 --resolution 32 --num-samples 16
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t open-vision-banana:ci -f docker/Dockerfile .
+      - name: Verify container imports
+        run: |
+          docker run --rm open-vision-banana:ci \
+            python -c "from open_vision_banana.core import DepthRGBMapper; print('ok')"

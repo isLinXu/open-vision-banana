@@ -140,6 +140,7 @@ class TestConfigSystem:
         assert "optimizer" in d
         assert "data" in d
         assert "training" in d
+        assert "logging" in d
         assert "depth_mapping" in d
         assert "normal_mapping" in d
         assert "segmentation" in d

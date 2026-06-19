@@ -40,10 +40,13 @@ class EMAModel:
         self.update_after_step = update_after_step
         self.step = 0
 
+        # Capture (name, param) pairs once to avoid repeated iteration
+        # over model.named_parameters() during every update() call.
+        self._param_refs: list[tuple[str, torch.Tensor]] = [
+            (name, p) for name, p in model.named_parameters() if p.requires_grad
+        ]
         self.shadow_params = {
-            name: p.data.clone()
-            for name, p in model.named_parameters()
-            if p.requires_grad
+            name: p.data.clone() for name, p in self._param_refs
         }
 
     @torch.no_grad()
@@ -58,9 +61,7 @@ class EMAModel:
             (1.0 + self.step) / (10.0 + self.step),
         )
 
-        for name, param in model.named_parameters():
-            if not param.requires_grad:
-                continue
+        for name, param in self._param_refs:
             if name not in self.shadow_params:
                 continue
             self.shadow_params[name].mul_(effective_decay).add_(

@@ -41,25 +41,16 @@ class SegmentationDecoder:
         self,
         rgb_image: torch.Tensor,
         class_color_map: dict[str, tuple[int, int, int]],
-        adaptive_color_tolerance: bool = True,
     ) -> torch.Tensor:
         """Decode semantic segmentation from RGB visualization.
 
         Assigns each pixel to the class whose target color is closest
-        in RGB space.
-
-        When adaptive_color_tolerance is True, the color tolerance τ
-        is dynamically adjusted based on local image statistics:
-        - High-contrast regions: smaller τ for sharper boundaries
-        - Low-contrast regions: larger τ for smoother transitions
-        - Near depth discontinuities: smaller τ for precision
-        - Far from edges: larger τ for efficiency
+        in RGB space using vectorized pairwise distance computation.
 
         Args:
             rgb_image: Generated RGB image [B, 3, H, W] in [0, 1].
             class_color_map: Mapping from class name to (R, G, B) tuple
                 with values in [0, 255].
-            adaptive_color_tolerance: Whether to adaptively adjust τ.
 
         Returns:
             Segmentation mask [B, 1, H, W] with class indices.
@@ -76,32 +67,14 @@ class SegmentationDecoder:
         pixels = rgb_image.permute(0, 2, 3, 1).reshape(B, -1, 3)
         colors = class_colors.unsqueeze(0).expand(B, -1, -1)
 
+        # Nearest-color assignment via vectorized cdist.
+        # When adaptive_color_tolerance is True, we still use nearest-color
+        # assignment (argmin) for correctness; the adaptive tau only affects
+        # instance segmentation, not semantic (where every pixel must be
+        # assigned to exactly one class regardless of distance).
         distances = torch.cdist(pixels, colors)
         labels = distances.argmin(dim=-1)
         mask = labels.reshape(B, 1, H, W)
-
-        # ── P2: Adaptive color tolerance ───────────────────────────
-        if adaptive_color_tolerance:
-            # Compute local contrast for adaptive τ
-            # High contrast → sharper boundaries → smaller τ
-            # Low contrast → smoother transitions → larger τ
-            gray = rgb_image.mean(dim=1, keepdim=True)
-            gradient_magnitude = torch.norm(
-                torch.gradient(gray, dim=(-2, -1))[0], dim=0
-            ).squeeze(0)
-
-            # Near depth discontinuities: high gradient → smaller τ
-            # Far from edges: low gradient → larger τ
-            # Scale τ inversely with gradient magnitude
-            tau_adaptive = self.color_tolerance / (1.0 + gradient_magnitude)
-        else:
-            tau_adaptive = self.color_tolerance
-
-        # Assign pixels to nearest class color using adaptive τ
-        # (Still uses cdist for vectorized distance computation)
-        dist_adaptive = torch.cdist(pixels, colors)
-        labels_adaptive = dist_adaptive.argmin(dim=-1)
-        mask = labels_adaptive.reshape(B, 1, H, W)
 
         return mask
 
@@ -299,17 +272,16 @@ class SegmentationDecoder:
         labels[valid] = lut[labels[valid]]
         labels = labels.reshape(H, W)
 
-        # Relabel to consecutive integers
+        # Relabel to consecutive integers (fully vectorized)
         unique_labels, inverse = labels.reshape(-1).unique(return_inverse=True)
         is_bg = unique_labels < 0
-        new_id = torch.zeros_like(unique_labels)
-        non_bg_idx = 1
-        for i in range(len(unique_labels)):
-            if is_bg[i]:
-                new_id[i] = 0
-            else:
-                new_id[i] = non_bg_idx
-                non_bg_idx += 1
+        # Vectorized: bg → 0, non-bg → 1, 2, 3, ...
+        # cumsum of (~is_bg) gives consecutive IDs starting from 0 for bg,
+        # then 1, 2, 3, ... for each non-bg label in order.
+        non_bg_cumsum = (~is_bg).cumsum(dim=0)
+        new_id = non_bg_cumsum.long()
+        # Ensure background labels map to 0
+        new_id = torch.where(is_bg, torch.zeros_like(new_id), new_id)
 
         result = new_id[inverse].reshape(H, W)
         return result
@@ -330,7 +302,7 @@ class SegmentationDecoder:
         3. For each eligible edge, scatter the minimum label to both
            endpoints (iterative label propagation)
         4. Path compression via lut[lut] (4 rounds)
-        5. Relabel to consecutive integers via unique + scatter
+        5. Relabel to consecutive integers via unique + cumsum
 
         Complexity: O(E α(N)) effective, fully vectorized.
         """
@@ -397,19 +369,13 @@ class SegmentationDecoder:
         labels[valid] = lut[labels[valid]]
         labels = labels.reshape(H, W)
 
-        # Step 4: Relabel to consecutive integers (vectorized)
+        # Step 4: Relabel to consecutive integers (fully vectorized)
         unique_labels, inverse = labels.reshape(-1).unique(return_inverse=True)
-        # Find which unique labels are background (< 0)
         is_bg = unique_labels < 0
-        # Build a mapping: bg → 0, non-bg → 1, 2, 3, ...
-        new_id = torch.zeros_like(unique_labels)
-        non_bg_idx = 1
-        for i in range(len(unique_labels)):
-            if is_bg[i]:
-                new_id[i] = 0
-            else:
-                new_id[i] = non_bg_idx
-                non_bg_idx += 1
+        # cumsum gives consecutive IDs: bg=0, then 1, 2, 3, ...
+        non_bg_cumsum = (~is_bg).cumsum(dim=0)
+        new_id = non_bg_cumsum.long()
+        new_id = torch.where(is_bg, torch.zeros_like(new_id), new_id)
 
         result = new_id[inverse].reshape(H, W)
         return result

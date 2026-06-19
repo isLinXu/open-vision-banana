@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-vision-banana"
-version = "0.2.0"
+version = "0.3.3"
 description = "Image Generators are Generalist Vision Learners — Open-source implementation"
 readme = "README.md"
 license = {text = "MIT"}
@@ -36,6 +36,7 @@ inference = [
     "diffusers>=0.30",
     "transformers>=4.40",
     "accelerate>=0.25",
+    "huggingface_hub>=0.20",
 ]
 training = [
     "diffusers>=0.30",
@@ -43,6 +44,10 @@ training = [
     "accelerate>=0.25",
     "peft>=0.10",
     "wandb>=0.16",
+]
+deepspeed = [
+    "open-vision-banana[training]",
+    "deepspeed>=0.14",
 ]
 export = [
     "onnx>=1.15",
@@ -58,7 +63,7 @@ dev = [
     "mypy>=1.10",
 ]
 all = [
-    "open-vision-banana[inference,training,export,evaluation,dev]",
+    "open-vision-banana[inference,training,export,evaluation,dev,deepspeed]",
 ]
 
 [project.urls]

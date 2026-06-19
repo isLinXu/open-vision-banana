@@ -28,7 +28,7 @@ def _pil_to_tensor(img: Image.Image) -> torch.Tensor:
     arr = np.array(img)
     if arr.ndim == 2:
         arr = arr[:, :, np.newaxis]
-    return torch.from_numpy(arr.transpose(2, 0, 1)).copy()
+    return torch.from_numpy(arr.transpose(2, 0, 1)).clone()
 
 
 def _fill_polygon(mask: "np.ndarray", pts: "np.ndarray") -> None:
@@ -124,10 +124,11 @@ class HypersimDepthDataset(BaseVisionDataset):
         image = self._load_image(sample["image"])
 
         depth_img = Image.open(sample["target"])
-        depth = _pil_to_tensor(depth_img).float().unsqueeze(0)
+        depth = _pil_to_tensor(depth_img).float()
         if depth.max() > 1.0:
             depth = depth / 1000.0
 
+        # depth is [1, H, W] → add batch dim for interpolate
         depth = torch.nn.functional.interpolate(
             depth.unsqueeze(0), size=(self.resolution, self.resolution),
             mode="nearest",

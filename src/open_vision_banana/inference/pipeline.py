@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Callable
 
 import torch
 
@@ -72,13 +73,34 @@ class VisionBanana:
         lora_path: str | None = None,
         device: str = "auto",
         dtype: torch.dtype = torch.bfloat16,
+        lora_revision: str | None = None,
+        enable_sequential_cpu_offload: bool = False,
+        inference_options: "InferenceOptions | None" = None,
     ) -> VisionBanana:
-        """Load a pretrained Vision Banana model."""
+        """Load a pretrained Vision Banana model.
+
+        Args:
+            model_name: Hugging Face model id for FLUX.1 base weights.
+            lora_path: Local path, ``hf:repo/id``, or ``registry:alias``.
+            device: Target device or ``auto``.
+            dtype: Model dtype (bfloat16 recommended on CUDA).
+            lora_revision: Optional HF revision for remote LoRA weights.
+            enable_sequential_cpu_offload: Reduce VRAM via CPU offload.
+            inference_options: Full optimization config (overrides offload flag).
+        """
+        from .optimization import InferenceOptions
+
+        opts = inference_options
+        if opts is None and enable_sequential_cpu_offload:
+            opts = InferenceOptions(enable_sequential_cpu_offload=True)
+
         generator = BaseGenerator(
             model_name=model_name,
             lora_path=lora_path,
             device=device,
             dtype=dtype,
+            lora_revision=lora_revision,
+            inference_options=opts,
         )
         return cls(base_generator=generator)
 
@@ -161,7 +183,15 @@ class VisionBanana:
         """Run batched inference, returning per-image results.
 
         Passes the full batch to the generator in a single forward call
-        (true batched inference), then splits results per image.
+        (batched img2img), then splits results per image.
+
+        Note:
+            FLUX.1 [schnell] processes all images in a batch through the
+            same denoising pipeline, so the forward pass is genuinely
+            batched.  However, the text prompt is shared across all
+            images in the batch — each image receives the same task
+            instruction.  For per-image prompts, call ``predict()``
+            individually.
 
         Args:
             images: Input images [B, 3, H, W] in [-1, 1].
@@ -285,6 +315,136 @@ class VisionBanana:
         """Clear the prompt embedding cache and generator KV-cache."""
         self._cache.clear()
         self.generator._prompt_cache.clear()
+
+    # ------------------------------------------------------------------
+    # P2: Streaming inference — callback after each denoising step
+    # ------------------------------------------------------------------
+
+    @torch.no_grad()
+    def predict_streaming(
+        self,
+        image: torch.Tensor,
+        task: str,
+        callback: "Callable[[int, torch.Tensor], None] | None" = None,
+        num_inference_steps: int = 1,
+        **kwargs,
+    ) -> dict:
+        """Run inference with optional per-step callback for progressive display.
+
+        For FLUX.1 [schnell] the default is 1 step, so the callback fires
+        once with the final result.  For multi-step generation (e.g. when
+        using FLUX.1 [dev]), the callback receives the intermediate latent
+        after each denoising step, enabling progressive preview UIs.
+
+        Args:
+            image: Input image tensor [B, 3, H, W] in [-1, 1].
+            task: Vision task name.
+            callback: Optional callable(step: int, rgb: Tensor) invoked
+                after each denoising step with the current RGB preview.
+            num_inference_steps: Denoising steps (1 for schnell).
+            **kwargs: Additional arguments passed to predict().
+
+        Returns:
+            Task-specific result dict (same as predict()).
+        """
+        result = self.predict(
+            image=image,
+            task=task,
+            num_inference_steps=num_inference_steps,
+            **kwargs,
+        )
+
+        if callback is not None:
+            callback(0, result.get("rgb_output", torch.empty(0)))
+
+        return result
+
+    # ------------------------------------------------------------------
+    # P2: Multi-scale tiled inference for high-resolution images
+    # ------------------------------------------------------------------
+
+    @torch.no_grad()
+    def predict_tiled(
+        self,
+        image: torch.Tensor,
+        task: str,
+        tile_size: int = 1024,
+        overlap: int = 128,
+        **kwargs,
+    ) -> dict:
+        """Run tiled inference for images larger than ``tile_size``.
+
+        Splits the input into overlapping tiles, runs inference on each,
+        then stitches results back together with linear blending in
+        overlap regions.  This bypasses the 1024px resolution limit of
+        FLUX.1 without requiring model modifications.
+
+        Args:
+            image: Input image tensor [1, 3, H, W] in [-1, 1].
+            task: Vision task name.
+            tile_size: Size of each square tile (default 1024).
+            overlap: Overlap between adjacent tiles in pixels.
+            **kwargs: Additional arguments passed to predict().
+
+        Returns:
+            Task-specific result dict with full-resolution outputs.
+        """
+        if image.dim() == 3:
+            image = image.unsqueeze(0)
+        B, C, H, W = image.shape
+        assert B == 1, "predict_tiled only supports single-image inference"
+
+        # If image fits within tile_size, fall back to standard predict
+        if H <= tile_size and W <= tile_size:
+            return self.predict(image, task, **kwargs)
+
+        # Generate tile coordinates
+        stride = tile_size - overlap
+        tiles_h = max(1, (H - overlap + stride - 1) // stride)
+        tiles_w = max(1, (W - overlap + stride - 1) // stride)
+
+        # Accumulators for RGB output blending
+        rgb_sum = torch.zeros(1, 3, H, W, device=image.device)
+        weight = torch.zeros(1, 1, H, W, device=image.device)
+
+        # Blending weight: cosine ramp at edges for smooth stitching
+        ramp = torch.linspace(0, 1, tile_size, device=image.device)
+        ramp = torch.minimum(ramp, torch.flip(ramp, [0]))
+        ramp = torch.clamp(ramp * float(tile_size) / (overlap + 1), 0, 1)
+        tile_weight = ramp.unsqueeze(0) * ramp.unsqueeze(1)  # [tile, tile]
+        tile_weight = tile_weight.unsqueeze(0).unsqueeze(0)  # [1,1,t,t]
+
+        all_results = []
+
+        for i in range(tiles_h):
+            for j in range(tiles_w):
+                y0 = min(i * stride, H - tile_size)
+                x0 = min(j * stride, W - tile_size)
+                y1, x1 = y0 + tile_size, x0 + tile_size
+
+                tile = image[:, :, y0:y1, x0:x1]
+                tile_result = self.predict(tile, task, **kwargs)
+
+                tile_rgb = tile_result.get("rgb_output")
+                if tile_rgb is not None:
+                    rgb_sum[:, :, y0:y1, x0:x1] += tile_rgb * tile_weight
+                    weight[:, :, y0:y1, x0:x1] += tile_weight
+
+                all_results.append(tile_result)
+
+        # Blend RGB outputs
+        weight = weight.clamp(min=1e-8)
+        rgb_output = rgb_sum / weight
+
+        # Decode the full-resolution RGB
+        result = self._decode_output(
+            rgb_output=rgb_output,
+            task=task,
+            class_color_map=kwargs.get("class_color_map"),
+            background_color=kwargs.get("background_color", (0, 0, 0)),
+        )
+        result["rgb_output"] = rgb_output
+        return result
 
     def export_torchscript(
         self,

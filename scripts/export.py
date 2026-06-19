@@ -33,6 +33,13 @@ def parse_args():
                         help="Output directory for ONNX files")
     parser.add_argument("--opset-version", type=int, default=17,
                         help="ONNX opset version")
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["int8"],
+        help="Apply post-export quantization to RGB mappers (int8 dynamic)",
+    )
     return parser.parse_args()
 
 
@@ -49,6 +56,18 @@ def main():
     # Export normal RGB mapper
     logger.info("Exporting normal RGB mapper to ONNX...")
     export_mapper_onnx("normal_to_rgb", str(output_dir / "normal_to_rgb.onnx"), args.opset_version)
+
+    if args.quantization == "int8":
+        import torch
+        from open_vision_banana.export.onnx_export import DepthRGBMapperONNX, NormalRGBMapperONNX
+        from open_vision_banana.inference.optimization import quantize_mapper_int8
+
+        logger.info("Exporting INT8 TorchScript mappers...")
+        depth_q = quantize_mapper_int8(DepthRGBMapperONNX())
+        normal_q = quantize_mapper_int8(NormalRGBMapperONNX())
+        torch.jit.save(torch.jit.trace(depth_q, torch.rand(1, 1, 64, 64)), str(output_dir / "depth_mapper_int8.pt"))
+        torch.jit.save(torch.jit.trace(normal_q, torch.rand(1, 3, 64, 64)), str(output_dir / "normal_mapper_int8.pt"))
+        logger.info("INT8 mapper scripts saved")
 
     logger.info(f"Models exported to {output_dir}")
 
