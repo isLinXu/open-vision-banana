@@ -135,7 +135,7 @@ def export_mapper_onnx(
                 # Use DepthRGBMapper (non-ONNX) for the inverse since it's
                 # not used in hot-path inference — only needed for evaluation.
                 from ..core.depth_mapper import DepthRGBMapper
-                dm = DepthRGBMapper(self.mapper.lam, self.mapper.c)
+                dm = DepthRGBMapper(lam=self.mapper.lam, c=self.mapper.c)
                 return dm.rgb_to_depth(rgb)
 
         model = RGBToDepthONNX()
