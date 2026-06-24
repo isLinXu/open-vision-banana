@@ -87,6 +87,7 @@ class SegmentationDecoder:
         rgb_image: torch.Tensor,
         background_color: tuple[int, int, int] = (0, 0, 0),
         adaptive_color_tolerance: bool = True,
+        grouping_mode: str = "adjacent",  # 新增
     ) -> list[list[dict]]:
         """Decode instance segmentation using multi-stage clustering.
 
@@ -105,6 +106,9 @@ class SegmentationDecoder:
             rgb_image: Generated RGB image [B, 3, H, W] in [0, 1].
             background_color: Background color (R, G, B) in [0, 255].
             adaptive_color_tolerance: Whether to adaptively adjust τ.
+            grouping_mode: "adjacent" (default) or "seed".  Seed-based
+                uses the component's seed color for comparison, which
+                produces more compact instances per paper Appendix A.
 
         Returns:
             List of lists of instance masks, one per image in batch.
@@ -124,17 +128,21 @@ class SegmentationDecoder:
             img = img_255[b].permute(1, 2, 0)  # [H, W, 3]
 
             # Stage 1: Background Initialization
-            # Use adaptive τ if available, otherwise use fixed τ
             if tau_map is not None:
                 bg_mask = (img - bg_color.to(img.device)).norm(dim=-1) < tau_map[b]
             else:
                 bg_mask = (img - bg_color.to(img.device)).norm(dim=-1) < self.color_tolerance
 
             # Stage 2: Color Similarity Grouping (vectorized Union-Find)
-            if tau_map is not None:
-                labels = self._union_find_grouping_adaptive(img, bg_mask, tau_map[b])
+            if grouping_mode == "seed":
+                labels = self._seed_based_union_find(img, bg_mask)
+            elif grouping_mode == "adjacent":
+                if tau_map is not None:
+                    labels = self._union_find_grouping_adaptive(img, bg_mask, tau_map[b])
+                else:
+                    labels = self._union_find_grouping(img, bg_mask)
             else:
-                labels = self._union_find_grouping(img, bg_mask)
+                raise ValueError(f"Unknown grouping_mode: {grouping_mode}")
 
             # Stage 3: Noise Pruning (vectorized)
             labels = self._noise_pruning(labels, min_area)
@@ -400,6 +408,143 @@ class SegmentationDecoder:
         unique_labels, inverse = labels.reshape(-1).unique(return_inverse=True)
         is_bg = unique_labels < 0
         # cumsum gives consecutive IDs: bg=0, then 1, 2, 3, ...
+        non_bg_cumsum = (~is_bg).cumsum(dim=0)
+        new_id = non_bg_cumsum.long()
+        new_id = torch.where(is_bg, torch.zeros_like(new_id), new_id)
+
+        result = new_id[inverse].reshape(H, W)
+        return result
+
+    def _seed_based_union_find(self, img: torch.Tensor, bg_mask: torch.Tensor) -> torch.Tensor:
+        """Stage 2: Seed-based Union-Find grouping.
+
+        From the paper (Appendix A):
+        Each pixel is compared against the *seed* color of its neighbor's
+        component, not the neighbor's own color.  This produces more
+        compact instances because the comparison criterion is anchored
+        to the component's original seed rather than drifting as the
+        component grows.
+
+        Algorithm:
+        1. Initialize labels[i] = i, seed_colors[i] = img[i] for all N pixels
+        2. For 5 iterations:
+           a. Scan 16 directions
+           b. For each eligible edge, compare pixel color vs neighbor component seed
+           c. If |img[pixel] - seed[neighbor_root]|² ≤ τ², merge
+           d. Update seed: seed[new_root] = seed[min_root]
+        3. Path compression + relabel to consecutive integers
+
+        Args:
+            img: [H, W, 3] image in [0, 255].
+            bg_mask: [H, W] boolean background mask.
+
+        Returns:
+            Label map [H, W] with consecutive integer labels.
+        """
+        H, W, C = img.shape
+        device = img.device
+        N = H * W
+        tau_sq = self.color_tolerance**2
+
+        # Step 1: Initialize
+        labels = torch.arange(N, dtype=torch.long, device=device)
+        # Seed colors: each pixel's own RGB value, [N, 3]
+        seed_colors = img.reshape(N, 3).clone()
+
+        # 16-connectivity shifts
+        shifts = [
+            (-1, 0), (1, 0), (0, -1), (0, 1),   # orthogonal
+            (-1, -1), (-1, 1), (1, -1), (1, 1),  # diagonal
+            (-2, -1), (-2, 1), (2, -1), (2, 1),  # knight's move
+            (-1, -2), (-1, 2), (1, -2), (1, 2),  # knight's move
+        ]
+
+        for _ in range(5):  # 5 iterations until convergence
+            changed = False
+            for dy, dx in shifts:
+                shifted_img = torch.roll(img, shifts=(-dy, -dx), dims=(0, 1))
+
+                valid = torch.ones(H, W, dtype=torch.bool, device=device)
+                if dy == -1:
+                    valid[0, :] = False
+                elif dy == -2:
+                    valid[0:2, :] = False
+                elif dy == 1:
+                    valid[-1, :] = False
+                elif dy == 2:
+                    valid[-2:, :] = False
+                if dx == -1:
+                    valid[:, 0] = False
+                elif dx == -2:
+                    valid[:, 0:2] = False
+                elif dx == 1:
+                    valid[:, -1] = False
+                elif dx == 2:
+                    valid[:, -2:] = False
+
+                valid = valid & ~bg_mask
+
+                if not valid.any():
+                    continue
+
+                src_y, src_x = torch.where(valid)
+                src_indices = src_y * W + src_x
+                dst_indices = (src_y + dy) * W + (src_x + dx)
+
+                # Get current roots for src and dst
+                src_roots = labels[src_indices]
+                dst_roots = labels[dst_indices]
+
+                # Compare src pixel color against dst component's seed color
+                src_pixels = img.reshape(N, 3)[src_indices]
+                dst_seeds = seed_colors[dst_roots]
+                color_dist_sq = ((src_pixels - dst_seeds) ** 2).sum(dim=-1)
+
+                eligible = color_dist_sq <= tau_sq
+                if not eligible.any():
+                    continue
+
+                changed = True
+
+                eligible_src = src_indices[eligible]
+                eligible_dst = dst_indices[eligible]
+                min_roots = torch.minimum(eligible_src, eligible_dst)
+
+                # Union: scatter minimum root
+                labels.scatter_(0, eligible_src, torch.minimum(labels[eligible_src], min_roots))
+                labels.scatter_(0, eligible_dst, torch.minimum(labels[eligible_dst], min_roots))
+
+                # Update seeds: for merged components, use min root's seed
+                # We need to update seeds for all roots that were merged
+                merged_src = eligible_src
+                merged_dst = eligible_dst
+                for _ in range(2):
+                    # Propagate seeds to roots
+                    root_labels = labels.clone()
+                    for _ in range(4):
+                        root_labels = root_labels[root_labels]
+                    # Update seed for any component whose root changed
+                    seed_colors[merged_src] = seed_colors[root_labels[merged_src]]
+                    seed_colors[merged_dst] = seed_colors[root_labels[merged_dst]]
+
+            if not changed:
+                break
+
+        # Path compression
+        lut = labels.clone()
+        for _ in range(4):
+            lut = lut[lut]
+
+        labels = torch.arange(N, dtype=torch.long, device=device)
+        labels[bg_mask.reshape(N)] = -1
+
+        valid = labels >= 0
+        labels[valid] = lut[labels[valid]]
+        labels = labels.reshape(H, W)
+
+        # Relabel to consecutive integers
+        unique_labels, inverse = labels.reshape(-1).unique(return_inverse=True)
+        is_bg = unique_labels < 0
         non_bg_cumsum = (~is_bg).cumsum(dim=0)
         new_id = non_bg_cumsum.long()
         new_id = torch.where(is_bg, torch.zeros_like(new_id), new_id)

@@ -55,6 +55,7 @@ class MixedVisionDataset(Dataset):
         generation_dataset: Dataset | None = None,
         vision_ratio: float = 0.1,
         seed: int = 42,
+        colormaps: list[str] | None = None,  # 新增
     ):
         if not 0.0 < vision_ratio <= 1.0:
             raise ValueError(f"vision_ratio must be in (0, 1]; got {vision_ratio}")
@@ -66,6 +67,9 @@ class MixedVisionDataset(Dataset):
 
         self.total_vision = sum(len(ds) for ds in vision_datasets)
         self._vision_lengths = [len(ds) for ds in vision_datasets]
+
+        # Multi-colormap training augmentation (paper Section 3.2)
+        self.colormaps = colormaps or ["cube_edge"]
 
         # Backward-compatible aliases
         self.vision_weight = vision_ratio
@@ -97,7 +101,12 @@ class MixedVisionDataset(Dataset):
             ds_idx = int(torch.randint(len(self.vision_datasets), (1,), generator=self.rng).item())
             ds = self.vision_datasets[ds_idx]
             sample_idx = int(torch.randint(len(ds), (1,), generator=self.rng).item())
-            return ds[sample_idx]
+            sample = ds[sample_idx]
+            # Multi-colormap training augmentation: attach random colormap for depth tasks
+            if isinstance(sample, dict) and sample.get("task") == "depth":
+                cmap_idx = int(torch.randint(len(self.colormaps), (1,), generator=self.rng).item())
+                sample["colormap"] = self.colormaps[cmap_idx]
+            return sample
         else:
             assert self.generation_dataset is not None
             sample_idx = int(torch.randint(len(self.generation_dataset), (1,), generator=self.rng).item())

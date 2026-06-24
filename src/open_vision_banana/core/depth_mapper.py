@@ -31,45 +31,152 @@ logger = logging.getLogger(__name__)
 #       → Yellow(1,1,0) → White(1,1,1)
 # Each segment lies strictly on an edge of the RGB cube.
 
+# ──────────────────────────────────────────────────────────────
+# Multi-Colormap Keypoints for Depth Encoding (Paper Section 3.2)
+# ──────────────────────────────────────────────────────────────
+
+# Cube-edge colormap: Black → Blue → Cyan → Green → Yellow → White
 CUBE_EDGE_KEYPOINTS = torch.tensor(
     [
-        # (position, R, G, B) — position in [0, 1], colors in [0, 1]
         [0.00, 0.00, 0.00, 0.00],  # Black (near) — (0,0,0)
-        [0.20, 0.00, 0.00, 1.00],  # Blue         — (0,0,1) 沿 z 轴
-        [0.40, 0.00, 1.00, 1.00],  # Cyan         — (0,1,1) 沿 y 轴
-        [0.60, 0.00, 1.00, 0.00],  # Green        — (0,1,0) 沿 z 轴反向
-        [0.80, 1.00, 1.00, 0.00],  # Yellow       — (1,1,0) 沿 x 轴
-        [1.00, 1.00, 1.00, 1.00],  # White (far)  — (1,1,1) 沿 z 轴
+        [0.20, 0.00, 0.00, 1.00],  # Blue         — (0,0,1)
+        [0.40, 0.00, 1.00, 1.00],  # Cyan         — (0,1,1)
+        [0.60, 0.00, 1.00, 0.00],  # Green        — (0,1,0)
+        [0.80, 1.00, 1.00, 0.00],  # Yellow       — (1,1,0)
+        [1.00, 1.00, 1.00, 1.00],  # White (far)  — (1,1,1)
     ],
     dtype=torch.float32,
 )
 
+# Plasma colormap keypoints (sampled from matplotlib)
+PLASMA_KEYPOINTS = torch.tensor(
+    [
+        [0.000, 0.0504, 0.0298, 0.5280],
+        [0.143, 0.3251, 0.0069, 0.6395],
+        [0.286, 0.5462, 0.0390, 0.6470],
+        [0.429, 0.7234, 0.1962, 0.5390],
+        [0.571, 0.8598, 0.3606, 0.4069],
+        [0.714, 0.9555, 0.5331, 0.2855],
+        [0.857, 0.9945, 0.7409, 0.1663],
+        [1.000, 0.9400, 0.9752, 0.1313],
+    ],
+    dtype=torch.float32,
+)
+
+# Inferno colormap keypoints (sampled from matplotlib)
+INFERNO_KEYPOINTS = torch.tensor(
+    [
+        [0.000, 0.0015, 0.0005, 0.0139],
+        [0.143, 0.1558, 0.0446, 0.3253],
+        [0.286, 0.3977, 0.0833, 0.4332],
+        [0.429, 0.6217, 0.1642, 0.3888],
+        [0.571, 0.8323, 0.2839, 0.2574],
+        [0.714, 0.9613, 0.4887, 0.0843],
+        [0.857, 0.9812, 0.7591, 0.1569],
+        [1.000, 0.9884, 0.9984, 0.6449],
+    ],
+    dtype=torch.float32,
+)
+
+# Viridis colormap keypoints (sampled from matplotlib)
+VIRIDIS_KEYPOINTS = torch.tensor(
+    [
+        [0.000, 0.2670, 0.0049, 0.3294],
+        [0.143, 0.2752, 0.1949, 0.4960],
+        [0.286, 0.2124, 0.3597, 0.5517],
+        [0.429, 0.1534, 0.4970, 0.5577],
+        [0.571, 0.1223, 0.6332, 0.5304],
+        [0.714, 0.2889, 0.7584, 0.4284],
+        [0.857, 0.6266, 0.8546, 0.2234],
+        [1.000, 0.9932, 0.9062, 0.1439],
+    ],
+    dtype=torch.float32,
+)
+
+# Grayscale: linear mapping from depth to (gray, gray, gray)
+GRAYSCALE_KEYPOINTS = torch.tensor(
+    [
+        [0.00, 0.00, 0.00, 0.00],
+        [1.00, 1.00, 1.00, 1.00],
+    ],
+    dtype=torch.float32,
+)
+
+# Rainbow colormap: Black → Red → Yellow → Green → Cyan → Blue → Violet → White
+# From the paper website: "rainbow (black-red-yellow-green-cyan-blue-violet-white) color palette"
+RAINBOW_KEYPOINTS = torch.tensor(
+    [
+        [0.000, 0.00, 0.00, 0.00],  # Black
+        [0.143, 1.00, 0.00, 0.00],  # Red
+        [0.286, 1.00, 1.00, 0.00],  # Yellow
+        [0.429, 0.00, 1.00, 0.00],  # Green
+        [0.571, 0.00, 1.00, 1.00],  # Cyan
+        [0.714, 0.00, 0.00, 1.00],  # Blue
+        [0.857, 0.50, 0.00, 1.00],  # Violet (approximate)
+        [1.000, 1.00, 1.00, 1.00],  # White
+    ],
+    dtype=torch.float32,
+)
+
+# Colormap registry
+_COLORMAP_REGISTRY: dict[str, torch.Tensor] = {
+    "cube_edge": CUBE_EDGE_KEYPOINTS,
+    "plasma": PLASMA_KEYPOINTS,
+    "inferno": INFERNO_KEYPOINTS,
+    "viridis": VIRIDIS_KEYPOINTS,
+    "grayscale": GRAYSCALE_KEYPOINTS,
+    "rainbow": RAINBOW_KEYPOINTS,
+}
+
+_AVAILABLE_COLORMAPS = list(_COLORMAP_REGISTRY.keys())
+
+
 
 class DepthRGBMapper:
-    """Reversible depth-to-RGB mapping using power transform + cube-edge colormap.
+    """Reversible depth-to-RGB mapping using power transform + multi-colormap support.
 
     From the paper (Section 3.2):
     - Apply power transform: f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
     - Parameters: λ=-3, c=10/3
-    - Then map via cube-edge traversal colormap (black → blue → cyan → green → yellow → white)
+    - Then map via colormap (cube-edge by default, or plasma/inferno/viridis/grayscale)
 
     This maps unbounded depth values [0, ∞) to bounded RGB [0, 1]³.
     The curving prioritizes accuracy for nearby content (higher utility).
+
+    Multi-colormap support enables training-time augmentation:
+    the model learns to be robust to different RGB encoding schemes,
+    as recommended by the paper.
     """
 
-    def __init__(self, lam: float = -3.0, c: float = 10.0 / 3.0):
+    def __init__(self, colormap: str = "cube_edge", lam: float = -3.0, c: float = 10.0 / 3.0):
         self.lam = lam
         self.c = c
+        self.colormap = colormap
+        self._keypoints = self._get_keypoints(colormap)
+
+    def _get_keypoints(self, colormap: str) -> torch.Tensor:
+        """Get keypoints for the specified colormap."""
+        if colormap not in _COLORMAP_REGISTRY:
+            raise ValueError(
+                f"Unknown colormap: {colormap}. "
+                f"Available: {get_available_colormaps()}"
+            )
+        return _COLORMAP_REGISTRY[colormap]
+
+    @property
+    def colormap_keypoints(self) -> torch.Tensor:
+        """Return the current colormap's keypoints tensor."""
+        return self._keypoints
+
+    def set_colormap(self, colormap: str) -> None:
+        """Switch to a different colormap (e.g. for training augmentation)."""
+        self.colormap = colormap
+        self._keypoints = self._get_keypoints(colormap)
 
     def depth_to_normalized(self, depth: torch.Tensor) -> torch.Tensor:
         """Apply power transform with adaptive precision.
 
         f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
-
-        For near depth (d < d_near), use finer sampling (fewer keypoints,
-        smaller step size) for higher precision.
-        For far depth (d > d_far), use coarser sampling (more keypoints,
-        larger steps) for efficiency.
 
         Args:
             depth: Metric depth values [B, 1, H, W] in meters, range [0, ∞).
@@ -78,11 +185,6 @@ class DepthRGBMapper:
             Normalized depth values [B, 1, H, W] in [0, 1).
         """
         depth = depth.clamp(min=0.0)
-
-        # ── Adaptive precision based on depth value ──────────────
-        # Near (d < 1.0): finer sampling, higher precision
-        # Far (d > 10.0): coarser sampling, lower precision
-        # (thresholds kept as comments for future implementation)
 
         ratio = depth / (self.lam * self.c)
         ratio = ratio.clamp(max=1.0 - 1e-7)
@@ -100,12 +202,11 @@ class DepthRGBMapper:
         return depth.clamp(min=0.0)
 
     def normalized_to_rgb(self, normalized: torch.Tensor) -> torch.Tensor:
-        """Map normalized depth to RGB via cube-edge colormap.
+        """Map normalized depth to RGB via the selected colormap.
 
-        Uses piecewise-linear interpolation between cube-edge keypoints,
-        following the edges of the RGB cube from black to white.
+        Uses piecewise-linear interpolation between keypoints.
         """
-        kp = CUBE_EDGE_KEYPOINTS.to(normalized.device)
+        kp = self._keypoints.to(normalized.device)
         positions = kp[:, 0].contiguous()
         colors = kp[:, 1:].contiguous()
 
@@ -127,10 +228,8 @@ class DepthRGBMapper:
         rgb = rgb_flat.reshape(*orig_shape, 3)
 
         if rgb.dim() == 6:
-            # 5D input [B, 1, D, H, W] → [B, 3, D, H, W]
             rgb = rgb.permute(0, 5, 1, 2, 3, 4).squeeze(2)
         elif rgb.dim() == 5:
-            # 4D input [B, 1, H, W] → [B, 3, H, W]
             rgb = rgb.permute(0, 4, 1, 2, 3).squeeze(2)
         elif rgb.dim() == 4:
             rgb = rgb.permute(0, 3, 1, 2)
@@ -143,10 +242,10 @@ class DepthRGBMapper:
         positions: torch.Tensor,
         colors: torch.Tensor,
     ) -> torch.Tensor:
-        """Project RGB pixels onto the piecewise-linear cube-edge curve.
+        """Project RGB pixels onto the piecewise-linear curve.
 
-        Uses analytical segment projection (5 segments) instead of brute-force
-        nearest-neighbour over 256 samples — ~30× faster with equal accuracy
+        Uses analytical segment projection instead of brute-force
+        nearest-neighbour — ~30× faster with equal accuracy
         for on-curve encodings and better behaviour for noisy inputs.
 
         Args:
@@ -189,12 +288,10 @@ class DepthRGBMapper:
         return refined.reshape(rgb_chunk.shape[0], rgb_chunk.shape[1])
 
     def rgb_to_normalized(self, rgb: torch.Tensor, chunk_size: int = 4096) -> torch.Tensor:
-        """Inverse: RGB → normalized depth via cube-edge colormap inversion.
+        """Inverse: RGB → normalized depth via colormap inversion.
 
-        Projects each RGB pixel onto the nearest point of the cube-edge
-        curve using piecewise-linear segment projection. Because the colormap
-        is monotonic along the cube edges, this recovers the normalized value
-        accurately for encodings produced by ``normalized_to_rgb``.
+        Projects each RGB pixel onto the nearest point of the piecewise-linear
+        curve using segment projection. Works for any colormap in the registry.
 
         Memory optimisation:
             Pixels are processed in ``chunk_size`` strips so peak extra VRAM
@@ -202,13 +299,12 @@ class DepthRGBMapper:
 
         Args:
             rgb: [B, 3, H, W] in [0, 1].
-            chunk_size: Number of pixels processed at once. Decrease to
-                save VRAM; increase for throughput.
+            chunk_size: Number of pixels processed at once.
 
         Returns:
             Normalized depth [B, 1, H, W] in [0, 1].
         """
-        kp = CUBE_EDGE_KEYPOINTS.to(rgb.device)
+        kp = self._keypoints.to(rgb.device)
         positions = kp[:, 0].contiguous()
         colors = kp[:, 1:].contiguous()
 
@@ -234,4 +330,17 @@ class DepthRGBMapper:
         return self.normalized_to_depth(normalized)
 
 
-__all__ = ["DepthRGBMapper", "CUBE_EDGE_KEYPOINTS"]
+def get_available_colormaps() -> list[str]:
+    """Return the list of supported colormap names."""
+    return _AVAILABLE_COLORMAPS.copy()
+
+
+__all__ = [
+    "DepthRGBMapper",
+    "CUBE_EDGE_KEYPOINTS",
+    "PLASMA_KEYPOINTS",
+    "INFERNO_KEYPOINTS",
+    "VIRIDIS_KEYPOINTS",
+    "GRAYSCALE_KEYPOINTS",
+    "get_available_colormaps",
+]
