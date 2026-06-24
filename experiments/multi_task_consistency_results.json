@@ -1,0 +1,100 @@
+{
+  "metadata": {
+    "run_date": "2026-06-23",
+    "resolution": "64 (H4/H3 synthetic) + 128 (H1/H2 from prior run)",
+    "max_depth_m": 8.0,
+    "valid_mask_filtering": true,
+    "note": "H4 rerun with valid-mask + synthetic data. Fixes sigma=0 MAE=6177m artifact. H1/H2 retained from prior run."
+  },
+  "h1": [
+    {
+      "scene": "Scene A (Ground+Sphere+Cyl)",
+      "angular_error_deg": 3.3067591190338135,
+      "gradient_correlation": 0.12340464442968369
+    },
+    {
+      "scene": "Scene B (Overlapping Spheres)",
+      "angular_error_deg": 3.199760675430298,
+      "gradient_correlation": 0.12834756076335907
+    },
+    {
+      "scene": "Scene C (Tilted Plane)",
+      "angular_error_deg": 2.6827027797698975,
+      "gradient_correlation": 0.09402311593294144
+    }
+  ],
+  "h2": [
+    {
+      "scene": "Scene A (Ground+Sphere+Cyl)",
+      "boundary_iou": 0.2836322784423828,
+      "depth_edge_ratio": 0.044677734375,
+      "seg_boundary_ratio": 0.02520751953125
+    },
+    {
+      "scene": "Scene B (Overlapping Spheres)",
+      "boundary_iou": 0.2672750949859619,
+      "depth_edge_ratio": 0.03790283203125,
+      "seg_boundary_ratio": 0.02142333984375
+    },
+    {
+      "scene": "Scene C (Tilted Plane)",
+      "boundary_iou": 0.18939393758773804,
+      "depth_edge_ratio": 0.031005859375,
+      "seg_boundary_ratio": 0.01690673828125
+    }
+  ],
+  "h3": {
+    "depth_mean_rgb": [
+      0.3915172517299652,
+      0.9262357950210571,
+      0.22397293150424957
+    ],
+    "normal_mean_rgb": [
+      0.49732136726379395,
+      0.5049218535423279,
+      0.5009605884552002
+    ],
+    "seg_mean_rgb": [
+      0.39687490463256836,
+      0.3968749940395355,
+      0.4062500596046448
+    ],
+    "histogram_intersections": {
+      "depth_vs_normal": 0.5508626699447632,
+      "depth_vs_segmentation": 0.0631510391831398,
+      "normal_vs_segmentation": 0.123291015625
+    }
+  },
+  "h4": [
+    {
+      "noise_sigma": 0.0,
+      "depth_roundtrip_mae": 5.347246769815683e-07,
+      "normal_roundtrip_cos_sim": 1.0,
+      "seg_f1_proxy": 1.0
+    },
+    {
+      "noise_sigma": 0.05,
+      "depth_roundtrip_mae": 0.16681595146656036,
+      "normal_roundtrip_cos_sim": 1.0,
+      "seg_f1_proxy": 0.0
+    },
+    {
+      "noise_sigma": 0.1,
+      "depth_roundtrip_mae": 0.3479628562927246,
+      "normal_roundtrip_cos_sim": 1.0,
+      "seg_f1_proxy": 0.0
+    },
+    {
+      "noise_sigma": 0.2,
+      "depth_roundtrip_mae": 1.172647476196289,
+      "normal_roundtrip_cos_sim": 1.0,
+      "seg_f1_proxy": 0.0
+    },
+    {
+      "noise_sigma": 0.5,
+      "depth_roundtrip_mae": 8063.201171875,
+      "normal_roundtrip_cos_sim": 1.0,
+      "seg_f1_proxy": 0.0
+    }
+  ]
+}

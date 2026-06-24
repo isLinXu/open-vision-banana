@@ -1,0 +1,107 @@
+{
+  "roundtrip": {
+    "random": {
+      "mean_cosine_sim": 1.0,
+      "mean_angular_error_deg": 0.001883785822428763,
+      "max_angular_error_deg": 0.03426402062177658,
+      "median_angular_error_deg": 0.0,
+      "std_angular_error_deg": 0.006009502336382866
+    },
+    "gradient": {
+      "mean_cosine_sim": 1.0,
+      "mean_angular_error_deg": 0.0017899221275001764
+    },
+    "spherical": {
+      "mean_cosine_sim": 1.0,
+      "mean_angular_error_deg": 0.0005492166383191943
+    }
+  },
+  "noise_robustness": [
+    {
+      "noise_sigma": 0.0,
+      "mean_cosine_sim": 1.0,
+      "mean_angular_error_deg": 0.0016572104068472981
+    },
+    {
+      "noise_sigma": 0.01,
+      "mean_cosine_sim": 0.9996011853218079,
+      "mean_angular_error_deg": 1.4304195642471313
+    },
+    {
+      "noise_sigma": 0.05,
+      "mean_cosine_sim": 0.9898697137832642,
+      "mean_angular_error_deg": 7.233211040496826
+    },
+    {
+      "noise_sigma": 0.1,
+      "mean_cosine_sim": 0.9597955942153931,
+      "mean_angular_error_deg": 14.394198417663574
+    },
+    {
+      "noise_sigma": 0.2,
+      "mean_cosine_sim": 0.84738689661026,
+      "mean_angular_error_deg": 28.309274673461914
+    },
+    {
+      "noise_sigma": 0.5,
+      "mean_cosine_sim": 0.46426087617874146,
+      "mean_angular_error_deg": 58.28513717651367
+    }
+  ],
+  "flip_consistency": {
+    "mean_cosine_sim_before": 1.0,
+    "mean_cosine_sim_after": 1.0,
+    "x_component_flip_accuracy": 1.0
+  },
+  "edge_cases": [
+    {
+      "case_name": "Pure front-facing (0,0,1)",
+      "passed": true,
+      "cosine_sim": 1.0,
+      "note": "Camera normal should map to RGB=(0.5,0.5,1)"
+    },
+    {
+      "case_name": "Pure right-facing (1,0,0)",
+      "passed": true,
+      "cosine_sim": 1.0,
+      "note": "Should map to RGB=(0,0.5,0.5)"
+    },
+    {
+      "case_name": "Pure up-facing (0,1,0)",
+      "passed": true,
+      "cosine_sim": 1.0,
+      "note": "Should map to RGB=(0.5,1,0.5)"
+    },
+    {
+      "case_name": "Pure left-facing (-1,0,0)",
+      "passed": true,
+      "cosine_sim": 1.0,
+      "note": "Should map to RGB=(1,0.5,0.5)"
+    },
+    {
+      "case_name": "Zero vector (degenerate)",
+      "passed": true,
+      "cosine_sim": 0.0,
+      "note": "Maps to RGB=(0.5,0.5,0.5), recovers to random unit vector"
+    },
+    {
+      "case_name": "Back-facing (0,0,-1)",
+      "passed": true,
+      "cosine_sim": 1.0,
+      "note": "RGB clamped to [0,1], z decoded to -1.0000"
+    },
+    {
+      "case_name": "Batch consistency",
+      "passed": true,
+      "cosine_sim": 0.999995231628418,
+      "note": "All batch elements should produce identical roundtrip"
+    }
+  ],
+  "speed": {
+    "encode_ms": 14.289720000233501,
+    "decode_ms": 54.358240839792415,
+    "total_ms": 68.64796084002592,
+    "resolution": 512,
+    "num_runs": 50
+  }
+}
