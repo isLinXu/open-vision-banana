@@ -5,12 +5,17 @@ The main model class that ties together:
 - RGBMapper (reversible depth/normal/segmentation encoding)
 - VisualizationDecoder (prompt building + output decoding)
 
-Vision Banana supports 5 vision tasks via prompt-based task selection:
+Vision Banana supports 10 vision tasks via prompt-based task selection:
 1. Semantic Segmentation (2D)
 2. Instance Segmentation (2D)
 3. Referring Expression Segmentation (2D)
 4. Metric Depth Estimation (3D)
 5. Surface Normal Estimation (3D)
+6. Edge Detection (2D)
+7. Optical Flow (2D)
+8. 2D Keypoint Detection (2D)
+9. Object Detection (2D)
+10. Depth Edge Detection (3D)
 
 All tasks share the same model weights — only the prompt changes.
 """
@@ -41,13 +46,13 @@ class VisionBanana:
     we seamlessly reframe perception as image generation.
 
     Features:
-    - 5 vision tasks via prompt-based selection
+    - 10 vision tasks via prompt-based selection
     - Batched inference with automatic result splitting
     - KV-cache reuse for repeated generation
     - TorchScript export for deployment
     """
 
-    SUPPORTED_TASKS = ["semantic", "instance", "referring", "depth", "normal"]
+    SUPPORTED_TASKS = ["semantic", "instance", "referring", "depth", "normal", "edge", "flow", "keypoint", "object_detection", "depth_edge"]
 
     def __init__(
         self,
@@ -247,6 +252,21 @@ class VisionBanana:
         elif task == "normal":
             return self.prompt_builder.build_normal_prompt()
 
+        elif task == "edge":
+            return self.prompt_builder.build_edge_prompt()
+
+        elif task == "flow":
+            return self.prompt_builder.build_flow_prompt()
+
+        elif task == "keypoint":
+            return self.prompt_builder.build_keypoint_prompt()
+
+        elif task == "object_detection":
+            return self.prompt_builder.build_object_detection_prompt()
+
+        elif task == "depth_edge":
+            return self.prompt_builder.build_depth_edge_prompt()
+
         raise ValueError(f"Unknown task: {task}")
 
     def _decode_output(
@@ -279,6 +299,21 @@ class VisionBanana:
             return self.decoder.decode_referring(
                 rgb_output, target_color=target_color
             )
+
+        elif task == "edge":
+            return self.decoder.decode_edge(rgb_output)
+
+        elif task == "flow":
+            return self.decoder.decode_flow(rgb_output)
+
+        elif task == "keypoint":
+            return self.decoder.decode_keypoint(rgb_output)
+
+        elif task == "object_detection":
+            return self.decoder.decode_object_detection(rgb_output)
+
+        elif task == "depth_edge":
+            return self.decoder.decode_depth_edge(rgb_output)
 
         raise ValueError(f"Unknown task: {task}")
 

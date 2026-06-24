@@ -40,6 +40,11 @@ class PromptBuilder:
 
     DEPTH_PROMPT = 'Generate a metric depth visualization of this image.'
     NORMAL_PROMPT = 'Generate a surface normal estimation visualization of this image.'
+    EDGE_PROMPT = 'This image is an edge detection map. The edges are rendered in white, the background in black.'
+    FLOW_PROMPT = 'This image is an optical flow visualization. Direction is encoded by hue, magnitude by saturation.'
+    KEYPOINT_PROMPT = 'This image shows 2D keypoint detections. Each keypoint is represented by a colored dot on a black background.'
+    OBJECT_DETECTION_PROMPT = 'This image shows object detection results. Each detected object is outlined by a colored bounding box on a black background.'
+    DEPTH_EDGE_PROMPT = 'This image is a depth edge map. Depth discontinuities are rendered in white, the background in black.'
 
     @classmethod
     def build_semantic_prompt(
@@ -117,6 +122,31 @@ class PromptBuilder:
     def build_normal_prompt(cls) -> str:
         """Build prompt for surface normal estimation."""
         return cls.NORMAL_PROMPT
+
+    @classmethod
+    def build_edge_prompt(cls) -> str:
+        """Build prompt for edge detection."""
+        return cls.EDGE_PROMPT
+
+    @classmethod
+    def build_flow_prompt(cls) -> str:
+        """Build prompt for optical flow."""
+        return cls.FLOW_PROMPT
+
+    @classmethod
+    def build_keypoint_prompt(cls) -> str:
+        """Build prompt for 2D keypoint detection."""
+        return cls.KEYPOINT_PROMPT
+
+    @classmethod
+    def build_object_detection_prompt(cls) -> str:
+        """Build prompt for object detection."""
+        return cls.OBJECT_DETECTION_PROMPT
+
+    @classmethod
+    def build_depth_edge_prompt(cls) -> str:
+        """Build prompt for depth edge detection."""
+        return cls.DEPTH_EDGE_PROMPT
 
 
 __all__ = ["PromptBuilder"]
