@@ -520,18 +520,36 @@ These datasets are used to reproduce the paper's quantitative results in Table 1
 
 The paper uses **in-house synthetic annotations** and **rendering engine outputs** that are not publicly available. The following public datasets can be used as **functional replacements** for instruction-tuning.
 
-#### Core Training Set (~240 GB MVP)
+#### Core Training Set
+
+> **Hypersim 1.9TB 太大？** 论文同款合成数据，但完整下载需要约 1.9TB。以下提供**轻量级替代方案**（17-50GB），功能等价。
+
+**方案 A：轻量级（推荐，~50 GB 总训练数据）**
 
 | Dataset | Task | Size | Why | Download |
 |---------|------|------|-----|----------|
-| **Hypersim** | Depth + Normal + Semantic + Instance | ~1.9 TB (use 10% subset ~200 GB) | Paper-equivalent synthetic indoor data; Apple; perfect annotations; covers 4 core tasks | [GitHub](https://github.com/apple/ml-hypersim) |
-| **COCO 2017** | Instance + Keypoint + Detection | ~25 GB | Standard multi-task base; 80 classes; instances & keypoints | [cocodataset.org](https://cocodataset.org/) |
-| **ADE20K** | Semantic | ~1 GB | Semantic segmentation standard; 150 classes | [sceneparsing.csail.mit.edu](http://sceneparsing.csail.mit.edu/) |
-| **RefCOCO / RefCOCO+ / RefCOCOg** | Referring Expression | ~100 MB (annotations only; images reuse COCO) | Referring expression standard | [github.com/lichengunc/refer](https://github.com/lichengunc/refer) |
-| **ReasonSeg** | Reasoning Segmentation | ~50 MB | Reasoning instruction training | [github.com/dvlab-reasoning/ReasonSeg](https://github.com/dvlab-reasoning/ReasonSeg) |
-| **Virtual KITTI 2** | Depth + Normal + Flow + Instance | ~50 GB | Synthetic outdoor perfect labels; complements Hypersim | [naverlabs.com](https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/) |
-| **FlyingThings3D** | Optical Flow | ~40 GB | Standard flow training data | [lmb.informatik.uni-freiburg.de](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) |
-| **BSDS500** | Edge Detection | ~100 MB | Classic edge detection dataset | [berkeley.edu](https://www2.eecs.berkeley.edu/Research/Projects/CS/vision/grouping/resources.html) |
+| **Virtual KITTI 2** | Depth + Normal + Flow + Instance | ~50 GB | 合成完美标注，室外场景，覆盖 4 个任务 | [naverlabs.com](https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/) |
+| **BlendedMVS** | Depth | ~17 GB | 多视图立体，深度质量高 | [GitHub](https://github.com/YoYo000/MVSNet) |
+| **COCO 2017** | Instance + Keypoint + Detection | ~25 GB | 标准多任务基础数据集 | [cocodataset.org](https://cocodataset.org/) |
+| **ADE20K** | Semantic | ~1 GB | 语义分割标准训练集 | [sceneparsing.csail.mit.edu](http://sceneparsing.csail.mit.edu/) |
+| **RefCOCO / RefCOCO+ / RefCOCOg** | Referring Expression | ~100 MB | 指代表达标准 | [github.com/lichengunc/refer](https://github.com/lichengunc/refer) |
+| **ReasonSeg** | Reasoning Segmentation | ~50 MB | 推理指令训练 | [github.com/dvlab-reasoning/ReasonSeg](https://github.com/dvlab-reasoning/ReasonSeg) |
+| **FlyingThings3D** | Optical Flow | ~40 GB | 光流标准训练数据 | [lmb.informatik.uni-freiburg.de](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) |
+| **BSDS500** | Edge Detection | ~100 MB | 经典边缘检测数据集 | [berkeley.edu](https://www2.eecs.berkeley.edu/Research/Projects/CS/vision/grouping/resources.html) |
+
+**方案 B：论文同款（~70 GB）**
+
+| Dataset | Task | Size | Why | Download |
+|---------|------|------|-----|----------|
+| **Hypersim（子集，前 8 场景）** | Depth + Normal + Semantic + Instance | ~33 GB | 论文同款合成数据，只取前 8 场景 | [GitHub](https://github.com/apple/ml-hypersim) |
+| **COCO 2017** | Instance + Keypoint + Detection | ~25 GB | 标准多任务基础 | [cocodataset.org](https://cocodataset.org/) |
+| **ADE20K** | Semantic | ~1 GB | 语义分割标准 | [sceneparsing.csail.mit.edu](http://sceneparsing.csail.mit.edu/) |
+| **RefCOCO / RefCOCO+ / RefCOCOg** | Referring Expression | ~100 MB | 指代表达标准 | [github.com/lichengunc/refer](https://github.com/lichengunc/refer) |
+| **ReasonSeg** | Reasoning Segmentation | ~50 MB | 推理指令训练 | [github.com/dvlab-reasoning/ReasonSeg](https://github.com/dvlab-reasoning/ReasonSeg) |
+| **FlyingThings3D** | Optical Flow | ~40 GB | 光流标准训练 | [lmb.informatik.uni-freiburg.de](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) |
+| **BSDS500** | Edge Detection | ~100 MB | 经典边缘检测 | [berkeley.edu](https://www2.eecs.berkeley.edu/Research/Projects/CS/vision/grouping/resources.html) |
+
+> **建议**：先使用方案 A（轻量级）快速验证 pipeline，再按需扩展到方案 B 或完整 Hypersim。论文中 vision data 仅占训练混合的 ~10%，所以数据量不需要很大。
 
 #### Extended Training Set
 

@@ -56,6 +56,7 @@ class DatasetSpec:
 
 
 DATASET_REGISTRY: dict[str, DatasetSpec] = {
+    # === Paper-equivalent synthetic data (large) ===
     "hypersim-depth": DatasetSpec(
         name="Hypersim Depth",
         task="depth",
@@ -64,6 +65,48 @@ DATASET_REGISTRY: dict[str, DatasetSpec] = {
         requires_login=False,
         license="MIT",
     ),
+    # === Lightweight alternatives to Hypersim ===
+    "vkitti2-depth": DatasetSpec(
+        name="Virtual KITTI 2 Depth",
+        task="depth",
+        source="https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/",
+        size_estimate_gb=50.0,
+        requires_login=False,
+        license="Academic",
+    ),
+    "blendedmvs-depth": DatasetSpec(
+        name="BlendedMVS Depth",
+        task="depth",
+        source="https://github.com/YoYo000/MVSNet",
+        size_estimate_gb=17.0,
+        requires_login=False,
+        license="Academic",
+    ),
+    "hrwsi-depth": DatasetSpec(
+        name="HRWSI Depth",
+        task="depth",
+        source="https://github.com/aim-uofa/DepthAnything",
+        size_estimate_gb=20.0,
+        requires_login=False,
+        license="Academic",
+    ),
+    "diode-depth": DatasetSpec(
+        name="DIODE Depth",
+        task="depth",
+        source="https://diode-dataset.org/",
+        size_estimate_gb=40.0,
+        requires_login=False,
+        license="Academic",
+    ),
+    "tartanair-depth": DatasetSpec(
+        name="TartanAir Depth",
+        task="depth",
+        source="https://github.com/castacks/tartanair_tools",
+        size_estimate_gb=30.0,
+        requires_login=False,
+        license="Academic",
+    ),
+    # === Existing datasets ===
     "scannet-normal": DatasetSpec(
         name="ScanNet Normal",
         task="normal",
