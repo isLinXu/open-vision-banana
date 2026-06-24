@@ -13,11 +13,10 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
 
@@ -138,9 +137,7 @@ class NativeTrainer(TrainerInterface):
         self.gradient_accumulation_steps = max(1, gradient_accumulation_steps)
         # Use device type for GradScaler; MPS supports float16 autocast
         # but does not require GradScaler. Only CUDA uses full AMP scaling.
-        self.scaler = torch.amp.GradScaler(
-            self.device.type, enabled=self.use_amp
-        )
+        self.scaler = torch.amp.GradScaler(self.device.type, enabled=self.use_amp)
 
     def wrap_model(self, model: nn.Module) -> nn.Module:
         return model.to(self.device)
@@ -220,12 +217,8 @@ class NativeTrainer(TrainerInterface):
         checkpoint_path: str,
     ) -> dict:
         ckpt_dir = Path(checkpoint_path)
-        model.load_state_dict(
-            torch.load(ckpt_dir / "model.pt", weights_only=True)
-        )
-        optimizer.load_state_dict(
-            torch.load(ckpt_dir / "optimizer.pt", weights_only=True)
-        )
+        model.load_state_dict(torch.load(ckpt_dir / "model.pt", weights_only=True))
+        optimizer.load_state_dict(torch.load(ckpt_dir / "optimizer.pt", weights_only=True))
         logger.info(f"Checkpoint loaded from {ckpt_dir}")
         return {}
 
@@ -287,8 +280,8 @@ class FSDPTrainer(NativeTrainer):
     ) -> None:
         if not self.is_main_process():
             return
-        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
         from torch.distributed.fsdp import FullStateDictConfig, StateDictType
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
         if isinstance(model, FSDP):
             cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
@@ -354,6 +347,7 @@ class DeepSpeedTrainer(NativeTrainer):
         if self._engine is None:
             return True
         from .deepspeed_utils import deepspeed_is_main
+
         return deepspeed_is_main(self._engine)
 
     def barrier(self) -> None:
@@ -446,11 +440,11 @@ class AccelerateTrainer(TrainerInterface):
     def __init__(self, **accelerate_kwargs) -> None:
         try:
             from accelerate import Accelerator
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "HuggingFace Accelerate is required for AccelerateTrainer. "
                 "Install with: pip install accelerate"
-            )
+            ) from exc
         self.accelerator = Accelerator(**accelerate_kwargs)
 
     def wrap_model(self, model: nn.Module) -> nn.Module:
@@ -513,10 +507,9 @@ class AccelerateTrainer(TrainerInterface):
     ) -> dict:
         unwrapped = self.accelerator.unwrap_model(model)
         from peft import PeftModel
+
         if isinstance(unwrapped, PeftModel):
-            loaded = PeftModel.from_pretrained(
-                unwrapped.base_model.model, checkpoint_path
-            )
+            loaded = PeftModel.from_pretrained(unwrapped.base_model.model, checkpoint_path)
             unwrapped.load_state_dict(loaded.state_dict(), strict=False)
         logger.info(f"Checkpoint loaded from {checkpoint_path}")
         return {}
@@ -555,10 +548,7 @@ def create_trainer(
     }
 
     if backend not in trainers:
-        raise ValueError(
-            f"Unknown training backend: {backend}. "
-            f"Available: {list(trainers.keys())}"
-        )
+        raise ValueError(f"Unknown training backend: {backend}. Available: {list(trainers.keys())}")
 
     return trainers[backend](**kwargs)
 

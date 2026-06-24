@@ -83,23 +83,53 @@ class VisualizationDecoder:
     def decode_referring(
         self,
         rgb_image: torch.Tensor,
-        threshold: float = 0.5,
+        target_color: tuple[int, int, int] = (255, 255, 255),
+        threshold: float | None = None,
     ) -> dict:
         """Decode referring expression segmentation from RGB visualization.
 
-        The model renders the referred object as white pixels on a black
-        background.  This method binarises the result.
+        From the paper (Page 3):
+        "By prompting the model to 'Segment the skateboard category in pure
+        yellow (<255, 255, 0>)', we can easily parse the mask for skateboard by
+        clustering pixels whose values are close to <255, 255, 0>."
+
+        Computes the L2 distance in RGB space from each pixel to the
+        target color, then thresholds to produce a binary mask.
 
         Args:
             rgb_image: Generated RGB image [B, 3, H, W] in [0, 1].
-            threshold: Mean channel threshold for foreground classification.
+            target_color: Target RGB color for the referred object,
+                as (R, G, B) in [0, 255]. Default is white (255, 255, 255).
+            threshold: Distance threshold in [0, 1] normalized RGB space.
+                If None, uses an adaptive threshold based on the distance
+                distribution (mean - 0.5 * std heuristic).
 
         Returns:
             Dict with keys:
             - "mask": bool tensor [B, 1, H, W], True = referred region.
             - "visualization": original rgb_image for display.
         """
-        mask = rgb_image.mean(dim=1, keepdim=True) > threshold
+        B, _, H, W = rgb_image.shape
+        device = rgb_image.device
+
+        # Normalize target color to [0, 1]
+        target = (
+            torch.tensor(target_color, dtype=torch.float32, device=device)
+            / 255.0
+        ).view(1, 3, 1, 1)
+
+        # L2 distance in RGB space [B, 1, H, W]
+        dist = torch.norm(rgb_image - target, dim=1, keepdim=True)
+
+        if threshold is None:
+            # Adaptive threshold: mean distance minus half std
+            # This works well when the referred object is a distinct color
+            # against a different background.
+            mean_dist = dist.mean(dim=(-2, -1), keepdim=True)
+            std_dist = dist.std(dim=(-2, -1), keepdim=True)
+            threshold = (mean_dist - 0.5 * std_dist).clamp(min=0.05, max=0.5)
+
+        mask = dist < threshold
         return {
             "mask": mask,
             "visualization": rgb_image,

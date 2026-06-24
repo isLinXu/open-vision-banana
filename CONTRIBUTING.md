@@ -44,7 +44,7 @@ src/open_vision_banana/
 ├── __init__.py          # Package root with lazy imports
 ├── config.py            # VisionBananaConfig + 8 sub-configs
 ├── core/                # Reversible RGB mapping (no external deps)
-│   ├── depth_mapper.py  # Continuous spectral depth ↔ RGB
+│   ├── depth_mapper.py  # Cube-edge colormap depth ↔ RGB
 │   ├── normal_mapper.py # Camera-space normal ↔ RGB
 │   ├── rgb_mapper.py    # Abstract RGB mapper base
 │   └── segmentation.py  # Instance decode (5-stage algorithm)

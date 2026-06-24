@@ -2,16 +2,15 @@
 
 import torch
 import torch.nn as nn
-import pytest
 
-from open_vision_banana.training.trainer_interface import NativeTrainer, DDPTrainer
-from open_vision_banana.training.lr_finder import LRFinder
 from open_vision_banana.evaluation.evaluator import VisionEvaluator
-
+from open_vision_banana.training.lr_finder import LRFinder
+from open_vision_banana.training.trainer_interface import DDPTrainer, NativeTrainer
 
 # ──────────────────────────────────────────────────────────────────────
 # Gradient accumulation & gradient clipping tests
 # ──────────────────────────────────────────────────────────────────────
+
 
 class TestGradientAccumulation:
     def test_default_accumulation_steps(self):
@@ -20,14 +19,16 @@ class TestGradientAccumulation:
 
     def test_custom_accumulation_steps(self):
         trainer = NativeTrainer(
-            device="cpu", use_amp=False,
+            device="cpu",
+            use_amp=False,
             gradient_accumulation_steps=4,
         )
         assert trainer.gradient_accumulation_steps == 4
 
     def test_custom_grad_norm(self):
         trainer = NativeTrainer(
-            device="cpu", use_amp=False,
+            device="cpu",
+            use_amp=False,
             max_grad_norm=5.0,
         )
         assert trainer.max_grad_norm == 5.0
@@ -35,7 +36,8 @@ class TestGradientAccumulation:
     def test_train_step_accumulation(self):
         """Test that train_step returns True only at accumulation boundary."""
         trainer = NativeTrainer(
-            device="cpu", use_amp=False,
+            device="cpu",
+            use_amp=False,
             gradient_accumulation_steps=3,
         )
         model = nn.Linear(4, 2)
@@ -61,7 +63,8 @@ class TestGradientAccumulation:
     def test_train_step_no_accumulation(self):
         """With accumulation=1, every step should trigger optimizer step."""
         trainer = NativeTrainer(
-            device="cpu", use_amp=False,
+            device="cpu",
+            use_amp=False,
             gradient_accumulation_steps=1,
         )
         model = nn.Linear(4, 2)
@@ -87,12 +90,16 @@ class TestGradientAccumulation:
 # VisionEvaluator.evaluate_batch tests
 # ──────────────────────────────────────────────────────────────────────
 
+
 class TestEvaluateBatch:
     def test_depth_batch_eval(self):
         """Test evaluate_batch for depth estimation."""
+
         # Create a mock model that returns its input as rgb_output
         class MockModel:
-            def eval(self): pass
+            def eval(self):
+                pass
+
             def predict(self, **kwargs):
                 return {"rgb_output": kwargs["image"] * 0.5 + 0.5}
 
@@ -112,7 +119,9 @@ class TestEvaluateBatch:
 
     def test_normal_batch_eval(self):
         class MockModel:
-            def eval(self): pass
+            def eval(self):
+                pass
+
             def predict(self, **kwargs):
                 return {"rgb_output": kwargs["image"] * 0.5 + 0.5}
 
@@ -121,13 +130,17 @@ class TestEvaluateBatch:
         target_rgb = torch.rand(1, 3, 8, 8)
 
         metrics = evaluator.evaluate_batch(
-            image=image, target_rgb=target_rgb, task="normal",
+            image=image,
+            target_rgb=target_rgb,
+            task="normal",
         )
         assert len(metrics) > 0
 
     def test_semantic_batch_eval(self):
         class MockModel:
-            def eval(self): pass
+            def eval(self):
+                pass
+
             def predict(self, **kwargs):
                 return {"rgb_output": kwargs["image"] * 0.5 + 0.5}
 
@@ -137,8 +150,10 @@ class TestEvaluateBatch:
         target_rgb = torch.rand(1, 3, 8, 8)
 
         metrics = evaluator.evaluate_batch(
-            image=image, target_rgb=target_rgb,
-            task="semantic", class_color_map=cmap,
+            image=image,
+            target_rgb=target_rgb,
+            task="semantic",
+            class_color_map=cmap,
         )
         assert len(metrics) > 0
 
@@ -146,6 +161,7 @@ class TestEvaluateBatch:
 # ──────────────────────────────────────────────────────────────────────
 # LRFinder tests
 # ──────────────────────────────────────────────────────────────────────
+
 
 class TestLRFinder:
     def test_basic_range_test(self):
@@ -237,7 +253,10 @@ class TestLRFinder:
             def __init__(self, n):
                 self.x = torch.randn(n, 10)
                 self.y = torch.randn(n, 1)
-            def __len__(self): return len(self.x)
+
+            def __len__(self):
+                return len(self.x)
+
             def __getitem__(self, i):
                 return {"image": self.x[i], "target_rgb": self.y[i]}
 

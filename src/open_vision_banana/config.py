@@ -6,9 +6,17 @@ All sub-configs have sensible defaults matching the paper.
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import yaml
+
+
+def _filtered_from_dict(cls, d: dict):
+    """Create a config instance from dict, ignoring unknown keys."""
+    valid = inspect.signature(cls.__init__).parameters
+    filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
+    return cls(**filtered)
 
 
 class DepthMappingConfig:
@@ -23,10 +31,7 @@ class DepthMappingConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> DepthMappingConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class NormalMappingConfig:
@@ -65,10 +70,7 @@ class SegmentationConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> SegmentationConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class ModelConfig:
@@ -96,10 +98,7 @@ class ModelConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> ModelConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class LoRAConfig:
@@ -130,10 +129,7 @@ class LoRAConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> LoRAConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class OptimizerConfig:
@@ -164,10 +160,7 @@ class OptimizerConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> OptimizerConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class DataConfig:
@@ -209,10 +202,7 @@ class DataConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> DataConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class TrainingConfig:
@@ -269,10 +259,7 @@ class TrainingConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> TrainingConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class LoggingConfig:
@@ -316,10 +303,7 @@ class LoggingConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> LoggingConfig:
-        import inspect
-        valid = inspect.signature(cls.__init__).parameters
-        filtered = {k: v for k, v in d.items() if k in valid and k != "self"}
-        return cls(**filtered)
+        return _filtered_from_dict(cls, d)
 
 
 class VisionBananaConfig:

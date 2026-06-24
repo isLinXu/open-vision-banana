@@ -97,7 +97,6 @@ class VisionEvaluator:
             batch["class_color_map"] = class_color_map
 
         # Build a single-batch dataloader-like iterable
-        import itertools
         single_batch_loader = [batch]
 
         return self.evaluate(
@@ -221,9 +220,7 @@ class VisionEvaluator:
             n_batches += 1
 
         if n_batches == 0:
-            logger.warning(
-                "evaluate() called on an empty dataloader — returning empty metrics"
-            )
+            logger.warning("evaluate() called on an empty dataloader — returning empty metrics")
             return {}
 
         for k in all_metrics:
@@ -262,17 +259,13 @@ class VisionEvaluator:
             )
             if task == "semantic":
                 if class_color_map is None:
-                    raise ValueError(
-                        "class_color_map required for semantic segmentation predict()"
-                    )
+                    raise ValueError("class_color_map required for semantic segmentation predict()")
                 predict_kwargs["class_color_map"] = class_color_map
             elif task == "instance":
                 predict_kwargs["object_name"] = object_name or "object"
             elif task == "referring":
                 if expression is None:
-                    raise ValueError(
-                        "expression required for referring segmentation predict()"
-                    )
+                    raise ValueError("expression required for referring segmentation predict()")
                 predict_kwargs["expression"] = expression
 
             result = self.model.predict(**predict_kwargs)
@@ -295,18 +288,18 @@ class VisionEvaluator:
         return pred_rgb.to(self.device)
 
     @staticmethod
-    def _extract_rgb_from_result(
-        result: dict, task: str, image: torch.Tensor
-    ) -> torch.Tensor:
+    def _extract_rgb_from_result(result: dict, task: str, image: torch.Tensor) -> torch.Tensor:
         """Best-effort extraction of a displayable [B,3,H,W] tensor from a result dict."""
         if "visualization" in result:
             return result["visualization"]
         # For depth/normal the decoded tensor can be re-encoded to a display image
         if task == "depth" and "depth" in result:
             from ..core.depth_mapper import DepthRGBMapper
+
             return DepthRGBMapper().depth_to_rgb(result["depth"])
         if task == "normal" and "normal" in result:
             from ..core.normal_mapper import NormalRGBMapper
+
             return NormalRGBMapper().normal_to_rgb(result["normal"])
         # For segmentation tasks the mask is binary — return it as a grey image
         if "mask" in result:

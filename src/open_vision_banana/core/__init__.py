@@ -1,7 +1,7 @@
 """Core algorithms — no external dependencies beyond PyTorch/NumPy.
 
 Provides reversible RGB mapping for all vision tasks:
-- DepthRGBMapper: power transform + spectral colormap
+- DepthRGBMapper: power transform + cube-edge colormap
 - NormalRGBMapper: direct linear mapping
 - SegmentationDecoder: 5-stage instance clustering
 - UnionFind: disjoint set union with path compression + union by rank

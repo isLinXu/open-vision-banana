@@ -3,19 +3,18 @@
 import pytest
 import torch
 import torch.nn as nn
-from pathlib import Path
 
 from open_vision_banana.export.onnx_export import (
     DepthRGBMapperONNX,
     NormalRGBMapperONNX,
-    export_mapper_onnx,
     export_full_pipeline_onnx,
+    export_mapper_onnx,
 )
-
 
 # ──────────────────────────────────────────────────────────────────
 # DepthRGBMapperONNX tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestDepthRGBMapperONNX:
     """Test the ONNX-compatible depth mapper wrapper."""
@@ -88,6 +87,7 @@ class TestDepthRGBMapperONNX:
 # NormalRGBMapperONNX tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestNormalRGBMapperONNX:
     """Test the ONNX-compatible normal mapper wrapper."""
 
@@ -122,6 +122,7 @@ class TestNormalRGBMapperONNX:
 # ──────────────────────────────────────────────────────────────────
 # export_mapper_onnx tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestExportMapperOnnx:
     """Test the export_mapper_onnx function."""
@@ -196,11 +197,13 @@ class TestExportMapperOnnx:
 # export_full_pipeline_onnx tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestExportFullPipelineOnnx:
     """Test the export_full_pipeline_onnx function."""
 
     def test_export_with_mock_transformer(self, tmp_path):
         """Should export a mock transformer model to ONNX."""
+
         class MockTransformer(nn.Module):
             def __init__(self):
                 super().__init__()
@@ -208,7 +211,7 @@ class TestExportFullPipelineOnnx:
 
             def forward(self, hidden, timestep, text_emb):
                 # Simple forward that returns something with the right shape
-                B = hidden.shape[0]
+                hidden.shape[0]
                 return hidden
 
         class MockModel:
@@ -221,6 +224,7 @@ class TestExportFullPipelineOnnx:
 
     def test_export_creates_output_dir(self, tmp_path):
         """Should create output directory."""
+
         class MockTransformer(nn.Module):
             def __init__(self):
                 super().__init__()

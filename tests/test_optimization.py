@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock
 
 import torch
-import torch.nn as nn
 
 from open_vision_banana.export.onnx_export import NormalRGBMapperONNX
 from open_vision_banana.inference.optimization import (

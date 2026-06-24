@@ -7,7 +7,7 @@ quantization for lightweight RGB mapper modules (not the 12B transformer).
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn

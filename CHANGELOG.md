@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-06-23
+
+### Changed
+
+- **`_extract_instances` vectorized** (`core/segmentation.py`): Replaced per-label Python loop (K GPU→CPU round-trips for `img[mask].mean()`) with scatter_add + bincount aggregation. Mean colors for all components computed in a single pass, reducing K sync points to 1.
+- **`_compute_adaptive_tau` vectorized** (`core/segmentation.py`): Replaced manual gradient differencing with `F.conv2d` + Sobel kernels. Eliminates 3 temporary tensor allocations (`gx`, `gy`, `gradient_magnitude` reallocations) and produces cleaner gradients.
+- **GPU sync elimination** (`core/segmentation.py`): 4 `.item()` call sites wrapped with `int()` to make GPU→CPU synchronization explicit and prevent implicit float-coercion syncs.
+- **`_tensor_to_pil` GPU fix** (`inference/generator.py`): `t.min()` on GPU caused an implicit synchronization before `.cpu()`. Reordered to `.cpu()` first, then min/max check — avoids blocking the GPU pipeline.
+- **Config DRY refactor** (`config.py`): Extracted repeated `from_dict` boilerplate (8 classes × 4 lines each) into shared `_filtered_from_dict()` helper. ~50 lines of duplicated `inspect.signature` logic removed.
+- **Import cleanup** (`inference/pipeline.py`): `collections.abc.Callable` replaces `typing.Callable` (PEP 585). `InferenceOptions` imported at module level instead of string-annotated. `contextlib.suppress` replaces bare try/except.
+- **Import ordering** (`training/__init__.py`): Alphabetical ordering for deepspeed/fsdp imports.
+- **Lint compliance**: All 46 source + test files pass `ruff check` and `ruff format`. Fixed B904 (raise from exc), B905 (zip strict), B007 (unused loop var), F841 (unused vars). N817 added to ignore list (FSDP acronym is PyTorch convention).
+
+## [0.4.0] — 2026-06-23
+
+### Added
+
+- **Core algorithm performance benchmark** (`experiments/core_algorithm_benchmark.py`): Latency / throughput / memory baselines for depth, normal, and segmentation across resolutions 64–2048. Verifies the paper's Union-Find ~100× speedup claim (137× at 256²).
+- **Segmentation optimization regression tests** (`tests/test_segmentation_v040.py`): Covers the S4 tiny-component pre-filter and S5 vectorized merging.
+
+### Changed
+
+- **Single-source version**: `pyproject.toml` now reads `version` dynamically from `open_vision_banana.__version__` (was hardcoded and drifting between `0.2.0` / `0.3.3`). `__version__` bumped to `0.4.0`.
+- **SegmentationDecoder S5 (`_spatial_merging`) vectorized**: Replaced the Python greedy merge-pair loop (O(P) scalar `.item()` calls, P up to K²) with a tensor Union-Find over the merge-adjacency graph. Computes the same connected-component partition with no Python-level loops.
+
+### Performance
+
+- **SegmentationDecoder S4 (`_boundary_artifact_elimination`) pre-filter**: Components with < 9 pixels (which can never survive a 3×3 erosion) are dropped before the multi-hot conv. This removes a pathological blowup on noisy / low-resolution inputs — random 64×64 decode dropped from **~6.8 s → ~16 ms (≈430×)**, 256×256 from ~400 ms → ~120 ms. Exact (not approximate): such components were always removed by erosion anyway.
+
+### Fixed
+
+- **Fragile performance tests** (`tests/test_modules.py::TestPerformance`): Replaced absolute wall-clock thresholds (which failed under parallel CI load) with warmup + median-of-runs timing, generous regression-only bounds, and explicit correctness assertions.
+
 ## [0.3.4] — 2026-06-19
 
 ### Added
@@ -241,6 +274,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration system with YAML support.
 - Project scaffolding: pyproject.toml, README, LICENSE, tests.
 
+[0.4.1]: https://github.com/user/open-vision-banana/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/user/open-vision-banana/compare/v0.3.4...v0.4.0
+[0.3.4]: https://github.com/user/open-vision-banana/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/user/open-vision-banana/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/user/open-vision-banana/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/user/open-vision-banana/compare/v0.3.0...v0.3.1

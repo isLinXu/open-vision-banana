@@ -14,7 +14,7 @@ Subpackages:
 - data: Dataset loaders for vision task instruction tuning
 """
 
-__version__ = "0.2.0"
+__version__ = "0.4.1"
 
 # Lazy imports — only load what's needed
 from .config import VisionBananaConfig
@@ -38,7 +38,7 @@ def __getattr__(name):
         "NormalRGBMapper": ".core.normal_mapper",
         "SegmentationDecoder": ".core.segmentation",
         "RGBMapper": ".core.rgb_mapper",
-        "SPECTRAL_KEYPOINTS": ".core.depth_mapper",
+        "CUBE_EDGE_KEYPOINTS": ".core.depth_mapper",
         # Inference
         "BaseGenerator": ".inference.generator",
         "PromptBuilder": ".inference.prompt",
@@ -69,6 +69,7 @@ def __getattr__(name):
 
     if name in _lazy_map:
         import importlib
+
         module = importlib.import_module(_lazy_map[name], __package__)
         return getattr(module, name)
 

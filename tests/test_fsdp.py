@@ -1,6 +1,5 @@
 """Tests for FSDP training utilities."""
 
-import torch
 import torch.nn as nn
 
 from open_vision_banana.training.fsdp_utils import FSDPWrapper

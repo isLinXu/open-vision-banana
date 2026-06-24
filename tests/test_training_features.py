@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-import torch
 import torch.nn as nn
 from PIL import Image
 

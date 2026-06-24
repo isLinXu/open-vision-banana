@@ -12,9 +12,6 @@ This replaces the O(80×N) per-iteration flood-fill with an O(E α(N)) approach.
 
 from __future__ import annotations
 
-import torch
-from torch import Tensor
-
 
 class UnionFind:
     """Union-Find with path compression and union by rank.
@@ -24,7 +21,7 @@ class UnionFind:
 
     def __init__(self, n: int) -> None:
         self.parent = list(range(n))  # parent[i] = i initially
-        self.rank = [0] * n           # rank[i] = 0 initially
+        self.rank = [0] * n  # rank[i] = 0 initially
 
     def find(self, x: int) -> int:
         """Find root of x with path compression (max 4 rounds)."""

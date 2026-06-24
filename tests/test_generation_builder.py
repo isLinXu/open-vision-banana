@@ -4,8 +4,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from open_vision_banana.data.generation import build_generation_dataset
 from open_vision_banana.data.generation_builder import (
     build_synthetic_generation_dataset,
@@ -65,12 +63,11 @@ class TestWandbCheckpointLogging:
         artifact = MagicMock(name="vision-banana-lora-step-10")
         logger._wandb.log_artifact.return_value = artifact
 
-        with patch("wandb.Artifact", return_value=artifact) as mock_artifact, patch(
-            "wandb.log"
-        ) as mock_log:
-            logger.log_checkpoint(
-                ckpt_dir, alias="step-10", metadata={"step": 10}, step=10
-            )
+        with (
+            patch("wandb.Artifact", return_value=artifact, create=True) as mock_artifact,
+            patch("wandb.log", create=True) as mock_log,
+        ):
+            logger.log_checkpoint(ckpt_dir, alias="step-10", metadata={"step": 10}, step=10)
 
         mock_artifact.assert_called_once()
         logger._wandb.log_artifact.assert_called_once()

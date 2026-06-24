@@ -18,14 +18,15 @@ All tasks share the same model weights — only the prompt changes.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import torch
 
 from ..core.rgb_mapper import RGBMapper
 from .decoder import VisualizationDecoder
 from .generator import BaseGenerator
+from .optimization import InferenceOptions
 from .prompt import PromptBuilder
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,7 @@ class VisionBanana:
     - TorchScript export for deployment
     """
 
-    SUPPORTED_TASKS = [
-        "semantic", "instance", "referring", "depth", "normal"
-    ]
+    SUPPORTED_TASKS = ["semantic", "instance", "referring", "depth", "normal"]
 
     def __init__(
         self,
@@ -75,7 +74,7 @@ class VisionBanana:
         dtype: torch.dtype = torch.bfloat16,
         lora_revision: str | None = None,
         enable_sequential_cpu_offload: bool = False,
-        inference_options: "InferenceOptions | None" = None,
+        inference_options: InferenceOptions | None = None,
     ) -> VisionBanana:
         """Load a pretrained Vision Banana model.
 
@@ -112,6 +111,7 @@ class VisionBanana:
         class_color_map: dict | None = None,
         object_name: str | None = None,
         expression: str | None = None,
+        target_color: tuple[int, int, int] = (255, 255, 255),
         background_color: tuple[int, int, int] = (0, 0, 0),
         num_inference_steps: int = 1,
         strength: float = 0.85,
@@ -127,6 +127,8 @@ class VisionBanana:
             class_color_map: Required for semantic segmentation.
             object_name: Required for instance segmentation.
             expression: Required for referring segmentation.
+            target_color: Target color for referring segmentation (R, G, B) in [0, 255].
+                Defaults to white (255, 255, 255).
             background_color: Background color for instance segmentation.
             num_inference_steps: Denoising steps (1 for schnell).
             strength: Img2img noise strength (0, 1]. Lower → closer to input.
@@ -138,10 +140,7 @@ class VisionBanana:
             Task-specific result dict with decoded outputs.
         """
         if task not in self.SUPPORTED_TASKS:
-            raise ValueError(
-                f"Unsupported task: {task}. "
-                f"Choose from: {self.SUPPORTED_TASKS}"
-            )
+            raise ValueError(f"Unsupported task: {task}. Choose from: {self.SUPPORTED_TASKS}")
 
         prompt = self._build_prompt(
             task=task,
@@ -166,6 +165,7 @@ class VisionBanana:
             rgb_output=rgb_output,
             task=task,
             class_color_map=class_color_map,
+            target_color=target_color,
             background_color=background_color,
         )
 
@@ -254,6 +254,7 @@ class VisionBanana:
         rgb_output: torch.Tensor,
         task: str,
         class_color_map: dict | None = None,
+        target_color: tuple[int, int, int] = (255, 255, 255),
         background_color: tuple[int, int, int] = (0, 0, 0),
     ) -> dict:
         """Decode RGB output to vision task result."""
@@ -272,17 +273,16 @@ class VisionBanana:
             return self.decoder.decode_instance(rgb_output, background_color)
 
         elif task == "referring":
-            # Decode as binary mask: bright pixels (mean > 0.5) = referred region.
-            # The model renders the referred object in white on a black background.
-            pred_mask = rgb_output.mean(dim=1, keepdim=True) > 0.5   # [B, 1, H, W]
-            return {
-                "mask": pred_mask,
-                "visualization": rgb_output,
-            }
+            # Decode as binary mask by finding pixels closest to target_color
+            # in RGB space (L2 distance). This aligns with the paper's
+            # approach of "clustering pixels whose values are close to <255,255,0>".
+            return self.decoder.decode_referring(
+                rgb_output, target_color=target_color
+            )
 
         raise ValueError(f"Unknown task: {task}")
 
-    def eval(self) -> "VisionBanana":
+    def eval(self) -> VisionBanana:
         """Set underlying generator pipelines to eval mode (no-op for diffusers).
 
         This method exists so that ``VisionEvaluator`` can call
@@ -295,15 +295,15 @@ class VisionBanana:
         # diffusers Pipeline objects do not expose .eval() / .train() in the
         # nn.Module sense; calling them is a no-op.  We still propagate to any
         # sub-module that does support it.
+        import contextlib
+
         for pipe in [
             getattr(self.generator, "_t2i_pipe", None),
             getattr(self.generator, "_i2i_pipe", None),
         ]:
             if pipe is not None and hasattr(pipe, "eval"):
-                try:
+                with contextlib.suppress(Exception):
                     pipe.eval()
-                except Exception:
-                    pass
         return self
 
     def save(self, output_dir: str | Path) -> None:
@@ -325,7 +325,7 @@ class VisionBanana:
         self,
         image: torch.Tensor,
         task: str,
-        callback: "Callable[[int, torch.Tensor], None] | None" = None,
+        callback: Callable[[int, torch.Tensor], None] | None = None,
         num_inference_steps: int = 1,
         **kwargs,
     ) -> dict:
@@ -395,7 +395,7 @@ class VisionBanana:
         assert B == 1, "predict_tiled only supports single-image inference"
 
         # If image fits within tile_size, fall back to standard predict
-        if H <= tile_size and W <= tile_size:
+        if tile_size >= H and tile_size >= W:
             return self.predict(image, task, **kwargs)
 
         # Generate tile coordinates
@@ -467,6 +467,7 @@ class VisionBanana:
 
         if task == "depth":
             from ..core.depth_mapper import DepthRGBMapper
+
             mapper = DepthRGBMapper()
 
             class DepthDecoderScript(torch.nn.Module):
@@ -484,6 +485,7 @@ class VisionBanana:
 
         elif task == "normal":
             from ..core.normal_mapper import NormalRGBMapper
+
             mapper = NormalRGBMapper()
 
             class NormalDecoderScript(torch.nn.Module):
@@ -501,8 +503,7 @@ class VisionBanana:
 
         else:
             raise ValueError(
-                f"TorchScript export not supported for task: {task}. "
-                f"Choose from: depth, normal"
+                f"TorchScript export not supported for task: {task}. Choose from: depth, normal"
             )
 
         logger.info(f"TorchScript model exported to {output_path}")

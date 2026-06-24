@@ -99,9 +99,7 @@ class FSDPWrapper:
         device = f"cuda:{self.local_rank}"
         return FSDP(
             model.to(device),
-            sharding_strategy=strategy_map.get(
-                self.sharding_strategy, ShardingStrategy.FULL_SHARD
-            ),
+            sharding_strategy=strategy_map.get(self.sharding_strategy, ShardingStrategy.FULL_SHARD),
             auto_wrap_policy=auto_wrap_policy,
             mixed_precision=mp,
             device_id=self.local_rank,
@@ -127,8 +125,9 @@ class FSDPWrapper:
         """Return full (non-sharded) state dict for checkpoint saving."""
         if not self.enabled:
             return model.state_dict()
+        from torch.distributed.fsdp import FullStateDictConfig, StateDictType
         from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-        from torch.distributed.fsdp import FullStateDictConfig
+
         with FSDP.state_dict_type(
             model,
             StateDictType.FULL_STATE_DICT,
@@ -141,8 +140,9 @@ class FSDPWrapper:
         if not self.enabled:
             model.load_state_dict(state_dict)
             return
+        from torch.distributed.fsdp import FullStateDictConfig, StateDictType
         from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-        from torch.distributed.fsdp import FullStateDictConfig
+
         with FSDP.state_dict_type(
             model,
             StateDictType.FULL_STATE_DICT,

@@ -1,30 +1,29 @@
 """Tests for v0.3 coverage improvement: instance eval, split, union_find, trainer_interface."""
 
+import pytest
 import torch
 import torch.nn as nn
-import pytest
 
+from open_vision_banana.core.union_find import UnionFind
+from open_vision_banana.data.split import split_dataset, split_vision_datasets
 from open_vision_banana.evaluation.instance import (
     compute_iou_box,
     compute_iou_mask,
     compute_iou_matrix_batched,
     evaluate_instance,
 )
-from open_vision_banana.data.split import split_dataset, split_vision_datasets
-from open_vision_banana.core.union_find import UnionFind
 from open_vision_banana.training.trainer_interface import (
-    TrainerInterface,
-    NativeTrainer,
+    AccelerateTrainer,
     DDPTrainer,
     FSDPTrainer,
-    AccelerateTrainer,
+    NativeTrainer,
     create_trainer,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────
 # Instance evaluation tests
 # ──────────────────────────────────────────────────────────────────────
+
 
 class TestComputeIoUBox:
     def test_overlap(self):
@@ -77,18 +76,18 @@ class TestComputeIoUMask:
 
 class TestComputeIoUMatrixBatched:
     def test_matrix_shape(self):
-        pred = [{'mask': torch.zeros(4, 4, dtype=torch.bool)} for _ in range(3)]
-        gt = [{'mask': torch.zeros(4, 4, dtype=torch.bool)} for _ in range(2)]
+        pred = [{"mask": torch.zeros(4, 4, dtype=torch.bool)} for _ in range(3)]
+        gt = [{"mask": torch.zeros(4, 4, dtype=torch.bool)} for _ in range(2)]
         matrix = compute_iou_matrix_batched(pred, gt)
         assert matrix.shape == (3, 2)
 
     def test_empty_pred(self):
-        gt = [{'mask': torch.zeros(4, 4, dtype=torch.bool)} for _ in range(2)]
+        gt = [{"mask": torch.zeros(4, 4, dtype=torch.bool)} for _ in range(2)]
         matrix = compute_iou_matrix_batched([], gt)
         assert matrix.shape == (0, 2)
 
     def test_empty_gt(self):
-        pred = [{'mask': torch.zeros(4, 4, dtype=torch.bool)} for _ in range(3)]
+        pred = [{"mask": torch.zeros(4, 4, dtype=torch.bool)} for _ in range(3)]
         matrix = compute_iou_matrix_batched(pred, [])
         assert matrix.shape == (3, 0)
 
@@ -96,8 +95,8 @@ class TestComputeIoUMatrixBatched:
         """Identical masks should give IoU=1 on the diagonal."""
         mask = torch.zeros(4, 4, dtype=torch.bool)
         mask[1:3, 1:3] = True
-        pred = [{'mask': mask.clone()} for _ in range(3)]
-        gt = [{'mask': mask.clone()} for _ in range(3)]
+        pred = [{"mask": mask.clone()} for _ in range(3)]
+        gt = [{"mask": mask.clone()} for _ in range(3)]
         matrix = compute_iou_matrix_batched(pred, gt)
         for i in range(3):
             assert pytest.approx(matrix[i, i].item(), abs=0.001) == 1.0
@@ -107,7 +106,7 @@ class TestEvaluateInstance:
     def test_perfect_match(self):
         mask = torch.zeros(8, 8, dtype=torch.bool)
         mask[2:5, 2:5] = True
-        instances = [{'mask': mask.clone()}]
+        instances = [{"mask": mask.clone()}]
         result = evaluate_instance(instances, instances)
         assert result["AP@0.5"] == 1.0
         assert result["AP@0.75"] == 1.0
@@ -116,7 +115,7 @@ class TestEvaluateInstance:
     def test_no_predictions(self):
         gt_mask = torch.zeros(8, 8, dtype=torch.bool)
         gt_mask[0, 0] = True
-        gt_instances = [{'mask': gt_mask}]
+        gt_instances = [{"mask": gt_mask}]
         result = evaluate_instance([], gt_instances)
         assert result["AP@0.5"] == 0.0
         assert result["mAP@[0.5:0.95]"] == 0.0
@@ -124,14 +123,14 @@ class TestEvaluateInstance:
     def test_empty_gt(self):
         mask = torch.zeros(8, 8, dtype=torch.bool)
         mask[0, 0] = True
-        pred_instances = [{'mask': mask}]
+        pred_instances = [{"mask": mask}]
         result = evaluate_instance(pred_instances, [])
         assert result["AP@0.5"] == 0.0
 
     def test_custom_thresholds(self):
         mask = torch.zeros(8, 8, dtype=torch.bool)
         mask[2:5, 2:5] = True
-        instances = [{'mask': mask}]
+        instances = [{"mask": mask}]
         result = evaluate_instance(instances, instances, iou_thresholds=[0.5])
         assert "AP@0.50" in result or "AP@0.5" in result
 
@@ -140,9 +139,11 @@ class TestEvaluateInstance:
 # Dataset split tests
 # ──────────────────────────────────────────────────────────────────────
 
+
 class TestSplitDataset:
     def test_basic_split(self):
         from torch.utils.data import TensorDataset
+
         ds = TensorDataset(torch.arange(100).float().unsqueeze(1))
         train, val = split_dataset(ds, val_ratio=0.2)
         assert len(train) == 80
@@ -150,6 +151,7 @@ class TestSplitDataset:
 
     def test_zero_ratio(self):
         from torch.utils.data import TensorDataset
+
         ds = TensorDataset(torch.arange(10).float().unsqueeze(1))
         train, val = split_dataset(ds, val_ratio=0.0)
         assert train is ds
@@ -157,6 +159,7 @@ class TestSplitDataset:
 
     def test_too_small(self):
         from torch.utils.data import TensorDataset
+
         ds = TensorDataset(torch.arange(1).float().unsqueeze(1))
         train, val = split_dataset(ds, val_ratio=0.5)
         assert train is ds
@@ -164,6 +167,7 @@ class TestSplitDataset:
 
     def test_reproducible(self):
         from torch.utils.data import TensorDataset
+
         ds1 = TensorDataset(torch.arange(50).float().unsqueeze(1))
         ds2 = TensorDataset(torch.arange(50).float().unsqueeze(1))
         train1, val1 = split_dataset(ds1, val_ratio=0.3, seed=42)
@@ -177,6 +181,7 @@ class TestSplitDataset:
 class TestSplitVisionDatasets:
     def test_multiple_datasets(self):
         from torch.utils.data import TensorDataset
+
         ds1 = TensorDataset(torch.arange(50).float().unsqueeze(1))
         ds2 = TensorDataset(torch.arange(50).float().unsqueeze(1))
         train_list, val = split_vision_datasets([ds1, ds2], val_ratio=0.2)
@@ -191,6 +196,7 @@ class TestSplitVisionDatasets:
 
     def test_zero_ratio(self):
         from torch.utils.data import TensorDataset
+
         ds = TensorDataset(torch.arange(10).float().unsqueeze(1))
         train_list, val = split_vision_datasets([ds], val_ratio=0.0)
         assert train_list == [ds]
@@ -200,6 +206,7 @@ class TestSplitVisionDatasets:
 # ──────────────────────────────────────────────────────────────────────
 # UnionFind tests
 # ──────────────────────────────────────────────────────────────────────
+
 
 class TestUnionFind:
     def test_initial_state(self):
@@ -257,6 +264,7 @@ class TestUnionFind:
 # ──────────────────────────────────────────────────────────────────────
 # TrainerInterface tests
 # ──────────────────────────────────────────────────────────────────────
+
 
 class TestNativeTrainer:
     def test_auto_device(self):
@@ -374,12 +382,14 @@ class TestCreateTrainer:
 # EMAModel v0.3 optimization tests
 # ──────────────────────────────────────────────────────────────────────
 
+
 class TestEMAModelV03:
     def test_param_refs_captured(self):
         from open_vision_banana.training.utils import EMAModel
+
         model = nn.Linear(10, 5)
         ema = EMAModel(model, decay=0.99)
-        assert hasattr(ema, '_param_refs')
+        assert hasattr(ema, "_param_refs")
         assert len(ema._param_refs) > 0
         # Each ref should be (name, param) tuple
         for name, p in ema._param_refs:
@@ -388,6 +398,7 @@ class TestEMAModelV03:
 
     def test_update_with_refs(self):
         from open_vision_banana.training.utils import EMAModel
+
         model = nn.Linear(10, 5)
         ema = EMAModel(model, decay=0.99)
 
@@ -397,10 +408,11 @@ class TestEMAModelV03:
 
         ema.update(model)
         # Shadow params should have moved toward new weights
-        assert not torch.allclose(ema.shadow_params['weight'], model.weight.data)
+        assert not torch.allclose(ema.shadow_params["weight"], model.weight.data)
 
     def test_warmup_skip(self):
         from open_vision_banana.training.utils import EMAModel
+
         model = nn.Linear(10, 5)
         original_shadow = {k: v.clone() for k, v in model.state_dict().items()}
         ema = EMAModel(model, decay=0.99, update_after_step=10)
@@ -410,12 +422,13 @@ class TestEMAModelV03:
 
         ema.update(model)
         # Should not update during warmup
-        assert torch.allclose(ema.shadow_params['weight'], original_shadow['weight'])
+        assert torch.allclose(ema.shadow_params["weight"], original_shadow["weight"])
 
     def test_apply_and_restore_shadow(self):
         from open_vision_banana.training.utils import EMAModel
+
         model = nn.Linear(10, 5)
-        original_weight = model.weight.data.clone()
+        model.weight.data.clone()
         ema = EMAModel(model, decay=0.99)
 
         # Modify model weights
@@ -424,8 +437,8 @@ class TestEMAModelV03:
 
         # Apply shadow (should restore to original)
         backup = ema.apply_shadow(model)
-        assert torch.allclose(model.weight.data, ema.shadow_params['weight'])
+        assert torch.allclose(model.weight.data, ema.shadow_params["weight"])
 
         # Restore (should put back modified weights)
         ema.restore_shadow(model, backup)
-        assert not torch.allclose(model.weight.data, ema.shadow_params['weight'])
+        assert not torch.allclose(model.weight.data, ema.shadow_params["weight"])

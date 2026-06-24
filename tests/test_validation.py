@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 from PIL import Image
 
 from open_vision_banana.data.validation import validate_vision_dataset

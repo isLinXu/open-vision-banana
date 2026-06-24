@@ -3,13 +3,13 @@
 From the paper (Section 3.2):
 - Apply power transform: f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
 - Parameters: λ=-3, c=10/3
-- Then map via continuous spectral colormap (dark blue → white)
+- Then map via cube-edge traversal colormap (black → blue → cyan → green → yellow → white)
 
 This extends the base DepthRGBMapper with adaptive quantization:
 - Near depth (d < d_near): finer quantization for higher precision
 - Far depth (d > d_far): coarser quantization for efficiency
 - The power transform parameters remain fixed to guarantee reversibility
-- The spectral colormap is continuous (linear interpolation), so adaptive
+- The cube-edge colormap is piecewise-linear (linear interpolation along cube edges), so adaptive
   sampling density does not change the mapping — instead, adaptive
   *quantization* of the normalized depth provides variable precision
 
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import torch
 
-from .depth_mapper import DepthRGBMapper, SPECTRAL_KEYPOINTS
+from .depth_mapper import CUBE_EDGE_KEYPOINTS, DepthRGBMapper
 
 
 class AdaptiveDepthRGBMapper(DepthRGBMapper):
@@ -32,7 +32,7 @@ class AdaptiveDepthRGBMapper(DepthRGBMapper):
     - Far depth: coarser quantization (fewer discrete levels)
 
     The power transform parameters (λ, c) remain fixed to guarantee
-    perfect reversibility. The spectral colormap is continuous, so
+    perfect reversibility. The cube-edge colormap follows RGB cube edges, so
     instead of changing sampling density (which would not affect a
     continuous interpolation), the normalized depth is quantized to
     a variable number of levels based on the depth value.
@@ -85,15 +85,13 @@ class AdaptiveDepthRGBMapper(DepthRGBMapper):
         normalized = self.depth_to_normalized(depth)
 
         # Adaptive quantization: near depth gets more levels, far gets fewer.
-        t = ((depth - self.d_near) / (self.d_far - self.d_near + 1e-8))
+        t = (depth - self.d_near) / (self.d_far - self.d_near + 1e-8)
         t = t.clamp(0.0, 1.0)
         num_levels = (
-            self.near_samples * (1 - t) + self.far_samples * t
-        ).int().clamp(min=64, max=1024)
-
-        normalized_q = self._adaptive_quantize(
-            normalized, num_levels, self.max_quantization_levels
+            (self.near_samples * (1 - t) + self.far_samples * t).int().clamp(min=64, max=1024)
         )
+
+        normalized_q = self._adaptive_quantize(normalized, num_levels, self.max_quantization_levels)
 
         # Far depths (d > d_far) keep continuous normalized values — coarser
         # quantization at high depth causes large metric errors after the
@@ -101,7 +99,7 @@ class AdaptiveDepthRGBMapper(DepthRGBMapper):
         far_mask = (depth > self.d_far).expand_as(normalized)
         normalized_out = torch.where(far_mask, normalized, normalized_q)
 
-        return self._normalized_to_rgb_spectral(normalized_out)
+        return self._normalized_to_rgb_cube_edge(normalized_out)
 
     def _quantization_level_options(self) -> list[int]:
         """Distinct quantization grids tried during decode refinement."""
@@ -113,9 +111,9 @@ class AdaptiveDepthRGBMapper(DepthRGBMapper):
         rgb: torch.Tensor,
         continuous: torch.Tensor,
     ) -> torch.Tensor:
-        """Pick the quantized normalized value whose spectral RGB best matches *rgb*.
+        """Pick the quantized normalized value whose cube-edge RGB best matches *rgb*.
 
-        Candidates include the continuous spectral projection (for far depths
+        Candidates include the continuous cube-edge projection (for far depths
         encoded without quantization) plus snaps on each configured grid.
         """
         best_norm = continuous.clone()
@@ -132,7 +130,7 @@ class AdaptiveDepthRGBMapper(DepthRGBMapper):
             candidates.append((continuous / step).round() * step)
 
         for candidate in candidates:
-            candidate_rgb = self._normalized_to_rgb_spectral(candidate)
+            candidate_rgb = self._normalized_to_rgb_cube_edge(candidate)
             dist = (candidate_rgb - rgb).pow(2).sum(dim=1, keepdim=True).sqrt()
             better = dist < best_dist
             best_norm = torch.where(better, candidate, best_norm)
@@ -175,13 +173,13 @@ class AdaptiveDepthRGBMapper(DepthRGBMapper):
         step = 1.0 / num_levels.float()
         return (normalized / step).round() * step
 
-    def _normalized_to_rgb_spectral(self, normalized: torch.Tensor) -> torch.Tensor:
-        """Map normalized depth to RGB via continuous spectral colormap.
+    def _normalized_to_rgb_cube_edge(self, normalized: torch.Tensor) -> torch.Tensor:
+        """Map normalized depth to RGB via cube-edge colormap.
 
-        This is identical to the parent's spectral mapping but kept as a
+        This is identical to the parent's cube-edge mapping but kept as a
         separate method for clarity and testability.
         """
-        kp = SPECTRAL_KEYPOINTS.to(normalized.device)
+        kp = CUBE_EDGE_KEYPOINTS.to(normalized.device)
         positions = kp[:, 0].contiguous()
         colors = kp[:, 1:].contiguous()
 

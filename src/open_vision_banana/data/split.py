@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import torch
-from torch.utils.data import Dataset, Subset, random_split
+from torch.utils.data import Dataset, random_split
 
 
 def split_dataset(

@@ -1,7 +1,5 @@
 """Tests for training logging integrations (W&B and TensorBoard)."""
 
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from open_vision_banana.training.logging import TrainingLogger, create_training_logger_from_config
@@ -249,6 +247,7 @@ class TestCreateTrainingLoggerFromConfig:
     def test_no_logging_config(self):
         """Should return default logger when config has no logging section."""
         from types import SimpleNamespace
+
         cfg = SimpleNamespace()
         logger = create_training_logger_from_config(cfg)
         assert logger.wandb_enabled is False
@@ -257,6 +256,7 @@ class TestCreateTrainingLoggerFromConfig:
     def test_with_logging_config(self):
         """Should create logger from logging config."""
         from types import SimpleNamespace
+
         cfg = SimpleNamespace(
             logging=SimpleNamespace(
                 wandb_enabled=True,

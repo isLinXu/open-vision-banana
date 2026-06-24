@@ -1,6 +1,5 @@
 """Tests for AdaptiveDepthRGBMapper."""
 
-import pytest
 import torch
 
 from open_vision_banana.core.adaptive_depth_mapper import AdaptiveDepthRGBMapper
@@ -28,8 +27,12 @@ class TestAdaptiveDepthRGBMapper:
     def test_custom_params(self):
         """Custom parameters should be stored correctly."""
         mapper = AdaptiveDepthRGBMapper(
-            lam=-2.0, c=5.0, near_samples=256, far_samples=32,
-            d_near=0.5, d_far=5.0,
+            lam=-2.0,
+            c=5.0,
+            near_samples=256,
+            far_samples=32,
+            d_near=0.5,
+            d_far=5.0,
         )
         assert mapper.lam == -2.0
         assert mapper.c == 5.0
@@ -105,7 +108,7 @@ class TestAdaptiveDepthRGBMapper:
         normalized = torch.tensor([0.1, 0.5, 0.9])
         num_levels = torch.tensor([512, 128, 128])
         result = AdaptiveDepthRGBMapper._adaptive_quantize(normalized, num_levels, 512)
-        for val, levels in zip(result, num_levels):
+        for val, levels in zip(result, num_levels, strict=False):
             step = 1.0 / levels.item()
             remainder = (val / step).round() - (val / step)
             assert abs(remainder) < 1e-5
@@ -116,8 +119,8 @@ class TestAdaptiveDepthRGBMapper:
         # Two distinct depth values
         d_near = torch.tensor([[[[2.0]]]])
         d_far = torch.tensor([[[[8.0]]]])
-        rgb_near = mapper.depth_to_rgb(d_near)
-        rgb_far = mapper.depth_to_rgb(d_far)
+        mapper.depth_to_rgb(d_near)
+        mapper.depth_to_rgb(d_far)
         # The normalized values should be different (monotonic)
         n_near = mapper.depth_to_normalized(d_near)
         n_far = mapper.depth_to_normalized(d_far)
@@ -161,10 +164,10 @@ class TestAdaptiveDepthRGBMapper:
         assert depth.grad is not None
 
     def test_normalized_to_rgb_spectral(self):
-        """_normalized_to_rgb_spectral should produce valid RGB from normalized depth."""
+        """_normalized_to_rgb_cube_edge should produce valid RGB from normalized depth."""
         mapper = AdaptiveDepthRGBMapper()
         normalized = torch.rand(1, 1, 16, 16)
-        rgb = mapper._normalized_to_rgb_spectral(normalized)
+        rgb = mapper._normalized_to_rgb_cube_edge(normalized)
         assert rgb.shape == (1, 3, 16, 16)
         assert rgb.min() >= 0.0
         assert rgb.max() <= 1.0

@@ -26,10 +26,10 @@ from open_vision_banana.inference.optimization import (
 )
 from open_vision_banana.training.fsdp_utils import FSDPWrapper
 
-
 # ──────────────────────────────────────────────────────────────
 # FSDP Wrapper Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestFSDPWrapper:
     """Tests for FSDPWrapper checkpoint and state dict management."""
@@ -86,6 +86,7 @@ class TestFSDPWrapper:
 # Optimization Preset Tests
 # ──────────────────────────────────────────────────────────────
 
+
 class TestOptimizationPresets:
     """Tests for inference optimization preset system."""
 
@@ -132,7 +133,7 @@ class TestOptimizationPresets:
         with open(preset_file) as f:
             loaded = yaml.safe_load(f)
 
-        for name, cfg in loaded["profiles"].items():
+        for _name, cfg in loaded["profiles"].items():
             opts = options_from_dict(cfg)
             assert isinstance(opts, InferenceOptions)
             notes = estimate_vram_savings(opts)
@@ -152,6 +153,7 @@ class TestOptimizationPresets:
 # ──────────────────────────────────────────────────────────────
 # Data Validation Tests (script-level smoke)
 # ──────────────────────────────────────────────────────────────
+
 
 class TestDataValidation:
     """Smoke tests for the validate_dataset script interface."""
@@ -192,6 +194,7 @@ class TestDataValidation:
 # ──────────────────────────────────────────────────────────────
 # Attention Visualization Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestAttentionVisualization:
     """Tests for attention visualization utilities."""
@@ -243,6 +246,7 @@ class TestAttentionVisualization:
 # ──────────────────────────────────────────────────────────────
 # Pipeline Benchmark Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestPipelineBenchmark:
     """Tests for the pipeline benchmark data structures."""

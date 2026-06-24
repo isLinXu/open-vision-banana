@@ -14,22 +14,16 @@ Covers:
 
 from __future__ import annotations
 
-import json
-import tempfile
-from pathlib import Path
-
-import pytest
 import torch
-import torch.nn as nn
 
 from open_vision_banana.core.segmentation import SegmentationDecoder
 from open_vision_banana.inference.generator import _PromptEmbedCache
 from open_vision_banana.training.checkpoint import CheckpointManager
 
-
 # ──────────────────────────────────────────────────────────────
 # P0: CheckpointManager._latest_checkpoint fix
 # ──────────────────────────────────────────────────────────────
+
 
 class TestCheckpointLatestFix:
     """Verify _latest_checkpoint now searches self.output_dir."""
@@ -50,6 +44,7 @@ class TestCheckpointLatestFix:
 # ──────────────────────────────────────────────────────────────
 # P1: KV-cache LRU eviction
 # ──────────────────────────────────────────────────────────────
+
 
 class TestPromptEmbedCacheLRU:
     """Verify LRU cache evicts oldest entries."""
@@ -97,6 +92,7 @@ class TestPromptEmbedCacheLRU:
 # P1: Segmentation vectorized relabeling
 # ──────────────────────────────────────────────────────────────
 
+
 class TestVectorizedRelabeling:
     """Verify cumsum-based relabeling produces correct consecutive labels."""
 
@@ -131,17 +127,20 @@ class TestVectorizedRelabeling:
 # P1: VisionTaskDataset task-specific prompts
 # ──────────────────────────────────────────────────────────────
 
+
 class TestTaskSpecificPrompts:
     """Verify VisionTaskDataset uses task-specific prompts."""
 
     def test_task_prompts_exist(self):
         from open_vision_banana.training.tuner import VisionTaskDataset
+
         assert "depth" in VisionTaskDataset.TASK_PROMPTS
         assert "normal" in VisionTaskDataset.TASK_PROMPTS
         assert "semantic" in VisionTaskDataset.TASK_PROMPTS
 
     def test_depth_prompt_is_specific(self):
         from open_vision_banana.training.tuner import VisionTaskDataset
+
         depth_prompt = VisionTaskDataset.TASK_PROMPTS["depth"]
         assert "depth" in depth_prompt.lower()
         # Should NOT be the generic prompt
@@ -149,6 +148,7 @@ class TestTaskSpecificPrompts:
 
     def test_task_assignment(self):
         from open_vision_banana.training.tuner import VisionTaskDataset
+
         ds = VisionTaskDataset(task="normal")
         assert ds.task == "normal"
         assert ds.TASK_PROMPTS["normal"] != ds.DEFAULT_PROMPT
@@ -158,8 +158,10 @@ class TestTaskSpecificPrompts:
 # P2: Streaming and tiled inference (mock-based)
 # ──────────────────────────────────────────────────────────────
 
+
 class _MockGenerator:
     """Minimal mock generator for testing VisionBanana methods."""
+
     _prompt_cache = _PromptEmbedCache(maxsize=64)
 
     def generate(self, prompt, image=None, **kwargs):
@@ -172,9 +174,9 @@ class TestStreamingInference:
     """Test predict_streaming callback invocation."""
 
     def test_callback_is_called(self):
-        from open_vision_banana.inference.pipeline import VisionBanana
         from open_vision_banana.core.rgb_mapper import RGBMapper
         from open_vision_banana.inference.decoder import VisualizationDecoder
+        from open_vision_banana.inference.pipeline import VisionBanana
 
         gen = _MockGenerator()
         model = VisionBanana(
@@ -189,9 +191,7 @@ class TestStreamingInference:
             callback_calls.append((step, rgb is not None))
 
         image = torch.rand(1, 3, 8, 8) * 2 - 1
-        result = model.predict_streaming(
-            image=image, task="depth", callback=cb
-        )
+        result = model.predict_streaming(image=image, task="depth", callback=cb)
         assert len(callback_calls) == 1
         assert callback_calls[0][1] is True
         assert "depth" in result
@@ -201,9 +201,9 @@ class TestTiledInference:
     """Test predict_tiled fallback for small images."""
 
     def test_small_image_falls_back_to_predict(self):
-        from open_vision_banana.inference.pipeline import VisionBanana
         from open_vision_banana.core.rgb_mapper import RGBMapper
         from open_vision_banana.inference.decoder import VisualizationDecoder
+        from open_vision_banana.inference.pipeline import VisionBanana
 
         gen = _MockGenerator()
         model = VisionBanana(

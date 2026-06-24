@@ -2,7 +2,6 @@
 
 import json
 import pickle
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -10,7 +9,6 @@ import torch
 from PIL import Image
 
 from open_vision_banana.data.datasets import (
-    BaseVisionDataset,
     CityscapesSegDataset,
     HypersimDepthDataset,
     RefCOCOgDataset,
@@ -21,10 +19,10 @@ from open_vision_banana.data.datasets import (
     build_dataset,
 )
 
-
 # ──────────────────────────────────────────────────────────────────
 # Utility function tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestPilToTensor:
     """Test _pil_to_tensor helper."""
@@ -85,6 +83,7 @@ class TestFillPolygon:
 # build_dataset factory tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestBuildDataset:
     """Test the build_dataset factory function."""
 
@@ -129,6 +128,7 @@ class TestBuildDataset:
 # BaseVisionDataset tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestBaseVisionDataset:
     """Test BaseVisionDataset base class."""
 
@@ -170,6 +170,7 @@ class TestBaseVisionDataset:
 # HypersimDepthDataset tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestHypersimDepthDataset:
     """Test HypersimDepthDataset."""
 
@@ -185,9 +186,7 @@ class TestHypersimDepthDataset:
 
     def test_getitem(self, tmp_path):
         """__getitem__ should return dict with prompt, image, target_rgb."""
-        Image.new("RGB", (512, 512), color=(100, 100, 100)).save(
-            tmp_path / "scene_0_color.png"
-        )
+        Image.new("RGB", (512, 512), color=(100, 100, 100)).save(tmp_path / "scene_0_color.png")
 
         # Create a depth image with some variation
         depth_arr = (np.ones((512, 512), dtype=np.float32) * 5.0 * 1000).astype(np.uint16)
@@ -208,6 +207,7 @@ class TestHypersimDepthDataset:
 # ScanNetNormalDataset tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestScanNetNormalDataset:
     """Test ScanNetNormalDataset."""
 
@@ -225,9 +225,7 @@ class TestScanNetNormalDataset:
     def test_getitem(self, tmp_path):
         """__getitem__ should return normal-encoded target_rgb."""
         Image.new("RGB", (64, 64)).save(tmp_path / "scene_0_color.png")
-        Image.new("RGB", (64, 64), color=(128, 128, 128)).save(
-            tmp_path / "scene_0_normal.png"
-        )
+        Image.new("RGB", (64, 64), color=(128, 128, 128)).save(tmp_path / "scene_0_normal.png")
 
         ds = ScanNetNormalDataset(root_dir=str(tmp_path), resolution=64)
         item = ds[0]
@@ -238,6 +236,7 @@ class TestScanNetNormalDataset:
 # ──────────────────────────────────────────────────────────────────
 # CityscapesSegDataset tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestCityscapesSegDataset:
     """Test CityscapesSegDataset."""
@@ -267,7 +266,7 @@ class TestCityscapesSegDataset:
 
     def test_palette_cached(self, tmp_path):
         """_get_palette should cache the color palette."""
-        ds = CityscapesSegDataset(root_dir=str(tmp_path))
+        CityscapesSegDataset(root_dir=str(tmp_path))
         palette1 = CityscapesSegDataset._get_palette()
         palette2 = CityscapesSegDataset._get_palette()
         assert palette1 is palette2  # Same object (cached)
@@ -276,6 +275,7 @@ class TestCityscapesSegDataset:
 # ──────────────────────────────────────────────────────────────────
 # SACoInstanceDataset tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestSACoInstanceDataset:
     """Test SACoInstanceDataset."""
@@ -292,9 +292,7 @@ class TestSACoInstanceDataset:
     def test_getitem(self, tmp_path):
         """__getitem__ should return instance-encoded target_rgb."""
         Image.new("RGB", (64, 64)).save(tmp_path / "obj_0_color.png")
-        Image.new("RGB", (64, 64), color=(255, 0, 0)).save(
-            tmp_path / "obj_0_instance.png"
-        )
+        Image.new("RGB", (64, 64), color=(255, 0, 0)).save(tmp_path / "obj_0_instance.png")
 
         ds = SACoInstanceDataset(root_dir=str(tmp_path), resolution=64)
         item = ds[0]
@@ -305,6 +303,7 @@ class TestSACoInstanceDataset:
 # ──────────────────────────────────────────────────────────────────
 # RefCOCOgDataset tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestRefCOCOgDataset:
     """Test RefCOCOgDataset."""
@@ -323,21 +322,25 @@ class TestRefCOCOgDataset:
         img.save(img_dir / "123.jpg")
 
         # Create annotation
-        refs = [{
-            "image_id": 123,
-            "ann_id": 1,
-            "sentences": ["a cat sitting on a chair"],
-        }]
+        refs = [
+            {
+                "image_id": 123,
+                "ann_id": 1,
+                "sentences": ["a cat sitting on a chair"],
+            }
+        ]
         with open(tmp_path / "refs(g).p", "wb") as f:
             pickle.dump(refs, f)
 
         # Create instances.json with polygon segmentation
         instances = {
-            "annotations": [{
-                "id": 1,
-                "segmentation": [[10, 10, 50, 10, 50, 50, 10, 50]],
-                "bbox": [10, 10, 40, 40],
-            }]
+            "annotations": [
+                {
+                    "id": 1,
+                    "segmentation": [[10, 10, 50, 10, 50, 50, 10, 50]],
+                    "bbox": [10, 10, 40, 40],
+                }
+            ]
         }
         with open(tmp_path / "instances.json", "w") as f:
             json.dump(instances, f)
@@ -369,11 +372,13 @@ class TestRefCOCOgDataset:
             pickle.dump(refs, f)
 
         instances = {
-            "annotations": [{
-                "id": 1,
-                "segmentation": [[10, 10, 50, 10, 50, 50, 10, 50]],
-                "bbox": [10, 10, 40, 40],
-            }]
+            "annotations": [
+                {
+                    "id": 1,
+                    "segmentation": [[10, 10, 50, 10, 50, 50, 10, 50]],
+                    "bbox": [10, 10, 40, 40],
+                }
+            ]
         }
         with open(tmp_path / "instances.json", "w") as f:
             json.dump(instances, f)
@@ -397,14 +402,16 @@ class TestRefCOCOgDataset:
         # 4x4 mask with a 2x2 filled region
         rle_counts = [4, 2, 2, 2, 2, 4]  # 4 zeros, 2 ones, 2 zeros, 2 ones, 2 zeros, 4 zeros
         instances = {
-            "annotations": [{
-                "id": 1,
-                "segmentation": {
-                    "counts": rle_counts,
-                    "size": [4, 4],
-                },
-                "bbox": [0, 0, 4, 4],
-            }]
+            "annotations": [
+                {
+                    "id": 1,
+                    "segmentation": {
+                        "counts": rle_counts,
+                        "size": [4, 4],
+                    },
+                    "bbox": [0, 0, 4, 4],
+                }
+            ]
         }
         with open(tmp_path / "instances.json", "w") as f:
             json.dump(instances, f)
@@ -423,9 +430,7 @@ class TestRefCOCOgDataset:
         with open(tmp_path / "refs(g).p", "wb") as f:
             pickle.dump(refs, f)
 
-        instances = {
-            "annotations": [{"id": 1, "bbox": [0, 0, 10, 10]}]
-        }
+        instances = {"annotations": [{"id": 1, "bbox": [0, 0, 10, 10]}]}
         with open(tmp_path / "instances.json", "w") as f:
             json.dump(instances, f)
 

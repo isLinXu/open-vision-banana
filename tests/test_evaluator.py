@@ -2,15 +2,13 @@
 
 import pytest
 import torch
-import torch.nn as nn
-from unittest.mock import MagicMock
 
 from open_vision_banana.evaluation.evaluator import VisionEvaluator
-
 
 # ──────────────────────────────────────────────────────────────────
 # Mock model helpers
 # ──────────────────────────────────────────────────────────────────
+
 
 class MockModelWithPredict:
     """Mock model that exposes a predict() method."""
@@ -51,6 +49,7 @@ class MockModelDirect:
 # Init tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestVisionEvaluatorInit:
     """Test VisionEvaluator initialization."""
 
@@ -76,6 +75,7 @@ class TestVisionEvaluatorInit:
 # ──────────────────────────────────────────────────────────────────
 # Evaluate tests — depth task
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestEvaluateDepth:
     """Test evaluate() for depth estimation task."""
@@ -135,6 +135,7 @@ class TestEvaluateDepth:
 # Evaluate tests — normal task
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestEvaluateNormal:
     """Test evaluate() for normal estimation task."""
 
@@ -161,6 +162,7 @@ class TestEvaluateNormal:
 # Evaluate tests — referring task
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestEvaluateReferring:
     """Test evaluate() for referring segmentation task."""
 
@@ -173,9 +175,7 @@ class TestEvaluateReferring:
         ev = VisionEvaluator(model, device="cpu")
 
         dataloader = [{"image": torch.rand(1, 3, 8, 8), "target_rgb": mask}]
-        metrics = ev.evaluate(
-            dataloader, task="referring", expression="a cat"
-        )
+        metrics = ev.evaluate(dataloader, task="referring", expression="a cat")
         assert "IoU" in metrics
         assert metrics["IoU"] > 0.9
 
@@ -193,6 +193,7 @@ class TestEvaluateReferring:
 # Evaluate tests — instance task
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestEvaluateInstance:
     """Test evaluate() for instance segmentation task."""
 
@@ -204,15 +205,14 @@ class TestEvaluateInstance:
         ev = VisionEvaluator(model, device="cpu")
 
         dataloader = [{"image": torch.rand(1, 3, 8, 8), "target_rgb": rgb}]
-        metrics = ev.evaluate(
-            dataloader, task="instance", object_name="cat"
-        )
+        metrics = ev.evaluate(dataloader, task="instance", object_name="cat")
         assert "AP@0.5" in metrics
 
 
 # ──────────────────────────────────────────────────────────────────
 # Evaluate tests — semantic task
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestEvaluateSemantic:
     """Test evaluate() for semantic segmentation task."""
@@ -226,9 +226,7 @@ class TestEvaluateSemantic:
         ev = VisionEvaluator(model, device="cpu")
 
         dataloader = [{"image": torch.rand(1, 3, 8, 8), "target_rgb": rgb}]
-        metrics = ev.evaluate(
-            dataloader, task="semantic", class_color_map=cmap
-        )
+        metrics = ev.evaluate(dataloader, task="semantic", class_color_map=cmap)
         assert "mIoU" in metrics
 
     def test_semantic_missing_color_map_raises(self):
@@ -256,6 +254,7 @@ class TestEvaluateSemantic:
 # ──────────────────────────────────────────────────────────────────
 # Evaluate tests — edge cases
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestEvaluateEdgeCases:
     """Test edge cases in evaluate()."""
@@ -322,6 +321,7 @@ class TestEvaluateEdgeCases:
 # evaluate_batch tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestEvaluateBatch:
     """Test evaluate_batch() convenience method."""
 
@@ -358,6 +358,7 @@ class TestEvaluateBatch:
 # _extract_rgb_from_result tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestExtractRgbFromResult:
     """Test _extract_rgb_from_result static method."""
 
@@ -369,7 +370,6 @@ class TestExtractRgbFromResult:
 
     def test_extract_depth(self):
         """Should re-encode depth to RGB for depth task."""
-        from open_vision_banana.core.depth_mapper import DepthRGBMapper
 
         depth = torch.rand(1, 1, 8, 8) * 5 + 0.5
         result = {"depth": depth}
@@ -409,6 +409,7 @@ class TestExtractRgbFromResult:
 # ──────────────────────────────────────────────────────────────────
 # Direct model fallback tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestDirectModelFallback:
     """Test the direct model(image) fallback path."""

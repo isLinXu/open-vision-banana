@@ -16,7 +16,7 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -75,9 +75,7 @@ class LRFinder:
             gradient_accumulation_steps: Gradient accumulation steps.
         """
         # Save state for restoration
-        self._model_state = {
-            k: v.clone() for k, v in self.model.state_dict().items()
-        }
+        self._model_state = {k: v.clone() for k, v in self.model.state_dict().items()}
         self._optimizer_state = self.optimizer.state_dict()
 
         # Compute LR multiplier (exponential schedule)
@@ -104,11 +102,12 @@ class LRFinder:
 
             # Move batch to device
             if isinstance(batch, dict):
-                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                         for k, v in batch.items()}
+                batch = {
+                    k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                    for k, v in batch.items()
+                }
             elif isinstance(batch, (list, tuple)):
-                batch = [v.to(self.device) if isinstance(v, torch.Tensor) else v
-                         for v in batch]
+                batch = [v.to(self.device) if isinstance(v, torch.Tensor) else v for v in batch]
 
             # Forward + backward
             self.optimizer.zero_grad()
@@ -116,9 +115,9 @@ class LRFinder:
             if isinstance(batch, dict):
                 # Dict-style batch: extract image as model input, target_rgb as target
                 image_key = "image" if "image" in batch else "input"
-                input_tensor = batch.get(image_key, next(
-                    v for v in batch.values() if isinstance(v, torch.Tensor)
-                ))
+                input_tensor = batch.get(
+                    image_key, next(v for v in batch.values() if isinstance(v, torch.Tensor))
+                )
                 output = self.model(input_tensor)
                 target = batch.get("target_rgb", batch.get("target", output))
             else:
@@ -139,8 +138,9 @@ class LRFinder:
             if len(self.losses) == 0:
                 smoothed = loss_val
             else:
-                smoothed = self.smooth_factor * loss_val + \
-                           (1 - self.smooth_factor) * self.losses[-1]
+                smoothed = (
+                    self.smooth_factor * loss_val + (1 - self.smooth_factor) * self.losses[-1]
+                )
 
             self.lrs.append(current_lr)
             self.losses.append(smoothed)
@@ -158,8 +158,10 @@ class LRFinder:
 
             iter_count += 1
 
-        logger.info(f"LR range test completed: {len(self.lrs)} iterations, "
-                     f"LR range [{self.lrs[0]:.2e}, {self.lrs[-1]:.2e}]")
+        logger.info(
+            f"LR range test completed: {len(self.lrs)} iterations, "
+            f"LR range [{self.lrs[0]:.2e}, {self.lrs[-1]:.2e}]"
+        )
 
     def suggest_lr(self) -> float:
         """Suggest a learning rate based on the steepest descent point.
@@ -176,8 +178,7 @@ class LRFinder:
         # Compute loss gradients (differences)
         loss_grads = []
         for i in range(1, len(self.losses)):
-            grad = (self.losses[i] - self.losses[i - 1]) / \
-                   (self.lrs[i] - self.lrs[i - 1] + 1e-12)
+            grad = (self.losses[i] - self.losses[i - 1]) / (self.lrs[i] - self.lrs[i - 1] + 1e-12)
             loss_grads.append(grad)
 
         # Find the steepest negative gradient (max decrease)
@@ -194,8 +195,9 @@ class LRFinder:
         # Clamp to a reasonable range
         suggested_lr = max(1e-7, min(suggested_lr, 1e-1))
 
-        logger.info(f"Suggested LR: {suggested_lr:.2e} "
-                     f"(steepest descent at iteration {min_grad_idx + 1})")
+        logger.info(
+            f"Suggested LR: {suggested_lr:.2e} (steepest descent at iteration {min_grad_idx + 1})"
+        )
         return suggested_lr
 
     def plot(self, save_path: str | None = None) -> None:
@@ -207,8 +209,10 @@ class LRFinder:
         try:
             import matplotlib.pyplot as plt
         except ImportError:
-            logger.warning("matplotlib not installed; cannot plot. "
-                           "Use suggest_lr() for a programmatic suggestion.")
+            logger.warning(
+                "matplotlib not installed; cannot plot. "
+                "Use suggest_lr() for a programmatic suggestion."
+            )
             return
 
         fig, ax = plt.subplots(1, 1, figsize=(8, 4))
@@ -220,8 +224,7 @@ class LRFinder:
 
         # Mark suggested LR
         suggested = self.suggest_lr()
-        ax.axvline(x=suggested, color="r", linestyle="--",
-                   label=f"Suggested LR: {suggested:.2e}")
+        ax.axvline(x=suggested, color="r", linestyle="--", label=f"Suggested LR: {suggested:.2e}")
         ax.legend()
 
         plt.tight_layout()

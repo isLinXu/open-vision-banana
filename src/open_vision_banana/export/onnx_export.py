@@ -12,7 +12,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from ..core.depth_mapper import SPECTRAL_KEYPOINTS
+from ..core.depth_mapper import CUBE_EDGE_KEYPOINTS
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class DepthRGBMapperONNX(nn.Module):
     """ONNX-exportable wrapper for DepthRGBMapper.
 
-    Wraps the power transform + spectral colormap as a single
+    Wraps the power transform + cube-edge colormap as a single
     torch.nn.Module suitable for torch.onnx.export().
     """
 
@@ -28,8 +28,8 @@ class DepthRGBMapperONNX(nn.Module):
         super().__init__()
         self.lam = lam
         self.c = c
-        self.register_buffer("_positions", SPECTRAL_KEYPOINTS[:, 0].contiguous())
-        self.register_buffer("_colors", SPECTRAL_KEYPOINTS[:, 1:].contiguous())
+        self.register_buffer("_positions", CUBE_EDGE_KEYPOINTS[:, 0].contiguous())
+        self.register_buffer("_colors", CUBE_EDGE_KEYPOINTS[:, 1:].contiguous())
 
     def depth_to_normalized(self, depth: torch.Tensor) -> torch.Tensor:
         """Power transform: depth → normalized [0, 1)."""

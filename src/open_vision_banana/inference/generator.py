@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Bounded LRU cache for prompt embeddings
 # ──────────────────────────────────────────────────────────────
 
+
 class _PromptEmbedCache(OrderedDict):
     """Bounded LRU cache for prompt encoder outputs.
 
@@ -51,20 +52,23 @@ class _PromptEmbedCache(OrderedDict):
 
 def _tensor_to_pil(t: torch.Tensor) -> Image.Image:
     """Convert [C, H, W] tensor in [-1, 1] or [0, 1] to PIL Image."""
-    t = t.float()
+    t = t.float().cpu()
     if t.min() < 0:
         t = (t + 1.0) / 2.0
     t = t.clamp(0.0, 1.0)
-    arr = (t.permute(1, 2, 0).cpu().numpy() * 255).round().astype("uint8")
+    arr = (t.permute(1, 2, 0).numpy() * 255).round().astype("uint8")
     return Image.fromarray(arr)
 
 
 def _pil_to_tensor(img: Image.Image, device: str, dtype: torch.dtype) -> torch.Tensor:
     """Convert PIL Image to [1, C, H, W] tensor in [0, 1]."""
     import numpy as np
-    arr = torch.from_numpy(
-        (np.array(img.convert("RGB")) / 255.0).astype("float32")
-    ).permute(2, 0, 1).unsqueeze(0)
+
+    arr = (
+        torch.from_numpy((np.array(img.convert("RGB")) / 255.0).astype("float32"))
+        .permute(2, 0, 1)
+        .unsqueeze(0)
+    )
     return arr.to(device=device, dtype=dtype)
 
 
@@ -106,13 +110,11 @@ class BaseGenerator:
         self.inference_options = inference_options or InferenceOptions(
             enable_sequential_cpu_offload=enable_sequential_cpu_offload,
         )
-        self.enable_sequential_cpu_offload = (
-            self.inference_options.enable_sequential_cpu_offload
-        )
+        self.enable_sequential_cpu_offload = self.inference_options.enable_sequential_cpu_offload
 
         # Both pipelines are loaded lazily to save memory when only one is needed.
-        self._t2i_pipe = None   # FluxPipeline (text → image)
-        self._i2i_pipe = None   # FluxImg2ImgPipeline (image + text → image)
+        self._t2i_pipe = None  # FluxPipeline (text → image)
+        self._i2i_pipe = None  # FluxImg2ImgPipeline (image + text → image)
 
         # KV-cache for text encoder outputs: avoids redundant CLIP/T5
         # forward passes when the same prompt is used for repeated generation.
@@ -288,10 +290,10 @@ class BaseGenerator:
             )
 
         # Cache text encoder outputs for future reuse
-        if encode_prompt and hasattr(output, 'prompt_embeds'):
+        if encode_prompt and hasattr(output, "prompt_embeds"):
             self._prompt_cache[prompt_key] = {
                 "prompt_embeds": output.prompt_embeds,
-                "pooled_prompt_embeds": getattr(output, 'pooled_prompt_embeds', None),
+                "pooled_prompt_embeds": getattr(output, "pooled_prompt_embeds", None),
             }
 
         return self._output_to_tensor(output)
@@ -320,6 +322,7 @@ class BaseGenerator:
             return images  # already a tensor in some diffusers versions
 
         import numpy as np
+
         tensors = []
         for img in images:
             if isinstance(img, Image.Image):
@@ -352,7 +355,7 @@ class BaseGenerator:
         """Unload LoRA weights, reverting to the base model."""
         if self._t2i_pipe is not None:
             self._t2i_pipe.unload_lora_weights()
-            self._i2i_pipe = None   # force rebuild without LoRA
+            self._i2i_pipe = None  # force rebuild without LoRA
             self._prompt_cache.clear()  # invalidate cached embeddings
             logger.info("LoRA weights unloaded")
 

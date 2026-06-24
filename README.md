@@ -15,7 +15,7 @@ Vision Banana demonstrates that state-of-the-art visual understanding can emerge
 | Semantic Segmentation | 2D | Color mapping: `{"cat": "red", "background": "yellow"}` |
 | Instance Segmentation | 2D | "Each dog is colored differently" |
 | Referring Expression Segmentation | 2D | "The man in pink t shirt is rendered solid white" |
-| Metric Depth Estimation | 3D | Power transform + spectral colormap |
+| Metric Depth Estimation | 3D | Power transform + cube-edge colormap |
 | Surface Normal Estimation | 3D | Direct linear mapping (x,y,z) → (R,G,B) |
 
 ## Architecture
@@ -366,7 +366,7 @@ open-vision-banana/
 │   ├── __init__.py              # Lazy imports, version
 │   ├── config.py                # Hierarchical config (8 sub-configs)
 │   ├── core/                    # Core algorithms (no external deps)
-│   │   ├── depth_mapper.py      # Power transform + spectral colormap
+│   │   ├── depth_mapper.py      # Power transform + cube-edge colormap
 │   │   ├── normal_mapper.py     # Linear normal ↔ RGB mapping
 │   │   ├── segmentation.py      # 5-stage instance segmentation decoder
 │   │   ├── union_find.py       # Union-Find (path compression + union by rank)
@@ -425,7 +425,7 @@ Maps unbounded depth [0, ∞) to bounded RGB [0, 1]³ via power transform:
 f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
 ```
 
-Then applies a continuous spectral colormap with vectorized parabolic interpolation for sub-segment precision. Parameters: λ=-3, c=10/3.
+Then maps via a **cube-edge traversal colormap** (black → blue → cyan → green → yellow → white) with piecewise-linear interpolation. Parameters: λ=-3, c=10/3.
 
 ### 2. Normal → RGB Mapping (Direct Linear)
 
@@ -440,7 +440,7 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 From Appendix A of the paper:
 
 1. **Background Initialization**: τ=14 color tolerance
-2. **Color Similarity Grouping**: Union-Find with 8-connectivity (O(E α(N)), ~100x faster than flood-fill)
+2. **Color Similarity Grouping**: Union-Find with 16-connectivity (8 + 8 knight's move, O(E α(N)), ~100x faster than flood-fill)
 3. **Noise Pruning**: θ_size = 2×10⁻⁴
 4. **Boundary Artifact Elimination**: 3×3 erosion, θ_erosion=0.1
 5. **Spatially Constrained Merging**: γ=5.0

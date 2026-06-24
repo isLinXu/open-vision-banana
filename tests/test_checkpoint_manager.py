@@ -1,18 +1,19 @@
 """Tests for training/checkpoint.py — CheckpointManager class."""
 
 import json
+from pathlib import Path
+from unittest.mock import MagicMock
+
 import pytest
 import torch
 import torch.nn as nn
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 from open_vision_banana.training.checkpoint import CheckpointManager
-
 
 # ──────────────────────────────────────────────────────────────────
 # Helper: mock PEFT model
 # ──────────────────────────────────────────────────────────────────
+
 
 class MockPEFTModel:
     """Minimal mock PEFT model for checkpoint testing."""
@@ -35,6 +36,7 @@ class MockPEFTModel:
     def base_model(self):
         class _Base:
             model = MagicMock()
+
         return _Base()
 
 
@@ -42,11 +44,12 @@ class MockPEFTModel:
 # Init tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestCheckpointManagerInit:
     def test_creates_output_dir(self, tmp_path):
         """Should create output directory if it doesn't exist."""
         out = tmp_path / "checkpoints"
-        mgr = CheckpointManager(str(out))
+        CheckpointManager(str(out))
         assert out.exists()
         assert out.is_dir()
 
@@ -64,6 +67,7 @@ class TestCheckpointManagerInit:
 # ──────────────────────────────────────────────────────────────────
 # Save tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestCheckpointSave:
     def test_save_basic(self, tmp_path):
@@ -177,6 +181,7 @@ class TestCheckpointSave:
 # Load tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestCheckpointLoad:
     def test_load_latest(self, tmp_path):
         """Should load the latest checkpoint when step is None."""
@@ -273,6 +278,7 @@ class TestCheckpointLoad:
 # Pruning tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestCheckpointPruning:
     def test_prune_old_checkpoints(self, tmp_path):
         """Should remove oldest checkpoints beyond max_keep."""
@@ -307,6 +313,7 @@ class TestCheckpointPruning:
 # ──────────────────────────────────────────────────────────────────
 # Utility method tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestCheckpointUtilityMethods:
     def test_ckpt_step_extraction(self, tmp_path):

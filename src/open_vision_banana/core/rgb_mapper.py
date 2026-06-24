@@ -1,7 +1,7 @@
 """Unified RGB mapping dispatcher for all vision tasks.
 
 Routes to the appropriate mapper based on task type:
-- "depth": DepthRGBMapper (power transform + spectral colormap)
+- "depth": DepthRGBMapper (power transform + cube-edge colormap)
 - "normal": NormalRGBMapper (direct linear mapping)
 - "semantic": SegmentationDecoder (nearest-color assignment)
 - "instance": SegmentationDecoder (multi-stage clustering)

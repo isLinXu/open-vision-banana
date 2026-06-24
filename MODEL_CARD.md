@@ -96,13 +96,13 @@ model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
 | Fine-tuning method | rsLoRA (rank=64, alpha=128) |
 | Trainable params | 0.5%–1% of total |
 | Training data mix | 9:1 (original : vision task) |
-| Depth mapping | Continuous spectral color mapping + parabolic interpolation |
+| Depth mapping | Cube-edge traversal colormap + power transform (λ=-3, c=10/3) |
 | Normal mapping | Camera-space XYZ → RGB linear mapping |
 | Instance decoding | 5-stage: init → group → prune → boundary → merge |
 
 ### RGB Encoding Schemes
 
-**Depth → RGB**: Continuous spectral mapping with λ=-3, c=10/3. Near-depth precision prioritized. Parabolic interpolation refinement resolves reverse-projection ambiguity. Round-trip error: 0.0042m.
+**Depth → RGB**: Cube-edge traversal colormap (black→blue→cyan→green→yellow→white) with power transform λ=-3, c=10/3. Near-depth precision prioritized. Piecewise-linear interpolation along RGB cube edges. Round-trip error: 0.196%.
 
 **Normals → RGB**: Linear camera-space mapping: R=(1-x)/2, G=(1+y)/2, B=(1-z)/2. Exact invertibility.
 

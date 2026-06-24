@@ -10,24 +10,26 @@ Covers:
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
 import torch
 import torch.nn as nn
 
-
 # ──────────────────────────────────────────────────────────────
 # MixedVisionDataset.__len__ — effective epoch length semantics
 # ──────────────────────────────────────────────────────────────
 
+
 class _TinyDataset(torch.utils.data.Dataset):
     """Minimal dataset stub with configurable length."""
+
     def __init__(self, n: int):
         self._n = n
+
     def __len__(self) -> int:
         return self._n
+
     def __getitem__(self, idx: int) -> dict:
         return {"x": torch.zeros(1)}
 
@@ -37,6 +39,7 @@ class TestMixedDatasetLen:
 
     def test_no_generation_dataset_returns_total_vision(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
+
         ds1 = _TinyDataset(30)
         ds2 = _TinyDataset(20)
         mixed = MixedVisionDataset(vision_datasets=[ds1, ds2], vision_ratio=0.1)
@@ -45,6 +48,7 @@ class TestMixedDatasetLen:
 
     def test_with_generation_dataset_scales_up(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
+
         vision = _TinyDataset(100)
         gen = _TinyDataset(900)
         mixed = MixedVisionDataset(
@@ -57,6 +61,7 @@ class TestMixedDatasetLen:
 
     def test_vision_ratio_1_returns_total_vision(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
+
         vision = _TinyDataset(50)
         gen = _TinyDataset(450)
         mixed = MixedVisionDataset(
@@ -68,6 +73,7 @@ class TestMixedDatasetLen:
 
     def test_effective_len_at_least_one(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
+
         # Empty vision datasets with a generation dataset
         vision = _TinyDataset(0)
         gen = _TinyDataset(100)
@@ -80,16 +86,19 @@ class TestMixedDatasetLen:
 
     def test_invalid_vision_ratio_raises(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
+
         with pytest.raises(ValueError, match="vision_ratio"):
             MixedVisionDataset(vision_datasets=[], vision_ratio=0.0)
 
     def test_invalid_vision_ratio_above_one(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
+
         with pytest.raises(ValueError, match="vision_ratio"):
             MixedVisionDataset(vision_datasets=[], vision_ratio=1.5)
 
     def test_getitem_does_not_crash_with_generation(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
+
         vision = _TinyDataset(10)
         gen = _TinyDataset(90)
         mixed = MixedVisionDataset(
@@ -108,8 +117,10 @@ class TestMixedDatasetLen:
 # CheckpointManager — EMA save/load and weights_only paths
 # ──────────────────────────────────────────────────────────────
 
+
 class _FakePeft(nn.Module):
     """Minimal PEFT-like model that supports save_pretrained via state_dict."""
+
     def __init__(self):
         super().__init__()
         self.layer = nn.Linear(4, 2)
@@ -148,7 +159,6 @@ class TestCheckpointEMASafety:
         assert ema_path.exists(), "EMA file not created"
 
     def test_ema_reload_restores_shadow(self, tmp_path):
-        from open_vision_banana.training.checkpoint import CheckpointManager
         from open_vision_banana.training.utils import EMAModel
 
         model = _FakePeft()
@@ -170,8 +180,9 @@ class TestCheckpointEMASafety:
         ema2.shadow_params = torch.load(str(ema_path), weights_only=False)
 
         for name, tensor in ema2.shadow_params.items():
-            assert tensor.mean().item() == pytest.approx(3.14, abs=1e-4), \
+            assert tensor.mean().item() == pytest.approx(3.14, abs=1e-4), (
                 f"EMA shadow param {name} not restored correctly"
+            )
 
     def test_optimizer_load_weights_only(self, tmp_path):
         """optimizer.pt must be loadable with weights_only=True."""
@@ -189,6 +200,7 @@ class TestCheckpointEMASafety:
 # ──────────────────────────────────────────────────────────────
 # InstructionTuner — encode_latents / encode_text fallback paths
 # ──────────────────────────────────────────────────────────────
+
 
 def _make_minimal_tuner():
     """Create a tuner with a simple 3-channel transformer mock."""
@@ -233,7 +245,7 @@ class TestTunerFallbackPaths:
     def test_encode_latents_no_vae_stays_in_range(self):
         """Proxy latents should stay within [-1, 1] when input is in [-1, 1]."""
         tuner = _make_minimal_tuner()
-        images = torch.rand(2, 3, 16, 16) * 2 - 1   # [-1, 1]
+        images = torch.rand(2, 3, 16, 16) * 2 - 1  # [-1, 1]
         latents = tuner._encode_latents(images)
         assert latents.min() >= -1.0 - 1e-5
         assert latents.max() <= 1.0 + 1e-5
@@ -245,7 +257,7 @@ class TestTunerFallbackPaths:
         assert "prompt_embeds" in result
         assert "pooled_prompt_embeds" in result
         embeds = result["prompt_embeds"]
-        assert embeds.shape[0] == 2   # batch dim matches prompts
+        assert embeds.shape[0] == 2  # batch dim matches prompts
         # Fallback zeros: all entries should be zero
         assert embeds.abs().sum().item() == pytest.approx(0.0, abs=1e-6)
 
@@ -289,22 +301,26 @@ class TestTunerFallbackPaths:
 # DepthRGBMapper — chunked rgb_to_normalized memory path
 # ──────────────────────────────────────────────────────────────
 
+
 class TestDepthMapperChunked:
     """Verify rgb_to_normalized chunked path gives same result as large chunk."""
 
     def test_chunk_size_invariance(self):
         from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
         mapper = DepthRGBMapper()
         rgb = torch.rand(1, 3, 16, 16)
 
         out_default = mapper.rgb_to_normalized(rgb, chunk_size=4096)
         out_small = mapper.rgb_to_normalized(rgb, chunk_size=8)
 
-        assert torch.allclose(out_default, out_small, atol=1e-5), \
+        assert torch.allclose(out_default, out_small, atol=1e-5), (
             "Chunked output differs with different chunk sizes"
+        )
 
     def test_batch_chunk_invariance(self):
         from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
         mapper = DepthRGBMapper()
         rgb = torch.rand(3, 3, 8, 8)
 
@@ -315,6 +331,7 @@ class TestDepthMapperChunked:
 
     def test_output_in_unit_range(self):
         from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
         mapper = DepthRGBMapper()
         rgb = torch.rand(2, 3, 32, 32)
         normalized = mapper.rgb_to_normalized(rgb, chunk_size=64)
@@ -327,16 +344,18 @@ class TestDepthMapperChunked:
 # SegmentationDecoder — scatter_reduce P0-3 fix regression
 # ──────────────────────────────────────────────────────────────
 
+
 class TestSegmentationScatterFix:
     """P0-3 regression: loser-label collision should pick minimum winner."""
 
     def test_two_colour_blobs_detected(self):
         from open_vision_banana.core.segmentation import SegmentationDecoder
+
         decoder = SegmentationDecoder(color_tolerance=20.0)
         # Two clearly separated colour blobs: red upper-left, blue lower-right
         rgb = torch.zeros(1, 3, 32, 32)
-        rgb[0, 0, :12, :12] = 1.0          # red region
-        rgb[0, 2, 20:, 20:] = 1.0          # blue region
+        rgb[0, 0, :12, :12] = 1.0  # red region
+        rgb[0, 2, 20:, 20:] = 1.0  # blue region
         instances = decoder.decode_instance(rgb, background_color=(0, 0, 0))
         assert len(instances) == 1
         n_inst = len(instances[0])
@@ -344,14 +363,16 @@ class TestSegmentationScatterFix:
 
     def test_single_colour_blob_single_instance(self):
         from open_vision_banana.core.segmentation import SegmentationDecoder
+
         decoder = SegmentationDecoder(color_tolerance=20.0)
         rgb = torch.zeros(1, 3, 32, 32)
-        rgb[0, 0, 5:27, 5:27] = 0.8        # single reddish blob
+        rgb[0, 0, 5:27, 5:27] = 0.8  # single reddish blob
         instances = decoder.decode_instance(rgb, background_color=(0, 0, 0))
         assert len(instances[0]) == 1
 
     def test_semantic_decode_shape_and_range(self):
         from open_vision_banana.core.segmentation import SegmentationDecoder
+
         decoder = SegmentationDecoder()
         class_map = {"sky": (70, 130, 180), "road": (128, 64, 128)}
         rgb = torch.rand(2, 3, 16, 16)
@@ -365,22 +386,27 @@ class TestSegmentationScatterFix:
 # VisionEvaluator — predict() routing
 # ──────────────────────────────────────────────────────────────
 
+
 class TestVisionEvaluatorRouting:
     """Verify evaluator routes through predict() when available."""
 
     def _make_mock_model_with_predict(self, task_output: dict):
         class _PredictModel:
-            def eval(self): pass
+            def eval(self):
+                pass
+
             def predict(self, image, task, **kwargs) -> dict:
                 B = image.shape[0]
                 return {
                     "rgb_output": torch.rand(B, 3, image.shape[2], image.shape[3]),
                     **task_output,
                 }
+
         return _PredictModel()
 
     def test_evaluator_detects_predict_method(self):
         from open_vision_banana.evaluation.evaluator import VisionEvaluator
+
         model = self._make_mock_model_with_predict({})
         ev = VisionEvaluator(model, device="cpu")
         assert ev._has_predict is True
@@ -389,7 +415,9 @@ class TestVisionEvaluatorRouting:
         from open_vision_banana.evaluation.evaluator import VisionEvaluator
 
         class _DirectModel:
-            def eval(self): pass
+            def eval(self):
+                pass
+
             def __call__(self, x):
                 return torch.rand_like(x)
 
@@ -400,7 +428,9 @@ class TestVisionEvaluatorRouting:
         from open_vision_banana.evaluation.evaluator import VisionEvaluator
 
         class _MockModel:
-            def eval(self): pass
+            def eval(self):
+                pass
+
             def predict(self, image, task, **kwargs) -> dict:
                 return {"rgb_output": torch.rand_like(image)}
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -25,13 +26,14 @@ logger = logging.getLogger(__name__)
 def _pil_to_tensor(img: Image.Image) -> torch.Tensor:
     """Convert PIL image to tensor [C, H, W] without torchvision dependency."""
     import numpy as np
+
     arr = np.array(img)
     if arr.ndim == 2:
         arr = arr[:, :, np.newaxis]
     return torch.from_numpy(arr.transpose(2, 0, 1)).clone()
 
 
-def _fill_polygon(mask: "np.ndarray", pts: "np.ndarray") -> None:
+def _fill_polygon(mask: np.ndarray, pts: np.ndarray) -> None:
     """Scanline polygon fill — pure NumPy, no cv2 required.
 
     Args:
@@ -54,10 +56,9 @@ def _fill_polygon(mask: "np.ndarray", pts: "np.ndarray") -> None:
         for i in range(n):
             x0, y0 = xs[i], ys[i]
             x1, y1 = xs[(i + 1) % n], ys[(i + 1) % n]
-            if (y0 <= y < y1) or (y1 <= y < y0):
-                if y1 != y0:
-                    xi = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
-                    intersections.append(xi)
+            if ((y0 <= y < y1) or (y1 <= y < y0)) and y1 != y0:
+                xi = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
+                intersections.append(xi)
         intersections.sort()
         for k in range(0, len(intersections) - 1, 2):
             x_start = max(int(np.ceil(intersections[k])), 0)
@@ -130,7 +131,8 @@ class HypersimDepthDataset(BaseVisionDataset):
 
         # depth is [1, H, W] → add batch dim for interpolate
         depth = torch.nn.functional.interpolate(
-            depth.unsqueeze(0), size=(self.resolution, self.resolution),
+            depth.unsqueeze(0),
+            size=(self.resolution, self.resolution),
             mode="nearest",
         ).squeeze(0)
 
@@ -163,9 +165,7 @@ class ScanNetNormalDataset(BaseVisionDataset):
 
         normal_img = Image.open(sample["target"]).convert("RGB")
         if normal_img.size != (self.resolution, self.resolution):
-            normal_img = normal_img.resize(
-                (self.resolution, self.resolution), Image.LANCZOS
-            )
+            normal_img = normal_img.resize((self.resolution, self.resolution), Image.LANCZOS)
         target_rgb = _pil_to_tensor(normal_img).float() / 255.0
 
         prompt = PromptBuilder.build_normal_prompt()
@@ -209,7 +209,13 @@ class CityscapesSegDataset(BaseVisionDataset):
             return
         for img_path in sorted(img_dir.rglob("*.png")):
             gt_name = img_path.name.replace("leftImg8bit", "gtFine_labelIds")
-            gt_path = self.root_dir / "gtFine" / self.split / img_path.relative_to(img_dir).parent / gt_name
+            gt_path = (
+                self.root_dir
+                / "gtFine"
+                / self.split
+                / img_path.relative_to(img_dir).parent
+                / gt_name
+            )
             if gt_path.exists():
                 self.samples.append({"image": img_path, "target": gt_path})
 
@@ -220,9 +226,14 @@ class CityscapesSegDataset(BaseVisionDataset):
         label_img = Image.open(sample["target"])
         label = _pil_to_tensor(label_img).long().squeeze(0)
         label = label.unsqueeze(0).unsqueeze(0).float()
-        label = torch.nn.functional.interpolate(
-            label, size=(self.resolution, self.resolution), mode="nearest"
-        ).long().squeeze(0).squeeze(0)
+        label = (
+            torch.nn.functional.interpolate(
+                label, size=(self.resolution, self.resolution), mode="nearest"
+            )
+            .long()
+            .squeeze(0)
+            .squeeze(0)
+        )
 
         target_rgb = self._label_to_rgb(label)
         prompt = PromptBuilder.build_semantic_prompt(self.CITYSCAPES_COLORS)
@@ -245,12 +256,12 @@ class CityscapesSegDataset(BaseVisionDataset):
         Replaces the per-class Python loop with a single index_select operation.
         Unknown label indices are clamped to the last palette entry (harmless).
         """
-        palette = self._get_palette().to(label.device)           # [C, 3]
+        palette = self._get_palette().to(label.device)  # [C, 3]
         n_cls = palette.shape[0]
-        flat = label.reshape(-1).clamp(0, n_cls - 1).long()     # [H*W]
-        rgb_flat = palette[flat]                                  # [H*W, 3]
+        flat = label.reshape(-1).clamp(0, n_cls - 1).long()  # [H*W]
+        rgb_flat = palette[flat]  # [H*W, 3]
         H, W = label.shape
-        return rgb_flat.reshape(H, W, 3).permute(2, 0, 1)       # [3, H, W]
+        return rgb_flat.reshape(H, W, 3).permute(2, 0, 1)  # [3, H, W]
 
 
 class SACoInstanceDataset(BaseVisionDataset):
@@ -280,9 +291,7 @@ class SACoInstanceDataset(BaseVisionDataset):
 
         inst_img = Image.open(sample["target"]).convert("RGB")
         if inst_img.size != (self.resolution, self.resolution):
-            inst_img = inst_img.resize(
-                (self.resolution, self.resolution), Image.LANCZOS
-            )
+            inst_img = inst_img.resize((self.resolution, self.resolution), Image.LANCZOS)
         target_rgb = _pil_to_tensor(inst_img).float() / 255.0
 
         prompt = PromptBuilder.build_instance_prompt("objects")
@@ -326,6 +335,7 @@ class RefCOCOgDataset(BaseVisionDataset):
         if instances_file.exists():
             try:
                 import json
+
                 with open(instances_file) as f:
                     coco_data = json.load(f)
                 # Build ann_id → annotation lookup
@@ -340,6 +350,7 @@ class RefCOCOgDataset(BaseVisionDataset):
 
         try:
             import pickle
+
             with open(ann_file, "rb") as f:
                 refs = pickle.load(f)
 
@@ -363,11 +374,13 @@ class RefCOCOgDataset(BaseVisionDataset):
                     if not img_path.exists():
                         continue
 
-                self.samples.append({
-                    "image": img_path,
-                    "expression": str(expr),
-                    "ann_id": ann_id,
-                })
+                self.samples.append(
+                    {
+                        "image": img_path,
+                        "expression": str(expr),
+                        "ann_id": ann_id,
+                    }
+                )
 
         except Exception as e:
             logger.warning(f"Failed to load RefCOCOg annotations: {e}")
@@ -418,6 +431,7 @@ class RefCOCOgDataset(BaseVisionDataset):
                 # fill so that cv2 remains an optional dependency.
                 try:
                     import cv2  # optional
+
                     for poly in seg:
                         pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
                         cv2.fillPoly(mask, [pts.astype(np.int32)], 1)
@@ -430,6 +444,7 @@ class RefCOCOgDataset(BaseVisionDataset):
                 # RLE format (requires pycocotools or manual decode)
                 try:
                     from pycocotools import mask as coco_mask
+
                     mask = coco_mask.decode(seg)
                 except ImportError:
                     # Manual RLE decode (uncompressed)
@@ -447,9 +462,13 @@ class RefCOCOgDataset(BaseVisionDataset):
 
             # Resize to model resolution
             mask_tensor = torch.from_numpy(mask).float().unsqueeze(0).unsqueeze(0)
-            mask_resized = torch.nn.functional.interpolate(
-                mask_tensor, size=(self.resolution, self.resolution), mode="nearest"
-            ).squeeze(0).squeeze(0)
+            mask_resized = (
+                torch.nn.functional.interpolate(
+                    mask_tensor, size=(self.resolution, self.resolution), mode="nearest"
+                )
+                .squeeze(0)
+                .squeeze(0)
+            )
 
             # Binary white/black encoding
             target_rgb = mask_resized.unsqueeze(0).expand(3, -1, -1).clone()
