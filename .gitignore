@@ -238,3 +238,21 @@ wandb/
 .thumbs/
 .benchmarks/
 .box-desens/
+
+# Workspace / orchestrator tooling
+.workbuddy/
+
+# Old versioned analysis reports (keep only the latest v3)
+OPEN_VISION_BANANA_DEEP_ANALYSIS.md
+OPEN_VISION_BANANA_DEEP_ANALYSIS_v0*.md
+OPEN_VISION_BANANA_CODE_AUDIT.md
+PROJECT_ANALYSIS.md
+VISION_BANANA_PAPER_ALIGNMENT_REPORT.md
+VISION_BANANA_PAPER_ALIGNMENT_REPORT_v2.md
+VISION_BANANA_FULL_ALIGNMENT_CHECK.md
+VISION_BANANA_ALIGNMENT_EXECUTION_REPORT.md
+
+# Intermediate plan files (superseded by plan_alignment_v2.md and alignment commits)
+plan.md
+plan_alignment_implementation.md
+plan_alignment_v2.md
