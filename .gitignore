@@ -256,3 +256,6 @@ VISION_BANANA_ALIGNMENT_EXECUTION_REPORT.md
 plan.md
 plan_alignment_implementation.md
 plan_alignment_v2.md
+
+# Generated experiment charts (can be regenerated from .py scripts)
+experiments/*.png
