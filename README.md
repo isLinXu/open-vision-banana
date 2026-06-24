@@ -10,13 +10,20 @@ Vision Banana demonstrates that state-of-the-art visual understanding can emerge
 
 ## Supported Tasks
 
-| Task | Type | Prompt Style |
-|------|------|-------------|
-| Semantic Segmentation | 2D | Color mapping: `{"cat": "red", "background": "yellow"}` |
-| Instance Segmentation | 2D | "Each dog is colored differently" |
-| Referring Expression Segmentation | 2D | "The man in pink t shirt is rendered solid white" |
-| Metric Depth Estimation | 3D | Power transform + cube-edge colormap |
-| Surface Normal Estimation | 3D | Direct linear mapping (x,y,z) → (R,G,B) |
+| Task | Type | Prompt Style | Status |
+|------|------|-------------|--------|
+| Semantic Segmentation | 2D | Color mapping: `{"cat": "red", "background": "yellow"}` | ✅ |
+| Instance Segmentation | 2D | "Each dog is colored differently" | ✅ |
+| Referring Expression Segmentation | 2D | "The man in pink t shirt is rendered solid white" | ✅ |
+| Metric Depth Estimation | 3D | Power transform + 6 colormaps (cube-edge/plasma/inferno/viridis/grayscale/rainbow) | ✅ |
+| Surface Normal Estimation | 3D | Direct linear mapping (x,y,z) → (R,G,B) | ✅ |
+| Edge Detection | 2D | "Edges are white, background is black" | ✅ Speculative |
+| Optical Flow | 2D | HSV encoding: direction=hue, magnitude=saturation | ✅ Speculative |
+| 2D Keypoint Detection | 2D | Colored dots per keypoint type | ✅ Speculative |
+| Object Detection | 2D | Colored bounding box per class | ✅ Speculative |
+| Depth Edge Detection | 3D | Depth discontinuity → white edges | ✅ Speculative |
+
+> **Speculative tasks** are based on the paper's mention of "depth estimation, surface normal estimation, segmentation, **etc.**" and the [rainbow colormap mentioned on the project website](https://vision-banana.github.io).
 
 ## Architecture
 
@@ -366,16 +373,21 @@ open-vision-banana/
 │   ├── __init__.py              # Lazy imports, version
 │   ├── config.py                # Hierarchical config (8 sub-configs)
 │   ├── core/                    # Core algorithms (no external deps)
-│   │   ├── depth_mapper.py      # Power transform + cube-edge colormap
+│   │   ├── depth_mapper.py      # Power transform + 6 colormaps (cube-edge, plasma, inferno, viridis, grayscale, rainbow)
 │   │   ├── normal_mapper.py     # Linear normal ↔ RGB mapping
-│   │   ├── segmentation.py      # 5-stage instance segmentation decoder
+│   │   ├── segmentation.py      # 5-stage instance segmentation decoder (adjacent + seed-based Union-Find)
+│   │   ├── edge_mapper.py       # Edge detection: white edges on black background
+│   │   ├── flow_mapper.py       # Optical flow: HSV → RGB encoding/decoding
+│   │   ├── keypoint_mapper.py   # 2D keypoint detection: colored dots (speculative)
+│   │   ├── object_detection_mapper.py  # Object detection: colored bbox outlines (speculative)
+│   │   ├── depth_edge_mapper.py # Depth edge detection: Sobel gradient → white edges (speculative)
 │   │   ├── union_find.py       # Union-Find (path compression + union by rank)
-│   │   └── rgb_mapper.py       # Unified encode/decode interface
+│   │   └── rgb_mapper.py       # Unified encode/decode interface for 10 tasks
 │   ├── inference/               # Model loading and generation
 │   │   ├── generator.py         # FLUX.1 + LoRA wrapper
-│   │   ├── pipeline.py          # VisionBanana unified model
-│   │   ├── prompt.py            # Task-specific prompt builder
-│   │   └── decoder.py           # Visualization decoder
+│   │   ├── pipeline.py          # VisionBanana unified model (10 tasks)
+│   │   ├── prompt.py            # Task-specific prompt builder (10 tasks)
+│   │   └── decoder.py           # Visualization decoder (10 tasks)
 │   ├── training/                # LoRA instruction tuning
 │   │   ├── tuner.py             # InstructionTuner + VisionTaskDataset
 │   │   ├── utils.py             # EMA, DDP, augmentation, gradient checkpointing
@@ -386,17 +398,27 @@ open-vision-banana/
 │   │   ├── semantic.py          # mIoU, pixel accuracy
 │   │   ├── instance.py          # AP@0.5, AP@0.75, mAP
 │   │   ├── referring.py         # IoU, Precision@threshold
+│   │   ├── edge.py              # Edge detection metrics (precision, recall, F1)
+│   │   ├── flow.py              # Optical flow metrics (EPE, AE, F1)
 │   │   └── evaluator.py         # Unified VisionEvaluator
 │   ├── export/                  # Model export
 │   │   └── onnx_export.py       # ONNX + TorchScript export
 │   └── data/                    # Dataset loaders
 │       ├── datasets.py           # Hypersim, ScanNet, Cityscapes, RefCOCOg
-│       └── mixed.py             # 9:1 mixed dataset
+│       ├── mixed.py             # 9:1 mixed dataset with multi-colormap support
+│       └── generation_builder.py # Generation dataset builder
 ├── tests/
 │   ├── test_modules.py          # Core algorithm tests
 │   ├── test_training_utils.py   # Training utility tests
 │   ├── test_evaluation.py       # Evaluation metric tests
 │   ├── test_e2e.py              # ONNX export verification
+│   ├── test_colormap_enhancement.py    # Multi-colormap roundtrip tests
+│   ├── test_seed_based_segmentation.py # Seed-based Union-Find tests
+│   ├── test_edge_mapper.py      # Edge detection tests
+│   ├── test_flow_mapper.py      # Optical flow tests
+│   ├── test_keypoint_mapper.py  # Keypoint detection tests
+│   ├── test_object_detection_mapper.py # Object detection tests
+│   ├── test_depth_edge_mapper.py # Depth edge tests
 │   └── test_data_config.py      # Data + config tests
 ├── configs/
 │   ├── training_config.yaml     # Default training configuration
@@ -405,12 +427,16 @@ open-vision-banana/
 │   ├── demo.py                  # Algorithm demo (no GPU needed)
 │   ├── validate_data.py         # Dataset format validation
 │   ├── build_generation_dataset.py  # Synthetic / FLUX generation data builder
+│   ├── download_data.py          # Dataset downloader with registry
 │   ├── download_checkpoint.py   # Hugging Face LoRA download
+│   ├── prepare_hypersim.py      # Hypersim data preprocessing
 │   ├── optimize_inference.py    # Inference optimization helper
 │   ├── train.py                 # Training script
 │   ├── evaluate.py              # Evaluation script
 │   └── inference.py             # Inference script
 ├── docs/                        # Documentation
+│   ├── VISION_BANANA_PAPER_ALIGNMENT_REPORT_v3.md  # Paper alignment report (95%)
+│   └── DATASET_RESEARCH_REPORT.md                  # Full dataset research guide
 ├── paper/                       # Reference paper
 └── pyproject.toml               # pip-installable package config
 ```
@@ -462,6 +488,120 @@ From Appendix A of the paper:
 | Referring Seg | ReasonSeg | gIoU | 79.3 | 77.0 (SAM3+GPT) |
 | Depth | 6-dataset avg | δ1 | 0.882 | 0.823 (UniK3D) |
 | Normal | Indoor avg | mean ↓ | 15.05 | 15.72 (Lotus-2) |
+
+## Datasets
+
+> **Important:** The paper explicitly states that **no training data from evaluation benchmarks is included** in the instruction-tuning mixture. All evaluation benchmarks listed below must be **strictly held out** and used only for validation.
+
+### Evaluation Benchmarks (Hold-out Only)
+
+These datasets are used to reproduce the paper's quantitative results in Table 1. They must **not** be mixed into training data.
+
+| Task | Benchmark | Metric | Paper Result | Size | License | Status |
+|------|-----------|--------|-------------|------|---------|--------|
+| **Semantic Seg** | [Cityscapes val](https://www.cityscapes-dataset.com/) | mIoU ↑ | 0.699 | 5K images | Non-commercial (registration required) | ✅ Available |
+| **Instance Seg** | [SA-Co/Gold](https://github.com/facebookresearch/sam3/tree/main/scripts/eval/gold) | pmF1 ↑ | 0.540 | 500-query subset | MetaCLIP/SA-1B terms | ✅ Annotations public |
+| **Referring Seg** | [RefCOCOg UMD val](https://github.com/lichengunc/refer) | cIoU ↑ | 0.738 | 26K images | COCO (CC BY 4.0) | ✅ Available |
+| **Reasoning Seg** | [ReasonSeg val](https://github.com/dvlab-reasoning/ReasonSeg) | gIoU ↑ | 0.793 | 1,218 samples | Academic | ✅ Available |
+| **Depth** | [NYU v2](https://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html) | δ1 / AbsRel | 0.948 / 0.081 | 1,449 RGB-D | Academic | ✅ Available |
+| **Depth** | [KITTI](http://www.cvlibs.net/datasets/kitti/) | δ1 / AbsRel | 0.915 / 0.107 | 23K frames | Academic (CC BY-NC-SA 3.0) | ✅ Registration required |
+| **Depth** | [DIODE](https://diode-dataset.org/) | δ1 / AbsRel | 0.917 / 0.108 | 41K frames | Academic | ✅ Available |
+| **Depth** | [ETH3D](https://www.eth3d.net/) | δ1 / AbsRel | 0.935 / 0.103 | 454 frames | Academic | ✅ Available |
+| **Depth** | [iBims-1](https://github.com/atlas1992/customized_iBims1) | δ1 / AbsRel | 0.934 / 0.078 | 100 images | Academic | ✅ Available |
+| **Depth** | [nuScenes](https://www.nuscenes.org/) | δ1 / AbsRel | 0.643 / 0.219 | 40K keyframes | Academic (registration) | ✅ Available |
+| **Normal** | [NYU v2](https://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html) | mean/median angle ↓ | 17.78° / 8.88° | 1,449 RGB-D | Academic | ✅ Available |
+| **Normal** | [ScanNet](http://www.scan-net.org/) | mean/median angle ↓ | 13.82° / 11.56° | 2.5M views | Academic (registration) | ✅ Available |
+| **Normal** | [DIODE](https://diode-dataset.org/) | mean/median angle ↓ | — | 41K frames | Academic | ✅ Available |
+| **Normal** | [Virtual KITTI](https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/) | mean/median angle ↓ | 29.06° / 10.70° | 21K frames | Academic | ✅ Available |
+| **Generation** | [GenAI-Bench](https://github.com/TIGER-AI-Lab/GenAI-Bench) | Win Rate ↑ | 53.5% | 1,600 prompts | Apache 2.0 | ✅ `pip install genaibench` |
+| **Generation** | [ImgEdit](https://github.com/PKU-YuanGroup/ImgEdit) | Win Rate ↑ | 47.8% | 811 test cases | Academic | ✅ Available |
+
+### Training Datasets (Public Alternatives)
+
+The paper uses **in-house synthetic annotations** and **rendering engine outputs** that are not publicly available. The following public datasets can be used as **functional replacements** for instruction-tuning.
+
+#### Core Training Set (~240 GB MVP)
+
+| Dataset | Task | Size | Why | Download |
+|---------|------|------|-----|----------|
+| **Hypersim** | Depth + Normal + Semantic + Instance | ~1.9 TB (use 10% subset ~200 GB) | Paper-equivalent synthetic indoor data; Apple; perfect annotations; covers 4 core tasks | [GitHub](https://github.com/apple/ml-hypersim) |
+| **COCO 2017** | Instance + Keypoint + Detection | ~25 GB | Standard multi-task base; 80 classes; instances & keypoints | [cocodataset.org](https://cocodataset.org/) |
+| **ADE20K** | Semantic | ~1 GB | Semantic segmentation standard; 150 classes | [sceneparsing.csail.mit.edu](http://sceneparsing.csail.mit.edu/) |
+| **RefCOCO / RefCOCO+ / RefCOCOg** | Referring Expression | ~100 MB (annotations only; images reuse COCO) | Referring expression standard | [github.com/lichengunc/refer](https://github.com/lichengunc/refer) |
+| **ReasonSeg** | Reasoning Segmentation | ~50 MB | Reasoning instruction training | [github.com/dvlab-reasoning/ReasonSeg](https://github.com/dvlab-reasoning/ReasonSeg) |
+| **Virtual KITTI 2** | Depth + Normal + Flow + Instance | ~50 GB | Synthetic outdoor perfect labels; complements Hypersim | [naverlabs.com](https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/) |
+| **FlyingThings3D** | Optical Flow | ~40 GB | Standard flow training data | [lmb.informatik.uni-freiburg.de](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) |
+| **BSDS500** | Edge Detection | ~100 MB | Classic edge detection dataset | [berkeley.edu](https://www2.eecs.berkeley.edu/Research/Projects/CS/vision/grouping/resources.html) |
+
+#### Extended Training Set
+
+| Dataset | Task | Size | Notes |
+|---------|------|------|-------|
+| Mapillary Vistas | Semantic | ~25 GB | Street scenes; non-commercial license |
+| COCO-Stuff | Semantic | Part of COCO | Stuff annotations for semantic segmentation |
+| PACO-LVIS | Part-level Semantic | ~5 GB | Part-level segmentation annotations |
+| PASCAL-Part | Part-level Semantic | ~1 GB | Part-level segmentation |
+| PartImageNet | Part-level Semantic | ~2 GB | Part-level segmentation |
+| Taskonomy | Depth + Normal | ~400 GB | Large-scale synthetic indoor (Stanford) |
+| TartanAir | Depth + Flow | Large | Synthetic indoor/outdoor drone views |
+| MPI Sintel | Flow | ~5 GB | Movie scenes; high-quality flow |
+| KITTI 2015 | Flow | Small | Real-world sparse flow |
+| COCO Keypoints | Keypoint | In COCO 2017 | 17 keypoint human pose annotations |
+| MPII Human Pose | Keypoint | ~2 GB | Classic human pose dataset |
+| Objects365 | Detection | ~50 GB | 365-class detection; large scale |
+| OpenImages | Detection | ~30 GB | 600-class detection |
+
+### Data Preparation Quick Start
+
+```bash
+# List all supported datasets with download instructions
+python scripts/download_data.py --list
+
+# Download and prepare a specific dataset
+python scripts/download_data.py --dataset hypersim-depth --output data/hypersim/
+
+# Prepare Hypersim for training (the paper's equivalent synthetic data)
+python scripts/prepare_hypersim.py \
+  --source /path/to/hypersim \
+  --output data/hypersim_depth/ \
+  --resolution 512 \
+  --validate
+
+# Validate prepared dataset before training
+python scripts/validate_dataset.py --data-path data/hypersim_depth/ --task depth
+```
+
+### Training Data Mixing Strategy
+
+The paper uses a **9:1 generation-to-vision data ratio** (≈10% vision task data). We recommend:
+
+```python
+from open_vision_banana.data import MixedVisionDataset, build_generation_dataset
+from open_vision_banana.data import build_dataset
+
+# Vision datasets (≈10% of training)
+vision_datasets = [
+    build_dataset("depth", root_dir="data/hypersim"),
+    build_dataset("normal", root_dir="data/hypersim"),
+    build_dataset("semantic", root_dir="data/ade20k"),
+    build_dataset("instance", root_dir="data/coco"),
+    build_dataset("referring", root_dir="data/refcocog"),
+    build_dataset("flow", root_dir="data/flyingthings"),
+]
+
+# Generation data (≈90% of training)
+gen_ds = build_generation_dataset("data/generation/")
+
+# Mixed with multi-colormap augmentation for depth
+mixed_ds = MixedVisionDataset(
+    vision_datasets=vision_datasets,
+    generation_dataset=gen_ds,
+    vision_ratio=0.1,
+    colormaps=["cube_edge", "plasma", "inferno", "viridis", "grayscale", "rainbow"],
+)
+```
+
+For the full dataset research report (including all download links, license details, and preprocessing pipelines), see [`DATASET_RESEARCH_REPORT.md`](DATASET_RESEARCH_REPORT.md).
 
 ### Distributed Training (DDP / FSDP)
 
