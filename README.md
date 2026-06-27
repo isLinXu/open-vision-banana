@@ -374,6 +374,7 @@ open-vision-banana/
 │   ├── config.py                # Hierarchical config (8 sub-configs)
 │   ├── core/                    # Core algorithms (no external deps)
 │   │   ├── depth_mapper.py      # Power transform + 6 colormaps (cube-edge, plasma, inferno, viridis, grayscale, rainbow)
+│   │   ├── adaptive_depth_mapper.py  # Adaptive quantization mapper (roundtrip error ~0.45%)
 │   │   ├── normal_mapper.py     # Linear normal ↔ RGB mapping
 │   │   ├── segmentation.py      # 5-stage instance segmentation decoder (adjacent + seed-based Union-Find)
 │   │   ├── edge_mapper.py       # Edge detection: white edges on black background
@@ -384,14 +385,22 @@ open-vision-banana/
 │   │   ├── union_find.py       # Union-Find (path compression + union by rank)
 │   │   └── rgb_mapper.py       # Unified encode/decode interface for 10 tasks
 │   ├── inference/               # Model loading and generation
+│   │   ├── checkpoint.py        # LoRA checkpoint resolution (local / HF / registry)
 │   │   ├── generator.py         # FLUX.1 + LoRA wrapper
 │   │   ├── pipeline.py          # VisionBanana unified model (10 tasks)
 │   │   ├── prompt.py            # Task-specific prompt builder (10 tasks)
-│   │   └── decoder.py           # Visualization decoder (10 tasks)
+│   │   ├── decoder.py           # Visualization decoder (10 tasks)
+│   │   └── optimization.py      # Inference optimization presets + INT8 quantization
 │   ├── training/                # LoRA instruction tuning
 │   │   ├── tuner.py             # InstructionTuner + VisionTaskDataset
-│   │   ├── utils.py             # EMA, DDP, augmentation, gradient checkpointing
-│   │   └── checkpoint.py        # CheckpointManager
+│   │   ├── trainer_interface.py # TrainerInterface ABC + 5 backends (Native/DDP/FSDP/DeepSpeed/Accelerate)
+│   │   ├── checkpoint.py        # CheckpointManager
+│   │   ├── early_stopping.py    # EarlyStopping with best-checkpoint saving
+│   │   ├── logging.py           # TrainingLogger (W&B / TensorBoard)
+│   │   ├── lr_finder.py         # Learning rate finder
+│   │   ├── utils.py             # EMA, VisionAugmentation, gradient checkpointing
+│   │   ├── fsdp_utils.py        # FSDP wrapper (save/load with CPU offload)
+│   │   └── deepspeed_utils.py   # DeepSpeed ZeRO-3 initialization
 │   ├── evaluation/              # Metrics for all vision tasks
 │   │   ├── depth.py             # AbsRel, SqRel, RMSE, δ thresholds
 │   │   ├── normal.py            # Angular error, cosine similarity
@@ -400,29 +409,56 @@ open-vision-banana/
 │   │   ├── referring.py         # IoU, Precision@threshold
 │   │   ├── edge.py              # Edge detection metrics (precision, recall, F1)
 │   │   ├── flow.py              # Optical flow metrics (EPE, AE, F1)
+│   │   ├── baselines.py         # SOTA benchmark comparison data
 │   │   └── evaluator.py         # Unified VisionEvaluator
 │   ├── export/                  # Model export
 │   │   └── onnx_export.py       # ONNX + TorchScript export
 │   └── data/                    # Dataset loaders
-│       ├── datasets.py           # Hypersim, ScanNet, Cityscapes, RefCOCOg
+│       ├── datasets.py           # Hypersim, ScanNet, Cityscapes, SA-Co, RefCOCOg
 │       ├── mixed.py             # 9:1 mixed dataset with multi-colormap support
+│       ├── split.py             # Train/validation split utility
+│       ├── validation.py        # Dataset integrity validation
+│       ├── generation.py        # GenerationDataset (synthetic / FLUX modes)
 │       └── generation_builder.py # Generation dataset builder
-├── tests/
+├── tests/                       # 467 tests, 79% coverage
 │   ├── test_modules.py          # Core algorithm tests
 │   ├── test_training_utils.py   # Training utility tests
+│   ├── test_training_features.py # InstructionTuner + early stopping + split
+│   ├── test_training_logging.py # TrainingLogger (W&B / TB)
+│   ├── test_checkpoint_manager.py # CheckpointManager (22 tests)
 │   ├── test_evaluation.py       # Evaluation metric tests
+│   ├── test_evaluator.py        # VisionEvaluator (26 tests)
 │   ├── test_e2e.py              # ONNX export verification
+│   ├── test_onnx_export.py      # ONNX + TorchScript (21 tests)
 │   ├── test_colormap_enhancement.py    # Multi-colormap roundtrip tests
 │   ├── test_seed_based_segmentation.py # Seed-based Union-Find tests
+│   ├── test_segmentation_v040.py # S4 pre-filter + S5 vectorized merge tests
+│   ├── test_adaptive_depth.py   # Adaptive depth mapper (13 tests)
 │   ├── test_edge_mapper.py      # Edge detection tests
 │   ├── test_flow_mapper.py      # Optical flow tests
 │   ├── test_keypoint_mapper.py  # Keypoint detection tests
 │   ├── test_object_detection_mapper.py # Object detection tests
 │   ├── test_depth_edge_mapper.py # Depth edge tests
-│   └── test_data_config.py      # Data + config tests
+│   ├── test_datasets.py         # Dataset loaders (32 tests)
+│   ├── test_data_config.py      # Data + config tests
+│   ├── test_validation.py       # Dataset validation tests
+│   ├── test_optimization.py     # Inference optimization presets
+│   ├── test_optimizations_v021.py # v0.2.1 P0/P1/P2 fixes
+│   ├── test_v03_features.py     # v0.3.0 feature tests
+│   ├── test_v03_coverage.py     # v0.3.x coverage tests
+│   ├── test_v032_features.py    # v0.3.2 FSDP/preset/validation tests
+│   ├── test_baselines.py        # SOTA baseline comparison
+│   ├── test_deepspeed.py        # DeepSpeed trainer tests
+│   ├── test_fsdp.py             # FSDP trainer tests
+│   ├── test_generation_builder.py # Generation dataset builder tests
+│   ├── test_integration.py      # Integration tests
+│   ├── test_phase2.py           # Phase 2 feature tests
+│   └── test_prepare_hypersim.py # Hypersim preprocessing tests
 ├── configs/
 │   ├── training_config.yaml     # Default training configuration
-│   └── checkpoint_registry.yaml # Hugging Face LoRA checkpoint aliases
+│   ├── checkpoint_registry.yaml # Hugging Face LoRA checkpoint aliases
+│   ├── optimization_presets.yaml # Inference optimization presets (5 profiles)
+│   └── deepspeed_zero3.json     # DeepSpeed ZeRO-3 config
 ├── scripts/
 │   ├── demo.py                  # Algorithm demo (no GPU needed)
 │   ├── validate_data.py         # Dataset format validation
@@ -431,12 +467,24 @@ open-vision-banana/
 │   ├── download_checkpoint.py   # Hugging Face LoRA download
 │   ├── prepare_hypersim.py      # Hypersim data preprocessing
 │   ├── optimize_inference.py    # Inference optimization helper
+│   ├── benchmark_pipeline.py    # End-to-end pipeline benchmark
+│   ├── visualize_attention.py   # Attention map visualization
+│   ├── publish_to_hub.py        # Publish LoRA to Hugging Face Hub
 │   ├── train.py                 # Training script
+│   ├── train_ddp.sh             # DDP launch script
+│   ├── train_fsdp.sh            # FSDP launch script
 │   ├── evaluate.py              # Evaluation script
 │   └── inference.py             # Inference script
+├── docker/                      # Docker images
+│   ├── Dockerfile               # CPU image
+│   ├── Dockerfile.gpu           # GPU image (CUDA 12.1)
+│   └── docker-compose.yml       # 4 services (dev/training/inference/notebook)
 ├── docs/                        # Documentation
 │   ├── VISION_BANANA_PAPER_ALIGNMENT_REPORT_v3.md  # Paper alignment report (95%)
 │   └── DATASET_RESEARCH_REPORT.md                  # Full dataset research guide
+├── experiments/                 # Benchmark and ablation experiments
+├── notebooks/                   # Colab demo notebook
+├── templates/                   # Model card template
 ├── paper/                       # Reference paper
 └── pyproject.toml               # pip-installable package config
 ```
@@ -695,11 +743,14 @@ Interactive Colab demo: [`notebooks/colab_demo.ipynb`](notebooks/colab_demo.ipyn
 
 ## Citation
 
+If you use this codebase or build upon the Vision Banana paradigm, please cite the original paper:
+
 ```bibtex
 @article{visionbanana2025,
   title={Image Generators are Generalist Vision Learners},
-  author={Google Research},
-  year={2025}
+  author={Shengbang Bang and Hezhen Hu and Zheng Qian and Chengyu Wang and Yi Tai and Yann LeCun and Tong Wang},
+  year={2025},
+  note={Google Research}
 }
 ```
 
