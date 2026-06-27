@@ -303,7 +303,15 @@ class FSDPTrainer(NativeTrainer):
 
 
 class DeepSpeedTrainer(NativeTrainer):
-    """DeepSpeed ZeRO trainer — delegates to ``initialize_deepspeed``."""
+    """DeepSpeed ZeRO trainer — delegates to ``initialize_deepspeed``.
+
+    Note:
+        ``max_grad_norm`` is used both for DeepSpeed's gradient clipping
+        (passed to the DeepSpeed config) and for NativeTrainer's
+        ``clip_grad_norm_`` (used when DeepSpeed is not active).
+        ``gradient_accumulation_steps`` similarly serves both the DeepSpeed
+        config and the NativeTrainer accumulation logic.
+    """
 
     def __init__(
         self,
@@ -313,20 +321,16 @@ class DeepSpeedTrainer(NativeTrainer):
         lr: float = 5e-5,
         max_grad_norm: float = 1.0,
         use_amp: bool = False,
-        max_grad_norm_clip: float = 1.0,
-        gradient_accumulation_steps_native: int = 1,
     ) -> None:
         super().__init__(
             device="cuda" if torch.cuda.is_available() else "cpu",
             use_amp=use_amp,
-            max_grad_norm=max_grad_norm_clip,
-            gradient_accumulation_steps=gradient_accumulation_steps_native,
+            max_grad_norm=max_grad_norm,
+            gradient_accumulation_steps=gradient_accumulation_steps,
         )
         self.config_path = config_path
         self.micro_batch_size = micro_batch_size
-        self.gradient_accumulation_steps = gradient_accumulation_steps
         self.lr = lr
-        self.max_grad_norm = max_grad_norm
         self._engine = None
 
     def wrap_model(self, model: nn.Module) -> nn.Module:
@@ -471,18 +475,23 @@ class AccelerateTrainer(TrainerInterface):
         self.accelerator.backward(loss)
 
     def optimizer_step(self) -> None:
-        """No-op: Accelerate handles optimizer step internally via backward().
+        """Perform optimizer step via Accelerate.
 
-        When using AccelerateTrainer, gradient updates are performed
-        automatically by ``accelerator.backward()`` + manual
-        ``optimizer.step()`` in the training loop, or via
-        ``accelerator.clip_grad_norm_()`` for gradient clipping.
+        Delegates to ``self._optimizer.step()`` (prepared by ``prepare()``).
+        Accelerate handles gradient scaling internally, so no explicit
+        ``unscale_`` is needed.
 
-        Do NOT call this method expecting optimizer advancement; instead,
-        call ``optimizer.step()`` and ``optimizer.zero_grad()`` directly
-        after ``backward()``, or use the Accelerate prepare() pattern.
+        Raises:
+            RuntimeError: If ``setup_optimizer()`` was not called before
+                this method.
         """
-        pass
+        if self._optimizer is None:
+            raise RuntimeError(
+                "AccelerateTrainer.optimizer_step() called before setup_optimizer(). "
+                "Call trainer.setup_optimizer(optimizer) first, or use prepare() "
+                "to let Accelerate manage the optimizer."
+            )
+        self._optimizer.step()
 
     def save_checkpoint(
         self,
