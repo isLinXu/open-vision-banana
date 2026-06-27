@@ -77,37 +77,63 @@ class VisionTaskDataset(_Dataset):
             <path>/targets/   ← matching target visualisations (same filenames)
 
         Files without a matching target are silently skipped.
+
+        Uses ``os.scandir`` for efficient directory scanning and builds a
+        target-file index for O(1) lookup, avoiding the O(N×K) extension
+        probing of the previous implementation.
         """
+        import os
         from pathlib import Path
+
         root = Path(path)
         img_dir = root / "images"
         tgt_dir = root / "targets"
 
         if not img_dir.exists():
             import logging
+
             logging.getLogger(__name__).warning(
                 f"VisionTaskDataset: images dir not found at {img_dir}"
             )
             return
 
         IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
-        for img_path in sorted(img_dir.iterdir()):
-            if img_path.suffix.lower() not in IMG_EXTS:
-                continue
-            # Find matching target (same stem, any extension)
-            tgt_path = None
-            for ext in IMG_EXTS:
-                candidate = tgt_dir / (img_path.stem + ext)
-                if candidate.exists():
-                    tgt_path = candidate
-                    break
+
+        # Build a target-file index keyed by stem for O(1) lookup
+        # (avoids iterating extensions per image)
+        target_index: dict[str, Path] = {}
+        if tgt_dir.exists():
+            with os.scandir(str(tgt_dir)) as entries:
+                for entry in entries:
+                    if entry.is_file():
+                        p = Path(entry.path)
+                        if p.suffix.lower() in IMG_EXTS:
+                            target_index[p.stem] = p
+
+        # Scan images using os.scandir (faster than iterdir for large dirs)
+        image_paths: list[Path] = []
+        with os.scandir(str(img_dir)) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    p = Path(entry.path)
+                    if p.suffix.lower() in IMG_EXTS:
+                        image_paths.append(p)
+
+        # Sort for deterministic ordering
+        image_paths.sort()
+
+        prompt = self.TASK_PROMPTS.get(self.task, self.DEFAULT_PROMPT)
+        for img_path in image_paths:
+            tgt_path = target_index.get(img_path.stem)
             if tgt_path is None:
                 continue
-            self.samples.append({
-                "image_path": str(img_path),
-                "target_path": str(tgt_path),
-                "prompt": self.TASK_PROMPTS.get(self.task, self.DEFAULT_PROMPT),
-            })
+            self.samples.append(
+                {
+                    "image_path": str(img_path),
+                    "target_path": str(tgt_path),
+                    "prompt": prompt,
+                }
+            )
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -121,9 +147,7 @@ class VisionTaskDataset(_Dataset):
             img = Image.open(p).convert("RGB")
             if hasattr(self, "resolution"):
                 img = img.resize((self.resolution, self.resolution), Image.LANCZOS)
-            arr = torch.from_numpy(
-                np.array(img, dtype=np.float32) / 255.0
-            ).permute(2, 0, 1)
+            arr = torch.from_numpy(np.array(img, dtype=np.float32) / 255.0).permute(2, 0, 1)
             lo, hi = normalise_range
             return arr * (hi - lo) + lo
 
@@ -208,40 +232,87 @@ class InstructionTuner:
         - "partial": accepts hidden_states, timestep, encoder_hidden_states
         - "minimal": accepts hidden_states, timestep only
         - "positional": accepts positional args only (smoke-test mocks)
+
+        Uses ``inspect.signature`` to statically analyse the forward()
+        parameter list, avoiding exception-based control flow.  Falls back
+        to a single trial call only when static analysis is inconclusive
+        (e.g. ``**kwargs`` present but specific named params absent).
         """
-        dummy_hidden = torch.zeros(1, 3, 2, 2)
-        dummy_timestep = torch.tensor([0.5])
-        dummy_encoder = torch.zeros(1, 1, 4)
+        import inspect
 
         try:
-            self.peft_model(
-                hidden_states=dummy_hidden,
-                timestep=dummy_timestep,
-                encoder_hidden_states=dummy_encoder,
-                pooled_projections=torch.zeros(1, 4),
-            )
+            sig = inspect.signature(self.peft_model.forward)
+        except (ValueError, TypeError):
+            # Cannot introspect (e.g. a compiled/capturing object) —
+            # fall back to positional mode.
+            return "positional"
+
+        params = sig.parameters
+        # Collect named parameters (exclude *args / **kwargs)
+        named = {
+            name
+            for name, p in params.items()
+            if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+        }
+        has_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
+
+        # Check for the full FLUX signature
+        required_full = {"hidden_states", "timestep", "encoder_hidden_states", "pooled_projections"}
+        if required_full.issubset(named):
             return "full"
-        except TypeError:
-            pass
 
-        try:
-            self.peft_model(
-                hidden_states=dummy_hidden,
-                timestep=dummy_timestep,
-                encoder_hidden_states=dummy_encoder,
-            )
+        # Check for partial signature (3 named params)
+        required_partial = {"hidden_states", "timestep", "encoder_hidden_states"}
+        if required_partial.issubset(named):
             return "partial"
-        except TypeError:
-            pass
 
-        try:
-            self.peft_model(
-                hidden_states=dummy_hidden,
-                timestep=dummy_timestep,
-            )
+        # Check for minimal signature (2 named params)
+        required_minimal = {"hidden_states", "timestep"}
+        if required_minimal.issubset(named):
             return "minimal"
-        except TypeError:
-            pass
+
+        # If **kwargs is present but no specific named params were found
+        # (e.g. PEFT wrapper with (*args, **kwargs)), the model might still
+        # accept these params dynamically.  Do a single trial call with the
+        # most complete signature to detect acceptance.
+        if has_kwargs:
+            dummy_hidden = torch.zeros(1, 3, 2, 2)
+            dummy_timestep = torch.tensor([0.5])
+            dummy_encoder = torch.zeros(1, 1, 4)
+            dummy_pooled = torch.zeros(1, 4)
+
+            # Try full first, then partial, then minimal
+            for mode, kwargs in [
+                (
+                    "full",
+                    {
+                        "hidden_states": dummy_hidden,
+                        "timestep": dummy_timestep,
+                        "encoder_hidden_states": dummy_encoder,
+                        "pooled_projections": dummy_pooled,
+                    },
+                ),
+                (
+                    "partial",
+                    {
+                        "hidden_states": dummy_hidden,
+                        "timestep": dummy_timestep,
+                        "encoder_hidden_states": dummy_encoder,
+                    },
+                ),
+                (
+                    "minimal",
+                    {
+                        "hidden_states": dummy_hidden,
+                        "timestep": dummy_timestep,
+                    },
+                ),
+            ]:
+                try:
+                    self.peft_model(**kwargs)
+                    return mode
+                except TypeError:
+                    continue
 
         return "positional"
 
@@ -349,9 +420,7 @@ class InstructionTuner:
         )
 
         total_steps = len(train_loader) * epochs // gradient_accumulation_steps
-        scheduler = self._create_scheduler(
-            scheduler_type, total_steps, warmup_steps
-        )
+        scheduler = self._create_scheduler(scheduler_type, total_steps, warmup_steps)
 
         device_type = self._detect_device_type()
         use_deepspeed = self.deepspeed_engine is not None
@@ -395,9 +464,7 @@ class InstructionTuner:
                         self.deepspeed_engine.step()
                     else:
                         scaler.unscale_(self.optimizer)
-                        torch.nn.utils.clip_grad_norm_(
-                            self.peft_model.parameters(), max_grad_norm
-                        )
+                        torch.nn.utils.clip_grad_norm_(self.peft_model.parameters(), max_grad_norm)
                         scaler.step(self.optimizer)
                         scaler.update()
                     scheduler.step()
@@ -411,16 +478,24 @@ class InstructionTuner:
                     current_lr = scheduler.get_last_lr()[0]
 
                     if training_logger and global_step % log_every == 0:
-                        training_logger.log_metrics(global_step, {
-                            "train/loss": running_loss,
-                            "train/lr": current_lr,
-                            "train/epoch": float(epoch + 1),
-                        })
+                        training_logger.log_metrics(
+                            global_step,
+                            {
+                                "train/loss": running_loss,
+                                "train/lr": current_lr,
+                                "train/epoch": float(epoch + 1),
+                            },
+                        )
 
                     if callback and global_step % log_every == 0:
                         callback(global_step, running_loss, current_lr)
 
-                if ckpt_manager and is_main_process and global_step > 0 and global_step % save_every == 0:
+                if (
+                    ckpt_manager
+                    and is_main_process
+                    and global_step > 0
+                    and global_step % save_every == 0
+                ):
                     ckpt_path = ckpt_manager.save(
                         peft_model=self.peft_model,
                         optimizer=self.optimizer,
@@ -481,15 +556,18 @@ class InstructionTuner:
 
             avg_loss = epoch_loss / max(num_steps, 1)
             logger.info(
-                f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, "
+                f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}, "
                 f"LR: {scheduler.get_last_lr()[0]:.2e}, Steps: {global_step}"
             )
 
             if training_logger:
-                training_logger.log_metrics(global_step, {
-                    "epoch/train_loss": avg_loss,
-                    "epoch/number": float(epoch + 1),
-                })
+                training_logger.log_metrics(
+                    global_step,
+                    {
+                        "epoch/train_loss": avg_loss,
+                        "epoch/number": float(epoch + 1),
+                    },
+                )
 
             if stopped_early:
                 logger.info("Training stopped early at epoch %d", epoch + 1)
@@ -520,7 +598,11 @@ class InstructionTuner:
         return {
             "epochs_run": epoch + 1,
             "global_step": global_step,
-            "best_val_loss": best_val_loss if best_val_loss is not None else early_stopper.best_loss if early_stopper else None,
+            "best_val_loss": best_val_loss
+            if best_val_loss is not None
+            else early_stopper.best_loss
+            if early_stopper
+            else None,
             "stopped_early": stopped_early,
         }
 
@@ -554,8 +636,8 @@ class InstructionTuner:
             # encode_prompt returns (prompt_embeds, negative_prompt_embeds,
             #                        pooled_prompt_embeds, negative_pooled_prompt_embeds)
             if isinstance(text_outputs, (tuple, list)) and len(text_outputs) >= 3:
-                prompt_embeds = text_outputs[0]           # [B, seq_len, D_t5]
-                pooled_prompt_embeds = text_outputs[2]    # [B, D_clip]
+                prompt_embeds = text_outputs[0]  # [B, seq_len, D_t5]
+                pooled_prompt_embeds = text_outputs[2]  # [B, D_clip]
             else:
                 # Some diffusers versions return a different structure
                 prompt_embeds = text_outputs[0]
@@ -656,8 +738,10 @@ class InstructionTuner:
             prompts = [prompts]
 
         # Infer device from batch tensors; fall back to peft_model parameters.
-        device = target_rgb.device if isinstance(target_rgb, torch.Tensor) else next(
-            (p.device for p in self.peft_model.parameters()), torch.device("cpu")
+        device = (
+            target_rgb.device
+            if isinstance(target_rgb, torch.Tensor)
+            else next((p.device for p in self.peft_model.parameters()), torch.device("cpu"))
         )
 
         target_rgb = target_rgb.to(device)
@@ -678,20 +762,20 @@ class InstructionTuner:
 
         # ── P0-2: VAE encoding — work in latent space ───────────────────
         # Convert target_rgb [0,1] → [-1,1] before VAE encoding.
-        target_pixels = target_rgb * 2.0 - 1.0           # [B, 3, H, W]
-        target_latents = self._encode_latents(target_pixels)   # [B, 16, H/8, W/8]
+        target_pixels = target_rgb * 2.0 - 1.0  # [B, 3, H, W]
+        target_latents = self._encode_latents(target_pixels)  # [B, 16, H/8, W/8]
 
         # ── Flow matching in latent space ────────────────────────────────
-        timesteps = torch.rand(batch_size, device=device)       # [B]
+        timesteps = torch.rand(batch_size, device=device)  # [B]
         noise = torch.randn_like(target_latents)
 
         t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
-        noisy_latents = (1.0 - t_b) * target_latents + t_b * noise   # z_t
-        velocity_target = target_latents - noise                       # v*
+        noisy_latents = (1.0 - t_b) * target_latents + t_b * noise  # z_t
+        velocity_target = target_latents - noise  # v*
 
         # ── P0-1: Text conditioning ───────────────────────────────────────
         text_cond = self._encode_text(prompts, device)
-        prompt_embeds = text_cond["prompt_embeds"]                # [B, seq_len, D_t5]
+        prompt_embeds = text_cond["prompt_embeds"]  # [B, seq_len, D_t5]
         pooled_prompt_embeds = text_cond["pooled_prompt_embeds"]  # [B, D_clip] | None
 
         # ── Forward pass — use probed signature ────────────────────────
@@ -771,9 +855,7 @@ class InstructionTuner:
         )
 
         if warmup_steps > 0:
-            warmup = LinearLR(
-                self.optimizer, start_factor=0.01, total_iters=warmup_steps
-            )
+            warmup = LinearLR(self.optimizer, start_factor=0.01, total_iters=warmup_steps)
         else:
             warmup = None
 
