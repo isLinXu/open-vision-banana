@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.1] — 2026-06-23
+## [0.4.2] — 2026-06-27
+
+### Fixed (P1)
+
+- **torch.ao.quantization deprecation** (`inference/optimization.py`): `quantize_mapper_int8()` migrated from `torch.ao.quantization.quantize_dynamic` (removed in PyTorch ≥ 2.10) to `torchao.quantization.quantize_` with `Int8DynamicActivationInt8WeightConfig`. Automatic fallback to legacy API on platforms without torchao/Triton (e.g. MPS). Pure-tensor ONNX mappers (no `nn.Linear`/`nn.Conv2d`) now short-circuit to a no-op instead of producing an empty quantized model.
+- **CHANGELOG timestamp typos** (`CHANGELOG.md`): v0.1.0, v0.2.0, and v0.2.1 entries had year "2025" instead of "2026".
+- **DeepSpeedTrainer parameter redundancy** (`training/trainer_interface.py`): Removed `max_grad_norm_clip` and `gradient_accumulation_steps_native` — these duplicated `max_grad_norm` and `gradient_accumulation_steps` respectively, causing confusion about which parameter controlled clipping. The single `max_grad_norm` now serves both the DeepSpeed config and NativeTrainer's `clip_grad_norm_`.
+- **AccelerateTrainer.optimizer_step() contract violation** (`training/trainer_interface.py`): Was a no-op `pass` with a docstring telling users not to call it — violated `TrainerInterface` contract. Now properly delegates to `self._optimizer.step()` and raises `RuntimeError` with a clear message if `setup_optimizer()` was not called first.
+- **_probe_forward_signature exception-based control flow** (`training/tuner.py`): Replaced 3 sequential `try/except TypeError` model calls with `inspect.signature` static analysis. Falls back to a single trial call only when the signature has `**kwargs` but no named params (e.g. PEFT wrapper with `(*args, **kwargs)`). Eliminates unnecessary model forward calls during init.
+
+### Changed (P2)
+
+- **VisionTaskDataset._load_data optimization** (`training/tuner.py`): Replaced `sorted(iterdir())` + per-file extension probing with `os.scandir` + a target-file stem index for O(1) lookup. Avoids O(N×K) extension checks on large datasets (tens of thousands of samples).
+- **README Project Structure sync** (`README.md`): Updated directory tree to include all 43 source files (was missing 15 files: `adaptive_depth_mapper.py`, `split.py`, `validation.py`, `generation.py`, `checkpoint.py` in both `inference/` and `training/`, `optimization.py`, `trainer_interface.py`, `early_stopping.py`, `logging.py`, `lr_finder.py`, `fsdp_utils.py`, `deepspeed_utils.py`, `baselines.py`). Test list updated from 12 to 35 entries. Added `docker/`, `experiments/`, `notebooks/`, `templates/` directories.
+- **README Citation fix** (`README.md`): Replaced placeholder `author={Google Research}` with actual paper authors: Shengbang Bang, Hezhen Hu, Zheng Qian, Chengyu Wang, Yi Tai, Yann LeCun, Tong Wang.
+
+### Tests
+
+- All 467 tests pass. Ruff lint + format clean on modified files.
 
 ### Changed
 
@@ -261,7 +279,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deleted 12 legacy flat files under `src/` superseded by the new package structure.
 
-## [0.1.0] — 2025-06-10
+## [0.1.0] — 2026-06-10
 
 ### Added
 

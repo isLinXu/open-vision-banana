@@ -14,7 +14,7 @@ Subpackages:
 - data: Dataset loaders for vision task instruction tuning
 """
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 # Lazy imports — only load what's needed
 from .config import VisionBananaConfig
