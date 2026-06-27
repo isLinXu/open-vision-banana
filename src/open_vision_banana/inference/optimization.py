@@ -88,13 +88,46 @@ def quantize_mapper_int8(model: nn.Module) -> nn.Module:
 
     Suitable for ``DepthRGBMapperONNX`` / ``NormalRGBMapperONNX`` only.
     The FLUX transformer is not supported here.
+
+    Uses ``torchao.quantization.quantize_`` when available (PyTorch ≥ 2.10
+    removed ``torch.ao.quantization.quantize_dynamic``).  Falls back to the
+    legacy API on older PyTorch versions.
     """
     model.eval()
-    return torch.quantization.quantize_dynamic(
-        model,
-        {nn.Linear, nn.Conv2d},
-        dtype=torch.qint8,
-    )
+
+    # Collect Linear/Conv2d module FQNs for torchao
+    module_fqns: list[str] = []
+    for name, module in model.named_modules():
+        if isinstance(module, (nn.Linear, nn.Conv2d)):
+            module_fqns.append(name)
+
+    # If no quantizable layers exist (e.g. pure-tensor ONNX mappers),
+    # return the model unchanged — quantization is a no-op.
+    if not module_fqns:
+        logger.debug(
+            "quantize_mapper_int8: no nn.Linear/nn.Conv2d found; returning unchanged model"
+        )
+        return model
+
+    try:
+        from torchao.quantization import Int8DynamicActivationInt8WeightConfig, quantize_
+
+        config = Int8DynamicActivationInt8WeightConfig(module_fqns)
+        quantize_(model, config)
+        return model
+    except (ImportError, AttributeError, RuntimeError, NotImplementedError) as e:
+        # Fallback for environments without torchao or without Triton (e.g. MPS).
+        # Also catches torchao kernel errors on non-CUDA platforms.
+        logger.debug(f"torchao quantization unavailable ({e!r}); falling back to legacy API")
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+            return torch.quantization.quantize_dynamic(
+                model,
+                {nn.Linear, nn.Conv2d},
+                dtype=torch.qint8,
+            )
 
 
 def estimate_vram_savings(options: InferenceOptions) -> dict[str, str]:
