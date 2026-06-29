@@ -259,3 +259,16 @@ plan_alignment_v2.md
 
 # Generated experiment charts (can be regenerated from .py scripts)
 experiments/*.png
+
+# Training data & model checkpoints (too large for git)
+data/
+*.pt
+*.safetensors
+*.ckpt
+*.bin
+output/vb_sdxl_v4/
+output/vb_paper_aligned_v3/
+
+# HF cache & model downloads
+hf_cache/
+models/
