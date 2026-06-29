@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """Vision Banana v5 — Multi-backbone training with TRUE image conditioning.
 
-Extends v4 to support multiple base model families:
+Supports 16 base model families across UNet and Transformer architectures:
   - SD 1.5   (860M UNet, single text encoder)
   - SD 2.1   (866M UNet, single text encoder)
-  - SSD-1B   (1.3B UNet, dual text encoder)  ← v4 default
+  - SSD-1B   (1.3B UNet, dual text encoder)  ← default
   - SDXL     (2.6B UNet, dual text encoder)
   - SDXL Turbo (2.6B, 4-step generation)
-  - FLUX-dev/schnell (12B transformer)
+  - FLUX.1 dev/schnell (12B transformer)
+  - Qwen-Image (transformer, text rendering, CFG)
+  - Z-Image-Turbo (6B transformer, single-stream DiT)
+  - SANA-600M/1600M (transformer, linear DiT, efficient)
+  - Lumina-Image-2.0 (2B transformer, flow DiT)
+  - Chroma1-HD (8.9B transformer, FLUX.1-schnell base)
+  - FLUX.2-dev (next-gen transformer)
+  - CogView4-6B (transformer, Apache-2.0)
+  - AuraFlow (transformer, MMDiT, Apache-2.0)
 
 Key innovations (inherited from v4):
   1. TRUE img2img: input image encoded as latent starting point
@@ -16,16 +24,20 @@ Key innovations (inherited from v4):
   4. Stochastic interpolant: x_t = (1-t)*input + t*target + sigma*sqrt(t(1-t))*noise
 
 Architecture differences handled by model_registry:
+  - UNet vs Transformer backbone
   - Single vs dual text encoders
   - added_cond_kwargs (SDXL+ only)
-  - VAE scaling factors (SD: 0.18215, FLUX: 0.3611)
-  - VAE downsample factor (SD: 8x, FLUX: 16x)
+  - VAE scaling/shift factors per model
+  - VAE downsample factor (8x or 16x)
   - LoRA target modules per family
+  - Attention masks for DiT models
+  - Position IDs for FLUX/Chroma/FLUX.2
 
 Usage:
   python scripts/train_vb_v5.py --model ssd-1b           # default
   python scripts/train_vb_v5.py --model sd15 --steps 500 # lightweight
-  python scripts/train_vb_v5.py --model sdxl             # full capacity
+  python scripts/train_vb_v5.py --model sana-600m        # efficient DiT
+  python scripts/train_vb_v5.py --model qwen-image       # Qwen-Image
   python scripts/train_vb_v5.py --list-models            # list all options
 """
 
@@ -56,12 +68,15 @@ from open_vision_banana.model_registry import (
     PipelineComponents,
     apply_lora,
     auto_select_model,
+    backbone_forward,
     build_added_cond_kwargs,
     encode_text,
     get_model_config,
     list_models,
     load_pipeline,
-    unet_forward,
+    prepare_position_ids,
+    vae_decode,
+    vae_encode,
 )
 
 logging.basicConfig(
@@ -334,7 +349,6 @@ def generate_depth_img2img(
     prompt: str,
     device: torch.device,
     dtype: torch.dtype,
-    vae_scaling: float,
     num_steps: int = 30,
     seed: int = 42,
     strength: float = 1.0,
@@ -342,17 +356,24 @@ def generate_depth_img2img(
 ):
     """Generate depth visualization via TRUE img2img flow matching.
 
-    Works across all model families via the unified unet_forward helper.
+    Works across all model families via the unified backbone_forward helper.
     """
     config = components.config
-    unet = components.unet
+    backbone = components.unet
     vae = components.vae
-    unet.eval()
+    backbone.eval()
 
     # Encode text
-    encoder_hidden_states, pooled_embeds = encode_text(
+    encoder_hidden_states, aux_output = encode_text(
         components, [prompt], device, dtype
     )
+
+    # aux_output can be pooled_embeds (SDXL), attention_mask (DiT), or None
+    attention_mask = aux_output if isinstance(aux_output, torch.Tensor) and config.needs_attention_mask else None
+    pooled_embeds = aux_output if isinstance(aux_output, torch.Tensor) and not config.needs_attention_mask else None
+    if aux_output is None:
+        pooled_embeds = None
+        attention_mask = None
 
     # Build added_cond_kwargs if needed
     res = (input_image.shape[-2], input_image.shape[-1])
@@ -360,20 +381,29 @@ def generate_depth_img2img(
         config, pooled_embeds, res, device, dtype, batch_size=1
     )
 
+    # Prepare position IDs if needed
+    txt_ids, img_ids = prepare_position_ids(
+        None, encoder_hidden_states, config, device, dtype
+    )
+
     # CFG setup
     uncond_hidden = None
     uncond_added_cond = None
+    uncond_mask = None
     if guidance_scale > 1.0:
-        uncond_hidden, uncond_pooled = encode_text(
+        uncond_hidden, uncond_aux = encode_text(
             components, [""], device, dtype, negative=True
         )
-        uncond_added_cond = build_added_cond_kwargs(
-            config, uncond_pooled, res, device, dtype, batch_size=1
-        )
+        if isinstance(uncond_aux, torch.Tensor):
+            if config.needs_attention_mask:
+                uncond_mask = uncond_aux
+            else:
+                uncond_added_cond = build_added_cond_kwargs(
+                    config, uncond_aux, res, device, dtype, batch_size=1
+                )
 
     # TRUE img2img: encode INPUT image as latent starting point
-    input_latents = vae.encode(input_image).latent_dist.mode()
-    input_latents = input_latents * vae_scaling
+    input_latents = vae_encode(vae, input_image, config)
 
     torch.manual_seed(seed)
     latents = input_latents.clone()
@@ -386,30 +416,47 @@ def generate_depth_img2img(
         t = i * dt
         timestep_long = torch.tensor([int(t * 999)], device=device).clamp(0, 999)
 
-        if guidance_scale > 1.0 and uncond_hidden is not None:
-            v_cond = unet_forward(
-                unet, latents, timestep_long, encoder_hidden_states,
-                config, added_cond_kwargs
+        # Update position IDs with current latents
+        if config.needs_position_ids:
+            txt_ids, img_ids = prepare_position_ids(
+                latents, encoder_hidden_states, config, device, dtype
             )
-            v_uncond = unet_forward(
-                unet, latents, timestep_long, uncond_hidden,
-                config, uncond_added_cond
+
+        if guidance_scale > 1.0 and uncond_hidden is not None:
+            v_cond = backbone_forward(
+                backbone, latents, timestep_long, encoder_hidden_states, config,
+                added_cond_kwargs=added_cond_kwargs,
+                guidance=guidance_scale,
+                attention_mask=attention_mask,
+                pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
+            )
+            v_uncond = backbone_forward(
+                backbone, latents, timestep_long, uncond_hidden, config,
+                added_cond_kwargs=uncond_added_cond,
+                guidance=guidance_scale,
+                attention_mask=uncond_mask,
+                pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
             )
             pred_v = v_uncond + guidance_scale * (v_cond - v_uncond)
         else:
-            pred_v = unet_forward(
-                unet, latents, timestep_long, encoder_hidden_states,
-                config, added_cond_kwargs
+            pred_v = backbone_forward(
+                backbone, latents, timestep_long, encoder_hidden_states, config,
+                added_cond_kwargs=added_cond_kwargs,
+                guidance=guidance_scale,
+                attention_mask=attention_mask,
+                pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
             )
 
         latents = latents + dt * pred_v
 
     # Decode
-    latents = latents / vae_scaling
-    image = vae.decode(latents).sample
+    image = vae_decode(vae, latents, config)
     image = (image / 2 + 0.5).clamp(0, 1)
     image_np = (image.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-    unet.train()
+    backbone.train()
     return Image.fromarray(image_np)
 
 
@@ -421,14 +468,25 @@ def main():
         description="Vision Banana v5 — Multi-backbone training",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Available models:
-  sd15         Stable Diffusion 1.5 (860M, ~4GB)
-  sd2          Stable Diffusion 2.1 (866M, ~5GB)
-  ssd-1b       SSD-1B distilled SDXL (1.3B, ~5.5GB)  [default]
-  sdxl         SDXL Base (2.6B, ~7GB)
-  sdxl-turbo   SDXL Turbo (2.6B, ~7GB, 4-step)
-  flux-dev     FLUX.1-dev (12B, ~24GB)
-  flux-schnell FLUX.1-schnell (12B, ~24GB, 4-step)
+Available models (16 total):
+  UNet-based:
+    sd15         Stable Diffusion 1.5 (860M, ~4GB)
+    sd2          Stable Diffusion 2.1 (866M, ~5GB)
+    ssd-1b       SSD-1B distilled SDXL (1.3B, ~5.5GB)  [default]
+    sdxl         SDXL Base (2.6B, ~7GB)
+    sdxl-turbo   SDXL Turbo (2.6B, ~7GB, 4-step)
+  Transformer-based (DiT):
+    flux-dev     FLUX.1-dev (12B, ~24GB)
+    flux-schnell FLUX.1-schnell (12B, ~24GB, 4-step)
+    qwen-image   Qwen-Image (text rendering, ~20GB)
+    z-image      Z-Image-Turbo 6B (single-stream DiT, ~24GB)
+    sana-600m    SANA-600M (linear DiT, ~6GB)
+    sana-1600m   SANA-1600M (linear DiT, ~10GB)
+    lumina2      Lumina-Image-2.0 (2B flow DiT, ~12GB)
+    chroma       Chroma1-HD (8.9B, FLUX base, ~20GB)
+    flux2-dev    FLUX.2-dev (next-gen, ~30GB)
+    cogview4     CogView4-6B (Apache-2.0, ~24GB)
+    aura-flow    AuraFlow (MMDiT, Apache-2.0, ~15GB)
 
 Use --list-models to see all options with details.
         """,
@@ -531,7 +589,6 @@ Use --list-models to see all options with details.
 
     unet = components.unet
     vae = components.vae
-    vae_scaling = model_cfg.vae_scaling_factor
 
     # ─── Build datasets ───
     if not DEPTH_DATA_DIR.exists():
@@ -620,13 +677,11 @@ Use --list-models to see all options with details.
             # ── Encode TARGET to latents ──
             with torch.no_grad():
                 target_pixels = (target_rgb * 2.0 - 1.0).to(dtype)
-                target_latents = vae.encode(target_pixels).latent_dist.mode()
-                target_latents = target_latents * vae_scaling
+                target_latents = vae_encode(vae, target_pixels, model_cfg)
 
             # ── Encode INPUT image to latents ──
             with torch.no_grad():
-                input_latents = vae.encode(input_images).latent_dist.mode()
-                input_latents = input_latents * vae_scaling
+                input_latents = vae_encode(vae, input_images, model_cfg)
 
             # ── Sample timesteps ──
             timesteps = sample_timesteps_logit_normal(bsz, device)
@@ -644,9 +699,18 @@ Use --list-models to see all options with details.
 
             # ── Encode text ──
             with torch.no_grad():
-                encoder_hidden_states, pooled_embeds = encode_text(
-                components, prompts, device, dtype
-            )
+                encoder_hidden_states, aux_output = encode_text(
+                    components, prompts, device, dtype
+                )
+
+            # Handle aux_output (pooled_embeds for SDXL, attention_mask for DiT)
+            attention_mask = None
+            pooled_embeds = None
+            if isinstance(aux_output, torch.Tensor):
+                if model_cfg.needs_attention_mask:
+                    attention_mask = aux_output
+                else:
+                    pooled_embeds = aux_output
 
             # Build added_cond_kwargs if model needs it
             added_cond_kwargs = build_added_cond_kwargs(
@@ -656,11 +720,20 @@ Use --list-models to see all options with details.
 
             timestep_long = (timesteps * 999).long().clamp(0, 999)
 
-            # ── UNet forward (unified) ──
+            # ── Prepare position IDs if needed ──
+            txt_ids, img_ids = prepare_position_ids(
+                noisy_latents, encoder_hidden_states, model_cfg, device, dtype
+            )
+
+            # ── Backbone forward (unified) ──
             with torch.amp.autocast("mps", dtype=dtype, enabled=(device.type == "mps")):
-                predicted_velocity = unet_forward(
+                predicted_velocity = backbone_forward(
                     unet, noisy_latents, timestep_long, encoder_hidden_states,
-                    model_cfg, added_cond_kwargs
+                    model_cfg,
+                    added_cond_kwargs=added_cond_kwargs,
+                    attention_mask=attention_mask,
+                    pooled_embeds=pooled_embeds,
+                    txt_ids=txt_ids, img_ids=img_ids,
                 )
 
             # ── Loss ──
@@ -718,7 +791,7 @@ Use --list-models to see all options with details.
                             try:
                                 gen_img = generate_depth_img2img(
                                     components,
-                                    vimg, DEPTH_PROMPT, device, dtype, vae_scaling,
+                                    vimg, DEPTH_PROMPT, device, dtype,
                                     num_steps=20, seed=args.seed + vi,
                                     strength=strength,
                                     guidance_scale=model_cfg.default_guidance_scale,

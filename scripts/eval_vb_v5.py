@@ -35,12 +35,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from open_vision_banana.model_registry import (
     PipelineComponents,
     apply_lora,
+    backbone_forward,
     build_added_cond_kwargs,
     encode_text,
     get_model_config,
     list_models,
     load_pipeline,
-    unet_forward,
+    prepare_position_ids,
+    vae_decode,
+    vae_encode,
 )
 
 logging.basicConfig(
@@ -184,7 +187,6 @@ def generate_depth_img2img(
     prompt: str,
     device: torch.device,
     dtype: torch.dtype,
-    vae_scaling: float,
     num_steps: int = 30,
     seed: int = 42,
     strength: float = 1.0,
@@ -192,14 +194,23 @@ def generate_depth_img2img(
 ):
     """TRUE img2img depth generation — works across all model families."""
     config = components.config
-    unet = components.unet
+    backbone = components.unet
     vae = components.vae
-    unet.eval()
+    backbone.eval()
 
     # Encode text
-    encoder_hidden_states, pooled_embeds = encode_text(
+    encoder_hidden_states, aux_output = encode_text(
         components, [prompt], device, dtype
     )
+
+    # Handle aux_output
+    attention_mask = None
+    pooled_embeds = None
+    if isinstance(aux_output, torch.Tensor):
+        if config.needs_attention_mask:
+            attention_mask = aux_output
+        else:
+            pooled_embeds = aux_output
 
     # Build added_cond_kwargs
     res = (input_image.shape[-2], input_image.shape[-1])
@@ -210,17 +221,21 @@ def generate_depth_img2img(
     # CFG setup
     uncond_hidden = None
     uncond_added_cond = None
+    uncond_mask = None
     if guidance_scale > 1.0:
-        uncond_hidden, uncond_pooled = encode_text(
+        uncond_hidden, uncond_aux = encode_text(
             components, [""], device, dtype, negative=True
         )
-        uncond_added_cond = build_added_cond_kwargs(
-            config, uncond_pooled, res, device, dtype, batch_size=1
-        )
+        if isinstance(uncond_aux, torch.Tensor):
+            if config.needs_attention_mask:
+                uncond_mask = uncond_aux
+            else:
+                uncond_added_cond = build_added_cond_kwargs(
+                    config, uncond_aux, res, device, dtype, batch_size=1
+                )
 
     # TRUE img2img: encode INPUT image as starting latent
-    input_latents = vae.encode(input_image).latent_dist.mode()
-    input_latents = input_latents * vae_scaling
+    input_latents = vae_encode(vae, input_image, config)
 
     torch.manual_seed(seed)
     latents = input_latents.clone()
@@ -232,25 +247,43 @@ def generate_depth_img2img(
     for i in range(num_actual):
         t = i * dt
         timestep_long = torch.tensor([int(t * 999)], device=device).clamp(0, 999)
-        if guidance_scale > 1.0 and uncond_hidden is not None:
-            v_cond = unet_forward(
-                unet, latents, timestep_long, encoder_hidden_states,
-                config, added_cond_kwargs
+
+        # Prepare position IDs if needed
+        if config.needs_position_ids:
+            txt_ids, img_ids = prepare_position_ids(
+                latents, encoder_hidden_states, config, device, dtype
             )
-            v_uncond = unet_forward(
-                unet, latents, timestep_long, uncond_hidden,
-                config, uncond_added_cond
+
+        if guidance_scale > 1.0 and uncond_hidden is not None:
+            v_cond = backbone_forward(
+                backbone, latents, timestep_long, encoder_hidden_states, config,
+                added_cond_kwargs=added_cond_kwargs,
+                guidance=guidance_scale,
+                attention_mask=attention_mask,
+                pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
+            )
+            v_uncond = backbone_forward(
+                backbone, latents, timestep_long, uncond_hidden, config,
+                added_cond_kwargs=uncond_added_cond,
+                guidance=guidance_scale,
+                attention_mask=uncond_mask,
+                pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
             )
             pred_v = v_uncond + guidance_scale * (v_cond - v_uncond)
         else:
-            pred_v = unet_forward(
-                unet, latents, timestep_long, encoder_hidden_states,
-                config, added_cond_kwargs
+            pred_v = backbone_forward(
+                backbone, latents, timestep_long, encoder_hidden_states, config,
+                added_cond_kwargs=added_cond_kwargs,
+                guidance=guidance_scale,
+                attention_mask=attention_mask,
+                pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
             )
         latents = latents + dt * pred_v
 
-    latents = latents / vae_scaling
-    image = vae.decode(latents).sample
+    image = vae_decode(vae, latents, config)
     image = (image / 2 + 0.5).clamp(0, 1)
     image_np = (image.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
     return Image.fromarray(image_np)
@@ -261,7 +294,8 @@ def main():
         description="Evaluate Vision Banana v5 (multi-backbone)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Available models: sd15, sd2, ssd-1b, sdxl, sdxl-turbo, flux-dev, flux-schnell
+Available models (16): sd15, sd2, ssd-1b, sdxl, sdxl-turbo, flux-dev, flux-schnell,
+  qwen-image, z-image, sana-600m, sana-1600m, lumina2, chroma, flux2-dev, cogview4, aura-flow
 Use --list-models to see all options.
         """,
     )
@@ -349,8 +383,6 @@ Use --list-models to see all options.
                 loaded_keys.append(key)
     logger.info(f"Loaded {len(loaded_keys)} LoRA parameters from checkpoint")
 
-    vae_scaling = model_cfg.vae_scaling_factor
-
     # ─── Collect test images ───
     all_images = sorted((DEPTH_DATA_DIR / "images").glob("*.jpg"))
     test_images = all_images[-args.num_images:] if len(all_images) >= args.num_images else all_images
@@ -383,7 +415,7 @@ Use --list-models to see all options.
             try:
                 gen_img = generate_depth_img2img(
                     components,
-                    input_tensor, DEPTH_PROMPT, device, dtype, vae_scaling,
+                    input_tensor, DEPTH_PROMPT, device, dtype,
                     num_steps=num_steps,
                     seed=args.seed + img_idx,
                     strength=strength,
