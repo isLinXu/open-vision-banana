@@ -306,6 +306,25 @@ def save_lora_state(unet, path, ema_state=None):
     logger.info(f"Saved {len(state)} keys to {path.name}")
 
 
+def apply_ema_weights(unet, ema):
+    """Temporarily swap in EMA weights for evaluation. Returns original state."""
+    original = {}
+    for name, param in unet.named_parameters():
+        if param.requires_grad:
+            key = f"unet.{name}"
+            if key in ema.shadow:
+                original[name] = param.data.clone()
+                param.data.copy_(ema.shadow[key].to(param.device, param.dtype))
+    return original
+
+
+def restore_weights(unet, original):
+    """Restore original weights after EMA evaluation."""
+    for name, param in unet.named_parameters():
+        if name in original:
+            param.data.copy_(original[name])
+
+
 # ─── Depth metrics ────────────────────────────────────────────────────────
 
 
@@ -343,6 +362,19 @@ def sample_timesteps_logit_normal(batch_size, device, mean=0.0, std=1.0):
     """Logit-normal timestep sampling (matches SD3/FLUX training)."""
     noise = torch.randn(batch_size, device=device) * std + mean
     return torch.sigmoid(noise)
+
+
+def compute_timestep_weights(timesteps, gamma=2.0):
+    """Timestep-aware loss weighting for conditional flow matching.
+
+    Standard uniform weighting treats all timesteps equally, but low-strength
+    inference (t close to 0) requires the model to make small precise corrections.
+    This weighting emphasizes mid-to-low timesteps to improve low-strength performance.
+
+    Weight = 1 + gamma * (1 - t) * t  (peaks at t=0.5, min at t=0 and t=1)
+    This gives ~1.0 at endpoints and ~1.5 at midpoint with gamma=2.0.
+    """
+    return 1.0 + gamma * timesteps * (1.0 - timesteps)
 
 
 # ─── Flow matching inference ──────────────────────────────────────────────
@@ -419,6 +451,11 @@ def generate_depth_img2img(
 
     torch.manual_seed(seed)
     latents = input_latents.clone()
+
+    # Initialize position IDs (needed only for DiT models like FLUX/Chroma)
+    txt_ids, img_ids = prepare_position_ids(
+        None, encoder_hidden_states, config, device, dtype
+    )
 
     # Flow matching: integrate from t=0 (input) toward t=strength (target)
     num_actual = max(1, int(num_steps * strength))
@@ -535,6 +572,14 @@ Use --list-models to see all options with details.
     parser.add_argument("--ema-decay", type=float, default=0.999)
     parser.add_argument("--use-rslora", action="store_true", default=True)
     parser.add_argument("--img2img-strength", type=float, default=0.6)
+    parser.add_argument("--sigma-start", type=float, default=0.1,
+                        help="Initial noise sigma for stochastic interpolant")
+    parser.add_argument("--sigma-end", type=float, default=0.01,
+                        help="Final noise sigma (annealed over training)")
+    parser.add_argument("--use-ema-weights", action="store_true", default=True,
+                        help="Use EMA weights for validation/inference")
+    parser.add_argument("--timestep-weight-gamma", type=float, default=2.0,
+                        help="Gamma for timestep-aware loss weighting (0=uniform)")
     args = parser.parse_args()
 
     # List models and exit
@@ -707,8 +752,11 @@ Use --list-models to see all options with details.
             t_b = timesteps.view(bsz, 1, 1, 1)
 
             # ── Conditional flow matching with stochastic interpolant ──
+            # Sigma annealing: start with sigma_start, decay to sigma_end
+            sigma = args.sigma_start + (args.sigma_end - args.sigma_start) * (
+                global_step / max(1, total_steps)
+            )
             noise = torch.randn_like(target_latents)
-            sigma = 0.1
             noise_term = sigma * (t_b * (1.0 - t_b)).sqrt() * noise
 
             noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
@@ -759,8 +807,18 @@ Use --list-models to see all options with details.
                     txt_ids=txt_ids, img_ids=img_ids,
                 )
 
-            # ── Loss ──
-            loss = F.mse_loss(predicted_velocity.float(), velocity_target.float())
+            # ── Loss with timestep-aware weighting ──
+            if args.timestep_weight_gamma > 0:
+                ts_weights = compute_timestep_weights(
+                    timesteps, gamma=args.timestep_weight_gamma
+                ).view(bsz, 1, 1, 1)
+                per_sample_loss = F.mse_loss(
+                    predicted_velocity.float(), velocity_target.float(),
+                    reduction="none"
+                ).mean(dim=[1, 2, 3])
+                loss = (per_sample_loss * ts_weights.squeeze()).mean()
+            else:
+                loss = F.mse_loss(predicted_velocity.float(), velocity_target.float())
 
             loss_scaled = loss / args.grad_accum
             loss_scaled.backward()
@@ -800,9 +858,14 @@ Use --list-models to see all options with details.
                 if epoch_loss < best_loss * 0.99:
                     best_loss = epoch_loss
 
-                # ── Validation ──
+                # ── Validation with EMA weights ──
                 if global_step % args.val_every == 0 and global_step <= total_steps:
-                    logger.info(f"Validation at step {global_step} ...")
+                    logger.info(f"Validation at step {global_step} (EMA weights)...")
+
+                    # Swap to EMA weights for evaluation
+                    if args.use_ema_weights:
+                        _orig_weights = apply_ema_weights(unet, ema)
+
                     val_results = []
                     for vi, vimg in enumerate(val_images[:3]):
                         best_corr = -2.0
@@ -858,6 +921,10 @@ Use --list-models to see all options with details.
                             )
                             logger.info(f"  New best corr: {best_val_corr:.4f}")
 
+                    # Restore original weights after validation
+                    if args.use_ema_weights and _orig_weights:
+                        restore_weights(unet, _orig_weights)
+
     # ─── Save final ───
     final_path = output_dir / f"vb_v5_{model_cfg.name}_final.pt"
     save_lora_state(unet, final_path, ema.get_shadow())
@@ -890,6 +957,10 @@ Use --list-models to see all options with details.
                 "key_innovation": "true_img2img_input_latent_as_noise_start",
                 "ema_decay": args.ema_decay,
                 "img2img_strength": args.img2img_strength,
+                "sigma_start": args.sigma_start,
+                "sigma_end": args.sigma_end,
+                "use_ema_weights": args.use_ema_weights,
+                "timestep_weight_gamma": args.timestep_weight_gamma,
                 "needs_added_cond_kwargs": model_cfg.needs_added_cond_kwargs,
                 "num_text_encoders": model_cfg.num_text_encoders,
                 "cross_attention_dim": model_cfg.cross_attention_dim,

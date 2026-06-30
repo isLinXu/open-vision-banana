@@ -242,6 +242,11 @@ def generate_depth_img2img(
     torch.manual_seed(seed)
     latents = input_latents.clone()
 
+    # Initialize position IDs (needed only for DiT models like FLUX/Chroma)
+    txt_ids, img_ids = prepare_position_ids(
+        None, encoder_hidden_states, config, device, dtype
+    )
+
     # Flow matching: integrate from t=0 (input) toward t=strength (target)
     num_actual = max(1, int(num_steps * strength))
     dt = strength / num_actual
@@ -319,7 +324,13 @@ Use --list-models to see all options.
     parser.add_argument("--guidance-scale", type=float, default=None,
                         help="CFG scale (default: model-specific)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--lora-rank", type=int, default=None,
+                        help="LoRA rank (must match training. Default: model-specific)")
     parser.add_argument("--output-dir", type=str, default=None)
+    parser.add_argument("--use-ema", action="store_true", default=True,
+                        help="Use EMA weights from checkpoint (if available)")
+    parser.add_argument("--no-ema", action="store_true", default=False,
+                        help="Disable EMA, use raw weights")
     args = parser.parse_args()
 
     # List models and exit
@@ -369,21 +380,39 @@ Use --list-models to see all options.
     components = load_pipeline(model_cfg, device, dtype, enable_gradient_checkpointing=False)
 
     # Apply LoRA
+    lora_rank = args.lora_rank or model_cfg.default_lora_rank
     components.unet = apply_lora(
         components.unet, model_cfg,
-        rank=model_cfg.default_lora_rank,
-        alpha=model_cfg.default_lora_alpha,
+        rank=lora_rank,
+        alpha=lora_rank,
     )
+    logger.info(f"LoRA rank={lora_rank} (alpha={lora_rank})")
 
     # Load checkpoint
     logger.info(f"Loading checkpoint: {checkpoint_path.name}")
     ckpt = torch.load(checkpoint_path, map_location="cpu")
+
+    # Check for EMA weights
+    ema_keys = {k: v for k, v in ckpt.items() if k.startswith("ema.")}
+    unet_keys = {k: v for k, v in ckpt.items() if k.startswith("unet.")}
+    use_ema = args.use_ema and not args.no_ema and len(ema_keys) > 0
+
+    if use_ema:
+        logger.info(f"Using EMA weights ({len(ema_keys)} params)")
+        load_keys = ema_keys
+    else:
+        logger.info(f"Using raw weights ({len(unet_keys)} params)")
+        load_keys = unet_keys
+
     loaded_keys = []
     for name, param in components.unet.named_parameters():
         if param.requires_grad:
-            key = f"unet.{name}"
-            if key in ckpt:
-                param.data.copy_(ckpt[key].to(dtype))
+            if use_ema:
+                key = f"ema.{name}"
+            else:
+                key = f"unet.{name}"
+            if key in load_keys:
+                param.data.copy_(load_keys[key].to(dtype))
                 loaded_keys.append(key)
     logger.info(f"Loaded {len(loaded_keys)} LoRA parameters from checkpoint")
 
@@ -501,9 +530,10 @@ Use --list-models to see all options.
     else:
         logger.info("  ✗ FAIL: Model has not learned depth structure yet.")
 
-    # Save results JSON
+    # Save results JSON first (before plots, to avoid truncation if plotting fails)
     results_json = {
         "checkpoint": str(checkpoint_path),
+        "use_ema": use_ema,
         "model": model_cfg.model_id,
         "model_name": model_cfg.name,
         "model_family": model_cfg.family,
@@ -524,23 +554,27 @@ Use --list-models to see all options.
         "best_overall_pearson_r": float(best_overall),
         "best_mean_pearson_r": float(best_mean),
         "best_strength": float(best_strength),
-        "step2_pass": step2_pass,
-        "step3_pass": step3_pass,
+        "step2_pass": bool(step2_pass),
+        "step3_pass": bool(step3_pass),
         "all_results": [
             {
                 "image": r["image"],
-                "strength": r["strength"],
-                "pearson_r": r["metrics"]["pearson_r"],
-                "ssim": r["metrics"]["ssim"],
-                "mse": r["metrics"]["mse"],
-                "gradient_corr": r["metrics"]["gradient_corr"],
+                "strength": float(r["strength"]),
+                "pearson_r": float(r["metrics"]["pearson_r"]),
+                "ssim": float(r["metrics"]["ssim"]),
+                "mse": float(r["metrics"]["mse"]),
+                "gradient_corr": float(r["metrics"]["gradient_corr"]),
             }
             for r in all_results
         ],
     }
     with open(output_dir / "eval_results.json", "w") as f:
         json.dump(results_json, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    logger.info(f"Results JSON saved to {output_dir / 'eval_results.json'}")
 
+    # Then create summary plot (non-fatal if it fails)
     try:
         create_summary_plot(all_results, output_dir / "strength_sweep.png")
         logger.info(f"Summary plot saved to {output_dir / 'strength_sweep.png'}")

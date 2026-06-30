@@ -1419,7 +1419,11 @@ def vae_decode(
 
     if scaling is None:
         scaling = getattr(vae.config, 'scaling_factor', 1.0)
-    shift = getattr(vae.config, 'shift_factor', 0.0)
+    if scaling is None:
+        scaling = 1.0
+    shift = getattr(vae.config, 'shift_factor', None)
+    if shift is None:
+        shift = 0.0
 
     # Apply unscaling + shift
     latents = latents / scaling + shift
