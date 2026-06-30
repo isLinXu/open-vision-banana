@@ -203,10 +203,12 @@ def generate_depth_img2img(
         components, [prompt], device, dtype
     )
 
-    # Handle aux_output
+    # Handle aux_output (pooled_embeds, attention_mask, or HunyuanDiT tuple)
     attention_mask = None
     pooled_embeds = None
-    if isinstance(aux_output, torch.Tensor):
+    if isinstance(aux_output, tuple):
+        attention_mask = aux_output  # HunyuanDiT: (t5_hidden, clip_mask, t5_mask)
+    elif isinstance(aux_output, torch.Tensor):
         if config.needs_attention_mask:
             attention_mask = aux_output
         else:
@@ -294,8 +296,10 @@ def main():
         description="Evaluate Vision Banana v5 (multi-backbone)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Available models (16): sd15, sd2, ssd-1b, sdxl, sdxl-turbo, flux-dev, flux-schnell,
-  qwen-image, z-image, sana-600m, sana-1600m, lumina2, chroma, flux2-dev, cogview4, aura-flow
+Available models (23): sd15, sd2, ssd-1b, sdxl, sdxl-turbo, flux-dev, flux-schnell,
+  qwen-image, z-image, sana-600m, sana-1600m, sana-sprint, lumina2, chroma, flux2-dev,
+  cogview4, aura-flow, sd3, pixart-alpha, pixart-sigma, kolors, hunyuandit,
+  kandinsky3, sana-sprint
 Use --list-models to see all options.
         """,
     )

@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Unified model registry for multi-backbone Vision Banana training/inference.
 
-Supports different base model families with varying architectures:
+Supports 23 base model families with varying architectures:
   - SD 1.5 / SD 2.1  (single text encoder, no added_cond_kwargs)
   - SSD-1B / SDXL     (dual text encoder, added_cond_kwargs required)
   - SDXL-Turbo        (same as SDXL, fewer inference steps)
   - FLUX-dev/schnell  (dual transformer, different pipeline)
+  - SD3               (triple text encoder, MMDiT, pooled_projections)
+  - PixArt-Alpha/Sigma (T5 encoder, DiT, resolution added_cond_kwargs)
+  - Kolors            (ChatGLM encoder, UNet, added_cond_kwargs)
+  - HunyuanDiT        (bilingual CLIP + mT5, DiT, image_meta_size)
+  - Kandinsky3        (FLAN-UL2 encoder, UNet, attention_mask)
+  - SanaSprint        (T5 encoder, DiT, guidance embeds, 2-4 step)
 
 Each model family defines:
   - HF pipeline class & model_id
@@ -42,10 +48,10 @@ class ModelConfig:
     """Configuration for a base diffusion model family."""
     name: str
     model_id: str
-    family: str  # "sd15" | "sd2" | "sdxl" | "flux" | "qwen-image" | "z-image" | "sana" | "lumina2" | "chroma" | "flux2" | "cogview4" | "aura-flow"
+    family: str  # "sd15" | "sd2" | "sdxl" | "flux" | "qwen-image" | "z-image" | "sana" | "lumina2" | "chroma" | "flux2" | "cogview4" | "aura-flow" | "sd3" | "pixart" | "kolors" | "hunyuandit" | "kandinsky3" | "sana-sprint"
 
     # Text encoder
-    num_text_encoders: int  # 1 for SD1.5/SD2, 2 for SDXL/FLUX
+    num_text_encoders: int  # 1 for SD1.5/SD2, 2 for SDXL/FLUX, 3 for SD3
 
     # Backbone type: "unet" for SD family, "transformer" for DiT-based models
     backbone_type: str = "unet"
@@ -83,10 +89,14 @@ class ModelConfig:
     default_guidance_scale: float = 2.0
 
     # Transformer-specific flags (ignored for UNet models)
-    needs_guidance_in_forward: bool = False  # Qwen-Image, FLUX.2 pass guidance to transformer
-    needs_attention_mask: bool = False  # SANA, Lumina2 need encoder_attention_mask
+    needs_guidance_in_forward: bool = False  # Qwen-Image, FLUX.2, SanaSprint pass guidance to transformer
+    needs_attention_mask: bool = False  # SANA, Lumina2, PixArt, Kandinsky3 need encoder_attention_mask
     needs_position_ids: bool = False  # Chroma, FLUX.2 need txt_ids/img_ids
     needs_size_kwargs: bool = False  # CogView4 needs original_size/target_size/crop_coords
+    needs_pooled_projections: bool = False  # SD3, Kandinsky5 use pooled_projections
+    needs_image_meta_size: bool = False  # HunyuanDiT needs image_meta_size + style
+    needs_t5_and_clip: bool = False  # HunyuanDiT, HiDream use both T5 and CLIP encoders
+    needs_added_cond_kwargs_dit: bool = False  # PixArt uses added_cond_kwargs in transformer forward
 
     # Whether VAE encode returns latent_dist (False for some custom VAEs)
     vae_has_latent_dist: bool = True
@@ -484,6 +494,216 @@ REGISTRY: dict[str, ModelConfig] = {
         vae_has_latent_dist=False,
         description="AuraFlow — fal.ai, MMDiT, Apache-2.0",
     ),
+
+    # ──── SD3: Triple text encoder MMDiT ────
+
+    "sd3": ModelConfig(
+        name="sd3",
+        model_id="stabilityai/stable-diffusion-3-medium",
+        family="sd3",
+        backbone_type="transformer",
+        num_text_encoders=3,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=4096,
+        vae_scaling_factor=None,  # read from vae.config
+        vae_downsample_factor=8,
+        memory_budget_gb=20.0,
+        pipeline_class="StableDiffusion3Pipeline",
+        default_resolution=1024,
+        default_guidance_scale=7.0,
+        default_num_inference_steps=28,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=256,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "to_q_context", "to_k_context", "to_v_context", "to_out_context",
+            "context_embedder", "proj_out",
+            "linear_1", "linear_2",
+        ],
+        needs_pooled_projections=True,
+        needs_attention_mask=True,
+        description="Stable Diffusion 3 (2B MMDiT) — triple encoder (CLIP×2 + T5), flow matching",
+    ),
+
+    # ──── PixArt: T5 encoder, DiT with resolution added_cond_kwargs ────
+
+    "pixart-alpha": ModelConfig(
+        name="pixart-alpha",
+        model_id="PixArt-alpha/PixArt-XL-2-1024-MS",
+        family="pixart",
+        backbone_type="transformer",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=4096,
+        vae_scaling_factor=0.13025,
+        vae_downsample_factor=8,
+        memory_budget_gb=10.0,
+        pipeline_class="PixArtAlphaPipeline",
+        default_resolution=1024,
+        default_guidance_scale=4.5,
+        default_num_inference_steps=20,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=120,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "scale_shift_table",
+        ],
+        needs_attention_mask=True,
+        needs_added_cond_kwargs_dit=True,
+        description="PixArt-Alpha (600M DiT) — T5 encoder, 1024px, efficient training",
+    ),
+
+    "pixart-sigma": ModelConfig(
+        name="pixart-sigma",
+        model_id="PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
+        family="pixart",
+        backbone_type="transformer",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=4096,
+        vae_scaling_factor=0.13025,
+        vae_downsample_factor=8,
+        memory_budget_gb=10.0,
+        pipeline_class="PixArtSigmaPipeline",
+        default_resolution=1024,
+        default_guidance_scale=4.5,
+        default_num_inference_steps=20,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=300,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "scale_shift_table",
+        ],
+        needs_attention_mask=True,
+        needs_added_cond_kwargs_dit=True,
+        description="PixArt-Sigma (600M DiT) — stronger text rendering, 4K-capable",
+    ),
+
+    # ──── Kolors: ChatGLM text encoder + UNet ────
+
+    "kolors": ModelConfig(
+        name="kolors",
+        model_id="Kwai-Kolors/Kolors",
+        family="kolors",
+        backbone_type="unet",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=True,
+        cross_attention_dim=4096,
+        vae_scaling_factor=0.18215,
+        vae_downsample_factor=8,
+        memory_budget_gb=18.0,
+        pipeline_class="KolorsPipeline",
+        default_resolution=1024,
+        default_guidance_scale=5.0,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=256,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "ff.net.0.proj", "ff.net.2",
+        ],
+        description="Kolors (2.6B UNet) — Kuaishou, ChatGLM-6B text encoder, Chinese-friendly",
+    ),
+
+    # ──── HunyuanDiT: Bilingual CLIP + mT5, DiT ────
+
+    "hunyuandit": ModelConfig(
+        name="hunyuandit",
+        model_id="Tencent-Hunyuan/HunyuanDiT",
+        family="hunyuandit",
+        backbone_type="transformer",
+        num_text_encoders=2,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=1024,
+        vae_scaling_factor=0.13025,
+        vae_downsample_factor=8,
+        memory_budget_gb=15.0,
+        pipeline_class="HunyuanDiTPipeline",
+        default_resolution=1024,
+        default_guidance_scale=6.0,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=77,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "txt_in", "img_in",
+        ],
+        needs_attention_mask=True,
+        needs_t5_and_clip=True,
+        needs_image_meta_size=True,
+        vae_has_latent_dist=False,
+        description="HunyuanDiT (1.5B) — Tencent, bilingual CLIP+mT5, Chinese+English",
+    ),
+
+    # ──── Kandinsky3: FLAN-UL2 encoder, UNet ────
+
+    "kandinsky3": ModelConfig(
+        name="kandinsky3",
+        model_id="ai-forever/Kandinsky3.1",
+        family="kandinsky3",
+        backbone_type="unet",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=4096,
+        vae_scaling_factor=None,
+        vae_downsample_factor=8,
+        memory_budget_gb=12.0,
+        pipeline_class="Kandinsky3Pipeline",
+        default_resolution=1024,
+        default_guidance_scale=4.0,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=256,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "ff.net.0.proj", "ff.net.2",
+        ],
+        needs_attention_mask=True,
+        description="Kandinsky3 (3B UNet) — Sber, FLAN-UL2 encoder, Apache-2.0",
+    ),
+
+    # ──── SanaSprint: T5 encoder, 2-4 step generation ────
+
+    "sana-sprint": ModelConfig(
+        name="sana-sprint",
+        model_id="Efficient-Large-Model/SanaSprint",
+        family="sana-sprint",
+        backbone_type="transformer",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=2048,
+        vae_scaling_factor=None,
+        vae_downsample_factor=8,
+        memory_budget_gb=8.0,
+        pipeline_class="SanaSprintPipeline",
+        default_resolution=1024,
+        default_guidance_scale=0.0,
+        default_num_inference_steps=2,
+        default_lora_rank=16,
+        default_lora_alpha=32,
+        lora_target_modules=[
+            "linear", "proj_out",
+            "conv_inverted", "conv_point",
+        ],
+        needs_attention_mask=True,
+        needs_guidance_in_forward=True,
+        vae_has_latent_dist=False,
+        description="SanaSprint — NVIDIA, 2-4 step generation, ultra fast",
+    ),
 }
 
 
@@ -537,8 +757,11 @@ class PipelineComponents:
     text_encoder: Optional[torch.nn.Module]
     text_encoder_2: Optional[torch.nn.Module]
     tokenizer: object
-    scheduler: object = None
     config: ModelConfig = None
+    text_encoder_3: Optional[torch.nn.Module] = None  # SD3 uses 3 text encoders
+    tokenizer_2: Optional[object] = None
+    tokenizer_3: Optional[object] = None
+    scheduler: object = None
 
     @property
     def transformer(self):
@@ -581,6 +804,13 @@ def load_pipeline(
         "Flux2Pipeline": "diffusers",
         "CogView4Pipeline": "diffusers",
         "AuraFlowPipeline": "diffusers",
+        "StableDiffusion3Pipeline": "diffusers",
+        "PixArtAlphaPipeline": "diffusers",
+        "PixArtSigmaPipeline": "diffusers",
+        "KolorsPipeline": "diffusers",
+        "HunyuanDiTPipeline": "diffusers",
+        "Kandinsky3Pipeline": "diffusers",
+        "SanaSprintPipeline": "diffusers",
     }
 
     cls_name = config.pipeline_class
@@ -611,12 +841,26 @@ def load_pipeline(
     if text_encoder is not None:
         text_encoder = text_encoder.to(device)
     text_encoder_2 = None
+    text_encoder_3 = None
     tokenizer = getattr(pipe, "tokenizer", None)
+    tokenizer_2 = getattr(pipe, "tokenizer_2", None)
+    tokenizer_3 = getattr(pipe, "tokenizer_3", None)
 
     if config.num_text_encoders >= 2:
         text_encoder_2 = getattr(pipe, "text_encoder_2", None)
         if text_encoder_2 is not None:
             text_encoder_2 = text_encoder_2.to(device)
+
+    if config.num_text_encoders >= 3:
+        text_encoder_3 = getattr(pipe, "text_encoder_3", None)
+        if text_encoder_3 is not None:
+            text_encoder_3 = text_encoder_3.to(device)
+
+    # Kolors: ChatGLM text encoder is in a custom module, not standard text_encoder attr
+    if config.family == "kolors" and text_encoder is None:
+        text_encoder = getattr(pipe, "text_encoder", None)
+        if text_encoder is not None:
+            text_encoder = text_encoder.to(device)
 
     # Freeze base model
     backbone.requires_grad_(False)
@@ -625,6 +869,8 @@ def load_pipeline(
         text_encoder.requires_grad_(False)
     if text_encoder_2 is not None:
         text_encoder_2.requires_grad_(False)
+    if text_encoder_3 is not None:
+        text_encoder_3.requires_grad_(False)
 
     # Enable gradient checkpointing for memory efficiency
     if enable_gradient_checkpointing and hasattr(backbone, "enable_gradient_checkpointing"):
@@ -642,7 +888,10 @@ def load_pipeline(
         vae=vae,
         text_encoder=text_encoder,
         text_encoder_2=text_encoder_2,
+        text_encoder_3=text_encoder_3,
         tokenizer=tokenizer,
+        tokenizer_2=tokenizer_2,
+        tokenizer_3=tokenizer_3,
         scheduler=getattr(pipe, "scheduler", None),
         config=config,
     )
@@ -660,10 +909,12 @@ def encode_text(
     """Encode text prompts into hidden states + optional pooled embeddings.
 
     Handles:
-      - Single-encoder (SD1.5/2.1, all new DiT models)
-      - Dual-encoder (SDXL: concatenated hidden states + pooled; FLUX.1: T5 hidden states)
+      - Single-encoder (SD1.5/2.1, all new DiT models, PixArt, SanaSprint)
+      - Dual-encoder (SDXL: concatenated hidden states + pooled; FLUX.1: T5 hidden states;
+                      HunyuanDiT: bilingual CLIP + mT5)
+      - Triple-encoder (SD3: CLIP×2 + T5, pooled_projections)
 
-    For DiT models (Qwen-Image, Z-Image, SANA, Lumina2, etc.), returns
+    For DiT models (Qwen-Image, Z-Image, SANA, Lumina2, PixArt, Kandinsky3, etc.), returns
     (encoder_hidden_states, attention_mask) where attention_mask replaces pooled_embeds
     for models that need it.
 
@@ -672,16 +923,108 @@ def encode_text(
       - SD1.5/2.1: (hidden_states, None)
       - SDXL: (concatenated_hidden_states, pooled_embeds)
       - FLUX.1: (t5_hidden_states, None)
-      - DiT models with needs_attention_mask: (hidden_states, attention_mask)
-      - Other DiT models: (hidden_states, None)
+      - SD3: (concatenated_clip_hidden_states, pooled_projections)
+      - PixArt: (t5_hidden_states, attention_mask)
+      - Kolors: (chatglm_hidden_states, attention_mask)
+      - HunyuanDiT: (clip_hidden_states, attention_mask) — mT5 handled separately
+      - Kandinsky3: (flan_hidden_states, attention_mask)
+      - SanaSprint: (t5_hidden_states, attention_mask)
     """
     tokenizer = components.tokenizer
     text_encoder = components.text_encoder
     text_encoder_2 = components.text_encoder_2
+    text_encoder_3 = components.text_encoder_3
     config = components.config
     max_length = config.text_encoder_max_length
 
-    # Tokenize — most models use standard padding
+    # ── SD3: triple text encoder (CLIP×2 + T5) ──
+    if config.family == "sd3":
+        # CLIP text encoders (tokenizer + tokenizer_2)
+        prompt_embeds_list = []
+        pooled_prompt_embeds = None
+
+        for i, (te, tok) in enumerate([
+            (text_encoder, tokenizer),
+            (text_encoder_2, components.tokenizer_2),
+        ]):
+            if te is None:
+                continue
+            tokenized = tok(
+                prompts, padding="max_length", max_length=max_length,
+                truncation=True, return_tensors="pt"
+            )
+            input_ids = tokenized.input_ids.to(device)
+            output = te(input_ids, output_hidden_states=False)
+            prompt_embeds_list.append(output.last_hidden_state)
+            if i == 0:
+                pooled_prompt_embeds = output.text_embeds
+
+        # Concatenate CLIP hidden states
+        encoder_hidden_states = torch.cat(prompt_embeds_list, dim=-1)
+
+        # T5 encoder (tokenizer_3)
+        if text_encoder_3 is not None:
+            tok3 = components.tokenizer_3
+            tokenized_3 = tok3(
+                prompts, padding="max_length", max_length=max_length,
+                truncation=True, return_tensors="pt"
+            )
+            input_ids_3 = tokenized_3.input_ids.to(device)
+            t5_output = text_encoder_3(input_ids_3)
+            # Pad/truncate T5 to same length as CLIP
+            t5_hidden = t5_output.last_hidden_state
+            if t5_hidden.shape[1] < max_length:
+                pad_len = max_length - t5_hidden.shape[1]
+                t5_hidden = torch.nn.functional.pad(t5_hidden, (0, 0, 0, pad_len))
+            elif t5_hidden.shape[1] > max_length:
+                t5_hidden = t5_hidden[:, :max_length]
+            encoder_hidden_states = torch.cat([encoder_hidden_states, t5_hidden], dim=-2)
+
+        attention_mask = torch.ones(
+            encoder_hidden_states.shape[:2], device=device, dtype=dtype
+        )
+        return encoder_hidden_states.to(dtype), pooled_prompt_embeds.to(dtype) if pooled_prompt_embeds is not None else None
+
+    # ── HunyuanDiT: bilingual CLIP + mT5 ──
+    if config.family == "hunyuandit":
+        # CLIP (text_encoder) — bilingual CLIP
+        tokenized = tokenizer(
+            prompts, padding="max_length", max_length=max_length,
+            truncation=True, return_tensors="pt"
+        )
+        input_ids = tokenized.input_ids.to(device)
+        clip_hidden = text_encoder(input_ids)[0]
+
+        # mT5 (text_encoder_2)
+        if text_encoder_2 is not None:
+            tok2 = components.tokenizer_2
+            tokenized_2 = tok2(
+                prompts, padding="max_length", max_length=max_length,
+                truncation=True, return_tensors="pt"
+            )
+            input_ids_2 = tokenized_2.input_ids.to(device)
+            t5_hidden = text_encoder_2(input_ids_2)[0]
+            # Return concatenated as (clip_hidden, t5_hidden, clip_mask, t5_mask)
+            clip_mask = tokenized.attention_mask.to(device)
+            t5_mask = tokenized_2.attention_mask.to(device)
+            # For HunyuanDiT, encoder_hidden_states is clip_hidden, t5 is passed separately
+            return clip_hidden.to(dtype), (t5_hidden.to(dtype), clip_mask, t5_mask)
+
+        return clip_hidden.to(dtype), tokenized.attention_mask.to(device)
+
+    # ── Kolors: ChatGLM text encoder ──
+    if config.family == "kolors":
+        tokenized = tokenizer(
+            prompts, padding="max_length", max_length=max_length,
+            truncation=True, return_tensors="pt"
+        )
+        input_ids = tokenized.input_ids.to(device)
+        # ChatGLM returns (hidden_states, attention_mask)
+        encoder_hidden_states = text_encoder(input_ids)[0]
+        attention_mask = tokenized.attention_mask.to(device)
+        return encoder_hidden_states.to(dtype), attention_mask
+
+    # ── Standard tokenization for all other models ──
     tokenized = tokenizer(
         prompts, padding="max_length", max_length=max_length,
         truncation=True, return_tensors="pt"
@@ -722,9 +1065,11 @@ def build_added_cond_kwargs(
     dtype: torch.dtype,
     batch_size: int = 1,
 ) -> Optional[dict]:
-    """Build added_cond_kwargs for SDXL-family UNets.
+    """Build added_cond_kwargs for SDXL/Kolors-family models.
 
-    Returns None for non-SDXL models (SD1.5/2.1/FLUX).
+    Returns None for non-SDXL/Kolors models.
+    SDXL: {"text_embeds": pooled, "time_ids": [h,w,0,0,h,w]}
+    Kolors: {"text_embeds": pooled, "time_ids": [h,w,0,0,h,w]} (same structure)
     """
     if not config.needs_added_cond_kwargs:
         return None
@@ -794,15 +1139,21 @@ def backbone_forward(
 
     SD 1.5/2.1: unet(latents, t, enc_hidden)
     SDXL/SSD-1B: unet(latents, t, enc_hidden, added_cond_kwargs=...)
+    Kolors: unet(latents, t, enc_hidden, added_cond_kwargs=...) — same as SDXL
+    Kandinsky3: unet(latents, t, enc_hidden, encoder_attention_mask=...)
     FLUX.1: transformer(hidden_states, timestep, guidance, pooled_projections, enc_hidden, txt_ids, img_ids)
+    SD3: transformer(hidden_states, timestep, enc_hidden, pooled_projections)
+    PixArt: transformer(latents, enc_hidden, timestep, encoder_attention_mask, added_cond_kwargs)
     Qwen-Image: transformer(hidden_states, timestep/1000, guidance, enc_hidden, enc_mask, img_shapes)
     Z-Image: transformer(latent_input, timestep, enc_hidden)
     SANA: transformer(latents, enc_hidden, timestep, encoder_attention_mask)
+    SanaSprint: transformer(latents, enc_hidden, timestep, encoder_attention_mask, guidance)
     Lumina2: transformer(hidden_states, timestep, enc_hidden, encoder_attention_mask)
     Chroma: transformer(hidden_states, timestep/1000, enc_hidden, txt_ids, img_ids)
     FLUX.2: transformer(hidden_states, timestep/1000, guidance, enc_hidden, txt_ids, img_ids)
     CogView4: transformer(hidden_states, enc_hidden, timestep, original_size, target_size, crop_coords)
     AuraFlow: transformer(latents, enc_hidden, timestep)
+    HunyuanDiT: transformer(latents, t, enc_hidden, text_embedding_mask, enc_hidden_t5, text_embedding_mask_t5, image_meta_size, style, image_rotary_emb)
     """
     if config.backbone_type == "unet":
         kwargs = {}
@@ -900,6 +1251,85 @@ def backbone_forward(
         return backbone(
             latents,
             encoder_hidden_states=encoder_hidden_states,
+            timestep=timesteps,
+            return_dict=False,
+        )[0]
+
+    elif config.family == "sd3":
+        # SD3: transformer(hidden_states, timestep, encoder_hidden_states, pooled_projections)
+        return backbone(
+            hidden_states=latents,
+            timestep=timesteps,
+            encoder_hidden_states=encoder_hidden_states,
+            pooled_projections=pooled_embeds,
+            return_dict=False,
+        )[0]
+
+    elif config.family == "pixart":
+        # PixArt-Alpha/Sigma: transformer(latents, encoder_hidden_states, timestep, encoder_attention_mask, added_cond_kwargs)
+        kwargs = {}
+        if config.needs_added_cond_kwargs_dit:
+            # PixArt uses resolution-based added_cond_kwargs
+            kwargs["added_cond_kwargs"] = {"resolution": None, "aspect_ratio": None}
+        return backbone(
+            latents,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=attention_mask,
+            timestep=timesteps,
+            return_dict=False,
+            **kwargs,
+        )[0]
+
+    elif config.family == "kandinsky3":
+        # Kandinsky3: unet(latents, t, encoder_hidden_states, encoder_attention_mask)
+        return backbone(
+            latents,
+            timesteps,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=attention_mask,
+            return_dict=False,
+        )[0]
+
+    elif config.family == "hunyuandit":
+        # HunyuanDiT: transformer(latents, t, encoder_hidden_states, text_embedding_mask,
+        #   encoder_hidden_states_t5, text_embedding_mask_t5, image_meta_size, style, image_rotary_emb)
+        # aux_output is (t5_hidden, clip_mask, t5_mask) tuple from encode_text
+        t5_hidden = None
+        clip_mask = attention_mask
+        t5_mask = None
+        if isinstance(attention_mask, tuple):
+            t5_hidden, clip_mask, t5_mask = attention_mask
+
+        # image_meta_size: [B, 6] (orig_h, orig_w, crop_h, crop_w, target_h, target_w)
+        batch_size = latents.shape[0]
+        res = latents.shape[-1] * config.vae_downsample_factor
+        image_meta_size = torch.tensor(
+            [res, res, res, res, res, res],
+            device=latents.device, dtype=encoder_hidden_states.dtype
+        ).unsqueeze(0).expand(batch_size, -1)
+
+        style = torch.zeros(batch_size, device=latents.device, dtype=encoder_hidden_states.dtype)
+
+        return backbone(
+            latents,
+            timesteps,
+            encoder_hidden_states=encoder_hidden_states,
+            text_embedding_mask=clip_mask,
+            encoder_hidden_states_t5=t5_hidden,
+            text_embedding_mask_t5=t5_mask,
+            image_meta_size=image_meta_size,
+            style=style,
+            image_rotary_emb=None,
+            return_dict=False,
+        )[0]
+
+    elif config.family == "sana-sprint":
+        # SanaSprint: same as SANA but with guidance embeds
+        return backbone(
+            latents,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=attention_mask,
+            guidance=guidance if guidance is not None else 0.0,
             timestep=timesteps,
             return_dict=False,
         )[0]

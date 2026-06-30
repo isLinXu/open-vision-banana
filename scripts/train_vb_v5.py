@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vision Banana v5 — Multi-backbone training with TRUE image conditioning.
 
-Supports 16 base model families across UNet and Transformer architectures:
+Supports 23 base model families across UNet and Transformer architectures:
   - SD 1.5   (860M UNet, single text encoder)
   - SD 2.1   (866M UNet, single text encoder)
   - SSD-1B   (1.3B UNet, dual text encoder)  ← default
@@ -16,6 +16,12 @@ Supports 16 base model families across UNet and Transformer architectures:
   - FLUX.2-dev (next-gen transformer)
   - CogView4-6B (transformer, Apache-2.0)
   - AuraFlow (transformer, MMDiT, Apache-2.0)
+  - SD3 (2B MMDiT, triple text encoder)
+  - PixArt-Alpha/Sigma (600M DiT, T5 encoder)
+  - Kolors (2.6B UNet, ChatGLM encoder)
+  - HunyuanDiT (1.5B DiT, bilingual CLIP+mT5)
+  - Kandinsky3 (3B UNet, FLAN-UL2 encoder)
+  - SanaSprint (2-4 step ultra-fast generation)
 
 Key innovations (inherited from v4):
   1. TRUE img2img: input image encoded as latent starting point
@@ -368,9 +374,15 @@ def generate_depth_img2img(
         components, [prompt], device, dtype
     )
 
-    # aux_output can be pooled_embeds (SDXL), attention_mask (DiT), or None
-    attention_mask = aux_output if isinstance(aux_output, torch.Tensor) and config.needs_attention_mask else None
-    pooled_embeds = aux_output if isinstance(aux_output, torch.Tensor) and not config.needs_attention_mask else None
+    # aux_output can be pooled_embeds (SDXL), attention_mask (DiT), tuple (HunyuanDiT), or None
+    attention_mask = None
+    pooled_embeds = None
+    if isinstance(aux_output, tuple):
+        attention_mask = aux_output  # HunyuanDiT: (t5_hidden, clip_mask, t5_mask)
+    elif isinstance(aux_output, torch.Tensor) and config.needs_attention_mask:
+        attention_mask = aux_output
+    elif isinstance(aux_output, torch.Tensor):
+        pooled_embeds = aux_output
     if aux_output is None:
         pooled_embeds = None
         attention_mask = None
@@ -468,13 +480,15 @@ def main():
         description="Vision Banana v5 — Multi-backbone training",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Available models (16 total):
+Available models (23 total):
   UNet-based:
     sd15         Stable Diffusion 1.5 (860M, ~4GB)
     sd2          Stable Diffusion 2.1 (866M, ~5GB)
     ssd-1b       SSD-1B distilled SDXL (1.3B, ~5.5GB)  [default]
     sdxl         SDXL Base (2.6B, ~7GB)
     sdxl-turbo   SDXL Turbo (2.6B, ~7GB, 4-step)
+    kolors       Kolors (2.6B, ChatGLM encoder, ~18GB)
+    kandinsky3   Kandinsky3 (3B, FLAN-UL2, ~12GB)
   Transformer-based (DiT):
     flux-dev     FLUX.1-dev (12B, ~24GB)
     flux-schnell FLUX.1-schnell (12B, ~24GB, 4-step)
@@ -482,11 +496,16 @@ Available models (16 total):
     z-image      Z-Image-Turbo 6B (single-stream DiT, ~24GB)
     sana-600m    SANA-600M (linear DiT, ~6GB)
     sana-1600m   SANA-1600M (linear DiT, ~10GB)
+    sana-sprint  SanaSprint (2-4 step ultra-fast, ~8GB)
     lumina2      Lumina-Image-2.0 (2B flow DiT, ~12GB)
     chroma       Chroma1-HD (8.9B, FLUX base, ~20GB)
     flux2-dev    FLUX.2-dev (next-gen, ~30GB)
     cogview4     CogView4-6B (Apache-2.0, ~24GB)
     aura-flow    AuraFlow (MMDiT, Apache-2.0, ~15GB)
+    sd3          Stable Diffusion 3 (2B MMDiT, triple encoder, ~20GB)
+    pixart-alpha PixArt-Alpha (600M DiT, T5 encoder, ~10GB)
+    pixart-sigma PixArt-Sigma (600M DiT, 4K-capable, ~10GB)
+    hunyuandit   HunyuanDiT (1.5B, bilingual CLIP+mT5, ~15GB)
 
 Use --list-models to see all options with details.
         """,
@@ -703,10 +722,14 @@ Use --list-models to see all options with details.
                     components, prompts, device, dtype
                 )
 
-            # Handle aux_output (pooled_embeds for SDXL, attention_mask for DiT)
+            # Handle aux_output (pooled_embeds for SDXL, attention_mask for DiT,
+            # tuple for HunyuanDiT: (t5_hidden, clip_mask, t5_mask))
             attention_mask = None
             pooled_embeds = None
-            if isinstance(aux_output, torch.Tensor):
+            if isinstance(aux_output, tuple):
+                # HunyuanDiT: pass tuple directly, backbone_forward handles it
+                attention_mask = aux_output
+            elif isinstance(aux_output, torch.Tensor):
                 if model_cfg.needs_attention_mask:
                     attention_mask = aux_output
                 else:
