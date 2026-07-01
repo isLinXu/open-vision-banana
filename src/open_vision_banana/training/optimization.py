@@ -32,8 +32,17 @@ class MemoryManager:
     """
 
     def __init__(self, device: torch.device, threshold_gb: float = 0.85):
+        """Initialize memory manager.
+
+        Args:
+            device: Training device (mps/cuda/cpu).
+            threshold_gb: Memory usage threshold.  Interpreted as a
+                *fraction* (0-1) of total device memory — despite the
+                ``_gb`` suffix for backward compatibility.  For example,
+                0.85 means "clear cache when usage exceeds 85 % of total".
+        """
         self.device = device
-        self.threshold = threshold_gb
+        self.threshold = threshold_gb  # fraction of total (0-1)
         self._mps_available = device.type == "mps" and torch.backends.mps.is_available()
         self._cuda_available = device.type == "cuda" and torch.cuda.is_available()
 
@@ -335,6 +344,7 @@ class AdvancedAugmentation:
         gaussian_noise_std: float = 0.02,
         cutout_prob: float = 0.1,
         cutout_size: float = 0.2,
+        depth_aware: bool = False,
     ):
         self.flip_prob = flip_prob
         self.scale_range = scale_range
@@ -347,6 +357,9 @@ class AdvancedAugmentation:
         self.gaussian_noise_std = gaussian_noise_std
         self.cutout_prob = cutout_prob
         self.cutout_size = cutout_size
+        # When depth_aware=True, skip color jitter and noise on target
+        # (depth RGB encoding must preserve exact color-to-depth mapping)
+        self.depth_aware = depth_aware
 
     def __call__(self, image: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply augmentation to image and target pair.
@@ -377,9 +390,13 @@ class AdvancedAugmentation:
                     image.unsqueeze(0), size=(H, W),
                     mode='bilinear', align_corners=False
                 ).squeeze(0)
+                # Use bilinear for depth targets too (preserves smooth gradients)
+                # instead of nearest which creates blocky artifacts
+                target_mode = 'bilinear' if self.depth_aware else 'nearest'
                 target = F.interpolate(
                     target.unsqueeze(0), size=(H, W),
-                    mode='nearest'
+                    mode=target_mode,
+                    align_corners=False if target_mode != 'nearest' else None,
                 ).squeeze(0)
 
         # Brightness (input only, not target)
@@ -388,7 +405,8 @@ class AdvancedAugmentation:
             image = (image * brightness).clamp(-1.0, 1.0)
 
         # Color jitter (input only: hue, saturation, contrast)
-        if np.random.random() < self.color_jitter_prob:
+        # Skip in depth_aware mode to preserve RGB encoding
+        if not self.depth_aware and np.random.random() < self.color_jitter_prob:
             image = self._color_jitter(image)
 
         # Gaussian noise (input only: simulates diffusion process)

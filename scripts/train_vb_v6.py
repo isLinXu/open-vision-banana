@@ -234,6 +234,27 @@ def sample_timesteps_logit_normal(batch_size, device, mean=0.0, std=1.0):
     return torch.sigmoid(noise)
 
 
+def compute_min_snr_weight(timesteps, gamma=5.0):
+    """Compute Min-SNR weighting for flow matching timesteps.
+
+    SNR(t) = t^2 / (1-t)^2 for flow matching where t is in [0,1].
+    Min-SNR clamps SNR to gamma to prevent high-SNR (low-noise) domination.
+
+    Args:
+        timesteps: [B] timesteps in [0, 1].
+        gamma: SNR clamp value (paper default 5.0).
+
+    Returns:
+        [B] loss weights.
+    """
+    # Flow matching: SNR = t^2 / (1-t)^2 + sigma^2 term
+    # Simplified: weight = min(SNR, gamma) / SNR
+    t = timesteps.clamp(1e-4, 1.0 - 1e-4)
+    snr = (t ** 2) / ((1.0 - t) ** 2 + 1e-10)
+    min_snr = torch.clamp(snr, max=gamma)
+    return min_snr / (snr + 1e-10)
+
+
 @torch.no_grad()
 def generate_depth_img2img(components, input_image, prompt, device, dtype, num_steps=30, seed=42, strength=0.6, guidance_scale=2.0):
     config = components.config
@@ -331,6 +352,8 @@ def main():
                         help="Memory clear threshold (0-1)")
     parser.add_argument("--colormaps", type=str, default="cube_edge,rainbow,viridis",
                         help="Comma-separated colormaps for depth training")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to checkpoint to resume training from (loads LoRA weights, EMA, and step count)")
     args = parser.parse_args()
 
     if args.list_models:
@@ -404,6 +427,49 @@ def main():
 
     unet = components.unet
     vae = components.vae
+
+    # ── Resume from checkpoint ──
+    resume_step = 0
+    if args.resume:
+        resume_path = Path(args.resume)
+        if resume_path.exists():
+            logger.info(f"Resuming from: {resume_path}")
+            ckpt = torch.load(resume_path, map_location="cpu")
+            # Load EMA weights
+            ema_keys = {k[4:]: v for k, v in ckpt.items() if k.startswith("ema.")}
+            unet_keys = {k[5:]: v for k, v in ckpt.items() if k.startswith("unet.")}
+            loaded = 0
+            source_keys = ema_keys if ema_keys else unet_keys
+            prefix = "ema." if ema_keys else "unet."
+            for name, param in unet.named_parameters():
+                if param.requires_grad and name in source_keys:
+                    param.data.copy_(source_keys[name].to(dtype))
+                    loaded += 1
+            logger.info(f"Resumed: loaded {loaded} parameters from {prefix}* keys")
+            # Try to extract step from filename (e.g. ..._step500.pt)
+            import re
+            m = re.search(r"step(\d+)", resume_path.stem)
+            if m:
+                resume_step = int(m.group(1))
+                logger.info(f"Resuming from step {resume_step}")
+            # Load training state (optimizer/scheduler) if available
+            state_path = resume_path.parent / f"vb_v6_{model_cfg.name}_training_state.pt"
+            if state_path.exists():
+                try:
+                    training_state = torch.load(state_path, map_location="cpu")
+                    # Will load optimizer/scheduler state after they are created
+                    logger.info(f"Found training state at {state_path}, will restore optimizer/scheduler")
+                    _pending_training_state = training_state
+                except Exception as e:
+                    logger.warning(f"Failed to load training state: {e}")
+                    _pending_training_state = None
+            else:
+                _pending_training_state = None
+        else:
+            logger.warning(f"Resume checkpoint not found: {resume_path}")
+            _pending_training_state = None
+    else:
+        _pending_training_state = None
 
     # ── Build multi-task vision datasets ──
     vision_tasks = [t.strip() for t in args.vision_tasks.split(",")]
@@ -500,6 +566,17 @@ def main():
     )
     logger.info(f"Optimizer: AdamW, LR={args.lr}, Scheduler={args.scheduler}")
 
+    # Restore optimizer/scheduler state if resuming
+    if _pending_training_state is not None:
+        try:
+            optimizer.load_state_dict(_pending_training_state["optimizer_state"])
+            scheduler.load_state_dict(_pending_training_state["scheduler_state"])
+            best_loss = _pending_training_state.get("best_loss", float("inf"))
+            best_val_corr = _pending_training_state.get("best_val_corr", -1.0)
+            logger.info("Restored optimizer/scheduler state")
+        except Exception as e:
+            logger.warning(f"Failed to restore optimizer/scheduler state: {e}")
+
     # ── EMA ──
     ema = LoRAEMA(decay=args.ema_decay)
     ema.register([(n, p) for n, p in unet.named_parameters() if p.requires_grad])
@@ -535,7 +612,7 @@ def main():
     best_loss = float("inf")
     best_val_corr = -1.0
     t_train_start = time.time()
-    global_step = 0
+    global_step = resume_step
 
     logger.info("Starting v6 optimized training...")
     logger.info("  TRUE img2img + flow matching v-prediction + multi-colormap")
@@ -571,6 +648,12 @@ def main():
             with torch.no_grad():
                 encoder_hidden_states, aux_output = encode_text(components, prompts, device, dtype)
 
+            # CFG dropout: randomly replace text embeddings with unconditional
+            cfg_dropout_rate = 0.1
+            if torch.rand(1).item() < cfg_dropout_rate:
+                # Create unconditional embeddings (zeros or special unconditional prompt)
+                encoder_hidden_states = torch.zeros_like(encoder_hidden_states)
+
             attention_mask = None
             pooled_embeds = None
             if isinstance(aux_output, torch.Tensor):
@@ -586,14 +669,20 @@ def main():
             txt_ids, img_ids = prepare_position_ids(noisy_latents, encoder_hidden_states, model_cfg, device, dtype)
 
             # Forward
-            with torch.amp.autocast("mps", dtype=dtype, enabled=(device.type == "mps")):
+            with torch.amp.autocast(device.type, dtype=dtype, enabled=(device.type in ("mps", "cuda"))):
                 predicted_velocity = backbone_forward(
                     unet, noisy_latents, timestep_long, encoder_hidden_states, model_cfg,
                     added_cond_kwargs=added_cond_kwargs, attention_mask=attention_mask,
                     pooled_embeds=pooled_embeds, txt_ids=txt_ids, img_ids=img_ids,
                 )
 
-            loss = F.mse_loss(predicted_velocity.float(), velocity_target.float())
+            # Min-SNR weighted loss
+            snr_weights = compute_min_snr_weight(timesteps, gamma=5.0)  # [B]
+            per_sample_loss = F.mse_loss(
+                predicted_velocity.float(), velocity_target.float(),
+                reduction="none"
+            ).mean(dim=[1, 2, 3])  # [B]
+            loss = (per_sample_loss * snr_weights).mean()
             loss_scaled = loss / args.grad_accum
             loss_scaled.backward()
             epoch_loss = loss.item()
@@ -611,14 +700,31 @@ def main():
                 if global_step % args.log_every == 0:
                     elapsed = time.time() - t_train_start
                     eta = elapsed / global_step * (total_steps - global_step)
+                    # Log per-timestep loss distribution
+                    avg_t = timesteps.mean().item()
+                    avg_snr_w = snr_weights.mean().item()
                     logger.info(
                         f"S{global_step}/{total_steps} | Loss: {epoch_loss:.4f} | "
-                        f"LR: {current_lr:.2e} | {elapsed:.0f}s | ETA: {eta/60:.0f}m"
+                        f"LR: {current_lr:.2e} | avg_t={avg_t:.2f} | snr_w={avg_snr_w:.2f} | "
+                        f"{elapsed:.0f}s | ETA: {eta/60:.0f}m"
                     )
-                    train_log.append({"step": global_step, "loss": epoch_loss, "lr": current_lr})
+                    train_log.append({
+                        "step": global_step, "loss": epoch_loss, "lr": current_lr,
+                        "avg_timestep": avg_t, "avg_snr_weight": avg_snr_w,
+                    })
 
                 if global_step % args.save_every == 0:
                     save_lora_state(unet, output_dir / f"vb_v6_{model_cfg.name}_step{global_step}.pt", ema.get_shadow())
+                    # Save full training state for true resume
+                    training_state = {
+                        "step": global_step,
+                        "optimizer_state": optimizer.state_dict(),
+                        "scheduler_state": scheduler.state_dict(),
+                        "best_loss": best_loss,
+                        "best_val_corr": best_val_corr,
+                    }
+                    torch.save(training_state, output_dir / f"vb_v6_{model_cfg.name}_training_state.pt")
+                    logger.debug(f"Saved training state at step {global_step}")
 
                 if epoch_loss < best_loss * 0.99:
                     best_loss = epoch_loss
