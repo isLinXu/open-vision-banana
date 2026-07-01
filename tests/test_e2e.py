@@ -1,6 +1,7 @@
 """End-to-end tests for ONNX export and import verification."""
 
 
+import pytest
 import torch
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
@@ -10,6 +11,12 @@ from open_vision_banana.export.onnx_export import (
     NormalRGBMapperONNX,
     export_mapper_onnx,
 )
+
+# Skip if onnx is not installed
+try:
+    import onnx  # noqa: F401
+except ImportError:
+    pytestmark = pytest.mark.skip(reason="onnx not installed")
 
 
 class TestONNXExport:

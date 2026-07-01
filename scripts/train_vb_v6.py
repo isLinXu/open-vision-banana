@@ -56,6 +56,7 @@ from open_vision_banana.model_registry import (
 )
 from open_vision_banana.data.mixed import MixedVisionDataset
 from open_vision_banana.data.datasets import build_dataset
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.training.optimization import (
     AdvancedAugmentation,
     MemoryManager,
@@ -354,6 +355,8 @@ def main():
                         help="Comma-separated colormaps for depth training")
     parser.add_argument("--resume", type=str, default=None,
                         help="Path to checkpoint to resume training from (loads LoRA weights, EMA, and step count)")
+    parser.add_argument("--cache-latents", action="store_true",
+                        help="Cache VAE latents to avoid repeated encoding (trades memory for speed)")
     args = parser.parse_args()
 
     if args.list_models:
@@ -546,6 +549,17 @@ def main():
     )
     logger.info(f"Mixed dataset: {len(mixed_ds)} effective samples/epoch")
 
+    # ── VAE latent cache (optional) ──
+    if args.cache_latents:
+        from open_vision_banana.training.latent_cache import LatentCacheDataset
+        logger.info("Warming VAE latent cache (this may take a minute) ...")
+        mixed_ds = LatentCacheDataset(
+            mixed_ds, vae, model_cfg, device="cpu", dtype=dtype,
+            cache_input=True, cache_target=True,
+        )
+        mixed_ds.warm_cache(max_items=min(len(mixed_ds), 500))
+        logger.info(f"Latent cache warmed: {mixed_ds.cache_size} entries")
+
     # ── Optimized DataLoader ──
     dataloader = create_optimized_dataloader(
         dataset=mixed_ds,
@@ -627,11 +641,35 @@ def main():
             prompts = batch["prompt"]
             bsz = target_rgb.shape[0]
 
-            # Encode target and input
+            # Multi-colormap training: re-encode depth targets with per-sample colormap
+            # The MixedVisionDataset attaches a "colormap" key to depth samples.
+            # We decode the original target to depth, then re-encode with the new colormap.
+            colormaps_in_batch = batch.get("colormap", None)
+            if colormaps_in_batch is not None and len(colormaps_in_batch) > 0:
+                # Only re-encode depth samples that have a colormap assignment
+                unique_cmaps = set(colormaps_in_batch)
+                if len(unique_cmaps) > 1 or list(unique_cmaps)[0] != "cube_edge":
+                    mapper = DepthRGBMapper()
+                    for i in range(bsz):
+                        cmap = colormaps_in_batch[i] if i < len(colormaps_in_batch) else "cube_edge"
+                        if cmap != mapper.colormap:
+                            # Decode target_rgb → depth using default (cube_edge), then re-encode
+                            tgt_single = target_rgb[i:i+1]  # [1, 3, H, W]
+                            depth = mapper.rgb_to_depth(tgt_single)
+                            mapper.set_colormap(cmap)
+                            re_encoded = mapper.depth_to_rgb(depth)
+                            target_rgb[i] = re_encoded.squeeze(0)
+                            mapper.set_colormap("cube_edge")  # reset
+
+            # Encode target and input (or use cached latents)
             with torch.no_grad():
-                target_pixels = (target_rgb * 2.0 - 1.0).to(dtype)
-                target_latents = vae_encode(vae, target_pixels, model_cfg)
-                input_latents = vae_encode(vae, input_images, model_cfg)
+                if "target_latent" in batch and "input_latent" in batch:
+                    target_latents = batch["target_latent"].to(device).to(dtype)
+                    input_latents = batch["input_latent"].to(device).to(dtype)
+                else:
+                    target_pixels = (target_rgb * 2.0 - 1.0).to(dtype)
+                    target_latents = vae_encode(vae, target_pixels, model_cfg)
+                    input_latents = vae_encode(vae, input_images, model_cfg)
 
             # Sample timesteps
             timesteps = sample_timesteps_logit_normal(bsz, device)
@@ -644,15 +682,19 @@ def main():
             noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
             velocity_target = target_latents - input_latents
 
-            # Encode text
+            # Encode text (both conditional and unconditional for CFG dropout)
             with torch.no_grad():
                 encoder_hidden_states, aux_output = encode_text(components, prompts, device, dtype)
+                uncond_hidden, uncond_aux = encode_text(components, [""] * bsz, device, dtype, negative=True)
 
-            # CFG dropout: randomly replace text embeddings with unconditional
+            # CFG dropout: per-sample, replace text embeddings with unconditional
             cfg_dropout_rate = 0.1
-            if torch.rand(1).item() < cfg_dropout_rate:
-                # Create unconditional embeddings (zeros or special unconditional prompt)
-                encoder_hidden_states = torch.zeros_like(encoder_hidden_states)
+            if bsz > 1:
+                drop_mask = torch.rand(bsz, device=device) < cfg_dropout_rate  # [B]
+                drop_exp = drop_mask.view(bsz, 1, 1)  # broadcast over seq_len, hidden_dim
+                encoder_hidden_states = torch.where(drop_exp, uncond_hidden, encoder_hidden_states)
+            elif torch.rand(1).item() < cfg_dropout_rate:
+                encoder_hidden_states = uncond_hidden
 
             attention_mask = None
             pooled_embeds = None
@@ -729,9 +771,18 @@ def main():
                 if epoch_loss < best_loss * 0.99:
                     best_loss = epoch_loss
 
-                # ── Validation ──
+                # ── Validation (with EMA weights) ──
                 if global_step % args.val_every == 0:
-                    logger.info(f"Validation at step {global_step} ...")
+                    # Swap EMA weights into model for validation
+                    ema_shadow = ema.get_shadow()
+                    original_weights = {}
+                    with torch.no_grad():
+                        for name, param in unet.named_parameters():
+                            if param.requires_grad and f"ema.{name}" in ema_shadow:
+                                original_weights[name] = param.data.clone()
+                                param.data.copy_(ema_shadow[f"ema.{name}"].to(dtype))
+
+                    logger.info(f"Validation at step {global_step} (EMA weights) ...")
                     val_results = []
                     for vi, vimg in enumerate(val_images[:3]):
                         best_corr = -2.0
@@ -758,6 +809,12 @@ def main():
                         if best_img is not None:
                             best_img.save(output_dir / "val_during_training" / f"val_step{global_step}_{vi}_s{best_strength}.png")
                             val_results.append(best_metrics)
+
+                    # Restore original training weights after validation
+                    with torch.no_grad():
+                        for name, param in unet.named_parameters():
+                            if name in original_weights:
+                                param.data.copy_(original_weights[name])
 
                     if val_results:
                         avg_corr = np.mean([m["correlation"] for m in val_results])

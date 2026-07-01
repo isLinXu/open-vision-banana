@@ -11,6 +11,24 @@ from open_vision_banana.export.onnx_export import (
     export_mapper_onnx,
 )
 
+# Skip all ONNX export tests if onnx is not installed
+onnx_available = True
+try:
+    import onnx  # noqa: F401
+except ImportError:
+    onnx_available = False
+
+onnxscript_available = True
+try:
+    import onnxscript  # noqa: F401
+except ImportError:
+    onnxscript_available = False
+
+skip_no_onnx = pytest.mark.skipif(not onnx_available, reason="onnx not installed")
+skip_no_onnxscript = pytest.mark.skipif(
+    not onnxscript_available, reason="onnxscript not installed"
+)
+
 # ──────────────────────────────────────────────────────────────────
 # DepthRGBMapperONNX tests
 # ──────────────────────────────────────────────────────────────────
@@ -124,6 +142,7 @@ class TestNormalRGBMapperONNX:
 # ──────────────────────────────────────────────────────────────────
 
 
+@skip_no_onnx
 class TestExportMapperOnnx:
     """Test the export_mapper_onnx function."""
 
@@ -198,6 +217,7 @@ class TestExportMapperOnnx:
 # ──────────────────────────────────────────────────────────────────
 
 
+@skip_no_onnxscript
 class TestExportFullPipelineOnnx:
     """Test the export_full_pipeline_onnx function."""
 

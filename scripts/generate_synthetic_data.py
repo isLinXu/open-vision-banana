@@ -220,6 +220,130 @@ def generate_image(
     return Image.fromarray(image_np)
 
 
+def generate_image_batch(
+    components,
+    prompts: list[str],
+    device: torch.device,
+    dtype: torch.dtype,
+    resolution: int = 512,
+    num_steps: int = 20,
+    guidance_scale: float = 7.5,
+    seeds: list[int] | None = None,
+) -> list[Image.Image]:
+    """Generate a batch of images from text prompts using the base model.
+
+    This is significantly faster than calling generate_image() one-by-one
+    because it batches the UNet forward pass.
+
+    Args:
+        components: Pipeline components (model, VAE, etc.)
+        prompts: List of text prompts (length = batch_size).
+        device: torch device.
+        dtype: torch dtype.
+        resolution: Image resolution.
+        num_steps: Diffusion steps.
+        guidance_scale: CFG scale.
+        seeds: Optional list of random seeds (one per prompt).
+
+    Returns:
+        List of PIL Images.
+    """
+    config = components.config
+    backbone = components.unet
+    vae = components.vae
+    backbone.eval()
+
+    bsz = len(prompts)
+    if seeds is not None:
+        assert len(seeds) == bsz
+        # Use the first seed to set the global state; per-sample seeds are
+        # baked into the initial latents below.
+        torch.manual_seed(seeds[0])
+
+    with torch.no_grad():
+        encoder_hidden_states, aux_output = encode_text(components, prompts, device, dtype)
+
+    attention_mask = None
+    pooled_embeds = None
+    if isinstance(aux_output, torch.Tensor):
+        if config.needs_attention_mask:
+            attention_mask = aux_output
+        else:
+            pooled_embeds = aux_output
+
+    added_cond_kwargs = build_added_cond_kwargs(
+        config, pooled_embeds, (resolution, resolution), device, dtype, batch_size=bsz
+    )
+
+    # CFG setup: encode unconditional for all prompts in batch
+    uncond_hidden = None
+    uncond_added_cond = None
+    uncond_mask = None
+    if guidance_scale > 1.0:
+        uncond_hidden, uncond_aux = encode_text(components, [""] * bsz, device, dtype, negative=True)
+        if isinstance(uncond_aux, torch.Tensor):
+            if config.needs_attention_mask:
+                uncond_mask = uncond_aux
+            else:
+                uncond_added_cond = build_added_cond_kwargs(
+                    config, uncond_aux, (resolution, resolution), device, dtype, batch_size=bsz
+                )
+
+    # Initialize latents from noise — one per sample
+    latent_shape = config.get_latent_shape(bsz, resolution, resolution)
+    if seeds is not None:
+        # Generate per-sample noise for reproducibility
+        latents = torch.empty(latent_shape, device=device, dtype=dtype)
+        for i, s in enumerate(seeds):
+            gen = torch.Generator(device=device).manual_seed(s)
+            latents[i] = torch.randn(latent_shape[1:], generator=gen, device=device, dtype=dtype)
+    else:
+        latents = torch.randn(latent_shape, device=device, dtype=dtype)
+
+    txt_ids, img_ids = prepare_position_ids(latents, encoder_hidden_states, config, device, dtype)
+
+    # Denoising loop
+    for i in range(num_steps):
+        t = 1.0 - i / num_steps
+        timestep_long = torch.tensor([int(t * 999)], device=device).clamp(0, 999).expand(bsz)
+
+        if config.needs_position_ids:
+            txt_ids, img_ids = prepare_position_ids(latents, encoder_hidden_states, config, device, dtype)
+
+        if guidance_scale > 1.0 and uncond_hidden is not None:
+            v_cond = backbone_forward(
+                backbone, latents, timestep_long, encoder_hidden_states, config,
+                added_cond_kwargs=added_cond_kwargs, guidance=guidance_scale,
+                attention_mask=attention_mask, pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
+            )
+            v_uncond = backbone_forward(
+                backbone, latents, timestep_long, uncond_hidden, config,
+                added_cond_kwargs=uncond_added_cond, guidance=guidance_scale,
+                attention_mask=uncond_mask, pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
+            )
+            pred_v = v_uncond + guidance_scale * (v_cond - v_uncond)
+        else:
+            pred_v = backbone_forward(
+                backbone, latents, timestep_long, encoder_hidden_states, config,
+                added_cond_kwargs=added_cond_kwargs, guidance=guidance_scale,
+                attention_mask=attention_mask, pooled_embeds=pooled_embeds,
+                txt_ids=txt_ids, img_ids=img_ids,
+            )
+
+        dt = 1.0 / num_steps
+        latents = latents + dt * pred_v
+
+    # Decode batch
+    with torch.no_grad():
+        images = vae_decode(vae, latents, config)
+        images = (images / 2 + 0.5).clamp(0, 1)
+        images_np = (images.permute(0, 2, 3, 1).cpu().numpy() * 255).astype(np.uint8)
+
+    return [Image.fromarray(img) for img in images_np]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate synthetic training data for Vision Banana")
     parser.add_argument("--model", type=str, default="ssd-1b", help="Base model for generation")
@@ -385,48 +509,104 @@ def main():
     successful = 0
     failed = 0
 
-    for i in range(args.num_images):
-        prompt = random.choice(prompts)
-        seed = args.seed + i
-        filename = f"gen_{i:06d}_{seed}.jpg"
-        filepath = images_dir / filename
+    # Use batch generation when batch_size > 1
+    actual_batch_size = max(1, args.batch_size)
 
-        if filepath.exists():
-            logger.info(f"[{i+1}/{args.num_images}] Already exists: {filename}")
-            captions.append({"filename": filename, "caption": prompt, "seed": seed})
-            successful += 1
-            continue
+    if actual_batch_size > 1:
+        logger.info(f"Batch generation mode: batch_size={actual_batch_size}")
 
-        try:
-            img = generate_image(
-                components, prompt, device, dtype,
-                resolution=args.resolution,
-                num_steps=args.num_steps,
-                guidance_scale=args.guidance_scale,
-                seed=seed,
-            )
-            img.save(filepath, quality=95)
-            captions.append({"filename": filename, "caption": prompt, "seed": seed})
-            successful += 1
+        # Process in batches
+        for batch_start in range(0, args.num_images, actual_batch_size):
+            batch_end = min(batch_start + actual_batch_size, args.num_images)
+            actual_batch = min(actual_batch_size, batch_end - batch_start)
 
-            elapsed = time.time() - t_start
-            avg_time = elapsed / successful if successful > 0 else 0
-            eta = avg_time * (args.num_images - i - 1)
-            logger.info(
-                f"[{i+1}/{args.num_images}] {filename} | "
-                f"Avg: {avg_time:.1f}s/img | ETA: {eta/60:.0f}m"
-            )
+            batch_prompts = [random.choice(prompts) for _ in range(actual_batch)]
+            batch_seeds = [args.seed + batch_start + i for i in range(actual_batch)]
+            batch_filenames = [f"gen_{batch_start+i:06d}_{batch_seeds[i]}.jpg" for i in range(actual_batch)]
 
-            # Periodic save
-            if (i + 1) % args.save_every == 0:
-                with open(output_dir / "captions.json", "w") as f:
-                    json.dump(captions, f, indent=2)
-                logger.info(f"Saved {len(captions)} captions to captions.json")
+            # Skip already-generated images
+            all_exist = all((images_dir / fn).exists() for fn in batch_filenames)
+            if all_exist:
+                logger.info(f"[{batch_start+1}/{args.num_images}] Batch already exists, skipping")
+                for fn, pr, sd in zip(batch_filenames, batch_prompts, batch_seeds):
+                    captions.append({"filename": fn, "caption": pr, "seed": sd})
+                    successful += 1
+                continue
 
-        except Exception as e:
-            logger.error(f"[{i+1}/{args.num_images}] Failed: {e}")
-            failed += 1
-            continue
+            try:
+                batch_images = generate_image_batch(
+                    components, batch_prompts, device, dtype,
+                    resolution=args.resolution,
+                    num_steps=args.num_steps,
+                    guidance_scale=args.guidance_scale,
+                    seeds=batch_seeds,
+                )
+
+                for img, fn, pr, sd in zip(batch_images, batch_filenames, batch_prompts, batch_seeds):
+                    img.save(images_dir / fn, quality=95)
+                    captions.append({"filename": fn, "caption": pr, "seed": sd})
+                    successful += 1
+
+                elapsed = time.time() - t_start
+                avg_time = elapsed / successful if successful > 0 else 0
+                eta = avg_time * (args.num_images - batch_end)
+                logger.info(
+                    f"[{batch_end}/{args.num_images}] Batch done | "
+                    f"Avg: {avg_time:.1f}s/img | ETA: {eta/60:.0f}m"
+                )
+
+                if (batch_end) % args.save_every < actual_batch_size:
+                    with open(output_dir / "captions.json", "w") as f:
+                        json.dump(captions, f, indent=2)
+
+            except Exception as e:
+                logger.error(f"[{batch_start+1}/{args.num_images}] Batch failed: {e}")
+                failed += actual_batch
+                continue
+    else:
+        # Single-image generation (original path)
+        for i in range(args.num_images):
+            prompt = random.choice(prompts)
+            seed = args.seed + i
+            filename = f"gen_{i:06d}_{seed}.jpg"
+            filepath = images_dir / filename
+
+            if filepath.exists():
+                logger.info(f"[{i+1}/{args.num_images}] Already exists: {filename}")
+                captions.append({"filename": filename, "caption": prompt, "seed": seed})
+                successful += 1
+                continue
+
+            try:
+                img = generate_image(
+                    components, prompt, device, dtype,
+                    resolution=args.resolution,
+                    num_steps=args.num_steps,
+                    guidance_scale=args.guidance_scale,
+                    seed=seed,
+                )
+                img.save(filepath, quality=95)
+                captions.append({"filename": filename, "caption": prompt, "seed": seed})
+                successful += 1
+
+                elapsed = time.time() - t_start
+                avg_time = elapsed / successful if successful > 0 else 0
+                eta = avg_time * (args.num_images - i - 1)
+                logger.info(
+                    f"[{i+1}/{args.num_images}] {filename} | "
+                    f"Avg: {avg_time:.1f}s/img | ETA: {eta/60:.0f}m"
+                )
+
+                # Periodic save
+                if (i + 1) % args.save_every == 0:
+                    with open(output_dir / "captions.json", "w") as f:
+                        json.dump(captions, f, indent=2)
+                    logger.info(f"Saved {len(captions)} captions to captions.json")
+
+            except Exception as e:
+                logger.error(f"[{i+1}/{args.num_images}] Failed: {e}")
+                failed += 1
+                continue
 
     # Final save
     with open(output_dir / "captions.json", "w") as f:

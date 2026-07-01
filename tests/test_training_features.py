@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 import torch.nn as nn
 from PIL import Image
 
@@ -44,6 +45,10 @@ class TestTrainingLogger:
         logger.finish()
 
     def test_tensorboard_only(self, tmp_path: Path):
+        try:
+            import tensorboard  # noqa: F401
+        except ImportError:
+            pytest.skip("tensorboard not installed")
         logger = TrainingLogger(
             tensorboard_enabled=True,
             tensorboard_dir=str(tmp_path / "tb"),

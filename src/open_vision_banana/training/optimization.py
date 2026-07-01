@@ -303,15 +303,24 @@ class SchedulerFactory:
 
     @staticmethod
     def _one_cycle(optimizer, total_steps, warmup_steps):
+        """One-Cycle LR schedule (Smith & Topin 2019).
+
+        Phase 1 (warmup): linear ramp from 0 → max_lr
+        Phase 2 (anneal): cosine decay from max_lr → initial_lr * 0.01
+
+        Implemented as LambdaLR multiplier on the base lr:
+        - warmup: linear 0 → 1
+        - anneal: cosine 1 → 0.01
+        """
         def lr_lambda(step):
             if step < warmup_steps:
+                # Linear warmup: 0 → 1
                 return float(step) / float(max(1, warmup_steps))
+            # Cosine annealing: 1 → 0.01
             progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
-            # One cycle: up then down
-            if progress < 0.4:
-                return 1.0 + progress * 2.5  # ramp up to 2x
-            else:
-                return 2.0 - (progress - 0.4) * 2.0 / 0.6  # ramp down to 0
+            cosine_factor = 0.5 * (1.0 + np.cos(np.pi * progress))
+            # Map [0, 1] → [1.0, 0.01]
+            return 0.01 + 0.99 * cosine_factor
 
         return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
@@ -344,7 +353,7 @@ class AdvancedAugmentation:
         gaussian_noise_std: float = 0.02,
         cutout_prob: float = 0.1,
         cutout_size: float = 0.2,
-        depth_aware: bool = False,
+        depth_aware: bool = True,
     ):
         self.flip_prob = flip_prob
         self.scale_range = scale_range
@@ -426,10 +435,10 @@ class AdvancedAugmentation:
         img = (image + 1.0) / 2.0  # [-1, 1] → [0, 1]
         s = self.color_jitter_strength
 
-        # Hue shift (rotate RGB channels)
+        # Hue shift (channel rotation — shift channels cyclically)
         if np.random.random() < 0.5:
-            shift = np.random.uniform(-s, s)
-            img = img.roll(int(shift * 3), dims=0)
+            shift = int(np.random.choice([-1, 1]))  # shift by 1 channel position
+            img = img.roll(shift, dims=0)
 
         # Saturation
         if np.random.random() < 0.5:
