@@ -101,6 +101,8 @@ class AugmentedVisionDataset(Dataset):
             sample = dict(sample)
             sample["image"] = image_aug
             sample["target_rgb"] = target_aug
+        # If latents are cached (no image/target_rgb keys), pass through as-is.
+        # Augmentation on pixel space was already applied before caching.
         return sample
 
 
@@ -152,12 +154,23 @@ class GenerationDataset(Dataset):
 
 
 def collate_fn(batch):
+    """Collate function that handles mixed sample types (vision + generation).
+
+    Some samples may have latent cache keys (target_latent, input_latent) while
+    others don't. We only collate keys that exist in ALL samples of the batch.
+    """
+    # Find keys common to all samples
+    common_keys = set(batch[0].keys())
+    for s in batch[1:]:
+        common_keys &= set(s.keys())
+
     result = {}
-    for key in batch[0]:
-        if isinstance(batch[0][key], torch.Tensor):
-            result[key] = torch.stack([b[key] for b in batch])
+    for key in common_keys:
+        vals = [b[key] for b in batch]
+        if isinstance(vals[0], torch.Tensor):
+            result[key] = torch.stack(vals)
         else:
-            result[key] = [b[key] for b in batch]
+            result[key] = vals
     return result
 
 
@@ -497,11 +510,11 @@ def main():
     if not vision_datasets:
         depth_dir = DATA_DIR / "vb_v4_depth_2k"
         if depth_dir.exists():
-            from open_vision_banana.data.datasets import HypersimDepthDataset
-            ds = HypersimDepthDataset(depth_dir, split="train", resolution=resolution)
+            from open_vision_banana.data.datasets import PreEncodedDepthDataset
+            ds = PreEncodedDepthDataset(depth_dir, split="train", resolution=resolution)
             if len(ds) > 0:
                 vision_datasets.append(ds)
-                logger.info(f"  Fallback depth: {len(ds)} samples")
+                logger.info(f"  Fallback depth (pre-encoded): {len(ds)} samples")
 
     if not vision_datasets:
         logger.error("No vision datasets available!")
@@ -524,6 +537,34 @@ def main():
         )
     else:
         augmenter = None
+
+    # ── VAE latent cache (optional, applied to base vision datasets) ──
+    # NOTE: When cache_latents is enabled, augmentation is disabled because
+    # the cache stores pre-encoded latents of the original (unaugmented) images.
+    # Augmentation would invalidate the cache. The ~40% speedup from caching
+    # outweighs the marginal benefit of augmentation on depth tasks (where
+    # depth_aware=True already protects the target).
+    if args.cache_latents and augmenter is not None:
+        logger.info("Disabling augmentation because cache_latents is enabled (augmentation invalidates cache)")
+        augmenter = None
+
+    if args.cache_latents:
+        from open_vision_banana.training.latent_cache import LatentCacheDataset
+        logger.info("Warming VAE latent cache for vision datasets ...")
+        cached_vision = []
+        for ds in vision_datasets:
+            cached_ds = LatentCacheDataset(
+                ds, vae, model_cfg, device="cpu", dtype=dtype,
+                cache_input=True, cache_target=True,
+            )
+            cached_ds.warm_cache(max_items=min(len(cached_ds), 500))
+            cached_vision.append(cached_ds)
+            logger.info(f"  Cached {cached_ds.cache_size} latents from {len(ds)} samples")
+        # Keep original datasets for validation image lookup
+        _orig_vision_datasets = vision_datasets
+        vision_datasets = cached_vision
+    else:
+        _orig_vision_datasets = vision_datasets
 
     # Wrap datasets with augmentation
     augmented_vision = [AugmentedVisionDataset(ds, augmenter) for ds in vision_datasets]
@@ -548,17 +589,6 @@ def main():
         colormaps=colormaps,
     )
     logger.info(f"Mixed dataset: {len(mixed_ds)} effective samples/epoch")
-
-    # ── VAE latent cache (optional) ──
-    if args.cache_latents:
-        from open_vision_banana.training.latent_cache import LatentCacheDataset
-        logger.info("Warming VAE latent cache (this may take a minute) ...")
-        mixed_ds = LatentCacheDataset(
-            mixed_ds, vae, model_cfg, device="cpu", dtype=dtype,
-            cache_input=True, cache_target=True,
-        )
-        mixed_ds.warm_cache(max_items=min(len(mixed_ds), 500))
-        logger.info(f"Latent cache warmed: {mixed_ds.cache_size} entries")
 
     # ── Optimized DataLoader ──
     dataloader = create_optimized_dataloader(
@@ -598,10 +628,12 @@ def main():
 
     # ── Validation images ──
     val_image_paths = []
-    for ds in vision_datasets:
-        img_dir = Path(ds.root_dir) / "images"
-        if img_dir.exists():
-            val_image_paths.extend(sorted(img_dir.glob("*.jpg"))[:3])
+    for ds in _orig_vision_datasets:
+        root = getattr(ds, "root_dir", None) or getattr(getattr(ds, "base", None), "root_dir", None)
+        if root is not None:
+            img_dir = Path(root) / "images"
+            if img_dir.exists():
+                val_image_paths.extend(sorted(img_dir.glob("*.jpg"))[:3])
     val_image_paths = val_image_paths[:6]
 
     val_images = []

@@ -68,7 +68,7 @@ class LatentCacheDataset(Dataset):
         # Ensure pixels are in the right format
         if pixels.dim() == 3:
             pixels = pixels.unsqueeze(0)  # [1, 3, H, W]
-        pixels = pixels.to(self.dtype)
+        pixels = pixels.to(self.dtype).to(self.vae.device)
         with torch.no_grad():
             latent = vae_encode(self.vae, pixels, self.model_cfg)
         return latent.squeeze(0).cpu()  # [C, H', W']
@@ -76,7 +76,7 @@ class LatentCacheDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = self.base[idx]
 
-        # Cache target latent
+        # Cache target latent (keep original key for colormap re-encoding)
         if self.cache_target and "target_rgb" in sample and idx not in self._target_cache:
             target = sample["target_rgb"]
             if target.dim() == 3:
@@ -84,20 +84,16 @@ class LatentCacheDataset(Dataset):
             target = (target * 2.0 - 1.0).clamp(-1.0, 1.0)
             self._target_cache[idx] = self._encode(target)
             sample["target_latent"] = self._target_cache[idx]
-            del sample["target_rgb"]  # free memory
         elif self.cache_target and idx in self._target_cache:
             sample["target_latent"] = self._target_cache[idx]
-            sample.pop("target_rgb", None)
 
-        # Cache input latent
+        # Cache input latent (keep original key for potential re-use)
         if self.cache_input and "image" in sample and idx not in self._input_cache:
             img = sample["image"]
             self._input_cache[idx] = self._encode(img)
             sample["input_latent"] = self._input_cache[idx]
-            del sample["image"]  # free memory
         elif self.cache_input and idx in self._input_cache:
             sample["input_latent"] = self._input_cache[idx]
-            sample.pop("image", None)
 
         return sample
 

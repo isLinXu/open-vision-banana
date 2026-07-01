@@ -101,6 +101,11 @@ class BaseVisionDataset(Dataset):
         tensor = _pil_to_tensor(img).float() / 255.0
         return tensor * 2.0 - 1.0
 
+    def _tag_task(self, sample: dict) -> dict:
+        """Attach the TASK_TYPE to the sample dict for downstream use."""
+        sample["task"] = self.TASK_TYPE
+        return sample
+
 
 class HypersimDepthDataset(BaseVisionDataset):
     """Hypersim dataset for metric depth estimation."""
@@ -1659,6 +1664,59 @@ class nuScenesDataset(BaseVisionDataset):
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
 
+class PreEncodedDepthDataset(BaseVisionDataset):
+    """Dataset for pre-encoded depth RGB targets.
+
+    Handles the common ``images/`` + ``targets/`` directory layout where
+    target images are already RGB-encoded depth visualizations (not raw
+    depth maps). This is the format produced by the v4 data pipeline and
+    used by the synthetic data generator.
+
+    Expected directory structure::
+
+        root_dir/
+          images/   ← RGB input images (*.jpg, *.png)
+          targets/  ← Pre-encoded RGB depth targets (*.png)
+
+    The target RGB is loaded directly as [3, H, W] in [0, 1] without
+    any depth-to-RGB conversion.
+    """
+
+    TASK_TYPE = "depth"
+
+    def _scan(self) -> None:
+        img_dir = self.root_dir / "images"
+        target_dir = self.root_dir / "targets"
+        if not img_dir.exists():
+            logger.warning(f"Images directory not found: {img_dir}")
+            return
+        if not target_dir.exists():
+            logger.warning(f"Targets directory not found: {target_dir}")
+            return
+        for img_path in sorted(img_dir.iterdir()):
+            if img_path.suffix not in (".jpg", ".jpeg", ".png"):
+                continue
+            target_path = target_dir / (img_path.stem + ".png")
+            if not target_path.exists():
+                target_path = target_dir / (img_path.stem + ".jpg")
+            if target_path.exists():
+                self.samples.append({"image": img_path, "target": target_path})
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        image = self._load_image(sample["image"])
+
+        target_img = Image.open(sample["target"]).convert("RGB")
+        if target_img.size != (self.resolution, self.resolution):
+            target_img = target_img.resize(
+                (self.resolution, self.resolution), Image.LANCZOS
+            )
+        target_rgb = _pil_to_tensor(target_img).float() / 255.0
+
+        prompt = PromptBuilder.build_depth_prompt()
+        return self._tag_task({"prompt": prompt, "image": image, "target_rgb": target_rgb})
+
+
 def build_dataset(
     task: str,
     root_dir: str,
@@ -1690,6 +1748,7 @@ def build_dataset(
         "flyingthings3d": FlyingThings3DDataset,
         "mapillary": MapillaryVistasDataset,
         "nuscenes": nuScenesDataset,
+        "preencoded_depth": PreEncodedDepthDataset,
     }
     if task not in registry:
         raise ValueError(f"Unknown task: {task}. Choose from: {list(registry.keys())}")
@@ -1718,5 +1777,6 @@ __all__ = [
     "FlyingThings3DDataset",
     "MapillaryVistasDataset",
     "nuScenesDataset",
+    "PreEncodedDepthDataset",
     "build_dataset",
 ]
