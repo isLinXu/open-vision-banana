@@ -252,6 +252,37 @@ VISION_BANANA_PAPER_ALIGNMENT_REPORT_v2.md
 VISION_BANANA_FULL_ALIGNMENT_CHECK.md
 VISION_BANANA_ALIGNMENT_EXECUTION_REPORT.md
 
+# Temporary diagnostic / status reports (auto-generated, not code)
+CURRENT_STATUS_REPORT.md
+DATASET_EVALUATION_GAP_ANALYSIS.md
+DATASET_RESEARCH_REPORT.md
+DIT_VS_UNET_CONTROL_EXPERIMENT.md
+EXPERIMENTAL_VALIDATION_REPORT.md
+GENERATION_DATA_BUILDER_REPORT.md
+MATURITY_IMPROVEMENT_REPORT_v*.md
+MPS_VALIDATION_EXPERIMENT_PLAN.md
+PROJECT_EXTENSION_SUMMARY.md
+TRAINING_SCRIPT_V7_DESIGN.md
+VISION_BANANA_ALIGNMENT_AND_TRAINING_DIAGNOSIS.md
+VISION_BANANA_ALIGNMENT_COMPREHENSIVE_DIAGNOSIS_*.md
+VISION_BANANA_PAPER_ALIGNMENT.md
+VISION_BANANA_PAPER_ALIGNMENT_REPORT_v*.md
+
+# Migration guide artifacts (planning docs, not source code)
+SERVER_MIGRATION_GUIDE.docx
+SERVER_MIGRATION_GUIDE.md
+SERVER_MIGRATION_GUIDE.base.docx
+SERVER_MIGRATION_GUIDE.converted.md
+migration_guide_ch*.md
+plan_server_migration.md
+
+# Feasibility / PRD docs (not source code)
+docs/feasibility_assessment_report.md
+docs/stage1_prd_gap_analysis.md
+
+# Generated analysis images (can be regenerated)
+dit_vs_unet_baseline_analysis.png
+
 # Intermediate plan files (superseded by plan_alignment_v2.md and alignment commits)
 plan.md
 plan_alignment_implementation.md
