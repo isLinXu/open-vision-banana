@@ -105,11 +105,29 @@ class ModelConfig:
     description: str = ""
 
 
-# ─── Registry ───────────────────────────────────────────────────────────────
+# ─── Registry (lazy initialization) ───────────────────────────────────────
 
-REGISTRY: dict[str, ModelConfig] = {
+# Store factory functions instead of instantiated ModelConfig objects.
+# Configs are created on first access via get_model_config(), reducing import
+# overhead and enabling future dynamic registration without touching this file.
+_REGISTRY_FACTORIES: dict[str, callable] = {}
 
-    "sd15": ModelConfig(
+# Cache for already-instantiated configs
+_REGISTRY_CACHE: dict[str, ModelConfig] = {}
+
+
+def _register_model(name: str, factory: callable) -> None:
+    """Register a model config factory."""
+    _REGISTRY_FACTORIES[name] = factory
+
+
+def _build_registry() -> None:
+    """Populate factory registry. Called once at module init."""
+    # Only register once
+    if _REGISTRY_FACTORIES:
+        return
+
+    _register_model("sd15", lambda: ModelConfig(
         name="sd15",
         model_id="runwayml/stable-diffusion-v1-5",
         family="sd15",
@@ -127,9 +145,9 @@ REGISTRY: dict[str, ModelConfig] = {
             "ff.net.0.proj", "ff.net.2",
         ],
         description="Stable Diffusion 1.5 (860M UNet) — lightweight, widely compatible",
-    ),
+    ))
 
-    "sd2": ModelConfig(
+    _register_model("sd2", lambda: ModelConfig(
         name="sd2",
         model_id="stabilityai/stable-diffusion-2-1",
         family="sd2",
@@ -147,9 +165,9 @@ REGISTRY: dict[str, ModelConfig] = {
             "ff.net.0.proj", "ff.net.2",
         ],
         description="Stable Diffusion 2.1 (866M UNet) — improved text understanding",
-    ),
+    ))
 
-    "ssd-1b": ModelConfig(
+    _register_model("ssd-1b", lambda: ModelConfig(
         name="ssd-1b",
         model_id="segmind/SSD-1B",
         family="sdxl",
@@ -163,9 +181,9 @@ REGISTRY: dict[str, ModelConfig] = {
         default_resolution=256,
         default_guidance_scale=2.0,
         description="SSD-1B (1.3B UNet) — distilled SDXL, best quality/memory tradeoff",
-    ),
+    ))
 
-    "sdxl": ModelConfig(
+    _register_model("sdxl", lambda: ModelConfig(
         name="sdxl",
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
         family="sdxl",
@@ -179,9 +197,9 @@ REGISTRY: dict[str, ModelConfig] = {
         default_resolution=256,
         default_guidance_scale=2.0,
         description="SDXL (2.6B UNet) — full capacity, needs ≥16GB VRAM",
-    ),
+    ))
 
-    "sdxl-turbo": ModelConfig(
+    _register_model("sdxl-turbo", lambda: ModelConfig(
         name="sdxl-turbo",
         model_id="stabilityai/sdxl-turbo",
         family="sdxl",
@@ -193,21 +211,21 @@ REGISTRY: dict[str, ModelConfig] = {
         memory_budget_gb=7.0,
         pipeline_class="StableDiffusionXLPipeline",
         default_resolution=256,
-        default_guidance_scale=0.0,  # Turbo: no CFG
+        default_guidance_scale=0.0,
         default_num_inference_steps=4,
         description="SDXL Turbo (2.6B UNet) — 1-4 step generation, no CFG",
-    ),
+    ))
 
-    "flux-dev": ModelConfig(
+    _register_model("flux-dev", lambda: ModelConfig(
         name="flux-dev",
         model_id="black-forest-labs/FLUX.1-dev",
         family="flux",
         backbone_type="transformer",
         num_text_encoders=2,
-        needs_added_cond_kwargs=False,  # FLUX uses different conditioning
+        needs_added_cond_kwargs=False,
         cross_attention_dim=3072,
         vae_scaling_factor=0.3611,
-        vae_downsample_factor=16,  # FLUX VAE has 16x downsample
+        vae_downsample_factor=16,
         memory_budget_gb=24.0,
         pipeline_class="FluxPipeline",
         default_resolution=512,
@@ -218,13 +236,12 @@ REGISTRY: dict[str, ModelConfig] = {
             "to_q", "to_k", "to_v", "to_out.0",
             "proj_in", "proj_out",
             "ff.net.0.proj", "ff.net.2",
-            # FLUX transformer also has:
             "to_q_context", "to_k_context", "to_v_context", "to_out.0_context",
         ],
         description="FLUX.1-dev (12B transformer) — state-of-the-art, needs ≥24GB VRAM",
-    ),
+    ))
 
-    "flux-schnell": ModelConfig(
+    _register_model("flux-schnell", lambda: ModelConfig(
         name="flux-schnell",
         model_id="black-forest-labs/FLUX.1-schnell",
         family="flux",
@@ -248,11 +265,9 @@ REGISTRY: dict[str, ModelConfig] = {
             "to_q_context", "to_k_context", "to_v_context", "to_out.0_context",
         ],
         description="FLUX.1-schnell (12B) — 4-step generation, Apache-2.0",
-    ),
+    ))
 
-    # ──── New DiT-based models (diffusers 0.38+) ────
-
-    "qwen-image": ModelConfig(
+    _register_model("qwen-image", lambda: ModelConfig(
         name="qwen-image",
         model_id="Qwen/Qwen-Image",
         family="qwen-image",
@@ -260,7 +275,7 @@ REGISTRY: dict[str, ModelConfig] = {
         num_text_encoders=1,
         needs_added_cond_kwargs=False,
         cross_attention_dim=4096,
-        vae_scaling_factor=None,  # read from vae.config
+        vae_scaling_factor=None,
         vae_downsample_factor=8,
         memory_budget_gb=20.0,
         pipeline_class="QwenImagePipeline",
@@ -279,9 +294,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_attention_mask=True,
         vae_has_latent_dist=False,
         description="Qwen-Image — text rendering, CFG, Apache-2.0",
-    ),
+    ))
 
-    "z-image": ModelConfig(
+    _register_model("z-image", lambda: ModelConfig(
         name="z-image",
         model_id="Z-a-o/Z-Image-Turbo",
         family="z-image",
@@ -305,9 +320,9 @@ REGISTRY: dict[str, ModelConfig] = {
         ],
         vae_has_latent_dist=False,
         description="Z-Image-Turbo (6B) — Alibaba, single-stream DiT, Apache-2.0",
-    ),
+    ))
 
-    "sana-600m": ModelConfig(
+    _register_model("sana-600m", lambda: ModelConfig(
         name="sana-600m",
         model_id="Efficient-Large-Model/SANA_600M_1024px_diffusers",
         family="sana",
@@ -331,9 +346,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_attention_mask=True,
         vae_has_latent_dist=False,
         description="SANA-600M — NVIDIA, linear DiT, efficient 1024px",
-    ),
+    ))
 
-    "sana-1600m": ModelConfig(
+    _register_model("sana-1600m", lambda: ModelConfig(
         name="sana-1600m",
         model_id="Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers",
         family="sana",
@@ -357,9 +372,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_attention_mask=True,
         vae_has_latent_dist=False,
         description="SANA-1600M — NVIDIA, linear DiT, higher quality 1024px",
-    ),
+    ))
 
-    "lumina2": ModelConfig(
+    _register_model("lumina2", lambda: ModelConfig(
         name="lumina2",
         model_id="Alpha-VLLM/Lumina-Image-2.0",
         family="lumina2",
@@ -384,9 +399,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_attention_mask=True,
         vae_has_latent_dist=False,
         description="Lumina-Image-2.0 (2B) — Alpha-VLLM, flow DiT",
-    ),
+    ))
 
-    "chroma": ModelConfig(
+    _register_model("chroma", lambda: ModelConfig(
         name="chroma",
         model_id="lodestones/Chroma1-HD",
         family="chroma",
@@ -411,9 +426,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_position_ids=True,
         vae_has_latent_dist=True,
         description="Chroma1-HD (8.9B) — FLUX.1-schnell base, Apache-2.0",
-    ),
+    ))
 
-    "flux2-dev": ModelConfig(
+    _register_model("flux2-dev", lambda: ModelConfig(
         name="flux2-dev",
         model_id="black-forest-labs/FLUX.2-dev",
         family="flux2",
@@ -440,9 +455,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_position_ids=True,
         vae_has_latent_dist=True,
         description="FLUX.2-dev — Black Forest Labs, next-gen DiT",
-    ),
+    ))
 
-    "cogview4": ModelConfig(
+    _register_model("cogview4", lambda: ModelConfig(
         name="cogview4",
         model_id="THUDM/CogView4-6B",
         family="cogview4",
@@ -466,9 +481,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_size_kwargs=True,
         vae_has_latent_dist=False,
         description="CogView4-6B — THUDM/Tsinghua, Apache-2.0",
-    ),
+    ))
 
-    "aura-flow": ModelConfig(
+    _register_model("aura-flow", lambda: ModelConfig(
         name="aura-flow",
         model_id="fal/AuraFlow",
         family="aura-flow",
@@ -493,11 +508,9 @@ REGISTRY: dict[str, ModelConfig] = {
         ],
         vae_has_latent_dist=False,
         description="AuraFlow — fal.ai, MMDiT, Apache-2.0",
-    ),
+    ))
 
-    # ──── SD3: Triple text encoder MMDiT ────
-
-    "sd3": ModelConfig(
+    _register_model("sd3", lambda: ModelConfig(
         name="sd3",
         model_id="stabilityai/stable-diffusion-3-medium",
         family="sd3",
@@ -505,7 +518,7 @@ REGISTRY: dict[str, ModelConfig] = {
         num_text_encoders=3,
         needs_added_cond_kwargs=False,
         cross_attention_dim=4096,
-        vae_scaling_factor=None,  # read from vae.config
+        vae_scaling_factor=None,
         vae_downsample_factor=8,
         memory_budget_gb=20.0,
         pipeline_class="StableDiffusion3Pipeline",
@@ -524,11 +537,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_pooled_projections=True,
         needs_attention_mask=True,
         description="Stable Diffusion 3 (2B MMDiT) — triple encoder (CLIP×2 + T5), flow matching",
-    ),
+    ))
 
-    # ──── PixArt: T5 encoder, DiT with resolution added_cond_kwargs ────
-
-    "pixart-alpha": ModelConfig(
+    _register_model("pixart-alpha", lambda: ModelConfig(
         name="pixart-alpha",
         model_id="PixArt-alpha/PixArt-XL-2-1024-MS",
         family="pixart",
@@ -555,9 +566,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_attention_mask=True,
         needs_added_cond_kwargs_dit=True,
         description="PixArt-Alpha (600M DiT) — T5 encoder, 1024px, efficient training",
-    ),
+    ))
 
-    "pixart-sigma": ModelConfig(
+    _register_model("pixart-sigma", lambda: ModelConfig(
         name="pixart-sigma",
         model_id="PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
         family="pixart",
@@ -584,11 +595,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_attention_mask=True,
         needs_added_cond_kwargs_dit=True,
         description="PixArt-Sigma (600M DiT) — stronger text rendering, 4K-capable",
-    ),
+    ))
 
-    # ──── Kolors: ChatGLM text encoder + UNet ────
-
-    "kolors": ModelConfig(
+    _register_model("kolors", lambda: ModelConfig(
         name="kolors",
         model_id="Kwai-Kolors/Kolors",
         family="kolors",
@@ -612,11 +621,9 @@ REGISTRY: dict[str, ModelConfig] = {
             "ff.net.0.proj", "ff.net.2",
         ],
         description="Kolors (2.6B UNet) — Kuaishou, ChatGLM-6B text encoder, Chinese-friendly",
-    ),
+    ))
 
-    # ──── HunyuanDiT: Bilingual CLIP + mT5, DiT ────
-
-    "hunyuandit": ModelConfig(
+    _register_model("hunyuandit", lambda: ModelConfig(
         name="hunyuandit",
         model_id="Tencent-Hunyuan/HunyuanDiT",
         family="hunyuandit",
@@ -645,11 +652,9 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_image_meta_size=True,
         vae_has_latent_dist=False,
         description="HunyuanDiT (1.5B) — Tencent, bilingual CLIP+mT5, Chinese+English",
-    ),
+    ))
 
-    # ──── Kandinsky3: FLAN-UL2 encoder, UNet ────
-
-    "kandinsky3": ModelConfig(
+    _register_model("kandinsky3", lambda: ModelConfig(
         name="kandinsky3",
         model_id="ai-forever/Kandinsky3.1",
         family="kandinsky3",
@@ -674,11 +679,9 @@ REGISTRY: dict[str, ModelConfig] = {
         ],
         needs_attention_mask=True,
         description="Kandinsky3 (3B UNet) — Sber, FLAN-UL2 encoder, Apache-2.0",
-    ),
+    ))
 
-    # ──── SanaSprint: T5 encoder, 2-4 step generation ────
-
-    "sana-sprint": ModelConfig(
+    _register_model("sana-sprint", lambda: ModelConfig(
         name="sana-sprint",
         model_id="Efficient-Large-Model/SanaSprint",
         family="sana-sprint",
@@ -703,14 +706,56 @@ REGISTRY: dict[str, ModelConfig] = {
         needs_guidance_in_forward=True,
         vae_has_latent_dist=False,
         description="SanaSprint — NVIDIA, 2-4 step generation, ultra fast",
-    ),
-}
+    ))
+
+
+# Build factory registry at module import time (lightweight — just lambdas, no ModelConfig instances)
+_build_registry()
+
+
+# Public API: backward-compatible REGISTRY dict
+# Accessing REGISTRY keys triggers lazy instantiation
+class _LazyRegistry(dict):
+    """Dict that lazily instantiates ModelConfig on first value access."""
+
+    def __getitem__(self, key):
+        if key not in _REGISTRY_CACHE and key in _REGISTRY_FACTORIES:
+            _REGISTRY_CACHE[key] = _REGISTRY_FACTORIES[key]()
+        return _REGISTRY_CACHE[key]
+
+    def __contains__(self, key):
+        return key in _REGISTRY_FACTORIES
+
+    def __iter__(self):
+        return iter(_REGISTRY_FACTORIES)
+
+    def __len__(self):
+        return len(_REGISTRY_FACTORIES)
+
+    def keys(self):
+        return _REGISTRY_FACTORIES.keys()
+
+    def values(self):
+        for k in _REGISTRY_FACTORIES:
+            yield self[k]
+
+    def items(self):
+        for k in _REGISTRY_FACTORIES:
+            yield k, self[k]
+
+    def get(self, key, default=None):
+        if key in _REGISTRY_FACTORIES:
+            return self[key]
+        return default
+
+
+REGISTRY: dict[str, ModelConfig] = _LazyRegistry()
 
 
 def get_model_config(name: str) -> ModelConfig:
     """Look up a model config by name. Raises KeyError if not found."""
     if name not in REGISTRY:
-        available = ", ".join(sorted(REGISTRY.keys()))
+        available = ", ".join(sorted(list_models()))
         raise KeyError(
             f"Unknown model '{name}'. Available: {available}"
         )
@@ -724,7 +769,7 @@ def list_models() -> list[str]:
 
 def get_models_by_family(family: str) -> list[str]:
     """Return model names belonging to a family."""
-    return [k for k, v in REGISTRY.items() if v.family == family]
+    return [k for k in list_models() if get_model_config(k).family == family]
 
 
 def auto_select_model(memory_gb: float) -> str:
@@ -745,6 +790,7 @@ def auto_select_model(memory_gb: float) -> str:
         if memory_gb >= budget:
             return name
     return "sd15"  # fallback to smallest
+
 
 
 # ─── Pipeline loading ──────────────────────────────────────────────────────

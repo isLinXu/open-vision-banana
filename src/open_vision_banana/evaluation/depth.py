@@ -6,6 +6,10 @@ Standard metrics from the depth estimation literature:
 - RMSE: Root Mean Squared Error
 - RMSE_log: Root Mean Squared Log Error
 - δ<1.25, δ<1.25², δ<1.25³: Threshold accuracy
+
+Quantization-aware evaluation (P3 from v0.5.0 deep analysis):
+- Separates model prediction error from RGB encoding noise
+- Provides encoding_noise_baseline() for dynamic calibration
 """
 
 from __future__ import annotations
@@ -80,25 +84,80 @@ def depth_delta(
     return (ratio < threshold).float().mean().item()
 
 
+def encoding_noise_baseline(
+    gt: torch.Tensor,
+    colormap: str = "cube_edge",
+    num_samples: int = 64,
+    valid_mask: torch.Tensor | None = None,
+) -> float:
+    """Estimate the encoding noise floor from 8-bit RGB quantization.
+
+    Simulates the depth→RGB→depth roundtrip using the specified colormap
+    and quantizes to uint8 (round(rgb×255)/255). Returns the AbsRel
+    introduced purely by the encoding layer — this is a lower bound on
+    any end-to-end metric that uses RGB parameterization.
+
+    Args:
+        gt: Ground truth depth [B, 1, H, W] in meters.
+        colormap: Colormap name from DepthRGBMapper registry.
+        num_samples: Number of pixels to sample for speed (full tensor
+            can be expensive at high resolution).
+        valid_mask: Optional boolean mask for valid pixels.
+
+    Returns:
+        Estimated AbsRel (%) from quantization alone.
+    """
+    from ..core.depth_mapper import DepthRGBMapper
+
+    mapper = DepthRGBMapper(colormap=colormap)
+    pred = gt.squeeze(1)
+    if valid_mask is not None:
+        pred = pred[valid_mask]
+    nonzero = pred > 0
+    pred = pred[nonzero]
+    if pred.numel() == 0:
+        return 0.0
+
+    # Sample for efficiency if tensor is large
+    if pred.numel() > num_samples:
+        idx = torch.randperm(pred.numel())[:num_samples]
+        pred = pred.flatten()[idx]
+
+    # Add batch dimension [1, 1, N]
+    depth = pred.view(1, 1, -1)
+    rgb = mapper.depth_to_rgb(depth)
+    # Simulate uint8 quantization
+    rgb_q = (rgb * 255.0).round() / 255.0
+    recovered = mapper.rgb_to_depth(rgb_q).squeeze()
+    return (recovered - pred).abs().div(pred).mean().item()
+
+
 def evaluate_depth(
     pred: torch.Tensor,
     gt: torch.Tensor,
     valid_mask: torch.Tensor | None = None,
+    colormap: str | None = None,
 ) -> dict[str, float]:
     """Compute all standard depth evaluation metrics.
+
+    When ``colormap`` is provided, also estimates the encoding noise
+    baseline (AbsRel from 8-bit quantization) and reports
+    ``AbsRel_model`` = ``AbsRel`` − ``AbsRel_encoding``.
 
     Args:
         pred: Predicted depth [B, 1, H, W] in meters.
         gt: Ground truth depth [B, 1, H, W] in meters.
         valid_mask: Optional boolean mask for valid pixels.
+        colormap: Optional colormap name to estimate quantization noise.
 
     Returns:
-        Dictionary of metric name → value.
+        Dictionary of metric name → value. If colormap is provided,
+        includes ``AbsRel_encoding`` and ``AbsRel_model``.
     """
     pred = pred.squeeze(1)
     gt = gt.squeeze(1)
 
-    return {
+    result = {
         "AbsRel": depth_abs_rel(pred, gt, valid_mask),
         "SqRel": depth_sq_rel(pred, gt, valid_mask),
         "RMSE": depth_rmse(pred, gt, valid_mask),
@@ -108,5 +167,12 @@ def evaluate_depth(
         "δ<1.25³": depth_delta(pred, gt, 1.25 ** 3, valid_mask),
     }
 
+    if colormap is not None:
+        enc = encoding_noise_baseline(gt, colormap=colormap, valid_mask=valid_mask)
+        result["AbsRel_encoding"] = enc
+        result["AbsRel_model"] = max(0.0, result["AbsRel"] - enc)
 
-__all__ = ["evaluate_depth"]
+    return result
+
+
+__all__ = ["evaluate_depth", "encoding_noise_baseline"]
