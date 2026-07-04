@@ -87,8 +87,10 @@ class MixedVisionDataset(Dataset):
         """
         if self.generation_dataset is None or self.vision_ratio >= 1.0:
             return self.total_vision
-        # Avoid division-by-zero (already guarded by __init__ assertion)
-        return max(1, round(self.total_vision / self.vision_ratio))
+        # P1-19: cap epoch length so generation samples are not oversampled
+        effective_from_ratio = max(1, round(self.total_vision / self.vision_ratio))
+        gen_len = len(self.generation_dataset)
+        return min(effective_from_ratio, self.total_vision + gen_len)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         use_vision = (

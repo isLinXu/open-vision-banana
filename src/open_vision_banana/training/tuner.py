@@ -22,6 +22,11 @@ from torch.utils.data import Dataset as _Dataset
 from .checkpoint import CheckpointManager
 from .early_stopping import EarlyStopping
 from .logging import TrainingLogger
+from .optimization import (
+    SchedulerFactory,
+    compute_min_snr_weight,
+    sample_timesteps_logit_normal,
+)
 from .utils import EMAModel, VisionAugmentation, enable_gradient_checkpointing
 
 logger = logging.getLogger(__name__)
@@ -52,6 +57,11 @@ class VisionTaskDataset(_Dataset):
         "semantic": "Generate a semantic segmentation visualization of this image.",
         "instance": "Generate an instance segmentation visualization of this image.",
         "referring": "Generate a referring expression segmentation visualization of this image.",
+        "edge": "Generate an edge detection visualization of this image.",
+        "flow": "Generate an optical flow visualization of this image.",
+        "keypoint": "Generate a keypoint detection visualization of this image.",
+        "object_detection": "Generate an object detection visualization of this image.",
+        "depth_edge": "Generate a depth edge detection visualization of this image.",
     }
 
     DEFAULT_PROMPT = "Generate a visual understanding output for this image."
@@ -183,12 +193,28 @@ class InstructionTuner:
         use_gradient_checkpointing: bool = True,
         augmentation: VisionAugmentation | None = None,
         task: str = "depth",
+        channel_loss_weights: list[float] | torch.Tensor | None = None,
+        use_logit_normal_timesteps: bool = True,
+        use_min_snr: bool = True,
+        min_snr_gamma: float = 5.0,
+        cfg_dropout_rate: float = 0.1,
+        use_img2img_flow: bool = True,
+        flow_sigma: float = 0.0,
+        warmup_ratio: float | None = None,
     ) -> None:
         self.base_model = model
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
         self.lr = lr
         self.target_modules = target_modules or ["to_k", "to_v"]
+        self.channel_loss_weights = channel_loss_weights
+        self.use_logit_normal_timesteps = use_logit_normal_timesteps
+        self.use_min_snr = use_min_snr
+        self.min_snr_gamma = min_snr_gamma
+        self.cfg_dropout_rate = cfg_dropout_rate
+        self.use_img2img_flow = use_img2img_flow
+        self.flow_sigma = flow_sigma
+        self.warmup_ratio = warmup_ratio
         self.use_rslora = use_rslora
         self.peft_model = None
         self.optimizer = None
@@ -765,18 +791,53 @@ class InstructionTuner:
         target_pixels = target_rgb * 2.0 - 1.0  # [B, 3, H, W]
         target_latents = self._encode_latents(target_pixels)  # [B, 16, H/8, W/8]
 
-        # ── Flow matching in latent space ────────────────────────────────
-        timesteps = torch.rand(batch_size, device=device)  # [B]
-        noise = torch.randn_like(target_latents)
+        input_latents = None
+        if input_images is not None:
+            input_latents = self._encode_latents(input_images)
 
+        # ── Flow matching in latent space ────────────────────────────────
+        if self.use_logit_normal_timesteps:
+            timesteps = sample_timesteps_logit_normal(batch_size, device)
+        else:
+            timesteps = torch.rand(batch_size, device=device)
+
+        noise = torch.randn_like(target_latents)
         t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
-        noisy_latents = (1.0 - t_b) * target_latents + t_b * noise  # z_t
-        velocity_target = target_latents - noise  # v*
+
+        if self.use_img2img_flow and input_latents is not None:
+            if input_latents.shape != target_latents.shape:
+                input_latents = torch.nn.functional.adaptive_avg_pool2d(
+                    input_latents, target_latents.shape[-2:]
+                )
+            if self.flow_sigma > 0:
+                noise_term = self.flow_sigma * (t_b * (1.0 - t_b)).sqrt() * noise
+            else:
+                noise_term = 0.0
+            noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
+            velocity_target = target_latents - input_latents
+        else:
+            noisy_latents = (1.0 - t_b) * target_latents + t_b * noise
+            velocity_target = target_latents - noise
 
         # ── P0-1: Text conditioning ───────────────────────────────────────
         text_cond = self._encode_text(prompts, device)
         prompt_embeds = text_cond["prompt_embeds"]  # [B, seq_len, D_t5]
         pooled_prompt_embeds = text_cond["pooled_prompt_embeds"]  # [B, D_clip] | None
+
+        if self.cfg_dropout_rate > 0:
+            uncond = self._encode_text([""] * batch_size, device)
+            drop_mask = torch.rand(batch_size, device=device) < self.cfg_dropout_rate
+            if drop_mask.any():
+                drop = drop_mask.view(-1, *([1] * (prompt_embeds.dim() - 1)))
+                prompt_embeds = torch.where(drop, uncond["prompt_embeds"], prompt_embeds)
+                if (
+                    pooled_prompt_embeds is not None
+                    and uncond.get("pooled_prompt_embeds") is not None
+                ):
+                    drop_p = drop_mask.view(-1, *([1] * (pooled_prompt_embeds.dim() - 1)))
+                    pooled_prompt_embeds = torch.where(
+                        drop_p, uncond["pooled_prompt_embeds"], pooled_prompt_embeds
+                    )
 
         # ── Forward pass — use probed signature ────────────────────────
         # The forward mode was detected at init time via _probe_forward_signature,
@@ -816,8 +877,36 @@ class InstructionTuner:
             if predicted_velocity.shape[1] != velocity_target.shape[1]:
                 predicted_velocity = predicted_velocity[:, : velocity_target.shape[1]]
 
-        loss = nn.functional.mse_loss(predicted_velocity, velocity_target)
-        return loss
+        return self._compute_flow_loss(predicted_velocity, velocity_target, timesteps)
+
+    def _compute_flow_loss(
+        self,
+        predicted_velocity: torch.Tensor,
+        velocity_target: torch.Tensor,
+        timesteps: torch.Tensor,
+    ) -> torch.Tensor:
+        """Per-channel variance-normalised MSE with optional Min-SNR weighting."""
+        sq_err = (predicted_velocity - velocity_target) ** 2
+
+        if self.channel_loss_weights is not None:
+            weights = torch.as_tensor(
+                self.channel_loss_weights,
+                dtype=sq_err.dtype,
+                device=sq_err.device,
+            ).view(1, -1, 1, 1)
+            per_sample = (sq_err * weights).sum(dim=(1, 2, 3)) / (
+                weights.sum() * sq_err.shape[2] * sq_err.shape[3]
+            )
+        else:
+            channel_var = (
+                (velocity_target - velocity_target.mean(dim=(0, 2, 3), keepdim=True)) ** 2
+            ).mean(dim=(0, 2, 3)).clamp(min=1e-8)
+            per_sample = (sq_err / channel_var.view(1, -1, 1, 1)).mean(dim=(1, 2, 3))
+
+        if self.use_min_snr:
+            snr_weights = compute_min_snr_weight(timesteps, gamma=self.min_snr_gamma)
+            return (per_sample * snr_weights).mean()
+        return per_sample.mean()
 
     def _evaluate(self, val_dataset: _Dataset) -> float:
         """Evaluate on validation set and return average loss."""
@@ -847,34 +936,14 @@ class InstructionTuner:
         total_steps: int,
         warmup_steps: int,
     ) -> torch.optim.lr_scheduler.LRScheduler:
-        """Create learning rate scheduler with linear warmup."""
-        from torch.optim.lr_scheduler import (
-            CosineAnnealingLR,
-            LinearLR,
-            SequentialLR,
+        """Create LR scheduler via SchedulerFactory (P2-19)."""
+        return SchedulerFactory.create(
+            self.optimizer,
+            total_steps=total_steps,
+            warmup_steps=warmup_steps if warmup_steps > 0 else None,
+            warmup_ratio=self.warmup_ratio if self.warmup_ratio is not None else 0.1,
+            scheduler_type=scheduler_type,
         )
-
-        if warmup_steps > 0:
-            warmup = LinearLR(self.optimizer, start_factor=0.01, total_iters=warmup_steps)
-        else:
-            warmup = None
-
-        if scheduler_type == "cosine":
-            main_scheduler = CosineAnnealingLR(
-                self.optimizer, T_max=max(total_steps - warmup_steps, 1)
-            )
-        else:
-            main_scheduler = LinearLR(
-                self.optimizer, total_iters=max(total_steps - warmup_steps, 1)
-            )
-
-        if warmup is not None:
-            return SequentialLR(
-                self.optimizer,
-                schedulers=[warmup, main_scheduler],
-                milestones=[warmup_steps],
-            )
-        return main_scheduler
 
 
 def _collate_fn(batch: list[dict]) -> dict:

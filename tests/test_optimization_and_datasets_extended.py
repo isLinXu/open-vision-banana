@@ -182,6 +182,7 @@ class TestAdvancedAugmentation:
             flip_prob=0.0, scale_prob=0.0, brightness_prob=0.0,
             color_jitter_prob=0.0, gaussian_noise_prob=0.0,
             cutout_prob=1.0, cutout_size=0.5,
+            depth_aware=False,
         )
         image = torch.ones(3, 8, 8)
         target = torch.ones(3, 8, 8)

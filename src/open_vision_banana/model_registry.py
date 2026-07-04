@@ -33,6 +33,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -715,13 +716,16 @@ _build_registry()
 
 # Public API: backward-compatible REGISTRY dict
 # Accessing REGISTRY keys triggers lazy instantiation
+_registry_lock = threading.Lock()
+
 class _LazyRegistry(dict):
     """Dict that lazily instantiates ModelConfig on first value access."""
 
     def __getitem__(self, key):
-        if key not in _REGISTRY_CACHE and key in _REGISTRY_FACTORIES:
-            _REGISTRY_CACHE[key] = _REGISTRY_FACTORIES[key]()
-        return _REGISTRY_CACHE[key]
+        with _registry_lock:
+            if key not in _REGISTRY_CACHE and key in _REGISTRY_FACTORIES:
+                _REGISTRY_CACHE[key] = _REGISTRY_FACTORIES[key]()
+            return _REGISTRY_CACHE[key]
 
     def __contains__(self, key):
         return key in _REGISTRY_FACTORIES

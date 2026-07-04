@@ -132,12 +132,16 @@ class NativeTrainer(TrainerInterface):
             else:
                 device = "cpu"
         self.device = torch.device(device)
-        self.use_amp = use_amp and device != "cpu"
+        # P0-4: MPS supports bfloat16 autocast but not GradScaler.
+        self.use_autocast = use_amp and device != "cpu"
+        self.use_grad_scaler = use_amp and device == "cuda"
+        # Backward-compatible alias — callers checking use_amp mean autocast.
+        self.use_amp = self.use_autocast
         self.max_grad_norm = max_grad_norm
         self.gradient_accumulation_steps = max(1, gradient_accumulation_steps)
-        # Use device type for GradScaler; MPS supports float16 autocast
-        # but does not require GradScaler. Only CUDA uses full AMP scaling.
-        self.scaler = torch.amp.GradScaler(self.device.type, enabled=self.use_amp)
+        self.scaler = torch.amp.GradScaler(
+            self.device.type, enabled=self.use_grad_scaler
+        )
 
     def wrap_model(self, model: nn.Module) -> nn.Module:
         return model.to(self.device)
@@ -217,9 +221,35 @@ class NativeTrainer(TrainerInterface):
         checkpoint_path: str,
     ) -> dict:
         ckpt_dir = Path(checkpoint_path)
-        model.load_state_dict(torch.load(ckpt_dir / "model.pt", weights_only=True))
-        optimizer.load_state_dict(torch.load(ckpt_dir / "optimizer.pt", weights_only=True))
-        logger.info(f"Checkpoint loaded from {ckpt_dir}")
+        # P1-15: PEFT checkpoints use adapter layout, not flat model.pt
+        try:
+            from peft import PeftModel
+
+            if isinstance(model, PeftModel):
+                loaded = PeftModel.from_pretrained(
+                    model.base_model.model,
+                    str(ckpt_dir),
+                )
+                model.load_state_dict(loaded.state_dict(), strict=False)
+                del loaded
+                logger.info(f"PEFT checkpoint loaded from {ckpt_dir}")
+            elif (ckpt_dir / "model.pt").exists():
+                model.load_state_dict(
+                    torch.load(ckpt_dir / "model.pt", weights_only=False)
+                )
+                logger.info(f"Checkpoint loaded from {ckpt_dir / 'model.pt'}")
+            elif (ckpt_dir / "adapter_config.json").exists():
+                loaded = PeftModel.from_pretrained(model, str(ckpt_dir))
+                model.load_state_dict(loaded.state_dict(), strict=False)
+                del loaded
+                logger.info(f"PEFT adapter loaded from {ckpt_dir}")
+        except Exception as e:
+            logger.warning(f"Checkpoint load failed: {e}")
+
+        if optimizer is not None and (ckpt_dir / "optimizer.pt").exists():
+            optimizer.load_state_dict(
+                torch.load(ckpt_dir / "optimizer.pt", weights_only=True)
+            )
         return {}
 
     def is_main_process(self) -> bool:

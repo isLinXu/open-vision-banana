@@ -166,13 +166,12 @@ class CheckpointManager:
         except Exception as e:
             logger.warning(f"PEFT load failed (non-fatal): {e}")
 
-        # Load EMA shadow params
-        # Use weights_only=False for EMA because shadow_params is a plain dict
-        # of Tensors, which is safe but not accepted by weights_only=True.
+        # Load EMA shadow params with key/shape validation (P1-16)
         if ema is not None:
             ema_path = ckpt_dir / "ema_weights.pt"
             if ema_path.exists():
-                ema.shadow_params = torch.load(ema_path, weights_only=False)
+                loaded_ema = torch.load(ema_path, weights_only=False)
+                self._apply_ema_shadow(ema, loaded_ema, ckpt_dir)
                 logger.info(f"EMA weights loaded from {ema_path}")
 
         # Load optimizer state
@@ -202,6 +201,49 @@ class CheckpointManager:
 
         logger.info(f"Checkpoint loaded from {ckpt_dir}")
         return metadata
+
+    @staticmethod
+    def _apply_ema_shadow(ema, loaded: dict, ckpt_dir: Path) -> None:
+        """Merge EMA shadow params with validation warnings for mismatched keys."""
+        if not ema.shadow_params:
+            ema.shadow_params = loaded
+            return
+
+        expected = set(ema.shadow_params.keys())
+        loaded_keys = set(loaded.keys())
+        missing = expected - loaded_keys
+        unexpected = loaded_keys - expected
+        if missing:
+            logger.warning(
+                "EMA checkpoint %s missing %d keys (first 5: %s)",
+                ckpt_dir,
+                len(missing),
+                sorted(missing)[:5],
+            )
+        if unexpected:
+            logger.warning(
+                "EMA checkpoint %s has %d unexpected keys (first 5: %s)",
+                ckpt_dir,
+                len(unexpected),
+                sorted(unexpected)[:5],
+            )
+        shape_mismatch = []
+        merged = dict(ema.shadow_params)
+        for name, tensor in loaded.items():
+            if name not in merged:
+                continue
+            if merged[name].shape != tensor.shape:
+                shape_mismatch.append(name)
+                continue
+            merged[name] = tensor
+        if shape_mismatch:
+            logger.warning(
+                "EMA checkpoint %s shape mismatch on %d keys (first 5: %s)",
+                ckpt_dir,
+                len(shape_mismatch),
+                shape_mismatch[:5],
+            )
+        ema.shadow_params = merged
 
     @staticmethod
     def _ckpt_step(path: Path) -> int:

@@ -20,6 +20,29 @@ logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────
+# Flow-matching training helpers (v7 / paper-aligned)
+# ──────────────────────────────────────────────────────────────
+
+def sample_timesteps_logit_normal(
+    batch_size: int,
+    device: torch.device,
+    mean: float = 0.0,
+    std: float = 1.0,
+) -> torch.Tensor:
+    """Sample timesteps from a logit-normal distribution (SD3/FLUX style)."""
+    noise = torch.randn(batch_size, device=device) * std + mean
+    return torch.sigmoid(noise)
+
+
+def compute_min_snr_weight(timesteps: torch.Tensor, gamma: float = 5.0) -> torch.Tensor:
+    """Min-SNR weighting for flow-matching timesteps."""
+    t = timesteps.clamp(1e-4, 1.0 - 1e-4)
+    snr = (t ** 2) / ((1.0 - t) ** 2 + 1e-10)
+    min_snr = torch.clamp(snr, max=gamma)
+    return min_snr / (snr + 1e-10)
+
+
+# ──────────────────────────────────────────────────────────────
 # Memory Management
 # ──────────────────────────────────────────────────────────────
 
@@ -424,7 +447,8 @@ class AdvancedAugmentation:
             image = (image + noise).clamp(-1.0, 1.0)
 
         # Cutout (random erasing on input only)
-        if np.random.random() < self.cutout_prob:
+        # P1-18: depth-aware mode preserves input semantics — skip zero-fill cutout
+        if not self.depth_aware and np.random.random() < self.cutout_prob:
             image = self._cutout(image)
 
         return image, target
@@ -473,4 +497,6 @@ __all__ = [
     "create_optimized_dataloader",
     "SchedulerFactory",
     "AdvancedAugmentation",
+    "sample_timesteps_logit_normal",
+    "compute_min_snr_weight",
 ]
