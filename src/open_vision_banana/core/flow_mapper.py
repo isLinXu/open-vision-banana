@@ -26,7 +26,16 @@ class FlowRGBMapper:
     Decoding: RGB -> HSV -> flow.
     """
 
-    def __init__(self, max_flow: float = 20.0) -> None:
+    DEFAULT_MAX_FLOW = 20.0
+
+    def __init__(self, max_flow: float = DEFAULT_MAX_FLOW) -> None:
+        """Initialize the FlowRGBMapper.
+
+        Args:
+            max_flow: Maximum expected flow magnitude. Used to normalize
+                saturation in the HSV encoding. Values above this are clipped.
+                Defaults to 20.0 (typical for standard optical flow datasets).
+        """
         self.max_flow = max_flow
 
     def _hsv_to_rgb(self, h: torch.Tensor, s: torch.Tensor, v: torch.Tensor) -> torch.Tensor:

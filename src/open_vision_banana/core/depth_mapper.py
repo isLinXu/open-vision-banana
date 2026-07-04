@@ -227,12 +227,23 @@ class DepthRGBMapper:
 
         rgb = rgb_flat.reshape(*orig_shape, 3)
 
-        if rgb.dim() == 6:
-            rgb = rgb.permute(0, 5, 1, 2, 3, 4).squeeze(2)
-        elif rgb.dim() == 5:
-            rgb = rgb.permute(0, 4, 1, 2, 3).squeeze(2)
-        elif rgb.dim() == 4:
+        # P1-7: robust dimension handling — squeeze singleton dims between batch
+        # and the RGB channel, but only until we reach 4D or 3D.
+        squeeze_dims = [i for i in range(1, rgb.dim() - 1) if rgb.shape[i] == 1]
+        for i in reversed(squeeze_dims):
+            if rgb.dim() <= 4:
+                break
+            rgb = rgb.squeeze(i)
+
+        if rgb.dim() == 4:
             rgb = rgb.permute(0, 3, 1, 2)
+        elif rgb.dim() == 3:
+            rgb = rgb.permute(2, 0, 1)
+        else:
+            raise ValueError(
+                f"Unexpected RGB shape after reshape: {rgb.shape}. "
+                f"Expected 3D or 4D after squeezing singleton dims, got {rgb.dim()}D."
+            )
 
         return rgb.clamp(0.0, 1.0)
 

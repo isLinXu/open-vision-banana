@@ -57,47 +57,70 @@ class KeypointRGBMapper:
         num_keypoints: int = 17,
         dot_radius: int = 3,
         colors: torch.Tensor | None = None,
+        output_height: int = 512,
+        output_width: int = 512,
     ) -> None:
         self.num_keypoints = num_keypoints
         self.dot_radius = dot_radius
         self.colors = colors if colors is not None else COCO_KEYPOINT_COLORS[:num_keypoints]
+        self.output_height = output_height
+        self.output_width = output_width
 
     def keypoints_to_rgb(
         self,
         keypoints: torch.Tensor,
         visibility: torch.Tensor | None = None,
+        output_size: tuple[int, int] | None = None,
     ) -> torch.Tensor:
         """Encode keypoints to RGB visualization.
 
         Args:
             keypoints: [B, N, 2] normalized coordinates in [0, 1] (x, y).
             visibility: [B, N] bool, True = visible. If None, all visible.
+            output_size: Optional (H, W) override for the output resolution.
+                Defaults to ``self.output_height`` / ``self.output_width``.
 
         Returns:
             RGB tensor [B, 3, H, W] in [0, 1].
         """
         B, N, _ = keypoints.shape
-        H, W = 512, 512  # fixed resolution for visualization
-        rgb = torch.zeros(B, 3, H, W)
+        H, W = output_size if output_size is not None else (self.output_height, self.output_width)
+        device = keypoints.device
+        rgb = torch.zeros(B, 3, H, W, device=device)
 
         if visibility is None:
-            visibility = torch.ones(B, N, dtype=torch.bool)
+            visibility = torch.ones(B, N, dtype=torch.bool, device=device)
 
-        for b in range(B):
-            for n in range(N):
-                if not visibility[b, n]:
-                    continue
-                x = int(keypoints[b, n, 0].item() * W)
-                y = int(keypoints[b, n, 1].item() * H)
-                color = self.colors[n]
+        colors = self.colors.to(device)
+        px = (keypoints[..., 0] * W).long().clamp(0, W - 1)
+        py = (keypoints[..., 1] * H).long().clamp(0, H - 1)
 
-                # Draw filled circle
-                for dy in range(-self.dot_radius, self.dot_radius + 1):
-                    for dx in range(-self.dot_radius, self.dot_radius + 1):
-                        if dx * dx + dy * dy <= self.dot_radius * self.dot_radius:
-                            py, px = y + dy, x + dx
-                            if 0 <= py < H and 0 <= px < W:
-                                rgb[b, :, py, px] = color
+        r = self.dot_radius
+        dy = torch.arange(-r, r + 1, device=device)
+        dx = torch.arange(-r, r + 1, device=device)
+        dy_grid, dx_grid = torch.meshgrid(dy, dx, indexing="ij")
+        circle_mask = dx_grid ** 2 + dy_grid ** 2 <= r * r
+        offsets = torch.stack([dy_grid[circle_mask], dx_grid[circle_mask]], dim=-1)
+        num_offsets = offsets.shape[0]
+
+        # P1-3: vectorized encoding — eliminate Python loop over batch
+        all_y = (py.unsqueeze(2) + offsets[:, 0]).clamp(0, H - 1).long()  # [B, N, num_offsets]
+        all_x = (px.unsqueeze(2) + offsets[:, 1]).clamp(0, W - 1).long()  # [B, N, num_offsets]
+
+        vis_expanded = visibility.unsqueeze(2).expand(-1, -1, num_offsets)  # [B, N, num_offsets]
+        b_idx = torch.arange(B, device=device).view(B, 1, 1).expand(B, N, num_offsets)
+
+        valid_mask = vis_expanded
+        b_flat = b_idx[valid_mask]
+        y_flat = all_y[valid_mask]
+        x_flat = all_x[valid_mask]
+
+        colors_expanded = colors.unsqueeze(0).expand(B, -1, -1)  # [B, N, 3]
+        colors_per_offset = colors_expanded.unsqueeze(2).expand(-1, -1, num_offsets, -1)  # [B, N, num_offsets, 3]
+        colors_flat = colors_per_offset[valid_mask]  # [K, 3]
+
+        rgb_perm = rgb.permute(0, 2, 3, 1)  # [B, H, W, 3]
+        rgb_perm[b_flat, y_flat, x_flat] = colors_flat
 
         return rgb
 
@@ -118,21 +141,29 @@ class KeypointRGBMapper:
         """
         B, _, H, W = rgb.shape
         N = self.num_keypoints
-        keypoints = torch.zeros(B, N, 2)
-        visibility = torch.zeros(B, N, dtype=torch.bool)
+        device = rgb.device
 
-        for b in range(B):
-            img = rgb[b].permute(1, 2, 0)  # [H, W, 3]
-            for n in range(N):
-                target_color = self.colors[n].to(rgb.device)
-                # Find pixels close to target color
-                dist = ((img - target_color) ** 2).sum(dim=-1)
-                mask = dist < threshold
-                if mask.any():
-                    ys, xs = torch.where(mask)
-                    keypoints[b, n, 0] = xs.float().mean() / W
-                    keypoints[b, n, 1] = ys.float().mean() / H
-                    visibility[b, n] = True
+        colors = self.colors.to(device)
+        rgb_perm = rgb.permute(0, 2, 3, 1)
+
+        colors_expanded = colors.view(1, 1, 1, N, 3)
+        rgb_expanded = rgb_perm.unsqueeze(3)
+
+        dist = ((rgb_expanded - colors_expanded) ** 2).sum(dim=-1)
+        mask = dist < threshold
+
+        ys = torch.arange(H, device=device, dtype=torch.float32).view(1, H, 1, 1)
+        xs = torch.arange(W, device=device, dtype=torch.float32).view(1, 1, W, 1)
+
+        ys_masked = ys * mask
+        xs_masked = xs * mask
+
+        count = mask.sum(dim=(1, 2))
+        keypoints_y = ys_masked.sum(dim=(1, 2)) / (count + 1e-8)
+        keypoints_x = xs_masked.sum(dim=(1, 2)) / (count + 1e-8)
+
+        keypoints = torch.stack([keypoints_x / W, keypoints_y / H], dim=-1)
+        visibility = count > 0
 
         return keypoints, visibility
 

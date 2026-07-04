@@ -56,8 +56,23 @@ def test_bbox_with_scores() -> None:
     assert rgb.max() < rgb_no_score.max() or torch.allclose(rgb, rgb_no_score)
 
 
+def test_bbox_dynamic_resolution() -> None:
+    """Test bbox encoding with non-default resolution (P1-2)."""
+    mapper = ObjectDetectionRGBMapper(num_classes=2, line_width=2, output_height=256, output_width=256)
+
+    bboxes = torch.tensor([[[0.2, 0.3, 0.2, 0.2]]])
+    class_ids = torch.tensor([[0]])
+
+    rgb = mapper.bboxes_to_rgb(bboxes, class_ids)
+    assert rgb.shape == (1, 3, 256, 256)
+
+    rgb = mapper.bboxes_to_rgb(bboxes, class_ids, output_size=(128, 128))
+    assert rgb.shape == (1, 3, 128, 128)
+
+
 if __name__ == "__main__":
     test_bbox_roundtrip()
     test_coco_classes()
     test_bbox_with_scores()
+    test_bbox_dynamic_resolution()
     print("All object detection mapper tests passed!")

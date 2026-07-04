@@ -136,6 +136,52 @@ class TestDepthRGBMapper:
         recovered = self.mapper.rgb_to_depth(self.mapper.depth_to_rgb(depth))
         assert torch.isfinite(recovered).all()
 
+    # ── P1-7 regression guards: robust shape handling ───────────────
+
+    def test_normalized_to_rgb_2d_input(self):
+        """2D normalized [H, W] should produce [3, H, W] (no batch dim)."""
+        normalized = torch.linspace(0.0, 1.0, 16).view(1, 16)  # [1, 16]
+        rgb = self.mapper.normalized_to_rgb(normalized)
+        assert rgb.shape == (3, 1, 16), f"Expected (3, 1, 16), got {rgb.shape}"
+        assert rgb.min() >= 0.0 and rgb.max() <= 1.0
+
+    def test_normalized_to_rgb_3d_input(self):
+        """3D normalized [B, H, W] should produce [B, 3, H, W]."""
+        normalized = torch.linspace(0.0, 1.0, 16).view(2, 2, 4)
+        rgb = self.mapper.normalized_to_rgb(normalized)
+        assert rgb.shape == (2, 3, 2, 4), f"Expected (2, 3, 2, 4), got {rgb.shape}"
+
+    def test_normalized_to_rgb_4d_with_channel(self):
+        """4D normalized [B, 1, H, W] should produce [B, 3, H, W]."""
+        normalized = torch.linspace(0.0, 1.0, 16).view(2, 1, 2, 4)
+        rgb = self.mapper.normalized_to_rgb(normalized)
+        assert rgb.shape == (2, 3, 2, 4), f"Expected (2, 3, 2, 4), got {rgb.shape}"
+
+    def test_normalized_to_rgb_5d_multi_channel_raises(self):
+        """5D normalized [B, C, H, W] with C>1 should raise ValueError."""
+        normalized = torch.linspace(0.0, 1.0, 32).view(2, 2, 2, 4)
+        with pytest.raises(ValueError, match="Unexpected RGB shape"):
+            self.mapper.normalized_to_rgb(normalized)
+
+    def test_depth_to_rgb_2d_input(self):
+        """2D depth [H, W] should produce [3, H, W] via depth_to_rgb."""
+        depth = torch.tensor([[1.0, 2.0, 3.0, 5.0]])
+        rgb = self.mapper.depth_to_rgb(depth)
+        assert rgb.shape == (3, 1, 4), f"Expected (3, 1, 4), got {rgb.shape}"
+        assert rgb.min() >= 0.0 and rgb.max() <= 1.0
+
+    def test_depth_to_rgb_3d_input(self):
+        """3D depth [B, H, W] should produce [B, 3, H, W]."""
+        depth = torch.tensor([[[1.0, 2.0], [3.0, 5.0]]])
+        rgb = self.mapper.depth_to_rgb(depth)
+        assert rgb.shape == (1, 3, 2, 2), f"Expected (1, 3, 2, 2), got {rgb.shape}"
+
+    def test_depth_to_rgb_4d_with_channel(self):
+        """4D depth [B, 1, H, W] should produce [B, 3, H, W]."""
+        depth = torch.tensor([[[[1.0, 2.0], [3.0, 5.0]]]])
+        rgb = self.mapper.depth_to_rgb(depth)
+        assert rgb.shape == (1, 3, 2, 2), f"Expected (1, 3, 2, 2), got {rgb.shape}"
+
 
 # ──────────────────────────────────────────────────────────────
 # NormalRGBMapper Tests
