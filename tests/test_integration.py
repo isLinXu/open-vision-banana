@@ -439,3 +439,118 @@ class TestInstructionTunerNumWorkers:
         sig = inspect.signature(InstructionTuner.train)
         assert "num_workers" in sig.parameters, "num_workers not in InstructionTuner.train() signature"
         assert sig.parameters["num_workers"].default == 0, "num_workers default should be 0"
+
+
+# ──────────────────────────────────────────────────────────────
+# P0-2: _output_to_tensor numpy array handling
+# ──────────────────────────────────────────────────────────────
+
+
+class TestBaseGeneratorOutputToTensor:
+    """Verify _output_to_tensor handles diffusers output.images formats."""
+
+    def test_numpy_array_batch(self):
+        """P0-2: Handle diffusers output.images as np.ndarray [B, H, W, 3]."""
+        import numpy as np
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        class MockOutput:
+            images = np.random.randint(0, 256, (2, 64, 64, 3), dtype=np.uint8)
+
+        tensor = BaseGenerator._output_to_tensor(MockOutput())
+        assert isinstance(tensor, torch.Tensor)
+        assert tensor.shape == (2, 3, 64, 64)
+        assert tensor.dtype == torch.float32
+        assert tensor.min() >= 0.0 and tensor.max() <= 1.0
+
+    def test_numpy_array_single_image(self):
+        """P0-2: Handle single-image numpy array [H, W, 3]."""
+        import numpy as np
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        class MockOutput:
+            images = np.random.randint(0, 256, (64, 64, 3), dtype=np.uint8)
+
+        tensor = BaseGenerator._output_to_tensor(MockOutput())
+        assert isinstance(tensor, torch.Tensor)
+        assert tensor.shape == (1, 3, 64, 64)
+
+    def test_tensor_output_passthrough(self):
+        """Existing behaviour: tensor output returned directly."""
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        class MockOutput:
+            images = torch.rand(2, 3, 64, 64)
+
+        tensor = BaseGenerator._output_to_tensor(MockOutput())
+        assert isinstance(tensor, torch.Tensor)
+        assert tensor.shape == (2, 3, 64, 64)
+
+    def test_list_of_pil_images(self):
+        """Existing behaviour: list of PIL Images."""
+        from PIL import Image
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        class MockOutput:
+            images = [Image.new("RGB", (64, 64), color=(128, 128, 128)) for _ in range(2)]
+
+        tensor = BaseGenerator._output_to_tensor(MockOutput())
+        assert isinstance(tensor, torch.Tensor)
+        assert tensor.shape == (2, 3, 64, 64)
+
+    def test_list_of_numpy_arrays(self):
+        """Existing behaviour: list of numpy arrays."""
+        import numpy as np
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        class MockOutput:
+            images = [np.random.randint(0, 256, (64, 64, 3), dtype=np.uint8) for _ in range(2)]
+
+        tensor = BaseGenerator._output_to_tensor(MockOutput())
+        assert isinstance(tensor, torch.Tensor)
+        assert tensor.shape == (2, 3, 64, 64)
+
+
+# ──────────────────────────────────────────────────────────────
+# P1-4: InferenceOptions dtype sync with BaseGenerator
+# ──────────────────────────────────────────────────────────────
+
+
+class TestBaseGeneratorDtypeSync:
+    """Verify InferenceOptions.dtype is synced when auto-created."""
+
+    def test_dtype_sync_float32(self):
+        from unittest.mock import patch
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        with patch.object(BaseGenerator, '_load_model'):
+            gen = BaseGenerator(model_name="dummy", dtype=torch.float32, device="cpu")
+            assert gen.inference_options.dtype == "float32"
+
+    def test_dtype_sync_bfloat16(self):
+        from unittest.mock import patch
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        with patch.object(BaseGenerator, '_load_model'):
+            gen = BaseGenerator(model_name="dummy", dtype=torch.bfloat16, device="cpu")
+            assert gen.inference_options.dtype == "bfloat16"
+
+    def test_dtype_sync_float16(self):
+        from unittest.mock import patch
+        from open_vision_banana.inference.generator import BaseGenerator
+
+        with patch.object(BaseGenerator, '_load_model'):
+            gen = BaseGenerator(model_name="dummy", dtype=torch.float16, device="cpu")
+            assert gen.inference_options.dtype == "float16"
+
+    def test_explicit_inference_options_not_overridden(self):
+        from unittest.mock import patch
+        from open_vision_banana.inference.generator import BaseGenerator
+        from open_vision_banana.inference.optimization import InferenceOptions
+
+        with patch.object(BaseGenerator, '_load_model'):
+            opts = InferenceOptions(dtype="float16")
+            gen = BaseGenerator(
+                model_name="dummy", dtype=torch.float32, device="cpu", inference_options=opts
+            )
+            assert gen.inference_options.dtype == "float16"

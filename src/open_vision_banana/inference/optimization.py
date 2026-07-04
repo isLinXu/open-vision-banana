@@ -28,7 +28,7 @@ class InferenceOptions:
     torch_compile_mode: str = "reduce-overhead"
     quantize_mappers_int8: bool = False
     # Full-pipeline quantization options
-    dtype: str = "float16"  # float32 | float16 | bfloat16 | int8
+    dtype: str = "bfloat16"  # float32 | float16 | bfloat16 | int8
     enable_model_cpu_offload: bool = False
 
 
@@ -65,6 +65,7 @@ def apply_pipeline_optimizations(pipe, options: InferenceOptions) -> list[str]:
             pipe.transformer = torch.compile(
                 pipe.transformer,
                 mode=options.torch_compile_mode,
+                fullgraph=False,
             )
             applied.append(f"torch_compile(transformer, mode={options.torch_compile_mode})")
         else:

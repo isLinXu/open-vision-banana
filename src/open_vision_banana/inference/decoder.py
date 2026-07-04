@@ -8,10 +8,18 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import torch
 
 from ..core.rgb_mapper import RGBMapper
 from .prompt import PromptBuilder
+
+try:
+    import scipy.ndimage
+
+    _HAS_SCIPY = True
+except ImportError:
+    _HAS_SCIPY = False
 
 
 class VisualizationDecoder:
@@ -26,6 +34,20 @@ class VisualizationDecoder:
     def __init__(self, rgb_mapper: RGBMapper | None = None) -> None:
         self.rgb_mapper = rgb_mapper or RGBMapper()
         self.prompt_builder = PromptBuilder()
+
+        from ..core.edge_mapper import EdgeRGBMapper
+        from ..core.flow_mapper import FlowRGBMapper
+        from ..core.keypoint_mapper import KeypointRGBMapper
+        from ..core.object_detection_mapper import ObjectDetectionRGBMapper
+        from ..core.depth_edge_mapper import DepthEdgeRGBMapper
+
+        self._edge_mapper = EdgeRGBMapper(threshold=0.5)
+        self._edge_mapper_cls = EdgeRGBMapper
+        self._flow_mapper = FlowRGBMapper(max_flow=20.0)
+        self._flow_mapper_cls = FlowRGBMapper
+        self._keypoint_mapper = KeypointRGBMapper()
+        self._object_detection_mapper = ObjectDetectionRGBMapper()
+        self._depth_edge_mapper = DepthEdgeRGBMapper()
 
     def decode_depth(
         self,
@@ -131,6 +153,23 @@ class VisualizationDecoder:
             threshold = (mean_dist - 0.5 * std_dist).clamp(min=0.05, max=0.5)
 
         mask = dist <= threshold
+
+        # Connected-component post-processing: keep the largest connected
+        # component to align with the paper's clustering approach.  SciPy is
+        # an optional dependency; if unavailable, the raw threshold mask is
+        # returned.
+        if _HAS_SCIPY:
+            mask_np = mask.squeeze(1).cpu().numpy()  # [B, H, W]
+            cleaned = np.zeros_like(mask_np)
+            for b in range(B):
+                labeled, num_features = scipy.ndimage.label(mask_np[b])
+                if num_features > 0:
+                    # Count pixels per label (skip background label 0)
+                    areas = np.bincount(labeled.ravel())[1:]
+                    largest_label = int(np.argmax(areas)) + 1
+                    cleaned[b] = (labeled == largest_label)
+            mask = torch.from_numpy(cleaned).to(device=device, dtype=torch.bool).unsqueeze(1)
+
         return {
             "mask": mask,
             "visualization": rgb_image,
@@ -152,8 +191,10 @@ class VisualizationDecoder:
             - "edge_mask": bool tensor [B, 1, H, W].
             - "visualization": original rgb_image for display.
         """
-        from ..core.edge_mapper import EdgeRGBMapper
-        mapper = EdgeRGBMapper(threshold=threshold)
+        if threshold == 0.5:
+            mapper = self._edge_mapper
+        else:
+            mapper = self._edge_mapper_cls(threshold=threshold)
         edge_mask = mapper.rgb_to_edge(rgb_image)
         return {
             "edge_mask": edge_mask,
@@ -176,8 +217,10 @@ class VisualizationDecoder:
             - "flow": [B, 2, H, W] (u, v).
             - "visualization": original rgb_image for display.
         """
-        from ..core.flow_mapper import FlowRGBMapper
-        mapper = FlowRGBMapper(max_flow=max_flow)
+        if max_flow == 20.0:
+            mapper = self._flow_mapper
+        else:
+            mapper = self._flow_mapper_cls(max_flow=max_flow)
         flow = mapper.rgb_to_flow(rgb_image)
         return {
             "flow": flow,
@@ -201,9 +244,7 @@ class VisualizationDecoder:
             - "visibility": [B, N] bool.
             - "visualization": original rgb_image for display.
         """
-        from ..core.keypoint_mapper import KeypointRGBMapper
-        mapper = KeypointRGBMapper()
-        keypoints, visibility = mapper.rgb_to_keypoints(rgb_image, threshold=threshold)
+        keypoints, visibility = self._keypoint_mapper.rgb_to_keypoints(rgb_image, threshold=threshold)
         return {
             "keypoints": keypoints,
             "visibility": visibility,
@@ -228,9 +269,7 @@ class VisualizationDecoder:
             - "scores": [B, M] float.
             - "visualization": original rgb_image for display.
         """
-        from ..core.object_detection_mapper import ObjectDetectionRGBMapper
-        mapper = ObjectDetectionRGBMapper()
-        bboxes, class_ids, scores = mapper.rgb_to_bboxes(rgb_image, threshold=threshold)
+        bboxes, class_ids, scores = self._object_detection_mapper.rgb_to_bboxes(rgb_image, threshold=threshold)
         return {
             "bboxes": bboxes,
             "class_ids": class_ids,
@@ -254,9 +293,7 @@ class VisualizationDecoder:
             - "edge_mask": bool tensor [B, 1, H, W].
             - "visualization": original rgb_image for display.
         """
-        from ..core.depth_edge_mapper import DepthEdgeRGBMapper
-        mapper = DepthEdgeRGBMapper()
-        edge_mask = mapper.rgb_to_depth_edge(rgb_image)
+        edge_mask = self._depth_edge_mapper.rgb_to_depth_edge(rgb_image)
         return {
             "edge_mask": edge_mask,
             "visualization": rgb_image,

@@ -53,6 +53,8 @@ class VisionBanana:
     """
 
     SUPPORTED_TASKS = ["semantic", "instance", "referring", "depth", "normal", "edge", "flow", "keypoint", "object_detection", "depth_edge"]
+    # P2-14: discrete tasks must decode per-tile before stitching (no RGB blend)
+    DISCRETE_TILE_TASKS = frozenset({"semantic", "instance", "edge", "referring", "depth_edge"})
 
     def __init__(
         self,
@@ -67,8 +69,6 @@ class VisionBanana:
         self.decoder = decoder or VisualizationDecoder(self.rgb_mapper)
         self.prompt_builder = PromptBuilder()
         self.enable_cache = enable_cache
-        self._cache: dict[str, torch.Tensor] = {}
-        self._cache_size = cache_size
 
     @classmethod
     def from_pretrained(
@@ -123,6 +123,7 @@ class VisionBanana:
         height: int = 1024,
         width: int = 1024,
         seed: int | None = None,
+        prompt: str | None = None,
     ) -> dict:
         """Run inference for a vision task.
 
@@ -140,6 +141,8 @@ class VisionBanana:
             height: Output image height (t2i only).
             width: Output image width (t2i only).
             seed: Random seed for reproducibility.
+            prompt: Optional pre-built prompt string. If provided, it is used
+                directly instead of calling the task-specific prompt builder.
 
         Returns:
             Task-specific result dict with decoded outputs.
@@ -147,12 +150,13 @@ class VisionBanana:
         if task not in self.SUPPORTED_TASKS:
             raise ValueError(f"Unsupported task: {task}. Choose from: {self.SUPPORTED_TASKS}")
 
-        prompt = self._build_prompt(
-            task=task,
-            class_color_map=class_color_map,
-            object_name=object_name,
-            expression=expression,
-        )
+        if prompt is None:
+            prompt = self._build_prompt(
+                task=task,
+                class_color_map=class_color_map,
+                object_name=object_name,
+                expression=expression,
+            )
 
         logger.info(f"Running {task} prediction with prompt: {prompt[:100]}...")
 
@@ -183,6 +187,7 @@ class VisionBanana:
         self,
         images: torch.Tensor,
         task: str,
+        prompts: list[str] | None = None,
         **kwargs,
     ) -> list[dict]:
         """Run batched inference, returning per-image results.
@@ -191,21 +196,72 @@ class VisionBanana:
         (batched img2img), then splits results per image.
 
         Note:
-            FLUX.1 [schnell] processes all images in a batch through the
-            same denoising pipeline, so the forward pass is genuinely
-            batched.  However, the text prompt is shared across all
-            images in the batch — each image receives the same task
-            instruction.  For per-image prompts, call ``predict()``
-            individually.
+            When ``prompts`` is provided, each image uses its own prompt via
+            individual ``predict()`` calls.  When omitted, the full batch
+            shares one task prompt (efficient img2img batching).
 
         Args:
             images: Input images [B, 3, H, W] in [-1, 1].
             task: Vision task name.
+            prompts: Optional per-image prompts. If provided, each image is
+                processed individually with its corresponding prompt. This
+                sacrifices batch efficiency for correctness.
             **kwargs: Additional arguments passed to predict().
 
         Returns:
             List of result dicts, one per image.
         """
+        if prompts is not None:
+            if len(prompts) != images.shape[0]:
+                raise ValueError(
+                    f"Number of prompts ({len(prompts)}) must match batch size ({images.shape[0]})"
+                )
+            # P1-12: batch text encode + single img2img forward
+            text_cond = self.generator.encode_prompts(prompts)
+            gen_kwargs = {
+                k: v
+                for k, v in kwargs.items()
+                if k
+                not in (
+                    "class_color_map",
+                    "object_name",
+                    "expression",
+                    "target_color",
+                    "background_color",
+                    "prompt",
+                )
+            }
+            rgb_output = self.generator.generate(
+                prompt=None,
+                image=images,
+                prompt_embeds=text_cond["prompt_embeds"],
+                pooled_prompt_embeds=text_cond["pooled_prompt_embeds"],
+                **gen_kwargs,
+            )
+            result = self._decode_output(
+                rgb_output=rgb_output,
+                task=task,
+                class_color_map=kwargs.get("class_color_map"),
+                target_color=kwargs.get("target_color", (255, 255, 255)),
+                background_color=kwargs.get("background_color", (0, 0, 0)),
+            )
+            result["rgb_output"] = rgb_output
+            B = images.shape[0]
+            per_image = []
+            for i in range(B):
+                item: dict = {}
+                for key, val in result.items():
+                    if isinstance(val, torch.Tensor) and val.dim() > 0 and val.shape[0] == B:
+                        item[key] = val[i : i + 1]
+                    elif isinstance(val, list) and len(val) == B:
+                        item[key] = val[i]
+                    else:
+                        item[key] = val
+                if prompts is not None:
+                    item["prompt"] = prompts[i]
+                per_image.append(item)
+            return per_image
+
         result = self.predict(image=images, task=task, **kwargs)
         B = images.shape[0]
 
@@ -330,15 +386,15 @@ class VisionBanana:
         # diffusers Pipeline objects do not expose .eval() / .train() in the
         # nn.Module sense; calling them is a no-op.  We still propagate to any
         # sub-module that does support it.
-        import contextlib
-
         for pipe in [
             getattr(self.generator, "_t2i_pipe", None),
             getattr(self.generator, "_i2i_pipe", None),
         ]:
             if pipe is not None and hasattr(pipe, "eval"):
-                with contextlib.suppress(Exception):
+                try:
                     pipe.eval()
+                except AttributeError as e:
+                    logger.warning("Failed to call eval() on pipeline: %s", e)
         return self
 
     def save(self, output_dir: str | Path) -> None:
@@ -348,7 +404,6 @@ class VisionBanana:
 
     def clear_cache(self) -> None:
         """Clear the prompt embedding cache and generator KV-cache."""
-        self._cache.clear()
         self.generator._prompt_cache.clear()
 
     # ------------------------------------------------------------------
@@ -433,7 +488,10 @@ class VisionBanana:
         if tile_size >= H and tile_size >= W:
             return self.predict(image, task, **kwargs)
 
-        # Generate tile coordinates
+        if task in self.DISCRETE_TILE_TASKS:
+            return self._predict_tiled_discrete(image, task, tile_size, overlap, **kwargs)
+
+        # Continuous tasks: RGB cosine blending then decode
         stride = tile_size - overlap
         tiles_h = max(1, (H - overlap + stride - 1) // stride)
         tiles_w = max(1, (W - overlap + stride - 1) // stride)
@@ -479,6 +537,87 @@ class VisionBanana:
             background_color=kwargs.get("background_color", (0, 0, 0)),
         )
         result["rgb_output"] = rgb_output
+        return result
+
+    def _predict_tiled_discrete(
+        self,
+        image: torch.Tensor,
+        task: str,
+        tile_size: int,
+        overlap: int,
+        **kwargs,
+    ) -> dict:
+        """Decode-first tiled inference for discrete label tasks (P2-14)."""
+        B, C, H, W = image.shape
+        stride = tile_size - overlap
+        tiles_h = max(1, (H - overlap + stride - 1) // stride)
+        tiles_w = max(1, (W - overlap + stride - 1) // stride)
+
+        ramp = torch.linspace(0, 1, tile_size, device=image.device)
+        ramp = torch.minimum(ramp, torch.flip(ramp, [0]))
+        ramp = torch.clamp(ramp * float(tile_size) / (overlap + 1), 0, 1)
+        tile_weight = (ramp.unsqueeze(0) * ramp.unsqueeze(1)).unsqueeze(0).unsqueeze(0)
+
+        if task == "semantic":
+            class_color_map = kwargs.get("class_color_map")
+            if not class_color_map:
+                raise ValueError("class_color_map required for tiled semantic inference")
+            num_classes = len(class_color_map)
+            vote = torch.zeros(1, num_classes, H, W, device=image.device)
+            weight = torch.zeros(1, 1, H, W, device=image.device)
+            for i in range(tiles_h):
+                for j in range(tiles_w):
+                    y0 = min(i * stride, H - tile_size)
+                    x0 = min(j * stride, W - tile_size)
+                    y1, x1 = y0 + tile_size, x0 + tile_size
+                    tile = image[:, :, y0:y1, x0:x1]
+                    tile_result = self.predict(tile, task, **kwargs)
+                    labels = tile_result["mask"].long().squeeze(1)
+                    w = tile_weight
+                    for c in range(num_classes):
+                        vote[:, c, y0:y1, x0:x1] += (labels == c).float() * w
+                    weight[:, :, y0:y1, x0:x1] += w
+            weight = weight.clamp(min=1e-8)
+            final_labels = vote.argmax(dim=1, keepdim=True)
+            return {
+                "mask": final_labels,
+                "class_names": list(class_color_map.keys()),
+                "rgb_output": tile_result.get("rgb_output"),
+            }
+
+        # Binary / edge-like discrete tasks: weighted vote then threshold
+        accum = torch.zeros(1, 1, H, W, device=image.device)
+        weight = torch.zeros(1, 1, H, W, device=image.device)
+        last_result: dict = {}
+        for i in range(tiles_h):
+            for j in range(tiles_w):
+                y0 = min(i * stride, H - tile_size)
+                x0 = min(j * stride, W - tile_size)
+                y1, x1 = y0 + tile_size, x0 + tile_size
+                tile = image[:, :, y0:y1, x0:x1]
+                tile_result = self.predict(tile, task, **kwargs)
+                last_result = tile_result
+                if task in ("edge", "depth_edge"):
+                    tile_mask = tile_result["edge_mask"].float()
+                elif task == "referring":
+                    tile_mask = tile_result["mask"].float()
+                else:
+                    inst = tile_result.get("instances", [[]])[0]
+                    tile_mask = torch.zeros(1, 1, tile_size, tile_size, device=image.device)
+                    if inst:
+                        tile_mask.fill_(1.0)
+                w = tile_weight
+                accum[:, :, y0:y1, x0:x1] += tile_mask * w
+                weight[:, :, y0:y1, x0:x1] += w
+
+        weight = weight.clamp(min=1e-8)
+        final_mask = (accum / weight) > 0.5
+        result = dict(last_result)
+        if task in ("edge", "depth_edge"):
+            result["edge_mask"] = final_mask
+        elif task == "referring":
+            result["mask"] = final_mask
+        result["rgb_output"] = last_result.get("rgb_output")
         return result
 
     def export_torchscript(

@@ -12,6 +12,8 @@ FluxPipeline for unconditional/text-only generation.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from collections import OrderedDict
 from pathlib import Path
@@ -23,6 +25,15 @@ from .checkpoint import resolve_lora_path
 from .optimization import InferenceOptions, apply_pipeline_optimizations
 
 logger = logging.getLogger(__name__)
+
+
+def _prompt_cache_key(prompt: str | list[str]) -> str:
+    """Build a collision-resistant cache key for prompt embedding reuse."""
+    if isinstance(prompt, str):
+        return prompt
+    return hashlib.sha256(
+        json.dumps(prompt, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -110,6 +121,13 @@ class BaseGenerator:
         self.inference_options = inference_options or InferenceOptions(
             enable_sequential_cpu_offload=enable_sequential_cpu_offload,
         )
+        # When inference_options is auto-created, sync its dtype to the
+        # constructor dtype so apply_pipeline_optimizations doesn't silently
+        # convert the pipeline to an unexpected dtype.
+        if inference_options is None:
+            _dtype_map = {torch.float32: "float32", torch.float16: "float16", torch.bfloat16: "bfloat16"}
+            if self.dtype in _dtype_map:
+                self.inference_options.dtype = _dtype_map[self.dtype]
         self.enable_sequential_cpu_offload = self.inference_options.enable_sequential_cpu_offload
 
         # Both pipelines are loaded lazily to save memory when only one is needed.
@@ -189,13 +207,72 @@ class BaseGenerator:
             transformer=t2i.transformer,
         )
 
-        if self.enable_sequential_cpu_offload:
-            self._i2i_pipe.enable_sequential_cpu_offload()
-        else:
+        applied = apply_pipeline_optimizations(self._i2i_pipe, self.inference_options)
+        if applied:
+            logger.info("Applied inference optimizations to img2img pipeline: %s", ", ".join(applied))
+        if not self.inference_options.enable_sequential_cpu_offload:
             self._i2i_pipe = self._i2i_pipe.to(self.device)
 
         logger.info("Img2img pipeline ready")
         return self._i2i_pipe
+
+    @torch.no_grad()
+    def encode_prompts(self, prompts: list[str]) -> dict[str, torch.Tensor | None]:
+        """Batch-encode text prompts via FLUX dual encoders (P1-12).
+
+        Encodes all prompts in one ``encode_prompt`` call when possible, and
+        caches each prompt's embeddings individually for LRU reuse.
+
+        Returns:
+            Dict with ``prompt_embeds`` [B, seq, D] and ``pooled_prompt_embeds``.
+        """
+        if not prompts:
+            raise ValueError("prompts must be a non-empty list")
+
+        if len(prompts) == 1:
+            key = _prompt_cache_key(prompts[0])
+            cached = self._prompt_cache.get(key)
+            if cached is not None:
+                self._prompt_cache.move_to_end(key)
+                return {
+                    "prompt_embeds": cached["prompt_embeds"],
+                    "pooled_prompt_embeds": cached.get("pooled_prompt_embeds"),
+                }
+
+        device = torch.device(self.device) if isinstance(self.device, str) else self.device
+        text_outputs = self._t2i_pipe.encode_prompt(
+            prompt=prompts,
+            prompt_2=prompts,
+            device=device,
+            num_images_per_prompt=1,
+            max_sequence_length=512,
+        )
+        if isinstance(text_outputs, (tuple, list)) and len(text_outputs) >= 3:
+            prompt_embeds = text_outputs[0]
+            pooled_prompt_embeds = text_outputs[2]
+        else:
+            prompt_embeds = text_outputs[0]
+            pooled_prompt_embeds = text_outputs[1] if len(text_outputs) > 1 else None
+
+        prompt_embeds = prompt_embeds.to(device)
+        if pooled_prompt_embeds is not None:
+            pooled_prompt_embeds = pooled_prompt_embeds.to(device)
+
+        for i, prompt in enumerate(prompts):
+            key = _prompt_cache_key(prompt)
+            self._prompt_cache[key] = {
+                "prompt_embeds": prompt_embeds[i : i + 1],
+                "pooled_prompt_embeds": (
+                    pooled_prompt_embeds[i : i + 1]
+                    if pooled_prompt_embeds is not None
+                    else None
+                ),
+            }
+
+        return {
+            "prompt_embeds": prompt_embeds,
+            "pooled_prompt_embeds": pooled_prompt_embeds,
+        }
 
     # ------------------------------------------------------------------
     # Generation
@@ -249,22 +326,21 @@ class BaseGenerator:
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
+        precomputed = "prompt_embeds" in kwargs
+
         # ── KV-cache reuse for text encoder outputs ────────────────────
-        # When the same prompt is used repeatedly (e.g. batched inference,
-        # multi-task evaluation), cache the text encoder outputs to avoid
-        # redundant CLIP/T5 forward passes.
-        prompt_key = str(prompt) if isinstance(prompt, str) else str(tuple(prompt))
-        cached_prompt_embeds = self._prompt_cache.get(prompt_key)
-        if cached_prompt_embeds is not None:
-            # Move to end (most recently used) for LRU eviction order
-            self._prompt_cache.move_to_end(prompt_key)
-            kwargs["prompt_embeds"] = cached_prompt_embeds["prompt_embeds"]
-            kwargs["pooled_prompt_embeds"] = cached_prompt_embeds["pooled_prompt_embeds"]
-            # When providing pre-computed embeddings, pass empty prompt to
-            # skip re-encoding.  Some diffusers versions accept None.
+        if precomputed:
             encode_prompt = False
         else:
-            encode_prompt = True
+            prompt_key = _prompt_cache_key(prompt)
+            cached_prompt_embeds = self._prompt_cache.get(prompt_key)
+            if cached_prompt_embeds is not None:
+                self._prompt_cache.move_to_end(prompt_key)
+                kwargs["prompt_embeds"] = cached_prompt_embeds["prompt_embeds"]
+                kwargs["pooled_prompt_embeds"] = cached_prompt_embeds["pooled_prompt_embeds"]
+                encode_prompt = False
+            else:
+                encode_prompt = True
 
         if image is not None:
             pil_images = self._to_pil_list(image)
@@ -289,13 +365,6 @@ class BaseGenerator:
                 **kwargs,
             )
 
-        # Cache text encoder outputs for future reuse
-        if encode_prompt and hasattr(output, "prompt_embeds"):
-            self._prompt_cache[prompt_key] = {
-                "prompt_embeds": output.prompt_embeds,
-                "pooled_prompt_embeds": getattr(output, "pooled_prompt_embeds", None),
-            }
-
         return self._output_to_tensor(output)
 
     # ------------------------------------------------------------------
@@ -318,15 +387,28 @@ class BaseGenerator:
     def _output_to_tensor(output) -> torch.Tensor:
         """Convert diffusers pipeline output to [B, 3, H, W] float tensor in [0, 1]."""
         images = output.images
+        import numpy as np
+
+        # Handle numpy array output directly (diffusers output_type="np" or special configs)
+        if isinstance(images, np.ndarray):
+            arr = images.astype("float32") / 255.0 if images.dtype == np.uint8 else images.astype("float32")
+            tensor = torch.from_numpy(arr)
+            if tensor.dim() == 3:  # [H, W, 3]
+                tensor = tensor.permute(2, 0, 1).unsqueeze(0)
+            elif tensor.dim() == 4:  # [B, H, W, 3]
+                tensor = tensor.permute(0, 3, 1, 2)
+            return tensor.clamp(0, 1)
+
         if not isinstance(images, list):
             return images  # already a tensor in some diffusers versions
-
-        import numpy as np
 
         tensors = []
         for img in images:
             if isinstance(img, Image.Image):
                 arr = np.array(img.convert("RGB")).astype("float32") / 255.0
+                tensors.append(torch.from_numpy(arr).permute(2, 0, 1))
+            elif isinstance(img, np.ndarray):
+                arr = img.astype("float32") / 255.0 if img.dtype == np.uint8 else img.astype("float32")
                 tensors.append(torch.from_numpy(arr).permute(2, 0, 1))
             elif isinstance(img, torch.Tensor):
                 tensors.append(img.float())
