@@ -12,6 +12,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 
 import torch
 
@@ -26,7 +27,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate Vision Banana model")
     parser.add_argument(
         "--task", type=str, required=True,
-        choices=["depth", "normal", "semantic", "instance", "referring"],
+        choices=[
+        "depth", "normal", "semantic", "instance", "referring",
+        "edge", "flow", "keypoint", "object_detection", "depth_edge",
+        "generation_preservation",
+    ],
     )
     parser.add_argument(
         "--data-path", type=str, required=True,
@@ -59,13 +64,24 @@ def parse_args():
         "--compare-sota", action="store_true",
         help="Print comparison table against published SOTA baselines",
     )
+    parser.add_argument(
+        "--ddp", action="store_true",
+        help="Distributed evaluation (launch with torchrun)",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    if args.device:
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    use_ddp = args.ddp and torch.cuda.is_available()
+
+    if use_ddp:
+        torch.distributed.init_process_group(backend="nccl")
+        device = f"cuda:{local_rank}"
+        torch.cuda.set_device(local_rank)
+    elif args.device:
         device = args.device
     elif torch.cuda.is_available():
         device = "cuda"
@@ -74,39 +90,64 @@ def main():
     else:
         device = "cpu"
 
-    logger.info(f"Task: {args.task} | Device: {device}")
+    is_main = (not use_ddp) or local_rank == 0
+    if is_main:
+        logger.info(f"Task: {args.task} | Device: {device}")
 
     # ── Dataset ──────────────────────────────────────────────────────────
     from open_vision_banana.data import build_dataset
+
+    # Map CLI task names to build_dataset registry keys
+    dataset_task = args.task
+    if dataset_task == "object_detection":
+        dataset_task = "coco_detection"
+    elif dataset_task == "flow":
+        dataset_task = "sintel"
+    elif dataset_task == "edge":
+        dataset_task = "coco_stuff"
+    elif dataset_task == "keypoint":
+        dataset_task = "coco_detection"
+    elif dataset_task == "depth_edge":
+        dataset_task = "depth"
+    elif dataset_task == "generation_preservation":
+        dataset_task = "depth"
+
     dataset = build_dataset(
-        args.task, args.data_path, split="val", resolution=args.resolution
+        dataset_task, args.data_path, split="val", resolution=args.resolution
     )
     if len(dataset) == 0:
-        logger.error("Dataset is empty — check --data-path")
+        if is_main:
+            logger.error("Dataset is empty — check --data-path")
         return
 
+    sampler = None
+    if use_ddp:
+        from torch.utils.data.distributed import DistributedSampler
+        sampler = DistributedSampler(dataset, shuffle=False)
+
     dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=False, num_workers=0,
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=(sampler is None),
+        sampler=sampler,
+        num_workers=0,
     )
-    logger.info(f"Dataset: {len(dataset)} samples, {len(dataloader)} batches")
+    if is_main:
+        logger.info(f"Dataset: {len(dataset)} samples, {len(dataloader)} batches")
 
     # ── Model ─────────────────────────────────────────────────────────────
     if args.lora_path:
-        logger.info(f"Loading FLUX.1 + LoRA from {args.lora_path} …")
-        from open_vision_banana.inference.generator import BaseGenerator
+        if is_main:
+            logger.info(f"Loading FLUX.1 + LoRA from {args.lora_path} …")
         from open_vision_banana.inference.pipeline import VisionBanana
-        BaseGenerator(
-            model_name=args.model_name,
-            lora_path=args.lora_path,
-            device=device,
-        )
-        model = VisionBanana.from_pretrained.__func__(
-            VisionBanana, model_name=args.model_name, lora_path=args.lora_path, device=device
+        model = VisionBanana.from_pretrained(
+            model_name=args.model_name, lora_path=args.lora_path, device=device
         )
     else:
-        logger.warning(
-            "No --lora-path given — using a dummy identity model for metric smoke-test"
-        )
+        if is_main:
+            logger.warning(
+                "No --lora-path given — using a dummy identity model for metric smoke-test"
+            )
         import torch.nn as nn
         class _Identity(nn.Module):
             def forward(self, x): return x
@@ -130,6 +171,15 @@ def main():
         class_color_map=class_color_map,
     )
 
+    if use_ddp:
+        metrics = VisionEvaluator.reduce_metrics(metrics, device=device)
+        torch.distributed.barrier()
+
+    if not is_main:
+        if use_ddp:
+            torch.distributed.destroy_process_group()
+        return
+
     # ── Results ───────────────────────────────────────────────────────────
     logger.info("=" * 50)
     logger.info(f"Evaluation Results ({args.task})")
@@ -150,6 +200,9 @@ def main():
         from open_vision_banana.evaluation.baselines import format_sota_comparison
         print()
         print(format_sota_comparison(args.task, metrics))
+
+    if use_ddp:
+        torch.distributed.destroy_process_group()
 
 
 if __name__ == "__main__":

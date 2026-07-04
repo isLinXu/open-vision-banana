@@ -9,6 +9,7 @@ from open_vision_banana.evaluation.flow import evaluate_flow
 from open_vision_banana.evaluation.generation_preservation import (
     compute_clip_score_proxy,
     compute_diversity_score,
+    compute_fid,
     compute_fid_proxy,
     compute_perceptual_similarity,
     evaluate_generation_preservation,
@@ -20,6 +21,7 @@ from open_vision_banana.evaluation.keypoint import (
     evaluate_keypoints,
 )
 from open_vision_banana.evaluation.object_detection import (
+    _pycocotools_available,
     compute_iou_box,
     evaluate_object_detection,
 )
@@ -184,6 +186,22 @@ class TestObjectDetectionMetrics:
         assert "AP@0.5" in metrics
         assert "AP@0.75" in metrics
         assert metrics["AP@0.5"] == pytest.approx(1.0, abs=1e-4)
+        assert metrics.get("eval_backend") in ("pycocotools", "fallback")
+
+    @pytest.mark.skipif(not _pycocotools_available(), reason="pycocotools not installed")
+    def test_evaluate_object_detection_pycocotools_backend(self):
+        pred_boxes = [[(0.0, 0.0, 10.0, 10.0)]]
+        pred_scores = [[1.0]]
+        pred_labels = [[1]]
+        gt_boxes = [[(0.0, 0.0, 10.0, 10.0)]]
+        gt_labels = [[1]]
+        metrics = evaluate_object_detection(
+            pred_boxes, pred_scores, pred_labels,
+            gt_boxes, gt_labels, num_classes=1,
+            use_pycocotools=True,
+        )
+        assert metrics["eval_backend"] == "pycocotools"
+        assert metrics["AP@0.5"] == pytest.approx(1.0, abs=1e-2)
 
     def test_evaluate_object_detection_empty(self):
         pred_boxes = [[]]
@@ -204,6 +222,11 @@ class TestObjectDetectionMetrics:
 
 class TestGenerationPreservation:
     """Tests for generation preservation metrics."""
+
+    def test_fid_identical(self):
+        features = torch.randn(10, 64)
+        fid = compute_fid(features, features)
+        assert fid == pytest.approx(0.0, abs=1e-2)
 
     def test_fid_proxy_identical(self):
         features = torch.randn(10, 64)
@@ -248,6 +271,7 @@ class TestGenerationPreservation:
             real, gen, text_features=text, pred_rgb=pred_rgb, target_rgb=target_rgb
         )
         assert "FID_proxy" in metrics
+        assert "FID" in metrics
         assert "diversity_score" in metrics
         assert "clip_score_proxy" in metrics
         assert "perceptual_similarity" in metrics
@@ -267,8 +291,9 @@ class TestGenerationPreservation:
 class MockModelWithPredict:
     """Mock model that exposes a predict() method."""
 
-    def __init__(self, output_rgb=None):
+    def __init__(self, output_rgb=None, output_size: tuple[int, int] | None = None):
         self._output = output_rgb
+        self._output_size = output_size
         self.eval_called = False
 
     def eval(self):
@@ -276,10 +301,12 @@ class MockModelWithPredict:
         return self
 
     def predict(self, **kwargs):
-        if self._output is None:
-            B = kwargs.get("image", torch.zeros(1, 3, 8, 8)).shape[0]
-            return {"rgb_output": torch.rand(B, 3, 8, 8)}
-        return {"rgb_output": self._output}
+        if self._output is not None:
+            return {"rgb_output": self._output}
+        image = kwargs.get("image", torch.zeros(1, 3, 8, 8))
+        size = self._output_size or image.shape[-2:]
+        b = image.shape[0]
+        return {"rgb_output": torch.rand(b, 3, size[0], size[1])}
 
 
 class TestEvaluatorExtendedTasks:
@@ -369,6 +396,18 @@ class TestEvaluatorExtendedTasks:
         }
         with pytest.raises(ValueError, match="Unknown task"):
             ev.evaluate([batch], task="unknown_task")
+
+    def test_evaluator_generation_preservation_task(self):
+        pytest.importorskip("torchvision")
+        model = MockModelWithPredict()
+        ev = VisionEvaluator(model, device="cpu")
+        batch = {
+            "image": torch.rand(1, 3, 32, 32),
+            "target_rgb": torch.rand(1, 3, 32, 32),
+        }
+        metrics = ev.evaluate([batch], task="generation_preservation", max_batches=1)
+        assert "FID" in metrics
+        assert "diversity_score" in metrics
 
     def test_all_ten_tasks_supported(self):
         """Verify all 10 tasks are accepted by the evaluator."""

@@ -17,10 +17,15 @@ from __future__ import annotations
 
 import logging
 
+import math
+
 import torch
 
 from ..core.depth_mapper import DepthRGBMapper
+from ..core.flow_mapper import FlowRGBMapper
+from ..core.keypoint_mapper import KeypointRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
+from ..core.object_detection_mapper import ObjectDetectionRGBMapper
 from ..core.segmentation import SegmentationDecoder
 from .depth import evaluate_depth
 from .edge import evaluate_edge
@@ -29,6 +34,7 @@ from .instance import evaluate_instance
 from .keypoint import evaluate_keypoints
 from .normal import evaluate_normals
 from .object_detection import evaluate_object_detection
+from .generation_preservation import evaluate_generation_preservation
 from .referring import evaluate_referring
 from .semantic import evaluate_semantic
 
@@ -164,6 +170,8 @@ class VisionEvaluator:
         self.model.eval()
         all_metrics: dict[str, float] = {}
         n_batches = 0
+        gen_real_rgb: list[torch.Tensor] = []
+        gen_pred_rgb: list[torch.Tensor] = []
 
         # Pre-instantiate shared decoders once (not per batch)
         depth_mapper = DepthRGBMapper() if task in ("depth", "depth_edge") else None
@@ -208,7 +216,7 @@ class VisionEvaluator:
                     )
                 pred_labels = seg_decoder.decode_semantic(pred_rgb, cmap)
                 gt_labels = seg_decoder.decode_semantic(target_rgb, cmap)
-                metrics = evaluate_semantic(pred_labels, gt_labels, num_classes or len(cmap))
+                metrics = evaluate_semantic(pred_labels, gt_labels, num_classes if num_classes is not None else len(cmap))
 
             elif task == "instance":
                 pred_inst = seg_decoder.decode_instance(pred_rgb)[0]
@@ -244,8 +252,10 @@ class VisionEvaluator:
                 metrics = evaluate_flow(pred_flow, gt_flow)
 
             elif task == "keypoint":
-                # 2D keypoint detection: batch must contain keypoint annotations
-                pred_kpts = batch.get("pred_keypoints", pred_rgb)  # fallback
+                if "pred_keypoints" in batch:
+                    pred_kpts = batch["pred_keypoints"]
+                else:
+                    pred_kpts, _ = KeypointRGBMapper().rgb_to_keypoints(pred_rgb)
                 gt_kpts = batch.get("gt_keypoints")
                 if gt_kpts is None:
                     raise ValueError(
@@ -256,80 +266,163 @@ class VisionEvaluator:
                 metrics = evaluate_keypoints(pred_kpts, gt_kpts, areas=areas)
 
             elif task == "object_detection":
-                # Object detection: batch must contain box annotations
-                pred_boxes = batch.get("pred_boxes", [])
-                pred_scores = batch.get("pred_scores", [])
-                pred_labels = batch.get("pred_labels", [])
                 gt_boxes = batch.get("gt_boxes", [])
                 gt_labels = batch.get("gt_labels", [])
                 if not gt_boxes:
                     raise ValueError(
                         "gt_boxes and gt_labels are required for object detection evaluation."
                     )
+                if batch.get("pred_boxes"):
+                    pred_boxes = batch["pred_boxes"]
+                    pred_scores = batch["pred_scores"]
+                    pred_labels = batch["pred_labels"]
+                else:
+                    bboxes, class_ids, scores = ObjectDetectionRGBMapper().rgb_to_bboxes(pred_rgb)
+                    pred_boxes, pred_scores, pred_labels = self._decode_detection_batch(
+                        bboxes, class_ids, scores
+                    )
                 metrics = evaluate_object_detection(
                     pred_boxes, pred_scores, pred_labels,
                     gt_boxes, gt_labels,
-                    num_classes=num_classes or len(class_color_map) if class_color_map else 80,
+                    num_classes=num_classes if num_classes is not None else (len(class_color_map) if class_color_map else 80),
                 )
+
+            elif task == "generation_preservation":
+                gen_real_rgb.append(target_rgb.detach().cpu())
+                gen_pred_rgb.append(pred_rgb.detach().cpu())
+                metrics = {}
 
             else:
                 raise ValueError(
                     f"Unknown task: {task!r}. "
                     "Choose from: depth, normal, semantic, instance, referring, "
-                    "edge, depth_edge, flow, keypoint, object_detection"
+                    "edge, depth_edge, flow, keypoint, object_detection, "
+                    "generation_preservation"
                 )
 
             for k, v in metrics.items():
                 if isinstance(v, (int, float)):
                     all_metrics[k] = all_metrics.get(k, 0.0) + v
+                elif isinstance(v, list):
+                    # Collect lists for per-element averaging (handles nan correctly)
+                    if k not in all_metrics:
+                        all_metrics[k] = []
+                    all_metrics[k].append(v)
+                elif isinstance(v, dict):
+                    # Collect dicts for per-key averaging
+                    if k not in all_metrics:
+                        all_metrics[k] = {}
+                    for sub_k, sub_v in v.items():
+                        if isinstance(sub_v, (int, float)):
+                            all_metrics[k][sub_k] = all_metrics[k].get(sub_k, 0.0) + sub_v
 
             n_batches += 1
+
+        if task == "generation_preservation":
+            if not gen_real_rgb:
+                logger.warning("No batches evaluated for generation_preservation")
+                return {}
+            real_rgb = torch.cat(gen_real_rgb, dim=0)
+            pred_rgb_all = torch.cat(gen_pred_rgb, dim=0)
+            return evaluate_generation_preservation(
+                real_rgb=real_rgb,
+                gen_rgb=pred_rgb_all,
+                pred_rgb=pred_rgb_all,
+                target_rgb=real_rgb,
+            )
 
         if n_batches == 0:
             logger.warning("evaluate() called on an empty dataloader — returning empty metrics")
             return {}
 
         for k in all_metrics:
-            all_metrics[k] /= n_batches
+            if isinstance(all_metrics[k], list):
+                # Per-element mean, ignoring nan
+                n = len(all_metrics[k])
+                elem_len = len(all_metrics[k][0])
+                result = []
+                for i in range(elem_len):
+                    vals = [
+                        batch[i]
+                        for batch in all_metrics[k]
+                        if not (isinstance(batch[i], float) and math.isnan(batch[i]))
+                    ]
+                    result.append(sum(vals) / len(vals) if vals else float("nan"))
+                all_metrics[k] = result
+            elif isinstance(all_metrics[k], dict):
+                for sub_k in all_metrics[k]:
+                    if isinstance(all_metrics[k][sub_k], (int, float)):
+                        all_metrics[k][sub_k] /= n_batches
+            else:
+                all_metrics[k] /= n_batches
 
         return all_metrics
 
     @staticmethod
-    def _decode_flow_rgb(rgb: torch.Tensor) -> torch.Tensor:
-        """Decode HSV-style flow encoding from RGB visualization.
-
-        Vision Banana encodes optical flow as:
-        - Hue = direction angle
-        - Saturation = magnitude
-        - Value = 1.0 (full brightness)
-
-        This helper converts RGB back to flow vectors (u, v).
+    def _decode_flow_rgb(rgb: torch.Tensor, max_flow: float = 20.0) -> torch.Tensor:
+        """Decode HSV-style flow encoding using the core FlowRGBMapper.
 
         Args:
             rgb: [B, 3, H, W] RGB tensor in [0, 1].
+            max_flow: Maximum flow magnitude used during encoding.
 
         Returns:
             Flow tensor [B, 2, H, W] with (u, v) components.
         """
-        # Simplified HSV decode from RGB
-        # For a proper decode, full HSV conversion would be needed
-        # This is a lightweight approximation
-        r, g, b = rgb[:, 0], rgb[:, 1], rgb[:, 2]
-        max_c = torch.max(torch.max(r, g), b)
-        min_c = torch.min(torch.min(r, g), b)
-        diff = max_c - min_c + 1e-10
+        return FlowRGBMapper(max_flow=max_flow).rgb_to_flow(rgb)
 
-        # Hue approximation: direction
-        # Using simplified atan2 on (g - b) / (r - g) approximation
-        # For Vision Banana flow encoding, u and v are directly mapped to color channels
-        u = (r - 0.5) * 2.0 * 255.0  # Approximate horizontal flow
-        v = (g - 0.5) * 2.0 * 255.0  # Approximate vertical flow
-        # Magnitude from saturation (blue channel proxy)
-        mag = b * 2.0
+    @staticmethod
+    def _decode_detection_batch(
+        bboxes: torch.Tensor,
+        class_ids: torch.Tensor,
+        scores: torch.Tensor,
+        score_threshold: float = 0.05,
+    ) -> tuple[list, list, list]:
+        """Convert decoded tensors to per-image lists for evaluate_object_detection."""
+        pred_boxes: list[list[tuple[float, float, float, float]]] = []
+        pred_scores: list[list[float]] = []
+        pred_labels: list[list[int]] = []
 
-        # Normalize by magnitude if available
-        flow = torch.stack([u, v], dim=1)  # [B, 2, H, W]
-        return flow
+        B = bboxes.shape[0]
+        for b in range(B):
+            boxes_b: list[tuple[float, float, float, float]] = []
+            scores_b: list[float] = []
+            labels_b: list[int] = []
+            for m in range(bboxes.shape[1]):
+                score = float(scores[b, m].item())
+                if score < score_threshold:
+                    continue
+                x, y, w, h = bboxes[b, m].tolist()
+                if w <= 0 or h <= 0:
+                    continue
+                boxes_b.append((x, y, x + w, y + h))
+                scores_b.append(score)
+                labels_b.append(int(class_ids[b, m].item()))
+            pred_boxes.append(boxes_b)
+            pred_scores.append(scores_b)
+            pred_labels.append(labels_b)
+        return pred_boxes, pred_scores, pred_labels
+
+    @staticmethod
+    def reduce_metrics(metrics: dict, device: torch.device | str = "cpu") -> dict:
+        """All-reduce scalar metrics across DDP ranks (P2-27)."""
+        if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+            return metrics
+
+        reduced: dict = {}
+        for key, value in metrics.items():
+            if isinstance(value, (int, float)):
+                t = torch.tensor([float(value)], device=device, dtype=torch.float64)
+                torch.distributed.all_reduce(t, op=torch.distributed.ReduceOp.SUM)
+                world = torch.distributed.get_world_size()
+                reduced[key] = (t.item() / world)
+            elif isinstance(value, list) and value and isinstance(value[0], (int, float)):
+                arr = torch.tensor(value, device=device, dtype=torch.float64)
+                torch.distributed.all_reduce(arr, op=torch.distributed.ReduceOp.SUM)
+                reduced[key] = (arr / torch.distributed.get_world_size()).tolist()
+            else:
+                reduced[key] = value
+        return reduced
 
     # ------------------------------------------------------------------
     # Internal helpers
