@@ -85,6 +85,27 @@ def parse_args():
         default="configs/deepspeed_zero3.json",
         help="Path to DeepSpeed JSON config",
     )
+    # v7 / paper-aligned training options (InstructionTuner)
+    parser.add_argument(
+        "--colormaps", type=str, default=None,
+        help="Comma-separated depth colormaps (e.g. cube_edge,viridis,plasma)",
+    )
+    parser.add_argument("--flow-sigma", type=float, default=None,
+                        help="Optional flow-matching noise sigma (0 = pure flow)")
+    parser.add_argument("--no-min-snr", action="store_true",
+                        help="Disable Min-SNR loss weighting")
+    parser.add_argument("--no-logit-normal-timesteps", action="store_true",
+                        help="Use uniform timesteps instead of logit-normal")
+    parser.add_argument("--no-img2img-flow", action="store_true",
+                        help="Disable img2img-style flow matching (input→target)")
+    parser.add_argument("--cfg-dropout-rate", type=float, default=None,
+                        help="CFG dropout rate for text conditioning (default 0.1)")
+    parser.add_argument("--ema-decay", type=float, default=None,
+                        help="EMA decay override (default from config)")
+    parser.add_argument("--scheduler", type=str, default=None,
+                        help="LR scheduler: cosine, cosine_restarts, polynomial, constant, one_cycle")
+    parser.add_argument("--warmup-ratio", type=float, default=None,
+                        help="Warmup ratio for SchedulerFactory (overrides warmup_steps when set)")
     return parser.parse_args()
 
 
@@ -182,12 +203,17 @@ def main():
     # Device-specific adjustments
     use_amp = cfg.training.use_amp
     num_workers = cfg.data.num_workers
-    if device in ("mps", "cpu"):
+    if device == "cpu":
         if use_amp:
             logger.warning(
-                f"AMP not supported on {device} — disabling use_amp automatically."
+                "AMP not supported on cpu — disabling use_amp automatically."
             )
             use_amp = False
+    elif device == "mps" and use_amp:
+        logger.info(
+            "MPS: enabling bfloat16 autocast (GradScaler disabled — CUDA only)."
+        )
+    if device in ("mps", "cpu"):
         if num_workers > 0:
             logger.warning(
                 f"num_workers={num_workers} may cause hangs on {device} — forcing 0."
@@ -251,6 +277,14 @@ def main():
         use_rslora=cfg.lora.rs_lora,
         lr=cfg.optimizer.lr,
         augmentation=augmentation,
+        use_ema=cfg.training.use_ema,
+        ema_decay=args.ema_decay if args.ema_decay is not None else cfg.training.ema_decay,
+        use_min_snr=not args.no_min_snr,
+        use_logit_normal_timesteps=not args.no_logit_normal_timesteps,
+        use_img2img_flow=not args.no_img2img_flow,
+        flow_sigma=args.flow_sigma if args.flow_sigma is not None else 0.0,
+        cfg_dropout_rate=args.cfg_dropout_rate if args.cfg_dropout_rate is not None else 0.1,
+        warmup_ratio=args.warmup_ratio,
     )
 
     if args.gradient_checkpointing or args.fsdp or args.deepspeed:
@@ -291,7 +325,10 @@ def main():
     vision_datasets = []
 
     if args.data_path:
-        for task in ["depth", "normal", "semantic", "instance", "referring"]:
+        for task in [
+            "depth", "normal", "semantic", "instance", "referring",
+            "edge", "flow", "keypoint", "object_detection", "depth_edge",
+        ]:
             try:
                 ds = build_dataset(task, args.data_path, resolution=cfg.data.resolution)
                 if len(ds) > 0:
@@ -333,11 +370,16 @@ def main():
         )
         vision_ratio = 1.0
 
+    colormaps = None
+    if args.colormaps:
+        colormaps = [c.strip() for c in args.colormaps.split(",") if c.strip()]
+
     mixed_ds = MixedVisionDataset(
         vision_datasets=train_vision_datasets,
         generation_dataset=generation_dataset,
         vision_ratio=vision_ratio,
         seed=seed,
+        colormaps=colormaps,
     )
     logger.info(f"  Mixed dataset: {mixed_ds}")
 
@@ -361,6 +403,8 @@ def main():
         "epochs": cfg.training.epochs,
     })
 
+    scheduler_type = args.scheduler or cfg.optimizer.scheduler
+
     logger.info("Starting instruction-tuning...")
     summary = tuner.train(
         train_dataset=mixed_ds,
@@ -369,7 +413,7 @@ def main():
         batch_size=cfg.data.batch_size,
         gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
         max_grad_norm=cfg.optimizer.max_grad_norm,
-        scheduler_type=cfg.optimizer.scheduler,
+        scheduler_type=scheduler_type,
         warmup_steps=cfg.optimizer.warmup_steps,
         output_dir=output_dir,
         save_every=cfg.training.save_every,

@@ -4,71 +4,179 @@
 # Status values:
 #   - placeholder: documented slot, weights not yet published
 #   - available: weights published and downloadable
+#   - deprecated: weights superseded by a newer version
 #
 # Usage:
 #   python scripts/download_checkpoint.py --alias vision-banana
 #   python scripts/inference.py --lora-path registry:vision-banana ...
+#
+# ── Publishing a checkpoint ────────────────────────────────────────────
+# After training and validating a LoRA checkpoint:
+#   1. Upload to Hugging Face Hub:
+#        huggingface-cli upload open-vision-banana/<name> ./checkpoint_dir
+#   2. Update the status from "placeholder" to "available" below.
+#   3. Optionally add a version tag (e.g. depth-v1) and mark the old
+#      version as "deprecated".
+#   4. Run `python scripts/verify_checkpoint.py --alias <name>` to
+#      verify download + load + inference on a smoke-test image.
 
 checkpoints:
+  # ── Multi-task (all tasks in a single LoRA) ──────────────────────────
   vision-banana:
     repo_id: "open-vision-banana/vision-banana-lora"
     revision: main
     status: placeholder
+    version: "0.1.0-dev"
     description: >
-      Official Vision Banana multi-task LoRA weights (depth, normal, segmentation).
+      Official Vision Banana multi-task LoRA weights (depth, normal,
+      segmentation, object detection, keypoints).
       Not yet published — train locally or watch this repo for releases.
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 64
+    lora_alpha: 64
     tasks:
       - depth
       - normal
       - semantic
       - instance
       - referring
+      - object_detection
+      - keypoint
+    training_data:
+      - Hypersim (depth)
+      - iBims-1 (depth)
+      - NYUv2 (normal)
+      - ADE20K (semantic)
+      - COCO (instance/object_detection/keypoint)
+    metrics:
+      depth_abs_rel: null  # populate after training
+      normal_mean_angle_deg: null
+      semantic_mIoU: null
+      instance_ap50: null
+      detection_map50: null
 
+  # ── Single-task LoRA checkpoints ─────────────────────────────────────
   vision-banana-depth:
     repo_id: "open-vision-banana/vision-banana-depth-lora"
     revision: main
     status: placeholder
+    version: "0.1.0-dev"
     description: Depth-only LoRA checkpoint (placeholder).
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 32
+    lora_alpha: 32
     tasks:
       - depth
+    training_data:
+      - Hypersim
+      - iBims-1
 
   vision-banana-normal:
     repo_id: "open-vision-banana/vision-banana-normal-lora"
     revision: main
     status: placeholder
+    version: "0.1.0-dev"
     description: Surface-normal LoRA checkpoint (placeholder).
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 32
+    lora_alpha: 32
     tasks:
       - normal
+    training_data:
+      - NYUv2
+      - iBims-1
 
   vision-banana-semantic:
     repo_id: "open-vision-banana/vision-banana-semantic-lora"
     revision: main
     status: placeholder
+    version: "0.1.0-dev"
     description: Semantic segmentation LoRA checkpoint (placeholder).
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 32
+    lora_alpha: 32
     tasks:
       - semantic
+    training_data:
+      - ADE20K
+      - Cityscapes
 
   vision-banana-instance:
     repo_id: "open-vision-banana/vision-banana-instance-lora"
     revision: main
     status: placeholder
+    version: "0.1.0-dev"
     description: Instance segmentation LoRA checkpoint (placeholder).
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 32
+    lora_alpha: 32
     tasks:
       - instance
+    training_data:
+      - COCO
 
   vision-banana-referring:
     repo_id: "open-vision-banana/vision-banana-referring-lora"
     revision: main
     status: placeholder
+    version: "0.1.0-dev"
     description: Referring expression segmentation LoRA checkpoint (placeholder).
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 32
+    lora_alpha: 32
     tasks:
       - referring
+    training_data:
+      - RefCOCO
+      - RefCOCO+
+      - RefCOCOg
 
-  # Published checkpoints (flip status to "available" after publishing)
+  vision-banana-detection:
+    repo_id: "open-vision-banana/vision-banana-detection-lora"
+    revision: main
+    status: placeholder
+    version: "0.1.0-dev"
+    description: Object detection (bbox) LoRA checkpoint (placeholder).
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 32
+    lora_alpha: 32
+    tasks:
+      - object_detection
+    training_data:
+      - COCO
+
+  vision-banana-keypoint:
+    repo_id: "open-vision-banana/vision-banana-keypoint-lora"
+    revision: main
+    status: placeholder
+    version: "0.1.0-dev"
+    description: Keypoint detection LoRA checkpoint (placeholder).
+    base_model: "black-forest-labs/FLUX.1-dev"
+    lora_rank: 32
+    lora_alpha: 32
+    tasks:
+      - keypoint
+    training_data:
+      - COCO Keypoints
+
+  # ── Published checkpoints (flip status to "available" after publishing) ──
+  # Example template:
+  #
   # depth-v1:
   #   repo_id: "open-vision-banana/vision-banana-depth-v1"
   #   revision: main
   #   status: available
-  #   description: Depth estimation LoRA v1, trained on Hypersim
+  #   version: "1.0.0"
+  #   description: >
+  #     Depth estimation LoRA v1, trained on Hypersim (120k images).
+  #     AbsRel = 0.043 on NYUv2 test set.
+  #   base_model: "black-forest-labs/FLUX.1-dev"
+  #   lora_rank: 32
+  #   lora_alpha: 32
   #   tasks:
   #     - depth
+  #   training_data:
+  #     - Hypersim
+  #   metrics:
+  #     depth_abs_rel: 0.043
+  #     depth_rmse: 0.142

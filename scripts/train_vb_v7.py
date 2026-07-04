@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Vision Banana v7 — Training script with all bottleneck fixes.
 
+.. deprecated::
+    Use ``scripts/train.py`` instead.  v7-specific features (Min-SNR, logit-normal
+    timesteps, img2img flow matching, SchedulerFactory, multi-colormap) have been
+    ported to ``InstructionTuner`` and ``scripts/train.py``.
+
 Key improvements over v6:
   1. Default img2img_strength = 0.3 (was 0.6, reduces texture leakage)
   2. Default colormaps = cube_edge (single colormap, lower learning difficulty)
@@ -66,6 +71,7 @@ from open_vision_banana.training.optimization import (
     SchedulerFactory,
     create_optimized_dataloader,
 )
+from open_vision_banana.training.utils import EMAModel
 
 logging.basicConfig(
     level=logging.INFO,
@@ -204,28 +210,7 @@ def collate_fn(batch):
     return result
 
 
-# ─── EMA ────────────────────────────────────────────────────────────────────
-
-
-class LoRAEMA:
-    """Exponential moving average for LoRA parameters."""
-
-    def __init__(self, decay=0.9995):
-        self.decay = decay
-        self.shadow = {}
-
-    def register(self, params):
-        for name, param in params:
-            self.shadow[name] = param.data.clone()
-
-    @torch.no_grad()
-    def update(self, params):
-        for name, param in params:
-            if name in self.shadow:
-                self.shadow[name].mul_(self.decay).add_(param.data, alpha=1 - self.decay)
-
-    def get_shadow(self):
-        return {k: v.clone() for k, v in self.shadow.items()}
+# ─── EMA (unified EMAModel — P2-18) ───────────────────────────────────────
 
 
 def save_lora_state(unet, path, ema_state=None):
@@ -245,10 +230,20 @@ def save_lora_state(unet, path, ema_state=None):
 
 
 def compute_depth_correlation(gen_img, target_img):
-    gen_gray = np.array(gen_img.convert("L"), dtype=np.float32).flatten()
-    tgt_gray = np.array(target_img.convert("L"), dtype=np.float32).flatten()
-    gen_norm = gen_gray - gen_gray.mean()
-    tgt_norm = tgt_gray - tgt_gray.mean()
+    """Pearson r on metric depth recovered via DepthRGBMapper (P1-17)."""
+    from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
+    mapper = DepthRGBMapper()
+
+    def _pil_to_depth(pil_img):
+        arr = np.array(pil_img.convert("RGB"), dtype=np.float32) / 255.0
+        tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
+        return mapper.rgb_to_depth(tensor).flatten().numpy()
+
+    gen_depth = _pil_to_depth(gen_img)
+    tgt_depth = _pil_to_depth(target_img)
+    gen_norm = gen_depth - gen_depth.mean()
+    tgt_norm = tgt_depth - tgt_depth.mean()
     denom = np.sqrt((gen_norm ** 2).sum() * (tgt_norm ** 2).sum())
     if denom < 1e-6:
         return 0.0
@@ -350,7 +345,15 @@ def generate_depth_img2img(components, input_image, prompt, device, dtype, num_s
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Vision Banana v7 — Optimized training")
+    import warnings
+
+    warnings.warn(
+        "scripts/train_vb_v7.py is deprecated. "
+        "Use scripts/train.py — v7 features are now integrated into InstructionTuner.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+    parser = argparse.ArgumentParser(description="Vision Banana v7 — Optimized training (deprecated)")
     parser.add_argument("--model", type=str, default="ssd-1b")
     parser.add_argument("--list-models", action="store_true")
     parser.add_argument("--auto-select", action="store_true")
@@ -609,9 +612,8 @@ def main():
     logger.info(f"Optimizer: AdamW, LR={args.lr}, Scheduler={args.scheduler}")
 
     # ── EMA ──
-    ema = LoRAEMA(decay=args.ema_decay)
-    ema.register([(n, p) for n, p in unet.named_parameters() if p.requires_grad])
-    logger.info(f"EMA: {len(ema.shadow)} params, decay={args.ema_decay}")
+    ema = EMAModel(unet, decay=args.ema_decay, warmup_steps=0)
+    logger.info(f"EMA: {len(ema.shadow_params)} params, decay={args.ema_decay}")
 
     # ── Validation images ──
     val_image_paths = []
@@ -755,7 +757,7 @@ def main():
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
-                ema.update([(n, p) for n, p in unet.named_parameters() if p.requires_grad])
+                ema.update(unet)
 
                 current_lr = scheduler.get_last_lr()[0]
 
@@ -775,17 +777,17 @@ def main():
                     })
 
                 if global_step % args.save_every == 0:
-                    save_lora_state(unet, output_dir / f"vb_v7_{model_cfg.name}_step{global_step}.pt", ema.get_shadow())
+                    save_lora_state(unet, output_dir / f"vb_v7_{model_cfg.name}_step{global_step}.pt", ema.shadow_params)
 
                 if epoch_loss < best_loss * 0.99:
                     best_loss = epoch_loss
 
                 # ── Validation (with EMA weights) ──
                 if global_step % args.val_every == 0:
-                    # FIX: v6/v7 bug — ema.get_shadow() returns keys WITHOUT "ema." prefix.
+                    # FIX: v6/v7 bug — ema.shadow_params returns keys WITHOUT "ema." prefix.
                     # The old code checked f"ema.{name}" in ema_shadow which NEVER matched,
                     # so validation always used training weights instead of EMA weights.
-                    ema_shadow = ema.get_shadow()
+                    ema_shadow = ema.shadow_params
                     original_weights = {}
                     with torch.no_grad():
                         for name, param in unet.named_parameters():
@@ -859,7 +861,7 @@ def main():
                         })
                         if avg_corr > best_val_corr:
                             best_val_corr = avg_corr
-                            save_lora_state(unet, output_dir / f"vb_v7_{model_cfg.name}_best_corr.pt", ema.get_shadow())
+                            save_lora_state(unet, output_dir / f"vb_v7_{model_cfg.name}_best_corr.pt", ema.shadow_params)
                             logger.info(f"  New best corr: {best_val_corr:.4f}")
 
                 # ── Memory check ──
@@ -868,7 +870,7 @@ def main():
 
     # ── Save final ──
     final_path = output_dir / f"vb_v7_{model_cfg.name}_final.pt"
-    save_lora_state(unet, final_path, ema.get_shadow())
+    save_lora_state(unet, final_path, ema.shadow_params)
     total_time = time.time() - t_train_start
     logger.info(f"Training complete! Time: {total_time/60:.1f} min")
     logger.info(f"Final loss: {epoch_loss:.4f}, Best val corr: {best_val_corr:.4f}")
