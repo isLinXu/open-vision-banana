@@ -1,0 +1,86 @@
+# FLUX.1-schnell 本地权重训练配置
+# ================================
+# 使用本地下载的 FLUX.1-schnell 权重进行 LoRA 指令微调
+# 目标设备: Apple M3 Max (128GB unified memory, MPS)
+
+# 基础模型 — 本地路径
+model:
+  name: "/Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+# LoRA 配置 (rsLoRA scaling)
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# 优化器
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 100
+  max_grad_norm: 1.0
+
+# 输出
+output_dir: "output/checkpoints_flux_local"
+
+# 日志 (MPS 上使用本地 TensorBoard)
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana-flux-local"
+  wandb_log_checkpoints: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_flux_local"
+  run_name: "flux_local_depth"
+
+# 训练参数 (MPS 128GB 优化)
+training:
+  epochs: 3
+  gradient_accumulation_steps: 4       # 有效 batch_size = 1 * 4 = 4
+  use_amp: false                       # MPS autocast causes dtype mismatch; all inputs already bfloat16
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 500
+  save_every: 200
+  eval_every: 100
+  max_keep: 3
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+# 数据 (MPS 优化)
+data:
+  vision_ratio: 0.1                    # 10% vision, 90% generation
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 1                        # MPS 保守, FLUX 12B 模型
+  num_workers: 0                       # MPS 必须设为 0
+  augmentation: true
+  val_split: 0.1                       # 10% 验证集
+  generation_path: "data/vb_generation_5k"
+
+  # 训练任务数据
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_depth_pseudo_5k"
+          split: "train"
+
+# 深度 RGB 映射参数 (from paper)
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

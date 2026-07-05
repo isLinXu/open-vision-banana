@@ -1,0 +1,85 @@
+# MPS 专用训练配置
+# ================================
+# 针对 Apple Silicon (MPS) 137GB 统一内存优化
+
+# 基础模型
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+# LoRA 配置 (rsLoRA)
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# 优化器
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 500
+  max_grad_norm: 1.0
+
+# 输出
+output_dir: "output/checkpoints"
+
+# 日志 (MPS 上先禁用 W&B，使用本地 TensorBoard)
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana-mps"
+  wandb_log_checkpoints: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs"
+  run_name: "mps_flux_depth"
+
+# 训练参数 (MPS 优化)
+training:
+  epochs: 5
+  gradient_accumulation_steps: 8       # 模拟 batch_size=8
+  use_amp: true
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 500
+  eval_every: 250
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+# 数据 (MPS 优化)
+data:
+  vision_ratio: 0.1
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 1                        # MPS 保守设置，137GB 可用但安全起见
+  num_workers: 0                       # MPS 必须设为 0，防止 worker 进程 hang
+  augmentation: true
+  val_split: 0.1
+  generation_path: "data/vb_generation_5k"
+
+  # 训练任务数据
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_depth_300"
+          split: "train"
+
+# 深度 RGB 映射参数
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

@@ -1,0 +1,73 @@
+# FLUX.1-schnell 快速验证配置
+# ================================
+# 目标: 100 步训练，验证 checkpoint 保存 + 推理加载全链路
+# 预计时间: ~40 分钟 (100 steps × 4 micro-steps × ~36s)
+
+model:
+  name: "/Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 20
+  max_grad_norm: 1.0
+
+output_dir: "output/checkpoints_flux_quick"
+
+logging:
+  wandb_enabled: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_flux_quick"
+  run_name: "flux_quick_test"
+
+training:
+  epochs: 1
+  gradient_accumulation_steps: 4
+  use_amp: false
+  use_ema: false
+  save_every: 50
+  eval_every: 999           # disable eval during quick run
+  max_keep: 2
+  seed: 42
+  log_every: 5
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+data:
+  vision_ratio: 0.1
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 1
+  num_workers: 0
+  augmentation: false       # disable aug for speed
+  val_split: 0.05           # smaller val split
+  generation_path: "data/vb_generation_5k"
+
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_depth_pseudo_5k"
+          split: "train"
+
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0
