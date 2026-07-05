@@ -173,7 +173,7 @@ def main():
         cfg.logging.wandb_log_checkpoints = True
         cfg.logging.wandb_enabled = True
 
-    output_dir = args.output_dir
+    output_dir = args.output_dir if args.output_dir != "output/checkpoints" else cfg.output_dir
     seed = args.seed
     device = args.device or _auto_device()
 
@@ -325,8 +325,9 @@ def main():
     vision_datasets = []
 
     if args.data_path:
+        # Try preencoded_depth first (generic images/ + targets/ layout)
         for task in [
-            "depth", "normal", "semantic", "instance", "referring",
+            "preencoded_depth", "depth", "normal", "semantic", "instance", "referring",
             "edge", "flow", "keypoint", "object_detection", "depth_edge",
         ]:
             try:

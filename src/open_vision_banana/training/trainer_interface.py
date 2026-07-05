@@ -377,6 +377,47 @@ class DeepSpeedTrainer(NativeTrainer):
         self._engine = engine
         return engine
 
+    def backward(self, loss: torch.Tensor) -> None:
+        """Delegate backward to the DeepSpeed engine.
+
+        DeepSpeed handles gradient scaling internally, so we bypass
+        NativeTrainer's GradScaler path.
+        """
+        if self._engine is None:
+            super().backward(loss)
+        else:
+            self._engine.backward(loss)
+
+    def optimizer_step(self) -> None:
+        """Delegate optimizer step to the DeepSpeed engine.
+
+        DeepSpeed handles gradient clipping and optimizer step internally.
+        """
+        if self._engine is None:
+            super().optimizer_step()
+        else:
+            self._engine.step()
+
+    def train_step(
+        self,
+        model: nn.Module,
+        loss: torch.Tensor,
+        step_in_accumulation: int,
+    ) -> bool:
+        """Execute a single training step with DeepSpeed gradient accumulation.
+
+        Returns True if an optimizer step was performed.
+        """
+        scaled_loss = loss / self.gradient_accumulation_steps
+        self.backward(scaled_loss)
+
+        do_step = (step_in_accumulation + 1) % self.gradient_accumulation_steps == 0
+        if do_step:
+            self.optimizer_step()
+            if self._optimizer is not None:
+                self._optimizer.zero_grad()
+        return do_step
+
     def is_main_process(self) -> bool:
         if self._engine is None:
             return True

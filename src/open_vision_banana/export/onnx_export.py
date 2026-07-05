@@ -208,7 +208,7 @@ def export_full_pipeline_onnx(
     dummy_text_emb = torch.randn(1, 77, 4096)
 
     torch.onnx.export(
-        model.transformer,
+        model.generator._t2i_pipe.transformer,
         (dummy_hidden, dummy_timestep, dummy_text_emb),
         str(output_dir / "transformer.onnx"),
         opset_version=opset_version,

@@ -27,6 +27,7 @@ from .optimization import (
     compute_min_snr_weight,
     sample_timesteps_logit_normal,
 )
+from .trainer_interface import NativeTrainer, TrainerInterface
 from .utils import EMAModel, VisionAugmentation, enable_gradient_checkpointing
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,7 @@ class InstructionTuner:
         use_img2img_flow: bool = True,
         flow_sigma: float = 0.0,
         warmup_ratio: float | None = None,
+        trainer_backend: TrainerInterface | None = None,
     ) -> None:
         self.base_model = model
         self.lora_rank = lora_rank
@@ -221,6 +223,11 @@ class InstructionTuner:
         self.deepspeed_engine = None
         self.task = task
         self.augmentation = augmentation
+        # ── Trainer backend (TrainerInterface) ────────────────────────
+        # When provided, train() delegates backward / optimizer_step / grad
+        # scaling to this backend instead of manually managing them inline.
+        # This enables DDP / FSDP / DeepSpeed / Accelerate via the same code path.
+        self.trainer_backend = trainer_backend
         self._setup_lora()
 
         self.use_ema = use_ema
@@ -249,6 +256,48 @@ class InstructionTuner:
             return "mps"
         return "cpu"
 
+    @staticmethod
+    def _prepare_latent_image_ids(
+        batch_size: int, height: int, width: int, device, dtype
+    ) -> torch.Tensor:
+        """Build FLUX latent position IDs [H*W, 3] for the transformer.
+
+        Mirrors FluxPipeline._prepare_latent_image_ids: creates a 3-channel
+        ID grid where channel 0 is zeros, channel 1 is row indices, and
+        channel 2 is column indices, then flattens to [H*W, 3].
+        """
+        latent_image_ids = torch.zeros(height, width, 3)
+        latent_image_ids[..., 1] = latent_image_ids[..., 1] + torch.arange(height)[:, None]
+        latent_image_ids[..., 2] = latent_image_ids[..., 2] + torch.arange(width)[None, :]
+        latent_image_ids = latent_image_ids.reshape(height * width, 3)
+        return latent_image_ids.to(device=device, dtype=dtype)
+
+    @staticmethod
+    def _pack_latents(latents, batch_size, num_channels, height, width):
+        """Pack VAE latents for FLUX transformer.
+
+        [B, C, H, W] → [B, (H/2)*(W/2), C*4]
+
+        Mirrors FluxPipeline._pack_latents — the 2×2 spatial unpacking
+        increases channel count from latent_channels (16) to in_channels (64).
+        """
+        latents = latents.view(batch_size, num_channels, height // 2, 2, width // 2, 2)
+        latents = latents.permute(0, 2, 4, 1, 3, 5)
+        latents = latents.reshape(batch_size, (height // 2) * (width // 2), num_channels * 4)
+        return latents
+
+    @staticmethod
+    def _unpack_latents(latents, height, width):
+        """Unpack FLUX transformer output back to VAE latent format.
+
+        [B, (H/2)*(W/2), C*4] → [B, C, H, W]
+        """
+        batch_size, num_patches, channels = latents.shape
+        latents = latents.view(batch_size, height // 2, width // 2, channels // 4, 2, 2)
+        latents = latents.permute(0, 3, 1, 4, 2, 5)
+        latents = latents.reshape(batch_size, channels // 4, height, width)
+        return latents
+
     def _probe_forward_signature(self) -> str:
         """Probe the model's forward() signature at init time.
 
@@ -265,6 +314,18 @@ class InstructionTuner:
         (e.g. ``**kwargs`` present but specific named params absent).
         """
         import inspect
+
+        # ── P0-5: Fast-path for known FLUX transformer ──────────────────
+        # PEFT wrappers hide the real forward signature behind (*args, **kwargs).
+        # Probe the underlying model chain directly to avoid shape-mismatch
+        # dummy-call failures on MPS / bfloat16.
+        underlying = self.peft_model
+        for attr in ("base_model", "model"):
+            if hasattr(underlying, attr):
+                underlying = getattr(underlying, attr)
+        model_name = type(underlying).__name__
+        if model_name in ("FluxTransformer2DModel", "FluxTransformer2DModelWithLora"):
+            return "full"
 
         try:
             sig = inspect.signature(self.peft_model.forward)
@@ -302,10 +363,10 @@ class InstructionTuner:
         # accept these params dynamically.  Do a single trial call with the
         # most complete signature to detect acceptance.
         if has_kwargs:
-            dummy_hidden = torch.zeros(1, 3, 2, 2)
+            dummy_hidden = torch.zeros(1, 16, 2, 2)  # FLUX latent shape
             dummy_timestep = torch.tensor([0.5])
-            dummy_encoder = torch.zeros(1, 1, 4)
-            dummy_pooled = torch.zeros(1, 4)
+            dummy_encoder = torch.zeros(1, 1, 4096)
+            dummy_pooled = torch.zeros(1, 768)
 
             # Try full first, then partial, then minimal
             for mode, kwargs in [
@@ -386,9 +447,32 @@ class InstructionTuner:
             task_type=TaskType.FEATURE_EXTRACTION,
         )
 
-        transformer = self.base_model.transformer
+        # base_model is a BaseGenerator whose transformer lives inside the
+        # diffusers pipeline (FluxPipeline._t2i_pipe.transformer).
+        pipeline = getattr(self.base_model, "_t2i_pipe", None) or getattr(
+            self.base_model, "pipe", None
+        )
+        if pipeline is None:
+            # Fallback: base_model may itself be a diffusers pipeline
+            pipeline = self.base_model
+        transformer = getattr(pipeline, "transformer", None)
+        if transformer is None:
+            raise AttributeError(
+                f"Could not resolve 'transformer' from base_model. "
+                f"base_model type: {type(self.base_model)}"
+            )
         self.peft_model = get_peft_model(transformer, lora_config)
         self.peft_model.print_trainable_parameters()
+
+        # Cast LoRA parameters to the base model's dtype.
+        # PEFT initializes LoRA adapters in float32 by default, but on MPS
+        # mixed float32/bfloat16 operations cause "mps.multiply op requires
+        # the same element type" errors. Casting to bfloat16 resolves this.
+        base_dtype = next(transformer.parameters()).dtype
+        if base_dtype != torch.float32:
+            for param in self.peft_model.parameters():
+                if param.dtype != base_dtype:
+                    param.data = param.data.to(base_dtype)
 
         self.optimizer = torch.optim.AdamW(
             self.peft_model.parameters(),
@@ -450,11 +534,32 @@ class InstructionTuner:
 
         device_type = self._detect_device_type()
         use_deepspeed = self.deepspeed_engine is not None
-        if use_deepspeed:
-            use_amp = False
-        scaler = torch.amp.GradScaler(
-            device_type, enabled=use_amp and device_type == "cuda" and not use_deepspeed
-        )
+
+        # ── Determine whether to use TrainerInterface or legacy path ──
+        use_trainer_interface = self.trainer_backend is not None
+
+        if use_trainer_interface:
+            # Delegate to TrainerInterface — it handles backward, grad scaling,
+            # optimizer step, gradient clipping, and accumulation internally.
+            trainer = self.trainer_backend
+            trainer.setup_optimizer(self.optimizer)
+            if trainer.gradient_accumulation_steps != gradient_accumulation_steps:
+                logger.warning(
+                    "trainer_backend.gradient_accumulation_steps (%d) != "
+                    "train() gradient_accumulation_steps (%d); using backend value.",
+                    trainer.gradient_accumulation_steps,
+                    gradient_accumulation_steps,
+                )
+                gradient_accumulation_steps = trainer.gradient_accumulation_steps
+            use_amp = getattr(trainer, "use_autocast", False)
+            scaler = trainer.scaler
+            device_type = trainer.device.type
+        else:
+            if use_deepspeed:
+                use_amp = False
+            scaler = torch.amp.GradScaler(
+                device_type, enabled=use_amp and device_type == "cuda" and not use_deepspeed
+            )
         ckpt_manager = CheckpointManager(output_dir) if output_dir else None
         early_stopper = (
             EarlyStopping(patience=early_stopping_patience, min_delta=early_stopping_min_delta)
@@ -473,35 +578,53 @@ class InstructionTuner:
             num_steps = 0
 
             for step, batch in enumerate(train_loader):
-                if use_deepspeed:
+                if use_trainer_interface:
+                    # ── TrainerInterface path ──
+                    with torch.autocast(
+                        device_type, enabled=use_amp, dtype=torch.bfloat16
+                    ):
+                        loss = self._training_step(batch)
+                    stepped = trainer.train_step(self.peft_model, loss, step)
+                elif use_deepspeed:
                     loss = self._training_step(batch)
                     self.deepspeed_engine.backward(loss / gradient_accumulation_steps)
+                    stepped = (step + 1) % gradient_accumulation_steps == 0
+                    if stepped:
+                        self.deepspeed_engine.step()
+                        scheduler.step()
+                        self.optimizer.zero_grad(set_to_none=True)
+                        global_step += 1
                 else:
+                    # ── Legacy native path (backward compat) ──
                     with torch.autocast(device_type, enabled=use_amp, dtype=torch.bfloat16):
                         loss = self._training_step(batch)
                     scaled_loss = scaler.scale(loss / gradient_accumulation_steps)
                     scaled_loss.backward()
 
-                epoch_loss += loss.item()
-                num_steps += 1
+                    epoch_loss += loss.item()
+                    num_steps += 1
 
-                if (step + 1) % gradient_accumulation_steps == 0:
-                    if use_deepspeed:
-                        self.deepspeed_engine.step()
-                    else:
+                    if (step + 1) % gradient_accumulation_steps == 0:
                         scaler.unscale_(self.optimizer)
                         torch.nn.utils.clip_grad_norm_(self.peft_model.parameters(), max_grad_norm)
                         scaler.step(self.optimizer)
                         scaler.update()
-                    scheduler.step()
-                    self.optimizer.zero_grad(set_to_none=True)
-                    global_step += 1
+                        scheduler.step()
+                        self.optimizer.zero_grad(set_to_none=True)
+                        global_step += 1
 
                     if self.ema is not None:
                         self.ema.update(self._ema_module())
 
                     running_loss = epoch_loss / max(num_steps, 1)
                     current_lr = scheduler.get_last_lr()[0]
+
+                    if global_step > 0 and global_step % log_every == 0 and not getattr(self, "_last_logged_step", -1) == global_step:
+                        self._last_logged_step = global_step
+                        logger.info(
+                            f"Epoch {epoch+1}/{epochs} | Step {global_step} | "
+                            f"Loss: {running_loss:.4f} | LR: {current_lr:.2e}"
+                        )
 
                     if training_logger and global_step % log_every == 0:
                         training_logger.log_metrics(
@@ -515,6 +638,39 @@ class InstructionTuner:
 
                     if callback and global_step % log_every == 0:
                         callback(global_step, running_loss, current_lr)
+
+                if use_trainer_interface:
+                    epoch_loss += loss.item()
+                    num_steps += 1
+
+                    if stepped:
+                        scheduler.step()
+                        global_step += 1
+
+                        if self.ema is not None:
+                            self.ema.update(self._ema_module())
+
+                        running_loss = epoch_loss / max(num_steps, 1)
+                        current_lr = scheduler.get_last_lr()[0]
+
+                        if global_step % log_every == 0:
+                            logger.info(
+                                f"Epoch {epoch+1}/{epochs} | Step {global_step} | "
+                                f"Loss: {running_loss:.4f} | LR: {current_lr:.2e}"
+                            )
+
+                        if training_logger and global_step % log_every == 0:
+                            training_logger.log_metrics(
+                                global_step,
+                                {
+                                    "train/loss": running_loss,
+                                    "train/lr": current_lr,
+                                    "train/epoch": float(epoch + 1),
+                                },
+                            )
+
+                        if callback and global_step % log_every == 0:
+                            callback(global_step, running_loss, current_lr)
 
                 if (
                     ckpt_manager
@@ -651,29 +807,70 @@ class InstructionTuner:
             pipeline = self.base_model
 
         try:
-            # diffusers ≥ 0.30 exposes encode_prompt on FluxPipeline
-            text_outputs = pipeline.encode_prompt(
-                prompt=prompts,
-                prompt_2=prompts,
-                device=device,
-                num_images_per_prompt=1,
-                max_sequence_length=512,
-            )
-            # encode_prompt returns (prompt_embeds, negative_prompt_embeds,
-            #                        pooled_prompt_embeds, negative_pooled_prompt_embeds)
-            if isinstance(text_outputs, (tuple, list)) and len(text_outputs) >= 3:
-                prompt_embeds = text_outputs[0]  # [B, seq_len, D_t5]
-                pooled_prompt_embeds = text_outputs[2]  # [B, D_clip]
-            else:
-                # Some diffusers versions return a different structure
-                prompt_embeds = text_outputs[0]
-                pooled_prompt_embeds = text_outputs[1] if len(text_outputs) > 1 else None
+            # MPS + bfloat16 can trigger "Placeholder storage has not been
+            # allocated on MPS device!" for T5.  Temporarily cast text
+            # encoders to float32 for the encode_prompt call, then restore.
+            encoders = [pipeline.text_encoder, pipeline.text_encoder_2]
+            original_dtypes = []
+            for enc in encoders:
+                if enc is not None:
+                    original_dtypes.append(enc.dtype)
+                    enc.to(torch.float32)
+                else:
+                    original_dtypes.append(None)
+
+            try:
+                # diffusers ≥ 0.30 exposes encode_prompt on FluxPipeline
+                # Use no_grad to prevent MPS graph caching of float32
+                # intermediate tensors from the text encoders, which can
+                # cause dtype mismatch errors in subsequent transformer
+                # forward passes.
+                with torch.no_grad():
+                    text_outputs = pipeline.encode_prompt(
+                        prompt=prompts,
+                        prompt_2=prompts,
+                        device=device,
+                        num_images_per_prompt=1,
+                        max_sequence_length=512,
+                    )
+            finally:
+                # Restore original dtypes regardless of success/failure
+                for enc, dtype in zip(encoders, original_dtypes):
+                    if enc is not None and dtype is not None:
+                        enc.to(dtype)
+
+            # encode_prompt return structure varies across diffusers versions:
+            #   < 0.30: (prompt_embeds, negative_prompt_embeds,
+            #           pooled_prompt_embeds, negative_pooled_prompt_embeds)  — 4 items
+            #   ≥ 0.30: (prompt_embeds, pooled_prompt_embeds, text_ids)  — 3 items
+            #   ≥ 0.38: (prompt_embeds, pooled_prompt_embeds)  — 2 items (sometimes)
+            # Use shape-based detection: prompt_embeds has 3 dims [B, seq, D],
+            # pooled_prompt_embeds has 2 dims [B, D_clip],
+            # text_ids has 2 dims [seq, 3] (no batch dim).
+            prompt_embeds = text_outputs[0]  # always [B, seq_len, D_t5]
+            pooled_prompt_embeds = None
+            text_ids = None
+            for item in text_outputs[1:]:
+                if item is None:
+                    continue
+                if item.dim() == 2 and item.shape[-1] == 3 and item.shape[0] != 768:
+                    # text_ids: [seq_len, 3] — distinguish from pooled [B, 768]
+                    text_ids = item
+                elif item.dim() == 2:
+                    pooled_prompt_embeds = item  # [B, D_clip]
+
+            # Cast embeddings to the model's dtype (encoders were temporarily
+            # cast to float32 for MPS stability, so outputs are float32).
+            model_dtype = next(self.peft_model.parameters()).dtype
 
             return {
-                "prompt_embeds": prompt_embeds.to(device),
+                "prompt_embeds": prompt_embeds.to(device=device, dtype=model_dtype),
                 "pooled_prompt_embeds": (
-                    pooled_prompt_embeds.to(device) if pooled_prompt_embeds is not None else None
+                    pooled_prompt_embeds.to(device=device, dtype=model_dtype)
+                    if pooled_prompt_embeds is not None
+                    else None
                 ),
+                "text_ids": text_ids.to(device=device, dtype=model_dtype) if text_ids is not None else None,
             }
 
         except Exception as e:
@@ -687,6 +884,7 @@ class InstructionTuner:
             return {
                 "prompt_embeds": torch.zeros(B, 1, 4096, device=device),
                 "pooled_prompt_embeds": torch.zeros(B, 768, device=device),
+                "text_ids": torch.zeros(1, 3, device=device),
             }
 
     def _encode_latents(self, images: torch.Tensor) -> torch.Tensor:
@@ -726,11 +924,20 @@ class InstructionTuner:
         try:
             with torch.no_grad():
                 # images expected in [-1, 1] by the VAE
+                # Ensure input dtype and device match VAE weights to avoid
+                # "Input type and bias type should be the same" and
+                # "input and weight must be on the same device" on MPS.
+                vae_device = next(vae.parameters()).device
+                vae_dtype = next(vae.parameters()).dtype
+                images = images.to(device=vae_device, dtype=vae_dtype)
                 latent_dist = vae.encode(images).latent_dist
                 latents = latent_dist.sample()
-                # Apply VAE scaling factor (FLUX default: 0.18215)
-                scaling_factor = getattr(vae.config, "scaling_factor", 0.18215)
+                # Apply VAE scaling factor (FLUX default: 0.3611)
+                scaling_factor = getattr(vae.config, "scaling_factor", 0.3611)
                 latents = latents * scaling_factor
+                # Cast to model dtype to avoid MPS dtype mismatches
+                model_dtype = next(self.peft_model.parameters()).dtype
+                latents = latents.to(dtype=model_dtype)
             return latents
         except Exception as e:
             logger.warning(f"VAE encoding failed ({e}); using zero latents.")
@@ -763,11 +970,11 @@ class InstructionTuner:
         if isinstance(prompts, str):
             prompts = [prompts]
 
-        # Infer device from batch tensors; fall back to peft_model parameters.
-        device = (
-            target_rgb.device
-            if isinstance(target_rgb, torch.Tensor)
-            else next((p.device for p in self.peft_model.parameters()), torch.device("cpu"))
+        # Infer device from peft_model parameters (MPS/CUDA) rather than batch
+        # tensor device, because _encode_latents moves latents to the VAE's
+        # device (which may differ from DataLoader's CPU device).
+        device = next(
+            (p.device for p in self.peft_model.parameters()), torch.device("cpu")
         )
 
         target_rgb = target_rgb.to(device)
@@ -796,10 +1003,11 @@ class InstructionTuner:
             input_latents = self._encode_latents(input_images)
 
         # ── Flow matching in latent space ────────────────────────────────
+        model_dtype = next(self.peft_model.parameters()).dtype
         if self.use_logit_normal_timesteps:
-            timesteps = sample_timesteps_logit_normal(batch_size, device)
+            timesteps = sample_timesteps_logit_normal(batch_size, device).to(model_dtype)
         else:
-            timesteps = torch.rand(batch_size, device=device)
+            timesteps = torch.rand(batch_size, device=device).to(model_dtype)
 
         noise = torch.randn_like(target_latents)
         t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
@@ -823,6 +1031,7 @@ class InstructionTuner:
         text_cond = self._encode_text(prompts, device)
         prompt_embeds = text_cond["prompt_embeds"]  # [B, seq_len, D_t5]
         pooled_prompt_embeds = text_cond["pooled_prompt_embeds"]  # [B, D_clip] | None
+        text_ids = text_cond.get("text_ids")  # [seq_len, 3] | None (FLUX-specific)
 
         if self.cfg_dropout_rate > 0:
             uncond = self._encode_text([""] * batch_size, device)
@@ -839,30 +1048,84 @@ class InstructionTuner:
                         drop_p, uncond["pooled_prompt_embeds"], pooled_prompt_embeds
                     )
 
+        # ── Prepare hidden_states for FLUX transformer ──────────────────
+        # FLUX uses a 2×2 latent packing: [B, 16, H, W] → [B, (H/2)*(W/2), 64]
+        # The transformer's x_embedder is nn.Linear(64, inner_dim), so it
+        # expects the packed sequence form with 64 channels.
+        latent_h, latent_w = noisy_latents.shape[-2], noisy_latents.shape[-1]
+        latent_channels = noisy_latents.shape[1]
+        # Pack: [B, C, H, W] → [B, (H/2)*(W/2), C*4]
+        # Detach from VAE computation graph — MPS graph caching conflicts
+        # between VAE (float32 internal) and transformer (bfloat16) cause
+        # dtype mismatch errors. The latents don't need gradients.
+        noisy_latents_packed = self._pack_latents(
+            noisy_latents.detach(), batch_size, latent_channels, latent_h, latent_w
+        )
+        # img_ids correspond to packed spatial dims [H/2, W/2]
+        packed_h, packed_w = latent_h // 2, latent_w // 2
+        img_ids = self._prepare_latent_image_ids(
+            batch_size, packed_h, packed_w, device, noisy_latents.dtype
+        )
+
         # ── Forward pass — use probed signature ────────────────────────
         # The forward mode was detected at init time via _probe_forward_signature,
         # eliminating the per-step try/except fallback chain.
+        # Cast all inputs to the model's dtype to avoid MPS dtype mismatches.
+        model_dtype = next(self.peft_model.parameters()).dtype
         forward_kwargs: dict = {
-            "hidden_states": noisy_latents,
-            "timestep": timesteps,
-            "encoder_hidden_states": prompt_embeds,
+            "hidden_states": noisy_latents_packed.to(model_dtype),
+            "timestep": timesteps.to(model_dtype),
+            "encoder_hidden_states": prompt_embeds.to(model_dtype),
         }
         if self._forward_mode == "full":
-            forward_kwargs["pooled_projections"] = pooled_prompt_embeds
-            predicted_velocity = self.peft_model(**forward_kwargs)
-        elif self._forward_mode == "partial":
-            predicted_velocity = self.peft_model(**forward_kwargs)
-        elif self._forward_mode == "minimal":
-            predicted_velocity = self.peft_model(
-                hidden_states=noisy_latents,
-                timestep=timesteps,
-            )
-        else:  # "positional"
-            predicted_velocity = self.peft_model(noisy_latents, timestep=timesteps)
+            forward_kwargs["pooled_projections"] = pooled_prompt_embeds.to(model_dtype)
+            forward_kwargs["txt_ids"] = text_ids.to(model_dtype)
+            forward_kwargs["img_ids"] = img_ids.to(model_dtype)
 
-        # Some transformer forward() returns a tuple (output, *extras)
-        if isinstance(predicted_velocity, (tuple, list)):
-            predicted_velocity = predicted_velocity[0]
+        # ── Run FLUX transformer forward ──────────────────────────────
+
+        # P0-6: Workaround for diffusers PEFT wrapper mis-routing.
+        # The diffusers peft_utils.py wrapper occasionally captures the wrong
+        # forward_fn (e.g. T5EncoderModel.forward instead of FluxTransformer2DModel.
+        # forward).  We unwrap via functools.__wrapped__ and call the original
+        # forward directly, then manually apply LoRA scaling/unscaling.
+        try:
+            predicted_velocity = self.peft_model(**forward_kwargs)
+        except TypeError as e:
+            if "input_ids" in str(e):
+                if not getattr(self, "_peft_misroute_warned", False):
+                    logger.warning(
+                        "PEFT wrapper mis-routed forward call (%s); "
+                        "falling back to unwrapped transformer forward. "
+                        "(This warning is shown only once.)", e
+                    )
+                    self._peft_misroute_warned = True
+                transformer = self.peft_model.base_model.model
+                # Unwrap the diffusers wrapper to get the real forward
+                raw_forward = transformer.forward
+                while hasattr(raw_forward, "__wrapped__"):
+                    raw_forward = raw_forward.__wrapped__
+                # Apply LoRA scaling before the raw forward
+                # (USE_PEFT_BACKEND removed in diffusers ≥ 0.31; scale/unscale
+                #  are safe no-ops when no LoRA layers are present.)
+                from diffusers.utils.peft_utils import scale_lora_layers, unscale_lora_layers
+                scale_lora_layers(transformer, 1.0)
+                try:
+                    predicted_velocity = raw_forward(transformer, **forward_kwargs)
+                finally:
+                    unscale_lora_layers(transformer, 1.0)
+            else:
+                raise
+
+        # Extract tensor from Transformer2DModelOutput if needed
+        if hasattr(predicted_velocity, "sample"):
+            predicted_velocity = predicted_velocity.sample
+
+        # Handle FLUX output: transformer returns [B, (H/2)*(W/2), C*4] (packed sequence).
+        # Unpack back to [B, C, H, W] to match velocity_target.
+        if predicted_velocity.dim() == 3 and velocity_target.dim() == 4:
+            H, W = velocity_target.shape[-2], velocity_target.shape[-1]
+            predicted_velocity = self._unpack_latents(predicted_velocity, H, W)
 
         # Ensure shape matches velocity_target before computing loss.
         # (Some transformers return a different channel/spatial layout.)
