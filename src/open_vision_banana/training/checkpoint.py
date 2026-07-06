@@ -149,20 +149,35 @@ class CheckpointManager:
         if ckpt_dir is None or not ckpt_dir.exists():
             raise FileNotFoundError(f"No checkpoint found in {self.output_dir}")
 
-        # Load LoRA weights via PEFT
-        # PeftModel.from_pretrained returns a *new* model; we copy the adapter
-        # weights back into the existing peft_model to preserve its reference.
+        # Load LoRA weights directly from safetensors into the existing PEFT model.
+        # Avoids PeftModel.from_pretrained which creates a second adapter and
+        # causes double-wrapping that breaks the computation graph.
         try:
             from peft import PeftModel
             if isinstance(peft_model, PeftModel):
-                loaded = PeftModel.from_pretrained(
-                    peft_model.base_model.model,
-                    str(ckpt_dir),
-                )
-                # Copy adapter state dict in-place
-                peft_model.load_state_dict(loaded.state_dict(), strict=False)
-                del loaded
-                logger.info(f"LoRA weights loaded from {ckpt_dir}")
+                from safetensors.torch import load_file
+                weights_file = ckpt_dir / "adapter_model.safetensors"
+                if weights_file.exists():
+                    raw_state_dict = load_file(str(weights_file))
+                    # Remap checkpoint keys to match the live PEFT model's key
+                    # naming: checkpoint uses `.lora_A.weight` but the live model
+                    # uses `.lora_A.default.weight` (adapter name "default").
+                    state_dict = {}
+                    for k, v in raw_state_dict.items():
+                        new_k = k
+                        if k.endswith(".lora_A.weight"):
+                            new_k = k.replace(".lora_A.weight", ".lora_A.default.weight")
+                        elif k.endswith(".lora_B.weight"):
+                            new_k = k.replace(".lora_B.weight", ".lora_B.default.weight")
+                        state_dict[new_k] = v
+                    missing, unexpected = peft_model.load_state_dict(state_dict, strict=False)
+                    if missing:
+                        logger.warning(f"Missing keys during LoRA resume: {len(missing)} keys")
+                    if unexpected:
+                        logger.warning(f"Unexpected keys during LoRA resume: {len(unexpected)} keys")
+                    logger.info(f"LoRA weights loaded from {ckpt_dir}")
+                else:
+                    logger.warning(f"adapter_model.safetensors not found in {ckpt_dir}")
         except Exception as e:
             logger.warning(f"PEFT load failed (non-fatal): {e}")
 
