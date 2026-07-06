@@ -177,7 +177,15 @@ class BaseGenerator:
                 revision=self.lora_revision,
             )
             logger.info(f"Loading LoRA weights from {self._resolved_lora_path!r} …")
-            pipe.load_lora_weights(self._resolved_lora_path)
+            try:
+                pipe.load_lora_weights(self._resolved_lora_path)
+                logger.info("LoRA weights loaded via pipe.load_lora_weights")
+            except Exception as e:
+                logger.warning(
+                    "pipe.load_lora_weights failed (%s); "
+                    "falling back to manual LoRA weight merge.", e
+                )
+                self._load_and_merge_lora(pipe, self._resolved_lora_path)
 
         applied = apply_pipeline_optimizations(pipe, self.inference_options)
         if applied:
@@ -440,6 +448,104 @@ class BaseGenerator:
             self._i2i_pipe = None  # force rebuild without LoRA
             self._prompt_cache.clear()  # invalidate cached embeddings
             logger.info("LoRA weights unloaded")
+
+    def _load_and_merge_lora(self, pipe, lora_path: str) -> None:
+        """Load LoRA weights from safetensors and merge into base model.
+
+        Bypasses the PEFT wrapper entirely — reads the adapter weights
+        directly and applies W += scale * B @ A to the target modules.
+        This is the fallback when pipe.load_lora_weights() triggers the
+        diffusers PEFT mis-route bug.
+
+        Args:
+            pipe: The diffusers FluxPipeline instance.
+            lora_path: Path to the directory containing adapter_model.safetensors.
+        """
+        from safetensors.torch import load_file
+
+        adapter_path = Path(lora_path)
+        weights_file = adapter_path / "adapter_model.safetensors"
+        if not weights_file.exists():
+            raise FileNotFoundError(f"LoRA weights not found: {weights_file}")
+
+        # Read adapter config for scaling
+        config_path = adapter_path / "adapter_config.json"
+        import json
+        with open(config_path) as f:
+            config = json.load(f)
+
+        lora_rank = config.get("r", 64)
+        lora_alpha = config.get("lora_alpha", 128)
+        use_rslora = config.get("use_rslora", False)
+        target_modules = config.get("target_modules", ["to_k", "to_v"])
+
+        # rsLoRA scale = alpha / sqrt(rank); standard LoRA scale = alpha / rank
+        if use_rslora:
+            scale = lora_alpha / (lora_rank ** 0.5)
+        else:
+            scale = lora_alpha / lora_rank
+
+        logger.info(
+            "Manual LoRA merge: rank=%d, alpha=%d, rslora=%s, scale=%.4f, targets=%s",
+            lora_rank, lora_alpha, use_rslora, scale, target_modules
+        )
+
+        state_dict = load_file(str(weights_file))
+        transformer = pipe.transformer
+
+        # Group LoRA weights by module name
+        # Key format: base_model.model.{module_name}.lora_A.weight
+        #             base_model.model.{module_name}.lora_B.weight
+        lora_pairs: dict[str, dict[str, torch.Tensor]] = {}
+        for key, tensor in state_dict.items():
+            # Extract module name and A/B
+            parts = key.split(".")
+            # Find lora_A or lora_B in the key
+            for i, part in enumerate(parts):
+                if part in ("lora_A", "lora_B"):
+                    module_name = ".".join(parts[parts.index("model") + 1:i]) if "model" in parts else ".".join(parts[:-2])
+                    if module_name not in lora_pairs:
+                        lora_pairs[module_name] = {}
+                    lora_pairs[module_name][part] = tensor
+                    break
+
+        merged_count = 0
+        for module_name, pair in lora_pairs.items():
+            if "lora_A" not in pair or "lora_B" not in pair:
+                continue
+
+            # Navigate to the target module
+            module = transformer
+            for attr in module_name.split("."):
+                if hasattr(module, attr):
+                    module = getattr(module, attr)
+                else:
+                    logger.warning("Module '%s' not found in transformer, skipping", module_name)
+                    module = None
+                    break
+
+            if module is None:
+                continue
+
+            if not hasattr(module, "weight"):
+                logger.warning("Module '%s' has no 'weight' attribute, skipping", module_name)
+                continue
+
+            A = pair["lora_A"].to(module.weight.dtype)  # [rank, in_features]
+            B = pair["lora_B"].to(module.weight.dtype)  # [out_features, rank]
+
+            # W += scale * B @ A
+            delta = scale * (B @ A)
+            if module.weight.shape == delta.shape:
+                module.weight.data += delta
+                merged_count += 1
+            else:
+                logger.warning(
+                    "Shape mismatch for '%s': weight %s vs delta %s, skipping",
+                    module_name, tuple(module.weight.shape), tuple(delta.shape)
+                )
+
+        logger.info("Manually merged %d LoRA layers into base model", merged_count)
 
     def enable_cpu_offload(self) -> None:
         """Enable sequential CPU offload on already-loaded pipelines."""
