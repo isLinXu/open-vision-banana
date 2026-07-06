@@ -247,6 +247,13 @@ class InstructionTuner:
         # probe the model's forward() signature once and store the result.
         self._forward_mode = self._probe_forward_signature()
 
+        # ── P0-7: Detect PEFT mis-route at init time ────────────────────
+        # diffusers' PEFT integration may mis-route forward() calls to the
+        # wrong module (e.g. T5EncoderModel.forward which expects input_ids).
+        # When detected, we bypass the PEFT wrapper entirely and call the
+        # underlying transformer's forward directly with manual LoRA scaling.
+        self._use_direct_forward = self._detect_peft_misroute()
+
     @staticmethod
     def _detect_device_type() -> str:
         """Detect the best available device type: cuda, mps, or cpu."""
@@ -403,6 +410,93 @@ class InstructionTuner:
 
         return "positional"
 
+    def _detect_peft_misroute(self) -> bool:
+        """Detect whether the PEFT wrapper mis-routes forward() calls.
+
+        diffusers' PEFT integration (peft_utils.py) sometimes captures the
+        wrong ``forward_fn`` — e.g. T5EncoderModel.forward instead of
+        FluxTransformer2DModel.forward.  When this happens, calling the
+        PEFT-wrapped model with FLUX kwargs (hidden_states, timestep, etc.)
+        raises a TypeError mentioning 'input_ids'.
+
+        We detect this once at init time by inspecting the PEFT wrapper's
+        forward signature.  If the wrapper's forward accepts 'input_ids'
+        but NOT 'hidden_states', it's mis-routed.
+
+        Returns:
+            True if the PEFT wrapper is mis-routed and should be bypassed.
+        """
+        import inspect
+
+        try:
+            sig = inspect.signature(self.peft_model.forward)
+        except (ValueError, TypeError):
+            return False
+
+        params = {
+            name
+            for name, p in sig.parameters.items()
+            if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+        }
+
+        # Mis-route: wrapper accepts input_ids (T5 signature) but not
+        # hidden_states (FLUX transformer signature)
+        has_input_ids = "input_ids" in params
+        has_hidden_states = "hidden_states" in params
+        has_kwargs = any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values())
+
+        if has_input_ids and not has_hidden_states:
+            logger.warning(
+                "PEFT wrapper mis-route detected at init: forward() accepts "
+                "'input_ids' but not 'hidden_states'. Bypassing PEFT wrapper "
+                "and calling underlying transformer forward directly."
+            )
+            return True
+
+        # If the wrapper has **kwargs (opaque), do a single trial call to
+        # check whether it actually works with FLUX kwargs.
+        if has_kwargs and not has_hidden_states:
+            try:
+                dummy = torch.zeros(1, 4, 64, device="cpu", dtype=torch.float32)
+                self.peft_model(
+                    hidden_states=dummy,
+                    timestep=torch.tensor([0.5]),
+                    encoder_hidden_states=torch.zeros(1, 1, 4096),
+                    pooled_projections=torch.zeros(1, 768),
+                )
+            except TypeError as e:
+                if "input_ids" in str(e):
+                    logger.warning(
+                        "PEFT wrapper mis-route detected (trial call): %s. "
+                        "Bypassing PEFT wrapper for all training steps.", e
+                    )
+                    return True
+            except Exception:
+                pass  # Other errors (shape mismatch etc.) are expected; not a mis-route
+
+        return False
+
+    def _direct_forward(self, forward_kwargs: dict) -> torch.Tensor:
+        """Call the underlying transformer's forward directly, bypassing PEFT wrapper.
+
+        Used when _detect_peft_misroute() returns True.  Manually applies
+        LoRA scale/unscale around the raw forward call.
+
+        Important: we call transformer.forward WITHOUT unwrapping __wrapped__
+        because the PEFT wrapper patches forward with LoRA-adapted weights.
+        Unwrapping would bypass the LoRA layers entirely, breaking the
+        computation graph (loss has no grad_fn).
+        """
+        transformer = self.peft_model.base_model.model
+
+        from diffusers.utils.peft_utils import scale_lora_layers, unscale_lora_layers
+        scale_lora_layers(transformer, 1.0)
+        try:
+            output = transformer(**forward_kwargs)
+        finally:
+            unscale_lora_layers(transformer, 1.0)
+        return output
+
     def enable_deepspeed(
         self,
         *,
@@ -502,8 +596,14 @@ class InstructionTuner:
         early_stopping_min_delta: float = 0.0,
         train_sampler=None,
         is_main_process: bool = True,
+        start_step: int = 0,
+        start_epoch: int = 0,
     ) -> dict:
         """Train the LoRA instruction alignment.
+
+        Args:
+            start_step: Resume global step (for LR scheduler offset).
+            start_epoch: Resume epoch index.
 
         Returns:
             Summary dict with ``epochs_run``, ``global_step``, ``best_val_loss``,
@@ -567,11 +667,17 @@ class InstructionTuner:
             else None
         )
 
-        global_step = 0
+        global_step = start_step
         best_val_loss: float | None = None
         stopped_early = False
 
-        for epoch in range(epochs):
+        # Fast-forward LR scheduler to the resume step
+        if start_step > 0:
+            for _ in range(start_step):
+                scheduler.step()
+            logger.info(f"Resumed LR scheduler to step {start_step}, lr={scheduler.get_last_lr()[0]:.2e}")
+
+        for epoch in range(start_epoch, epochs):
             if train_sampler is not None and hasattr(train_sampler, "set_epoch"):
                 train_sampler.set_epoch(epoch)
             epoch_loss = 0.0
@@ -1084,38 +1190,27 @@ class InstructionTuner:
 
         # ── Run FLUX transformer forward ──────────────────────────────
 
-        # P0-6: Workaround for diffusers PEFT wrapper mis-routing.
-        # The diffusers peft_utils.py wrapper occasionally captures the wrong
-        # forward_fn (e.g. T5EncoderModel.forward instead of FluxTransformer2DModel.
-        # forward).  We unwrap via functools.__wrapped__ and call the original
-        # forward directly, then manually apply LoRA scaling/unscaling.
-        try:
-            predicted_velocity = self.peft_model(**forward_kwargs)
-        except TypeError as e:
-            if "input_ids" in str(e):
-                if not getattr(self, "_peft_misroute_warned", False):
-                    logger.warning(
-                        "PEFT wrapper mis-routed forward call (%s); "
-                        "falling back to unwrapped transformer forward. "
-                        "(This warning is shown only once.)", e
-                    )
-                    self._peft_misroute_warned = True
-                transformer = self.peft_model.base_model.model
-                # Unwrap the diffusers wrapper to get the real forward
-                raw_forward = transformer.forward
-                while hasattr(raw_forward, "__wrapped__"):
-                    raw_forward = raw_forward.__wrapped__
-                # Apply LoRA scaling before the raw forward
-                # (USE_PEFT_BACKEND removed in diffusers ≥ 0.31; scale/unscale
-                #  are safe no-ops when no LoRA layers are present.)
-                from diffusers.utils.peft_utils import scale_lora_layers, unscale_lora_layers
-                scale_lora_layers(transformer, 1.0)
-                try:
-                    predicted_velocity = raw_forward(transformer, **forward_kwargs)
-                finally:
-                    unscale_lora_layers(transformer, 1.0)
-            else:
-                raise
+        # P0-7: Bypass PEFT wrapper when mis-route is detected at init time.
+        # This avoids the per-step TypeError exception overhead.
+        if self._use_direct_forward:
+            predicted_velocity = self._direct_forward(forward_kwargs)
+        else:
+            try:
+                predicted_velocity = self.peft_model(**forward_kwargs)
+            except TypeError as e:
+                if "input_ids" in str(e):
+                    if not getattr(self, "_peft_misroute_warned", False):
+                        logger.warning(
+                            "PEFT wrapper mis-routed forward call (%s); "
+                            "falling back to unwrapped transformer forward. "
+                            "(This warning is shown only once.)", e
+                        )
+                        self._peft_misroute_warned = True
+                    # Late detection: switch to direct forward for remaining steps
+                    self._use_direct_forward = True
+                    predicted_velocity = self._direct_forward(forward_kwargs)
+                else:
+                    raise
 
         # Extract tensor from Transformer2DModelOutput if needed
         if hasattr(predicted_velocity, "sample"):
