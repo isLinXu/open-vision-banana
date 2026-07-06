@@ -319,7 +319,12 @@ def main():
             ckpt_parent = resume_path
         ckpt = CheckpointManager(str(ckpt_parent))
         meta = ckpt.load(tuner.peft_model)
-        logger.info(f"Resumed from step={meta.get('step', 0)}, epoch={meta.get('epoch', 0)}")
+        resume_step = meta.get('step', 0)
+        resume_epoch = meta.get('epoch', 0)
+        logger.info(f"Resumed from step={resume_step}, epoch={resume_epoch}")
+    else:
+        resume_step = 0
+        resume_epoch = 0
 
     # Build datasets
     vision_datasets = []
@@ -427,6 +432,8 @@ def main():
         early_stopping_min_delta=cfg.training.early_stopping_min_delta,
         train_sampler=train_sampler,
         is_main_process=is_main_process,
+        start_step=resume_step,
+        start_epoch=resume_epoch,
     )
 
     if fsdp_wrapper is not None:
