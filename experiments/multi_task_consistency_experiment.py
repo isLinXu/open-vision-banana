@@ -18,24 +18,23 @@
 from __future__ import annotations
 
 import json
-import time
-from dataclasses import dataclass, field
+import sys
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import matplotlib
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.core.normal_mapper import NormalRGBMapper
 from open_vision_banana.core.segmentation import SegmentationDecoder
 
-import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -160,7 +159,6 @@ class Scene:
 
 def generate_scene_ground_truth(scene: Scene, resolution: int = 256) -> dict:
     """Render depth, normal, 3D position, and object ID maps for a scene."""
-    device = "cpu"
     H = W = resolution
     fov = 60.0  # degrees
     aspect = 1.0
@@ -261,7 +259,7 @@ def compute_depth_normal_consistency(
     scene_name: str,
 ) -> DepthNormalConsistencyResult:
     """Verify H1: depth gradient should be orthogonal to normal (approximately).
-    
+
     Uses 3D position map to compute surface normals via cross product of
     neighboring positions, then compares with ground truth normals.
     """
@@ -271,43 +269,43 @@ def compute_depth_normal_consistency(
     # Compute normals from 3D positions using finite differences
     # For each pixel, compute vectors to right and down neighbors
     pos = position[0]  # [3, H, W]
-    
+
     # Right neighbor (handle boundary by clamping)
     pos_right = torch.cat([pos[:, :, 1:], pos[:, :, -1:]], dim=2)
     pos_down = torch.cat([pos[:, 1:, :], pos[:, -1:, :]], dim=1)
-    
+
     # Vectors from current pixel to neighbors
     v_right = pos_right - pos  # [3, H, W]
     v_down = pos_down - pos    # [3, H, W]
-    
+
     # Cross product to get normal
     nx = v_right[1] * v_down[2] - v_right[2] * v_down[1]
     ny = v_right[2] * v_down[0] - v_right[0] * v_down[2]
     nz = v_right[0] * v_down[1] - v_right[1] * v_down[0]
-    
+
     normal_from_depth = torch.stack([nx, ny, nz], dim=0)
     norm = normal_from_depth.norm(dim=0, keepdim=True).clamp(min=1e-8)
     normal_from_depth = normal_from_depth / norm
-    
+
     # Compare with ground truth normal
     gt_normal = normal[0]  # [3, H, W]
-    
+
     # Angular error between predicted and ground truth (use abs to handle sign ambiguity)
     dot = (normal_from_depth * gt_normal).sum(dim=0).clamp(-1, 1)
     angle_err = torch.acos(dot.abs()) * 180.0 / np.pi
-    
+
     # Valid mask: exclude background and extreme grazing angles (where cross-product method is unstable)
     # Use nz > 0.1 instead of 0.5 to include tilted surfaces like Scene C
     valid = (position[0, 2] < 7.5) & (position[0, 2] > 0.1) & (gt_normal[2] > 0.1)
-    
+
     mean_angle = angle_err[valid].mean().item() if valid.any() else 90.0
-    
+
     # Correlation between depth gradient magnitude and normal xy magnitude
     grad_x = F.conv2d(depth, torch.tensor([[[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]], dtype=torch.float32), padding=1)
     grad_y = F.conv2d(depth, torch.tensor([[[[-1, -2, -1], [0, 0, 0], [1, 2, 1]]]], dtype=torch.float32), padding=1)
     grad_mag = torch.sqrt(grad_x[0, 0] ** 2 + grad_y[0, 0] ** 2 + 1e-10)
     normal_xy_mag = torch.sqrt(gt_normal[0] ** 2 + gt_normal[1] ** 2)
-    
+
     # Pearson correlation on valid region
     if valid.sum() > 10:
         g_flat = grad_mag[valid].reshape(-1)
@@ -511,9 +509,9 @@ def generate_charts(results: dict, output_dir: Path):
 
     x = np.arange(len(scenes))
     width = 0.35
-    bars1 = ax.bar(x - width/2, angular_errors, width, label="Angular Error (°)", color="#e74c3c")
+    ax.bar(x - width/2, angular_errors, width, label="Angular Error (°)", color="#e74c3c")
     ax2 = ax.twinx()
-    bars2 = ax2.bar(x + width/2, correlations, width, label="Gradient Correlation", color="#3498db")
+    ax2.bar(x + width/2, correlations, width, label="Gradient Correlation", color="#3498db")
 
     ax.set_ylabel("Angular Error (°)", color="#e74c3c")
     ax2.set_ylabel("Pearson Correlation", color="#3498db")
@@ -535,7 +533,7 @@ def generate_charts(results: dict, output_dir: Path):
     ax.set_ylabel("Boundary IoU")
     ax.set_title("H2: Segmentation-Depth Boundary Alignment")
     ax.set_ylim(0, 1)
-    for bar, val in zip(bars, ious):
+    for bar, val in zip(bars, ious, strict=False):
         ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
                 f"{val:.3f}", ha="center", va="bottom", fontsize=11)
     fig.tight_layout()
@@ -549,7 +547,7 @@ def generate_charts(results: dict, output_dir: Path):
     labels = ["Depth", "Normal", "Segmentation"]
     means = [rgb_dist.depth_mean_rgb, rgb_dist.normal_mean_rgb, rgb_dist.seg_mean_rgb]
     colors = ["#e74c3c", "#3498db", "#2ecc71"]
-    for (label, mean, color) in zip(labels, means, colors):
+    for (label, mean, color) in zip(labels, means, colors, strict=False):
         ax.scatter(mean[0], mean[1], s=200, c=color, label=label, edgecolors="black", alpha=0.8)
         ax.annotate(label, (mean[0], mean[1]), textcoords="offset points", xytext=(5, 5))
 
@@ -638,7 +636,7 @@ This experiment validates four hypotheses about the multi-task consistency of Vi
         md += f"| {r.scene_name} | {r.depth_to_normal_angular_error:.2f} | {r.gradient_magnitude_correlation:.3f} | {interp} |\n"
 
     md += """
-**Analysis**: 
+**Analysis**:
 - The angular error between depth-gradient-predicted normal and true normal measures the geometric fidelity of the RGB parameterization.
 - Lower angular error (< 15°) indicates that the depth and normal parameterizations preserve the underlying 3D geometry.
 - Positive gradient correlation confirms that regions with strong depth discontinuities also have strong normal curvature.
@@ -711,15 +709,15 @@ This experiment validates four hypotheses about the multi-task consistency of Vi
     h1_score = sum(1 for r in h1 if r.depth_to_normal_angular_error < 15) / len(h1)
     md += f"{'⭐⭐⭐⭐⭐' if h1_score > 0.8 else '⭐⭐⭐⭐' if h1_score > 0.6 else '⭐⭐⭐'} | {h1_score*100:.0f}% scenes with <15° error |\n"
 
-    md += f"| Seg-Depth Boundary Align | "
+    md += "| Seg-Depth Boundary Align | "
     h2_score = sum(1 for r in h2 if r.boundary_iou > 0.4) / len(h2)
     md += f"{'⭐⭐⭐⭐⭐' if h2_score > 0.8 else '⭐⭐⭐⭐' if h2_score > 0.6 else '⭐⭐⭐'} | {h2_score*100:.0f}% scenes with IoU>0.4 |\n"
 
-    md += f"| RGB Space Independence | "
+    md += "| RGB Space Independence | "
     h3_score = 1.0 if all(v < 0.5 for v in h3.pairwise_histogram_intersection.values()) else 0.5
     md += f"{'⭐⭐⭐⭐⭐' if h3_score > 0.8 else '⭐⭐⭐⭐'} | Max overlap = {max(h3.pairwise_histogram_intersection.values()):.3f} |\n"
 
-    md += f"| Noise Isolation | "
+    md += "| Noise Isolation | "
     h4_score = 1.0 if h4[-1].normal_roundtrip_cos_sim > 0.99 and h4[-1].seg_f1_with_noisy_depth > 0.8 else 0.5
     md += f"{'⭐⭐⭐⭐⭐' if h4_score > 0.8 else '⭐⭐⭐⭐'} | Normal cos_sim at σ=0.5: {h4[-1].normal_roundtrip_cos_sim:.6f} |\n"
 
@@ -772,7 +770,7 @@ def main():
 
     d_mapper = DepthRGBMapper()
     n_mapper = NormalRGBMapper()
-    s_decoder = SegmentationDecoder()
+    SegmentationDecoder()
 
     h1_results = []
     h2_results = []

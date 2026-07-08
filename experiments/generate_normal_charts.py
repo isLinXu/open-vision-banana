@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 EXPERIMENTS_DIR = Path(__file__).resolve().parent
 
@@ -31,7 +30,7 @@ bars = ax.bar(patterns, cos_vals, color=colors, edgecolor="black", linewidth=0.5
 ax.set_ylabel("Cosine Similarity")
 ax.set_title("1. Roundtrip Accuracy ↑")
 ax.set_ylim(0.98, 1.001)
-for bar, val in zip(bars, cos_vals):
+for bar, val in zip(bars, cos_vals, strict=False):
     ax.text(
         bar.get_x() + bar.get_width() / 2,
         bar.get_height() + 0.0005,
@@ -52,7 +51,7 @@ ax.set_ylabel("Cosine Similarity")
 ax.set_title("2. Noise Robustness (Cosine Sim) ↑")
 ax.grid(True, alpha=0.3)
 ax.set_ylim(0, 1.05)
-for s, c in zip(sigmas, cos_sims):
+for s, c in zip(sigmas, cos_sims, strict=False):
     ax.text(s, c + 0.03, f"{c:.3f}", ha="center", fontsize=8)
 
 # 3. Noise Robustness (angular error)
@@ -63,7 +62,7 @@ ax.set_xlabel("RGB Noise σ")
 ax.set_ylabel("Angular Error (°)")
 ax.set_title("3. Noise Robustness (Angular Error) ↓")
 ax.grid(True, alpha=0.3)
-for s, a in zip(sigmas, angles):
+for s, a in zip(sigmas, angles, strict=False):
     ax.text(s, a + 2, f"{a:.1f}°", ha="center", fontsize=8)
 
 # 4. Summary & Speed

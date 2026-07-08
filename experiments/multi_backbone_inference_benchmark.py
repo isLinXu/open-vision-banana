@@ -42,8 +42,9 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import sys
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 
@@ -51,13 +52,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+import matplotlib
 
 from open_vision_banana.model_registry import (
     ModelConfig,
     PipelineComponents,
-    apply_lora,
     backbone_forward,
     build_added_cond_kwargs,
     encode_text,
@@ -66,7 +67,6 @@ from open_vision_banana.model_registry import (
     vae_encode,
 )
 
-import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -204,16 +204,11 @@ def _build_mock_components(cfg: ModelConfig, device: torch.device) -> PipelineCo
     vae = _MockVAE(scaling_factor=cfg.vae_scaling_factor or 0.18215, downsample=cfg.vae_downsample_factor)
     vae = vae.to(device)
 
-    if cfg.backbone_type == "unet":
-        backbone = _MockUNet()
-    else:
-        backbone = _MockTransformer()
+    backbone = _MockUNet() if cfg.backbone_type == "unet" else _MockTransformer()
     backbone = backbone.to(device)
 
     def _make_te(idx: int):
-        if cfg.family in ("sd15", "sd2"):
-            return _MockTextEncoder(hidden_size=768 if idx == 0 else 1280, text_embeds_dim=1280)
-        elif cfg.family == "sdxl":
+        if cfg.family in ("sd15", "sd2") or cfg.family == "sdxl":
             return _MockTextEncoder(hidden_size=768 if idx == 0 else 1280, text_embeds_dim=1280)
         elif cfg.family == "flux":
             return _MockTextEncoder(hidden_size=768 if idx == 0 else 4096, text_embeds_dim=1280)

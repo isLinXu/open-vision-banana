@@ -23,10 +23,10 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 import torch
@@ -37,16 +37,18 @@ import torch
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
 import sys
+
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
-
-from open_vision_banana.core.depth_mapper import DepthRGBMapper
-from open_vision_banana.core.normal_mapper import NormalRGBMapper
 
 # ---------------------------------------------------------------------------
 # Visualization setup
 # ---------------------------------------------------------------------------
 import matplotlib
+
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
+from open_vision_banana.core.normal_mapper import NormalRGBMapper
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -315,7 +317,7 @@ def _build_summary(exp: ExperimentOutput) -> None:
         avg_absrel[(cm, dom, q)] = np.mean([v["absrel"] for v in vals])
 
     # Rank colormaps per domain under quantization
-    domains = sorted({k[1] for k in avg_absrel.keys()})
+    domains = sorted({k[1] for k in avg_absrel})
     rankings = {}
     for dom in domains:
         q_scores = [(cm, avg_absrel[(cm, dom, True)]) for cm in COLORMAPS if (cm, dom, True) in avg_absrel]

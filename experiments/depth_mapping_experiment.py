@@ -20,21 +20,20 @@ Output: experiments/depth_mapping_benchmark_results.md + visualization charts
 from __future__ import annotations
 
 import json
-import time
-from dataclasses import dataclass, field
-from datetime import date
-from pathlib import Path
-from typing import Callable
-
-import torch
 
 # Import project modules
 import sys
+import time
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+import torch
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from open_vision_banana.core.depth_mapper import DepthRGBMapper, CUBE_EDGE_KEYPOINTS
 from open_vision_banana.core.adaptive_depth_mapper import AdaptiveDepthRGBMapper
-
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
 
 # ──────────────────────────────────────────────────────────────────
 # Baseline Linear Mapper (for comparison)
@@ -73,12 +72,12 @@ class RoundtripResult:
 
     def near_mean_rel_error(self) -> float:
         """Mean relative error for depths in [0, 5]m."""
-        vals = [e for d, e in zip(self.depth_values, self.rel_errors) if d <= 5.0]
+        vals = [e for d, e in zip(self.depth_values, self.rel_errors, strict=False) if d <= 5.0]
         return sum(vals) / max(len(vals), 1)
 
     def far_mean_rel_error(self) -> float:
         """Mean relative error for depths in [20, 100]m."""
-        vals = [e for d, e in zip(self.depth_values, self.rel_errors) if d >= 20.0]
+        vals = [e for d, e in zip(self.depth_values, self.rel_errors, strict=False) if d >= 20.0]
         return sum(vals) / max(len(vals), 1)
 
     def overall_mean_rel_error(self) -> float:
@@ -132,8 +131,8 @@ def run_roundtrip_experiment(
     orig = depth_tensor.squeeze().tolist()
     rec = recovered.squeeze().tolist()
 
-    abs_errors = [abs(o - r) for o, r in zip(orig, rec)]
-    rel_errors = [abs(o - r) / o for o, r in zip(orig, rec) if o > 0]
+    abs_errors = [abs(o - r) for o, r in zip(orig, rec, strict=False)]
+    rel_errors = [abs(o - r) / o for o, r in zip(orig, rec, strict=False) if o > 0]
 
     return RoundtripResult(
         strategy=strategy_name,
@@ -354,7 +353,7 @@ def main():
 
         f.write("\n## 4. Conclusions\n\n")
         paper_rt = results["Paper (Fixed)"].roundtrip
-        adaptive_rt = results["Adaptive"].roundtrip
+        results["Adaptive"].roundtrip
         linear_rt = results["Linear (Baseline)"].roundtrip
 
         f.write("1. **Roundtrip Accuracy**: ")

@@ -26,11 +26,12 @@ import torch.nn.functional as F
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+import matplotlib
+
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.core.normal_mapper import NormalRGBMapper
 from open_vision_banana.core.segmentation import SegmentationDecoder
 
-import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -316,10 +317,7 @@ def compute_h4(depth, normal, seg_rgb, valid_mask, noise_levels):
 
         # ★ Masked MAE: only valid-domain pixels
         err = (depth - depth_rec).abs()
-        if mask.any():
-            depth_mae = err[mask.expand_as(err)].mean().item()
-        else:
-            depth_mae = err.mean().item()
+        depth_mae = err[mask.expand_as(err)].mean().item() if mask.any() else err.mean().item()
 
         normal_rec = n_mapper.rgb_to_normal(normal_rgb)
         cos_sim = F.cosine_similarity(normal, normal_rec, dim=1).mean().item()
@@ -362,7 +360,7 @@ def generate_charts(h1_results, h2_results, h3, h4_results, output_dir):
     bars = ax.bar(scenes2, ious, color=["#2ecc71", "#27ae60", "#1e8449"])
     ax.set_ylabel("Boundary IoU"); ax.set_title("H2: Segmentation-Depth Boundary Alignment")
     ax.set_ylim(0, 1)
-    for b, v in zip(bars, ious):
+    for b, v in zip(bars, ious, strict=False):
         ax.text(b.get_x() + b.get_width()/2, b.get_height() + 0.02, f"{v:.3f}", ha="center", fontsize=11)
     fig.tight_layout(); fig.savefig(output_dir / "mtc_boundary_alignment.png", dpi=150)
     plt.close(fig)
@@ -372,7 +370,7 @@ def generate_charts(h1_results, h2_results, h3, h4_results, output_dir):
     labels = ["Depth", "Normal", "Segmentation"]
     means = [h3.depth_mean_rgb, h3.normal_mean_rgb, h3.seg_mean_rgb]
     colors = ["#e74c3c", "#3498db", "#2ecc71"]
-    for lab, m, c in zip(labels, means, colors):
+    for lab, m, c in zip(labels, means, colors, strict=False):
         ax.scatter(m[0], m[1], s=200, c=c, label=lab, edgecolors="black", alpha=0.8)
         ax.annotate(lab, (m[0], m[1]), textcoords="offset points", xytext=(5, 5))
     ax.set_xlabel("Mean R"); ax.set_ylabel("Mean G")
@@ -509,7 +507,7 @@ def generate_report(h1, h2, h3, h4, path):
     for r in h1:
         md += f"| {r.scene_name} | {r.angular_error_deg:.2f} | {r.gradient_correlation:.3f} |\n"
 
-    md += f"""
+    md += """
 ## 2. H2: Segmentation-Depth Boundary Alignment
 
 | Scene | Boundary IoU ↑ | Depth Edge Ratio | Seg Boundary Ratio |

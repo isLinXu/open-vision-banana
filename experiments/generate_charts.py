@@ -62,7 +62,7 @@ bars = ax.bar(strategies, vals, color=colors, edgecolor="black", linewidth=0.5)
 ax.set_ylabel("Mean Relative Error")
 ax.set_title("1. Overall Roundtrip Accuracy ↓")
 ax.set_ylim(0, max(vals) * 1.5 if max(vals) > 0 else 0.01)
-for bar, val in zip(bars, vals):
+for bar, val in zip(bars, vals, strict=False):
     ax.text(
         bar.get_x() + bar.get_width() / 2,
         bar.get_height() + max(vals) * 0.05,

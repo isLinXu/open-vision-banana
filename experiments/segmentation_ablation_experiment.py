@@ -14,18 +14,16 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 import torch
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from open_vision_banana.core.segmentation import SegmentationDecoder
-
 
 # ──────────────────────────────────────────────────────────────
 # Synthetic Data Generation
@@ -237,7 +235,7 @@ def run_decoder_on_batch(
     total_gt = 0
     matched_batches = 0
 
-    for img, gt_masks in zip(images, gt_mask_batches):
+    for img, gt_masks in zip(images, gt_mask_batches, strict=False):
         t0 = time.perf_counter()
         instances = decoder.decode_instance(img, adaptive_color_tolerance=adaptive)
         total_time += (time.perf_counter() - t0) * 1000
@@ -357,7 +355,7 @@ def main():
         decoder = SegmentationDecoder(color_tolerance=tau)
         res = run_decoder_on_batch(decoder, f"tau={tau}", images, gt_mask_batches, adaptive=False)
         param_results["color_tolerance"].append((tau, res))
-    print(f"  τ scan: ", end="")
+    print("  τ scan: ", end="")
     for tau, res in param_results["color_tolerance"]:
         print(f"({tau:.0f}: F1={res.f1:.3f})", end=" ")
     print()
@@ -367,7 +365,7 @@ def main():
         decoder = SegmentationDecoder(min_area_fraction=maf)
         res = run_decoder_on_batch(decoder, f"maf={maf}", images, gt_mask_batches, adaptive=False)
         param_results["min_area_fraction"].append((maf, res))
-    print(f"  θ_size scan: ", end="")
+    print("  θ_size scan: ", end="")
     for maf, res in param_results["min_area_fraction"]:
         print(f"({maf:.0e}: F1={res.f1:.3f})", end=" ")
     print()
@@ -377,7 +375,7 @@ def main():
         decoder = SegmentationDecoder(erosion_threshold=et)
         res = run_decoder_on_batch(decoder, f"et={et}", images, gt_mask_batches, adaptive=False)
         param_results["erosion_threshold"].append((et, res))
-    print(f"  θ_erosion scan: ", end="")
+    print("  θ_erosion scan: ", end="")
     for et, res in param_results["erosion_threshold"]:
         print(f"({et:.2f}: F1={res.f1:.3f})", end=" ")
     print()
@@ -440,9 +438,9 @@ def main():
         f.write("> **实验目的**: 验证论文附录 A 的 5 阶段实例分割解码算法，量化各阶段贡献，\n")
         f.write("> 评估自适应颜色容差（P2 改进）的有效性，并确定最优参数区间。\n\n")
         f.write(f"- **合成样本数**: {num_samples} 张 ({H}×{W})\n")
-        f.write(f"- **每张实例数**: 4 个（随机颜色矩形 + 内部纹理 + 边界伪影）\n")
-        f.write(f"- **默认噪声**: σ = 8.0 / 255\n")
-        f.write(f"- **匹配阈值**: IoU ≥ 0.5\n\n")
+        f.write("- **每张实例数**: 4 个（随机颜色矩形 + 内部纹理 + 边界伪影）\n")
+        f.write("- **默认噪声**: σ = 8.0 / 255\n")
+        f.write("- **匹配阈值**: IoU ≥ 0.5\n\n")
 
         # Section 1: Ablation
         f.write("## 1. 5 阶段消融分析\n\n")
@@ -457,9 +455,9 @@ def main():
         delta = full_f1 - basic_f1
         f.write(f"1. **完整 5 阶段相比仅 S1+S2 提升 F1 = {delta:.3f}**。")
         if delta > 0.1:
-            f.write(f"Stage 3–5 对实例质量至关重要。\n")
+            f.write("Stage 3–5 对实例质量至关重要。\n")
         else:
-            f.write(f"提升有限，说明合成数据噪声较弱。\n")
+            f.write("提升有限，说明合成数据噪声较弱。\n")
 
         # Identify biggest impact stage
         stage_impacts = {}
@@ -492,7 +490,7 @@ def main():
             f.write(f"1. **自适应 τ 在平均噪声下稳定优于固定 τ**，平均 F1 提升 {avg_delta:.3f}。\n")
         else:
             f.write(f"1. 自适应 τ 与固定 τ 差异不显著（平均 ΔF1 = {avg_delta:.3f}），在合成数据上固定 τ=14 已足够。\n")
-        f.write(f"2. 随着噪声增大，自适应 τ 的边缘保持能力使其在高噪声场景下优势扩大。\n\n")
+        f.write("2. 随着噪声增大，自适应 τ 的边缘保持能力使其在高噪声场景下优势扩大。\n\n")
 
         # Section 3: Parameter Sensitivity
         f.write("## 3. 参数敏感度扫描\n\n")

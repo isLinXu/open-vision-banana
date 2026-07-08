@@ -17,19 +17,17 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Callable
 
 import torch
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from open_vision_banana.core.normal_mapper import NormalRGBMapper
-
 
 # ──────────────────────────────────────────────────────────────────
 # Experiment Dataclasses
@@ -121,7 +119,7 @@ def generate_structured_normals(
         normals = torch.stack([x, y, z], dim=0).unsqueeze(0)
     else:
         raise ValueError(f"Unknown pattern: {pattern}")
-    
+
     norms = normals.norm(dim=1, keepdim=True).clamp(min=1e-8)
     return normals / norms
 
@@ -486,7 +484,7 @@ def main():
     with open(md_path, "w") as f:
         f.write("# Normal Mapping Roundtrip & Robustness Report\n\n")
         f.write(f"> **Experiment date**: {date.today().isoformat()}\n")
-        f.write(f"> **NormalRGBMapper version**: Camera-space right-handed (+x right, +y up, +z toward camera)\n\n")
+        f.write("> **NormalRGBMapper version**: Camera-space right-handed (+x right, +y up, +z toward camera)\n\n")
         f.write("## 1. Roundtrip Accuracy\n\n")
         f.write("| Pattern | Samples | Cosine Sim ↑ | Mean Angular Error (°) ↓ | Max Error (°) | Median Error (°) | Std (°) |\n")
         f.write("|---------|---------|--------------|--------------------------|---------------|------------------|---------|\n")
@@ -539,8 +537,8 @@ def main():
         f.write("- Batch consistency is guaranteed by pure tensor operations.\n")
 
         f.write("\n## 5. Speed Benchmark\n\n")
-        f.write(f"| Resolution | Encode (ms) | Decode (ms) | Total (ms) |\n")
-        f.write(f"|------------|-------------|-------------|------------|\n")
+        f.write("| Resolution | Encode (ms) | Decode (ms) | Total (ms) |\n")
+        f.write("|------------|-------------|-------------|------------|\n")
         f.write(f"| 512×512 | {enc_ms:.3f} | {dec_ms:.3f} | {total_ms:.3f} |\n")
 
         f.write("\n### 5.1 Conclusion\n\n")

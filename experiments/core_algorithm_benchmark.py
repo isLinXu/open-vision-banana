@@ -19,9 +19,7 @@ No GPU or FLUX weights required.
 
 from __future__ import annotations
 
-import gc
 import json
-import os
 import sys
 import time
 import tracemalloc
@@ -40,14 +38,14 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from open_vision_banana.core.depth_mapper import DepthRGBMapper
-from open_vision_banana.core.normal_mapper import NormalRGBMapper
-from open_vision_banana.core.segmentation import SegmentationDecoder
-
 # ---------------------------------------------------------------------------
 # Visualization setup (use Agg backend for headless)
 # ---------------------------------------------------------------------------
 import matplotlib
+
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
+from open_vision_banana.core.normal_mapper import NormalRGBMapper
+from open_vision_banana.core.segmentation import SegmentationDecoder
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -401,7 +399,7 @@ def generate_charts(results: dict, output_dir: Path):
     ]:
         total_ms = results[key]["encode_ms" if "encode_ms" in results[key] else "full_pipeline_ms"]
         pixels = [r * r for r in resolutions]
-        throughput = [p / (t / 1000.0) / 1e6 for p, t in zip(pixels, total_ms)]  # MP/s
+        throughput = [p / (t / 1000.0) / 1e6 for p, t in zip(pixels, total_ms, strict=False)]  # MP/s
         ax.plot(resolutions, throughput, marker="o", label=label, color=color, linewidth=2)
 
     ax.set_xscale("log", base=2)
@@ -417,9 +415,9 @@ def generate_charts(results: dict, output_dir: Path):
 
     # --- Chart 3: Union-Find Speedup ---
     uf_data = results["union_find"]
-    valid_speedups = [(r, s) for r, s in zip(uf_data["resolutions"], uf_data["speedup"]) if s is not None]
+    valid_speedups = [(r, s) for r, s in zip(uf_data["resolutions"], uf_data["speedup"], strict=False) if s is not None]
     if valid_speedups:
-        res_list, speedups = zip(*valid_speedups)
+        res_list, speedups = zip(*valid_speedups, strict=False)
         fig, ax = plt.subplots(figsize=(8, 6))
         bars = ax.bar(
             [f"{r}×{r}" for r in res_list],
@@ -433,7 +431,7 @@ def generate_charts(results: dict, output_dir: Path):
         ax.set_title("Union-Find Vectorized Speedup vs Naive Flood-Fill")
         ax.legend()
         # Add value labels on bars
-        for bar, val in zip(bars, speedups):
+        for bar, val in zip(bars, speedups, strict=False):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
                     f"{val:.1f}×", ha="center", va="bottom", fontsize=10)
         fig.tight_layout()
@@ -485,7 +483,7 @@ def generate_report(results: dict, output_path: Path):
 | Resolution | Project UF (ms) | Naive Flood-Fill (ms) | Speedup |
 |------------|-----------------|----------------------|---------|
 """
-    for r, pu, nf, sp in zip(uf["resolutions"], uf["project_uf_ms"], uf["naive_floodfill_ms"], uf["speedup"]):
+    for r, pu, nf, sp in zip(uf["resolutions"], uf["project_uf_ms"], uf["naive_floodfill_ms"], uf["speedup"], strict=False):
         nf_str = f"{nf:.2f}" if nf is not None else "N/A (extrapolated)"
         sp_str = f"{sp:.1f}×" if sp is not None else "N/A"
         md += f"| {r}×{r} | {pu:.2f} | {nf_str} | {sp_str} |\n"
@@ -502,7 +500,7 @@ def generate_report(results: dict, output_path: Path):
 | Resolution | Encode (ms) | Decode (ms) | Roundtrip MAE | Memory (MB) |
 |------------|-------------|-------------|---------------|-------------|
 """
-    for r, enc, dec, mae, mem in zip(depth["resolutions"], depth["encode_ms"], depth["decode_ms"], depth["roundtrip_mae"], depth["memory_mb"]):
+    for r, enc, dec, mae, mem in zip(depth["resolutions"], depth["encode_ms"], depth["decode_ms"], depth["roundtrip_mae"], depth["memory_mb"], strict=False):
         md += f"| {r}×{r} | {enc:.2f} | {dec:.2f} | {mae:.4f} | {mem:.1f} |\n"
 
     md += f"""
@@ -516,7 +514,7 @@ def generate_report(results: dict, output_path: Path):
 | Resolution | Encode (ms) | Decode (ms) | Cosine Sim | Memory (MB) |
 |------------|-------------|-------------|------------|-------------|
 """
-    for r, enc, dec, cs, mem in zip(normal["resolutions"], normal["encode_ms"], normal["decode_ms"], normal["roundtrip_cosine_sim"], normal["memory_mb"]):
+    for r, enc, dec, cs, mem in zip(normal["resolutions"], normal["encode_ms"], normal["decode_ms"], normal["roundtrip_cosine_sim"], normal["memory_mb"], strict=False):
         md += f"| {r}×{r} | {enc:.2f} | {dec:.2f} | {cs:.6f} | {mem:.1f} |\n"
 
     md += f"""
@@ -530,7 +528,7 @@ def generate_report(results: dict, output_path: Path):
 | Resolution | Full Pipeline (ms) | Detected Instances | Memory (MB) |
 |------------|--------------------|--------------------|-------------|
 """
-    for r, fp, ni, mem in zip(seg["resolutions"], seg["full_pipeline_ms"], seg["num_instances"], seg["memory_mb"]):
+    for r, fp, ni, mem in zip(seg["resolutions"], seg["full_pipeline_ms"], seg["num_instances"], seg["memory_mb"], strict=False):
         md += f"| {r}×{r} | {fp:.2f} | {ni} | {mem:.1f} |\n"
 
     md += f"""
