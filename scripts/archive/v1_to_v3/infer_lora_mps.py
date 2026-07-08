@@ -20,8 +20,8 @@ import os
 import time
 from pathlib import Path
 
-import torch
 import numpy as np
+import torch
 from PIL import Image
 
 # HuggingFace mirror
@@ -84,7 +84,6 @@ def apply_lora(unet, lora_state: dict):
     unet = get_peft_model(unet, lora_config)
 
     # Remap saved keys (peft model wraps with "base_model.model." prefix)
-    new_state = {}
     for name, param in unet.named_parameters():
         if param.requires_grad:
             # The saved keys match the peft model's parameter names
@@ -128,7 +127,7 @@ def plot_loss_curve(log_path: Path, output_path: Path):
 
     # Mark epoch boundaries
     prev_epoch = 0
-    for s, e, l in zip(steps, epochs, losses):
+    for s, e, _l in zip(steps, epochs, losses, strict=False):
         if e != prev_epoch:
             ax.axvline(x=s, color="gray", linestyle="--", alpha=0.4)
             ax.text(s, max(losses) * 0.95, f"Epoch {e}", fontsize=8, ha="center", color="gray")
@@ -248,7 +247,7 @@ def main():
         json.dump(summary, f, indent=2)
 
     logger.info(f"\n{'='*60}")
-    logger.info(f"Validation complete!")
+    logger.info("Validation complete!")
     logger.info(f"  Base images:   {OUTPUT_DIR}/base_*.png")
     logger.info(f"  LoRA images:   {OUTPUT_DIR}/lora_*.png")
     logger.info(f"  Loss curve:    {loss_path}")

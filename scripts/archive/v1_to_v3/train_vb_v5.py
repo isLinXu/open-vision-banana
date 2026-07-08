@@ -67,10 +67,10 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from open_vision_banana.model_registry import (
-    ModelConfig,
     PipelineComponents,
     apply_lora,
     auto_select_model,
@@ -632,7 +632,7 @@ Use --list-models to see all options with details.
     logger.info(f"Family: {model_cfg.family}, Encoders: {model_cfg.num_text_encoders}")
     logger.info(f"Device: {device}, Dtype: {dtype}, Resolution: {resolution}")
     logger.info(f"LoRA: rank={lora_rank}, alpha={lora_alpha}, rsLoRA={args.use_rslora}")
-    logger.info(f"Training: flow matching v-prediction + TRUE img2img")
+    logger.info("Training: flow matching v-prediction + TRUE img2img")
     logger.info(f"Data mix: {args.vision_ratio:.0%} vision + {1-args.vision_ratio:.0%} generation")
     logger.info(f"Batch: {args.batch_size}×{args.grad_accum}={args.batch_size*args.grad_accum}, LR: {args.lr}")
     logger.info(f"Steps: {total_steps}")
@@ -726,7 +726,7 @@ Use --list-models to see all options with details.
     global_step = 0
 
     logger.info("Starting training...")
-    logger.info(f"  CRITICAL: Using TRUE img2img — input image as latent noise start")
+    logger.info("  CRITICAL: Using TRUE img2img — input image as latent noise start")
 
     while global_step < total_steps:
         for step, batch in enumerate(dataloader):

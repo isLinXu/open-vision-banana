@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 import os
 import time
 from pathlib import Path
@@ -37,11 +36,13 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
+from open_vision_banana.data.datasets import build_dataset
+from open_vision_banana.data.mixed import MixedVisionDataset
 from open_vision_banana.model_registry import (
-    ModelConfig,
-    PipelineComponents,
     apply_lora,
     auto_select_model,
     backbone_forward,
@@ -54,9 +55,6 @@ from open_vision_banana.model_registry import (
     vae_decode,
     vae_encode,
 )
-from open_vision_banana.data.mixed import MixedVisionDataset
-from open_vision_banana.data.datasets import build_dataset
-from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.training.optimization import (
     AdvancedAugmentation,
     MemoryManager,

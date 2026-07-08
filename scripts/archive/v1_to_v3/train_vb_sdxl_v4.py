@@ -14,7 +14,7 @@ The critical innovation — TRUE image conditioning:
   We do:       input_latents = vae.encode(input_image).latent_dist.mode()
                noisy_latents = (1-t)*input_latents + t*noise   ← START FROM INPUT!
                velocity_target = target_latents - noisy_latents
-  
+
   This forces the model to learn: "given this image (as starting latent),
   generate the corresponding depth visualization."
 
@@ -51,6 +51,7 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 logging.basicConfig(
@@ -500,7 +501,7 @@ def main():
     logger.info(f"Data mix: {args.vision_ratio:.0%} vision + {1-args.vision_ratio:.0%} generation")
     logger.info(f"Batch: {args.batch_size}×{args.grad_accum}={args.batch_size*args.grad_accum}, LR: {args.lr}")
     logger.info(f"Steps: {args.steps}")
-    logger.info(f"Key change: input image → VAE latent → noise start (not target latent!)")
+    logger.info("Key change: input image → VAE latent → noise start (not target latent!)")
     logger.info("=" * 70)
 
     # ─── Load SDXL pipeline ───
@@ -627,7 +628,7 @@ def main():
     global_step = 0
 
     logger.info("Starting training...")
-    logger.info(f"  CRITICAL: Using TRUE img2img — input image as latent noise start")
+    logger.info("  CRITICAL: Using TRUE img2img — input image as latent noise start")
 
     while global_step < total_steps:
         for step, batch in enumerate(dataloader):
@@ -637,7 +638,7 @@ def main():
             target_rgb = batch["target_rgb"].to(device).float()
             input_images = batch["image"].to(device).to(dtype)
             prompts = batch["prompt"]
-            tasks = batch["task"]
+            batch["task"]
             bsz = target_rgb.shape[0]
 
             # ── Encode TARGET to latents (what we want the model to generate) ──

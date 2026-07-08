@@ -26,15 +26,16 @@ import os
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 from PIL import Image
 
 # HuggingFace mirror
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 logging.basicConfig(
@@ -138,7 +139,7 @@ def generate_depth(
     encoder_hidden_states = torch.zeros(1, 77, 768, device=device)
 
     with torch.no_grad():
-        for i, t in enumerate(timesteps):
+        for _i, t in enumerate(timesteps):
             # Concatenate input latents with current noisy latents
             concat = torch.cat([input_latents, latents], dim=1)  # [1, 8, 32, 32]
             adapted = adapter(concat)  # [1, 4, 32, 32]
@@ -340,7 +341,7 @@ def main():
         json.dump(summary, f, indent=2)
 
     logger.info(f"\n{'='*60}")
-    logger.info(f"Validation complete!")
+    logger.info("Validation complete!")
     logger.info(f"  Input images:  {OUTPUT_DIR}/input_*.png")
     logger.info(f"  Ground truth:  {OUTPUT_DIR}/gt_*.png")
     logger.info(f"  Predictions:   {OUTPUT_DIR}/depth_*.png")

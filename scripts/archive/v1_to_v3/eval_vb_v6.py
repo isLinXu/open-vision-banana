@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 import os
 import sys
 from pathlib import Path
@@ -36,6 +35,7 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.model_registry import (
     PipelineComponents,
     apply_lora,
@@ -49,11 +49,6 @@ from open_vision_banana.model_registry import (
     vae_decode,
     vae_encode,
 )
-from open_vision_banana.data.datasets import build_dataset
-from open_vision_banana.evaluation.evaluator import VisionEvaluator
-from open_vision_banana.core.depth_mapper import DepthRGBMapper
-from open_vision_banana.core.normal_mapper import NormalRGBMapper
-from open_vision_banana.core.segmentation import SegmentationDecoder
 
 logging.basicConfig(
     level=logging.INFO,

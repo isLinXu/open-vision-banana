@@ -12,11 +12,16 @@ Inherited from v2: logit-normal timestep, Min-SNR-gamma, EMA 0.999, augmentation
 """
 
 from __future__ import annotations
-import json, logging, math, os, time
+
+import json
+import logging
+import math
+import os
+import time
 from pathlib import Path
+
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
@@ -24,6 +29,7 @@ from torch.utils.data import DataLoader, Dataset
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
@@ -300,15 +306,15 @@ def main():
     logger.info(f"Model: {MODEL_ID} (proxy for FLUX.1)")
     logger.info(f"Device: {device}, Resolution: {RESOLUTION}")
     logger.info(f"LoRA: rank={LORA_RANK}, alpha={LORA_ALPHA}, rsLoRA={USE_RSLORA}")
-    logger.info(f"Training objective: Flow matching (v-prediction)")
+    logger.info("Training objective: Flow matching (v-prediction)")
     logger.info(f"Data mix: {VISION_RATIO:.0%} vision (distilled) + {1-VISION_RATIO:.0%} generation")
     logger.info(f"Batch: {BATCH_SIZE}x{GRAD_ACCUM}={BATCH_SIZE*GRAD_ACCUM}, LR: {LEARNING_RATE}")
     logger.info(f"Epochs: {EPOCHS}")
-    logger.info(f"v3 improvements:")
-    logger.info(f"  - Distilled dataset: 428 Depth-Anything depth maps (clean signal)")
-    logger.info(f"  - 10 epochs (~2140 optimizer steps, 3.5x v2)")
-    logger.info(f"  - Depth structure correlation (Pearson r) validation")
-    logger.info(f"  - Multi-strength validation sweep: 0.4 / 0.6 / 0.8")
+    logger.info("v3 improvements:")
+    logger.info("  - Distilled dataset: 428 Depth-Anything depth maps (clean signal)")
+    logger.info("  - 10 epochs (~2140 optimizer steps, 3.5x v2)")
+    logger.info("  - Depth structure correlation (Pearson r) validation")
+    logger.info("  - Multi-strength validation sweep: 0.4 / 0.6 / 0.8")
     logger.info("=" * 60)
 
     # Load pipeline

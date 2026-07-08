@@ -239,7 +239,7 @@ def main():
 
     # Strength × guidance_scale grid for first 3 samples
     logger.info("=== Depth generation grid search ===")
-    for vi, (img_path, tgt_path) in enumerate(zip(val_image_paths[:3], val_target_paths[:3])):
+    for vi, (img_path, tgt_path) in enumerate(zip(val_image_paths[:3], val_target_paths[:3], strict=False)):
         img = Image.open(img_path).convert("RGB").resize((RESOLUTION, RESOLUTION), Image.LANCZOS)
         arr = np.array(img, dtype=np.float32) / 255.0
         input_tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).to(device) * 2.0 - 1.0
@@ -363,7 +363,7 @@ def main():
     avg_tgt_std = np.mean([r["tgt_std"] for r in depth_results])
 
     logger.info("=" * 50)
-    logger.info(f"Summary:")
+    logger.info("Summary:")
     logger.info(f"  Avg MSE: {avg_mse:.4f}")
     logger.info(f"  Avg Correlation: {avg_corr:.3f}")
     logger.info(f"  Avg Gen Std: {avg_gen_std:.4f}")

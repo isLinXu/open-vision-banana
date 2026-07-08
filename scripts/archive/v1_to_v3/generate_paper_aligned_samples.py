@@ -14,7 +14,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from PIL import Image
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -174,7 +173,7 @@ def main():
     val_target_paths = sorted((VISION_DATA_DIR / "targets").glob("*.jpg"))[:6]
 
     results = []
-    for vi, (img_path, tgt_path) in enumerate(zip(val_image_paths, val_target_paths)):
+    for vi, (img_path, tgt_path) in enumerate(zip(val_image_paths, val_target_paths, strict=False)):
         logger.info(f"Generating depth sample {vi+1}/6: {img_path.name}")
 
         # Load input

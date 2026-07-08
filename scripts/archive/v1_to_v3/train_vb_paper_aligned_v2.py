@@ -27,7 +27,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
@@ -35,6 +34,7 @@ from torch.utils.data import DataLoader, Dataset
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
@@ -381,15 +381,15 @@ def main():
     logger.info(f"Model: {MODEL_ID} (proxy for FLUX.1)")
     logger.info(f"Device: {device}, Resolution: {RESOLUTION}")
     logger.info(f"LoRA: rank={LORA_RANK}, alpha={LORA_ALPHA}, rsLoRA={USE_RSLORA}")
-    logger.info(f"Training objective: Flow matching (v-prediction)")
+    logger.info("Training objective: Flow matching (v-prediction)")
     logger.info(f"Data mix: {VISION_RATIO:.0%} vision + {1-VISION_RATIO:.0%} generation")
     logger.info(f"Batch: {BATCH_SIZE}×{GRAD_ACCUM}={BATCH_SIZE*GRAD_ACCUM}, LR: {LEARNING_RATE}")
     logger.info(f"Epochs: {EPOCHS}")
-    logger.info(f"v2 improvements:")
+    logger.info("v2 improvements:")
     logger.info(f"  - Logit-normal timestep sampling: {USE_LOGIT_NORMAL} (μ={LOGIT_MEAN}, σ={LOGIT_STD})")
     logger.info(f"  - Min-SNR-γ weighting: {USE_MIN_SNR} (γ={MIN_SNR_GAMMA})")
     logger.info(f"  - EMA decay: {EMA_DECAY} (v1 was 0.9999)")
-    logger.info(f"  - Better augmentation: crop + color jitter")
+    logger.info("  - Better augmentation: crop + color jitter")
     logger.info("=" * 60)
 
     # ── Load pipeline ───────────────────────────────────────────────────

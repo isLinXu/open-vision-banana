@@ -6,21 +6,25 @@ Tests 3 checkpoints: best_corr (step 200), best (step ~20), step600.
 """
 
 from __future__ import annotations
-import json, os, time
+
+import json
+import os
+import time
 from pathlib import Path
+
 import numpy as np
 import torch
-import torch.nn.functional as F
 from PIL import Image
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from diffusers import AutoencoderKL, UNet2DConditionModel
-from transformers import CLIPTextModel, CLIPTokenizer
 from peft import LoraConfig, get_peft_model
+from transformers import CLIPTextModel, CLIPTokenizer
 
 # Config (must match training)
 MODEL_ID = "segmind/tiny-sd"

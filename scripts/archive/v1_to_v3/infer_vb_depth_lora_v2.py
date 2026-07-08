@@ -18,14 +18,15 @@ import os
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 from PIL import Image
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 logging.basicConfig(
@@ -159,10 +160,7 @@ def compute_metrics(pred: np.ndarray, gt: np.ndarray) -> dict:
     """Compute SSIM and PSNR between predicted and ground truth images."""
     # PSNR
     mse = np.mean((pred.astype(np.float64) - gt.astype(np.float64)) ** 2)
-    if mse < 1e-10:
-        psnr = 100.0
-    else:
-        psnr = 10.0 * np.log10(255.0 ** 2 / mse)
+    psnr = 100.0 if mse < 1e-10 else 10.0 * np.log10(255.0 ** 2 / mse)
 
     # SSIM (simplified, per-channel)
     from skimage.metrics import structural_similarity as ssim_fn
@@ -186,7 +184,7 @@ def make_comparison_figure(input_img, gt_img, pred_img, idx, output_dir, metrics
     titles = ["Input", "Ground Truth", "Prediction"]
     images = [input_img, gt_img, pred_img]
 
-    for ax, img, title in zip(axes, images, titles):
+    for ax, img, title in zip(axes, images, titles, strict=False):
         ax.imshow(img)
         ax.set_title(title, fontsize=14, fontweight="bold")
         ax.axis("off")
@@ -259,7 +257,7 @@ def plot_metrics_summary(metrics_list: list, output_path: Path):
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), dpi=150)
 
-    bars1 = ax1.bar(indices, psnrs, color="steelblue", alpha=0.8)
+    ax1.bar(indices, psnrs, color="steelblue", alpha=0.8)
     ax1.set_ylabel("PSNR (dB)", fontsize=12)
     ax1.set_title("Per-Sample PSNR", fontsize=13, fontweight="bold")
     ax1.grid(True, alpha=0.3, axis="y")
@@ -267,7 +265,7 @@ def plot_metrics_summary(metrics_list: list, output_path: Path):
     ax1.axhline(avg_psnr, color="red", linestyle="--", label=f"Mean: {avg_psnr:.2f}")
     ax1.legend()
 
-    bars2 = ax2.bar(indices, ssims, color="darkorange", alpha=0.8)
+    ax2.bar(indices, ssims, color="darkorange", alpha=0.8)
     ax2.set_ylabel("SSIM", fontsize=12)
     ax2.set_title("Per-Sample SSIM", fontsize=13, fontweight="bold")
     ax2.set_xlabel("Sample Index", fontsize=12)
@@ -321,7 +319,7 @@ def main():
     # ── Load trained weights (prefer EMA) ────────────────────────────
     # Try EMA from final, fall back to best, then final without EMA
     lora_state = torch.load(LORA_PATH, map_location="cpu")
-    has_ema = any(k.startswith("ema.") for k in lora_state.keys())
+    has_ema = any(k.startswith("ema.") for k in lora_state)
     use_ema = USE_EMA and has_ema
 
     logger.info(f"Loading trained weights from {LORA_PATH} (EMA={use_ema})...")
@@ -379,7 +377,7 @@ def main():
         all_metrics.append({"index": i, **metrics})
 
         # Create comparison figure
-        comp_path = make_comparison_figure(img, gt, depth_img, i, OUTPUT_DIR, metrics)
+        make_comparison_figure(img, gt, depth_img, i, OUTPUT_DIR, metrics)
 
         logger.info(
             f"[{i+1}/{NUM_SAMPLES}] {stem} | "
@@ -456,7 +454,7 @@ def main():
         json.dump(summary, f, indent=2)
 
     logger.info(f"\n{'='*60}")
-    logger.info(f"Validation complete!")
+    logger.info("Validation complete!")
     logger.info(f"  Avg PSNR: {avg_psnr:.2f} dB | Avg SSIM: {avg_ssim:.4f}")
     logger.info(f"  Comparisons:  {OUTPUT_DIR}/comparison_*.png")
     logger.info(f"  Loss curve:   {OUTPUT_DIR}/loss_curve.png")

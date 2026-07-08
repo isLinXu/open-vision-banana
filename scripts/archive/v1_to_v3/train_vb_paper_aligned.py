@@ -38,7 +38,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
@@ -47,6 +46,7 @@ from torch.utils.data import DataLoader, Dataset
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 # (DepthRGBMapper available in open_vision_banana.core.depth_mapper if needed)
@@ -441,11 +441,11 @@ def main():
     logger.info(f"Resolution: {RESOLUTION}")
     logger.info(f"LoRA: rank={LORA_RANK}, alpha={LORA_ALPHA}, rsLoRA={USE_RSLORA}")
     logger.info(f"Target modules: {TARGET_MODULES}")
-    logger.info(f"Training objective: Flow matching (v-prediction)")
+    logger.info("Training objective: Flow matching (v-prediction)")
     logger.info(f"Data mix: {VISION_RATIO:.0%} vision + {1-VISION_RATIO:.0%} generation")
     logger.info(f"Batch: {BATCH_SIZE}×{GRAD_ACCUM}={BATCH_SIZE*GRAD_ACCUM}, LR: {LEARNING_RATE}")
     logger.info(f"Epochs: {EPOCHS}, Output: {OUTPUT_DIR}")
-    logger.info(f"No ChannelAdapter — pure LoRA (paper-aligned)")
+    logger.info("No ChannelAdapter — pure LoRA (paper-aligned)")
     logger.info("=" * 60)
 
     # ── Load pipeline ───────────────────────────────────────────────────
@@ -693,7 +693,7 @@ def main():
 
     # ── Generate final comparison samples ──────────────────────────────
     logger.info("Generating final comparison samples...")
-    for vi, (vimg, vtgt) in enumerate(zip(val_images[:6], val_targets[:6])):
+    for vi, (vimg, vtgt) in enumerate(zip(val_images[:6], val_targets[:6], strict=False)):
         # Generate with flow matching
         gen_img = generate_depth_sample_flow(
             unet, vae, text_encoder, tokenizer,

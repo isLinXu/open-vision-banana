@@ -407,10 +407,7 @@ Use --list-models to see all options.
     loaded_keys = []
     for name, param in components.unet.named_parameters():
         if param.requires_grad:
-            if use_ema:
-                key = f"ema.{name}"
-            else:
-                key = f"unet.{name}"
+            key = f"ema.{name}" if use_ema else f"unet.{name}"
             if key in load_keys:
                 param.data.copy_(load_keys[key].to(dtype))
                 loaded_keys.append(key)

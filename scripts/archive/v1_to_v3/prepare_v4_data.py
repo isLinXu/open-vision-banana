@@ -99,7 +99,7 @@ def generate_depth_map(
         depth_norm = np.zeros_like(depth)
     # Apply spectral colormap (dark = near, bright = far, matching paper convention)
     depth_uint8 = (depth_norm * 255).astype(np.uint8)
-    depth_vis = Image.fromarray(depth_uint8)
+    Image.fromarray(depth_uint8)
     # Apply 'nipy_spectral' colormap via matplotlib-free approach
     depth_rgb = apply_spectral_colormap(depth_uint8)
     return Image.fromarray(depth_rgb)
@@ -282,7 +282,7 @@ def prepare_synthetic_data(
                 width=resolution,
             ).images
 
-            for j, (img, prompt) in enumerate(zip(images, batch_prompts)):
+            for j, (img, _prompt) in enumerate(zip(images, batch_prompts, strict=False)):
                 idx = batch_start + j
                 img.save(output_dir / "images" / f"synth_{idx:05d}.jpg", quality=95)
 
@@ -294,7 +294,7 @@ def prepare_synthetic_data(
                     f"  Synthetic: {batch_end}/{num_samples} | "
                     f"{elapsed:.0f}s | ETA: {eta/60:.1f}m"
                 )
-        except torch.cuda.OutOfMemoryError as e:
+        except torch.cuda.OutOfMemoryError:
             logger.warning(f"  OOM at batch {batch_start}, reducing batch size")
             batch_size = max(1, batch_size // 2)
         except Exception as e:

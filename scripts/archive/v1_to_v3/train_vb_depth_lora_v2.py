@@ -28,20 +28,20 @@ import logging
 import math
 import os
 import time
-from copy import deepcopy
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
 from PIL import Image
-import numpy as np
+from torch.utils.data import DataLoader, Dataset
 
 # HuggingFace mirror
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 logging.basicConfig(
@@ -369,7 +369,7 @@ def main():
 
     # ── Validation sample pool ──────────────────────────────────────────
     val_image_paths = sorted((DATA_DIR / "images").glob("*.jpg"))[:3]
-    val_target_paths = sorted((DATA_DIR / "targets").glob("*.jpg"))[:3]
+    sorted((DATA_DIR / "targets").glob("*.jpg"))[:3]
     val_images_tensor = []
     for p in val_image_paths:
         img = Image.open(p).convert("RGB").resize((RESOLUTION, RESOLUTION), Image.LANCZOS)
@@ -519,7 +519,7 @@ def main():
                         val_img.save(
                             OUTPUT_DIR / "val_during_training" / f"val_step{global_step}_{vi}.png"
                         )
-                    logger.info(f"Validation samples saved")
+                    logger.info("Validation samples saved")
 
         avg_loss = epoch_loss / max(epoch_steps, 1)
         avg_snr = epoch_snr_weight_sum / max(epoch_steps, 1)

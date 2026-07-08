@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 import os
 import time
 from pathlib import Path
@@ -40,17 +39,18 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import Dataset
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
+from open_vision_banana.data.datasets import PreEncodedDepthDataset
 from open_vision_banana.model_registry import (
-    ModelConfig,
-    PipelineComponents,
     apply_lora,
     auto_select_model,
     backbone_forward,
@@ -63,8 +63,6 @@ from open_vision_banana.model_registry import (
     vae_decode,
     vae_encode,
 )
-from open_vision_banana.data.datasets import PreEncodedDepthDataset, build_dataset
-from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.training.optimization import (
     AdvancedAugmentation,
     MemoryManager,
@@ -92,7 +90,7 @@ DEPTH_PROMPT = "Generate a metric depth visualization of this image."
 
 def discover_depth_datasets(data_dir: Path, pattern: str = "vb_*") -> list[Path]:
     """Discover depth datasets under data_dir matching pattern.
-    
+
     A valid depth dataset must have both images/ and targets/ subdirectories
     with at least one image file.
     """
@@ -112,7 +110,7 @@ def discover_depth_datasets(data_dir: Path, pattern: str = "vb_*") -> list[Path]
 
 def auto_select_depth_datasets(data_dir: Path) -> list[Path]:
     """Auto-select all valid depth datasets, combining them for maximum diversity.
-    
+
     Returns a list of dataset paths. If no datasets found, returns empty list.
     """
     discovered = discover_depth_datasets(data_dir)
@@ -477,7 +475,7 @@ def main():
                     try:
                         param.data.copy_(source_keys[name].to(dtype))
                         loaded += 1
-                    except Exception as e:
+                    except Exception:
                         logger.debug(f"  Skip {name}: shape mismatch ({param.shape} vs {source_keys[name].shape})")
             logger.info(f"Resumed: loaded {loaded} parameters from {prefix}* keys")
             import re
@@ -532,7 +530,7 @@ def main():
     # Fallback: if still no datasets, try vb_* wildcard
     if not vision_datasets:
         logger.warning("No known datasets found, trying vb_* wildcard fallback...")
-        for ds_path, count in discover_depth_datasets(data_dir):
+        for ds_path, _count in discover_depth_datasets(data_dir):
             try:
                 ds = PreEncodedDepthDataset(ds_path, split="train", resolution=resolution)
                 if len(ds) > 0:
@@ -635,7 +633,7 @@ def main():
 
     val_images = []
     val_target_imgs = []
-    for p, tp in zip(val_image_paths, val_targets):
+    for p, tp in zip(val_image_paths, val_targets, strict=False):
         img = Image.open(p).convert("RGB").resize((resolution, resolution), Image.LANCZOS)
         arr = np.array(img, dtype=np.float32) / 255.0
         t = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).to(device) * 2.0 - 1.0
@@ -696,10 +694,7 @@ def main():
 
             # Pure flow matching
             noise = torch.randn_like(target_latents)
-            if args.sigma > 0:
-                noise_term = args.sigma * (t_b * (1.0 - t_b)).sqrt() * noise
-            else:
-                noise_term = 0.0
+            noise_term = args.sigma * (t_b * (1.0 - t_b)).sqrt() * noise if args.sigma > 0 else 0.0
 
             noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
             velocity_target = target_latents - input_latents
@@ -799,7 +794,7 @@ def main():
                     logger.info(f"Validation at step {global_step} (EMA weights) ...")
                     val_results = []
                     val_per_sample = []
-                    for vi, (vimg, vtarget) in enumerate(zip(val_images[:4], val_target_imgs[:4])):
+                    for vi, (vimg, vtarget) in enumerate(zip(val_images[:4], val_target_imgs[:4], strict=False)):
                         best_corr = -2.0
                         best_strength = args.img2img_strength
                         best_img = None
