@@ -1,0 +1,218 @@
+name: Performance Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/benchmark.py"
+      - "scripts/benchmark_pipeline.py"
+      - "scripts/compare_benchmarks.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/benchmark.py"
+      - "scripts/benchmark_pipeline.py"
+      - "scripts/compare_benchmarks.py"
+  workflow_dispatch:
+
+env:
+  BENCHMARK_RESULTS_DIR: .benchmarks
+  REGRESSION_THRESHOLD: "0.15"
+
+jobs:
+  benchmark-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with core deps
+        run: pip install -e ".[evaluation,dev]"
+
+      - name: Run core benchmark (CPU)
+        run: |
+          python scripts/benchmark.py \
+            --resolution 256 \
+            --iterations 20 \
+            --device cpu \
+            > "${BENCHMARK_RESULTS_DIR}/core_benchmark_current.txt"
+
+      - name: Parse benchmark to JSON
+        run: |
+          python -c "
+          import json, re, pathlib
+          txt = pathlib.Path('${BENCHMARK_RESULTS_DIR}/core_benchmark_current.txt').read_text()
+          data = {}
+          for m in re.finditer(r'^(\s+)?([\w\s\(\)]+?)\s+([\d\.]+)\s+([\d\.]+)\s*$', txt, re.MULTILINE):
+              label = m.group(2).strip()
+              median = float(m.group(3))
+              p95 = float(m.group(4))
+              data[label] = {'median_ms': median, 'p95_ms': p95}
+          with open('${BENCHMARK_RESULTS_DIR}/core_benchmark_current.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          print('Parsed operations:', list(data.keys()))
+          "
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-benchmark-current
+          path: |
+            .benchmarks/core_benchmark_current.json
+            .benchmarks/core_benchmark_current.txt
+
+  benchmark-mapper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with core deps
+        run: pip install -e ".[evaluation,dev]"
+
+      - name: Run mapper-only pipeline benchmark
+        run: |
+          python scripts/benchmark_pipeline.py \
+            --mapper-only \
+            --resolution 256 \
+            --num-samples 20 \
+            --batch-size 1 \
+            --device cpu \
+            --output "${BENCHMARK_RESULTS_DIR}/mapper_benchmark_current.json"
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapper-benchmark-current
+          path: .benchmarks/mapper_benchmark_current.json
+
+  compare-regression:
+    runs-on: ubuntu-latest
+    needs: [benchmark-core, benchmark-mapper]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download current core benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: core-benchmark-current
+          path: .benchmarks/current
+
+      - name: Download current mapper benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: mapper-benchmark-current
+          path: .benchmarks/current
+
+      - name: Restore baseline from cache
+        id: cache-baseline
+        uses: actions/cache@v4
+        with:
+          path: .benchmarks/baseline
+          key: benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-main-
+            benchmark-baseline-
+
+      - name: Seed baseline if missing
+        run: |
+          mkdir -p .benchmarks/baseline
+          if [ ! -f .benchmarks/baseline/core_benchmark_baseline.json ]; then
+            echo '{}' > .benchmarks/baseline/core_benchmark_baseline.json
+          fi
+          if [ ! -f .benchmarks/baseline/mapper_benchmark_baseline.json ]; then
+            echo '[]' > .benchmarks/baseline/mapper_benchmark_baseline.json
+          fi
+
+      - name: Compare core benchmark
+        run: |
+          python scripts/compare_benchmarks.py \
+            .benchmarks/baseline/core_benchmark_baseline.json \
+            .benchmarks/current/core_benchmark_current.json \
+            --threshold ${{ env.REGRESSION_THRESHOLD }} \
+            --report .benchmarks/core_regression_report.md \
+            --json  .benchmarks/core_regression_report.json || true
+
+      - name: Compare mapper benchmark
+        run: |
+          python scripts/compare_benchmarks.py \
+            .benchmarks/baseline/mapper_benchmark_baseline.json \
+            .benchmarks/current/mapper_benchmark_current.json \
+            --threshold ${{ env.REGRESSION_THRESHOLD }} \
+            --report .benchmarks/mapper_regression_report.md \
+            --json  .benchmarks/mapper_regression_report.json || true
+
+      - name: Print regression reports
+        run: |
+          echo "=== Core Regression Report ==="
+          cat .benchmarks/core_regression_report.md || echo "No report generated."
+          echo ""
+          echo "=== Mapper Regression Report ==="
+          cat .benchmarks/mapper_regression_report.md || echo "No report generated."
+
+      - name: Fail on regression
+        run: |
+          has_regression=0
+          for f in .benchmarks/core_regression_report.json .benchmarks/mapper_regression_report.json; do
+            if [ -f "$f" ]; then
+              val=$(python -c "import json; print(json.load(open('$f')).get('has_regression', False))")
+              if [ "$val" = "True" ]; then
+                has_regression=1
+                echo "Regression detected in $f"
+              fi
+            fi
+          done
+          if [ "$has_regression" -eq 1 ]; then
+            echo "ERROR: Performance regression detected. See reports above."
+            exit 1
+          fi
+          echo "No performance regressions detected."
+
+      - name: Upload regression reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-reports
+          path: |
+            .benchmarks/*_report.md
+            .benchmarks/*_report.json
+
+  update-baseline:
+    runs-on: ubuntu-latest
+    needs: compare-regression
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download current benchmarks
+        uses: actions/download-artifact@v4
+        with:
+          name: core-benchmark-current
+          path: .benchmarks/current
+
+      - name: Download mapper benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: mapper-benchmark-current
+          path: .benchmarks/current
+
+      - name: Save new baseline
+        uses: actions/cache@v4
+        with:
+          path: .benchmarks/current
+          key: benchmark-baseline-main-${{ github.run_id }}

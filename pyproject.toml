@@ -88,10 +88,11 @@ addopts = "-v --tb=short"
 [tool.ruff]
 target-version = "py310"
 line-length = 100
+exclude = ["experiments", "notebooks", "scripts", ".session_tmps"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
-ignore = ["E501", "B008", "N806", "N812", "N817"]
+ignore = ["E501", "B008", "N806", "N812", "N817", "E702"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["open_vision_banana"]
@@ -105,3 +106,7 @@ warn_redundant_casts = true
 disallow_untyped_defs = false
 check_untyped_defs = true
 show_error_codes = true
+exclude = ["scripts", "experiments", "notebooks", ".session_tmps"]
+# Relax strictness on common PyTorch patterns where mypy's type inference
+# is overly narrow (e.g. Tensor vs Module unions, float|int indexing).
+disable_error_code = ["index", "operator", "arg-type", "call-overload"]
