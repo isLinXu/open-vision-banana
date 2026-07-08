@@ -173,8 +173,8 @@ class TestSplitDataset:
         train1, val1 = split_dataset(ds1, val_ratio=0.3, seed=42)
         train2, val2 = split_dataset(ds2, val_ratio=0.3, seed=42)
         # Same indices should be selected
-        val1_indices = sorted(val1.indices)
-        val2_indices = sorted(val2.indices)
+        val1_indices = sorted(val1.indices)  # type: ignore[union-attr]
+        val2_indices = sorted(val2.indices)  # type: ignore[union-attr]
         assert val1_indices == val2_indices
 
 

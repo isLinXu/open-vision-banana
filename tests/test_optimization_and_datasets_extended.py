@@ -1,11 +1,10 @@
 """Tests for extended benchmark datasets and optimization utilities."""
 
+
 import pytest
 import torch
-from pathlib import Path
 
 # ─── Optimization module tests ───
-
 from open_vision_banana.training.optimization import (
     AdvancedAugmentation,
     MemoryManager,
@@ -259,7 +258,7 @@ class TestCreateOptimizedDataloader:
 
 # ─── Extended dataset build tests ───
 
-from open_vision_banana.data.datasets import build_dataset
+from open_vision_banana.data.datasets import build_dataset  # noqa: E402
 
 
 class TestBuildDatasetExtended:
@@ -281,8 +280,8 @@ class TestBuildDatasetExtended:
             RefCOCODataset,
             RefCOCOgDataset,
             SACoInstanceDataset,
-            SintelFlowDataset,
             ScanNetNormalDataset,
+            SintelFlowDataset,
             TUMRGBDDataset,
             VirtualKITTIDataset,
             nuScenesDataset,
@@ -303,9 +302,8 @@ class TestBuildDatasetExtended:
 
     def test_registry_completeness(self):
         """Verify build_dataset registry covers all 15+ datasets."""
-        from open_vision_banana.data.datasets import build_dataset
         import inspect
-        registry = inspect.getclosurevars(build_dataset).nonlocals.get("registry", {})
+        inspect.getclosurevars(build_dataset).nonlocals.get("registry", {})
         # We can't easily inspect the closure, so we test by calling with invalid keys
         expected_tasks = [
             "depth", "normal", "semantic", "instance", "referring",
@@ -325,8 +323,12 @@ class TestBuildDatasetExtended:
 
     def test_task_type_attributes(self):
         from open_vision_banana.data.datasets import (
-            ETH3DDataset, OASISNormalDataset, COCODetectionDataset,
-            FlyingThings3DDataset, TUMRGBDDataset, nuScenesDataset,
+            COCODetectionDataset,
+            ETH3DDataset,
+            FlyingThings3DDataset,
+            OASISNormalDataset,
+            TUMRGBDDataset,
+            nuScenesDataset,
         )
         assert ETH3DDataset.TASK_TYPE == "depth"
         assert OASISNormalDataset.TASK_TYPE == "normal"
@@ -341,7 +343,7 @@ class TestBuildDatasetExtended:
         assert COCODetectionDataset.COCO_CLASSES[0] == "person"
 
     def test_load_flo_format(self):
-        from open_vision_banana.data.datasets import SintelFlowDataset, FlyingThings3DDataset
+        from open_vision_banana.data.datasets import FlyingThings3DDataset, SintelFlowDataset
         # Verify _load_flo method exists on both flow datasets
         assert hasattr(SintelFlowDataset, "_load_flo")
         assert hasattr(FlyingThings3DDataset, "_load_flo")
@@ -349,7 +351,7 @@ class TestBuildDatasetExtended:
 
 # ─── MixedVisionDataset with multi-colormap tests ───
 
-from open_vision_banana.data.mixed import MixedVisionDataset
+from open_vision_banana.data.mixed import MixedVisionDataset  # noqa: E402
 
 
 class TestMixedVisionDatasetMultiColormap:
@@ -498,7 +500,7 @@ class TestIntegrationOptimizationData:
         dl = create_optimized_dataloader(ds, batch_size=2, device=torch.device("cpu"), num_workers=0)
 
         steps = 0
-        for batch in dl:
+        for _batch in dl:
             opt.step()
             sched.step()
             steps += 1

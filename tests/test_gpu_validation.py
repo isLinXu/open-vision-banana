@@ -234,7 +234,7 @@ class TestGPUMemory:
         rgb = torch.rand(1, 3, 1024, 1024, device=device)
 
         torch.cuda.reset_peak_memory_stats()
-        instances = decoder.decode_instance(rgb)
+        decoder.decode_instance(rgb)
         peak_mb = torch.cuda.max_memory_allocated() / 1024**2
 
         # Should use less than 4GB for a single 1024x1024 image
@@ -249,7 +249,7 @@ class TestGPUMemory:
 
         torch.cuda.reset_peak_memory_stats()
         rgb = mapper.depth_to_rgb(depth)
-        recovered = mapper.rgb_to_depth(rgb)
+        mapper.rgb_to_depth(rgb)
         peak_mb = torch.cuda.max_memory_allocated() / 1024**2
 
         assert peak_mb < 2048, f"Peak memory {peak_mb:.0f}MB exceeds 2GB limit"

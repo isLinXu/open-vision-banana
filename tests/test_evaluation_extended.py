@@ -26,7 +26,6 @@ from open_vision_banana.evaluation.object_detection import (
     evaluate_object_detection,
 )
 
-
 # ────────────────────────────────────────────
 # Edge Detection Tests
 # ────────────────────────────────────────────
@@ -204,9 +203,9 @@ class TestObjectDetectionMetrics:
         assert metrics["AP@0.5"] == pytest.approx(1.0, abs=1e-2)
 
     def test_evaluate_object_detection_empty(self):
-        pred_boxes = [[]]
-        pred_scores = [[]]
-        pred_labels = [[]]
+        pred_boxes: list[list] = [[]]
+        pred_scores: list[list] = [[]]
+        pred_labels: list[list] = [[]]
         gt_boxes = [[(0.0, 0.0, 10.0, 10.0)]]
         gt_labels = [[1]]
         metrics = evaluate_object_detection(
@@ -422,4 +421,4 @@ class TestEvaluatorExtendedTasks:
             ]
 
 
-import math
+import math  # noqa: E402

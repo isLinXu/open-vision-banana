@@ -2,9 +2,11 @@
 """Standalone validation test for evaluator aggregation fixes."""
 
 import sys
+
 sys.path.insert(0, "src")
 
 import math
+from typing import Any
 
 import pytest
 import torch
@@ -46,7 +48,7 @@ class TestDictAggregation:
             "gt_labels": [[1]],
         }
         metrics = ev.evaluate([batch1, batch2], task="object_detection", num_classes=1)
-        ap50 = metrics.get("per_class_AP50", {})
+        ap50: dict = metrics.get("per_class_AP50", {})
         assert isinstance(ap50, dict)
         assert abs(ap50[1] - 0.5) < 1e-6
 
@@ -72,7 +74,7 @@ class TestListNanAggregation:
         assert math.isnan(m2["per_class_IoU"][1])
 
         # Simulate evaluator aggregation logic
-        all_metrics = {}
+        all_metrics: dict[str, Any] = {}
         for metrics in [m1, m2]:
             for k, v in metrics.items():
                 if isinstance(v, (int, float)):
@@ -85,7 +87,7 @@ class TestListNanAggregation:
         n_batches = 2
         for k in all_metrics:
             if isinstance(all_metrics[k], list):
-                n = len(all_metrics[k])
+                len(all_metrics[k])
                 elem_len = len(all_metrics[k][0])
                 result = []
                 for i in range(elem_len):

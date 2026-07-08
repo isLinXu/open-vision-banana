@@ -16,7 +16,6 @@ from open_vision_banana.core.object_detection_mapper import (
 )
 from open_vision_banana.core.segmentation import SegmentationDecoder
 
-
 # ── NMS Tests ───────────────────────────────────────────────────────────
 
 class TestNMS:

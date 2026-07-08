@@ -452,6 +452,7 @@ class TestBaseGeneratorOutputToTensor:
     def test_numpy_array_batch(self):
         """P0-2: Handle diffusers output.images as np.ndarray [B, H, W, 3]."""
         import numpy as np
+
         from open_vision_banana.inference.generator import BaseGenerator
 
         class MockOutput:
@@ -466,6 +467,7 @@ class TestBaseGeneratorOutputToTensor:
     def test_numpy_array_single_image(self):
         """P0-2: Handle single-image numpy array [H, W, 3]."""
         import numpy as np
+
         from open_vision_banana.inference.generator import BaseGenerator
 
         class MockOutput:
@@ -489,6 +491,7 @@ class TestBaseGeneratorOutputToTensor:
     def test_list_of_pil_images(self):
         """Existing behaviour: list of PIL Images."""
         from PIL import Image
+
         from open_vision_banana.inference.generator import BaseGenerator
 
         class MockOutput:
@@ -501,6 +504,7 @@ class TestBaseGeneratorOutputToTensor:
     def test_list_of_numpy_arrays(self):
         """Existing behaviour: list of numpy arrays."""
         import numpy as np
+
         from open_vision_banana.inference.generator import BaseGenerator
 
         class MockOutput:
@@ -521,6 +525,7 @@ class TestBaseGeneratorDtypeSync:
 
     def test_dtype_sync_float32(self):
         from unittest.mock import patch
+
         from open_vision_banana.inference.generator import BaseGenerator
 
         with patch.object(BaseGenerator, '_load_model'):
@@ -529,6 +534,7 @@ class TestBaseGeneratorDtypeSync:
 
     def test_dtype_sync_bfloat16(self):
         from unittest.mock import patch
+
         from open_vision_banana.inference.generator import BaseGenerator
 
         with patch.object(BaseGenerator, '_load_model'):
@@ -537,6 +543,7 @@ class TestBaseGeneratorDtypeSync:
 
     def test_dtype_sync_float16(self):
         from unittest.mock import patch
+
         from open_vision_banana.inference.generator import BaseGenerator
 
         with patch.object(BaseGenerator, '_load_model'):
@@ -545,6 +552,7 @@ class TestBaseGeneratorDtypeSync:
 
     def test_explicit_inference_options_not_overridden(self):
         from unittest.mock import patch
+
         from open_vision_banana.inference.generator import BaseGenerator
         from open_vision_banana.inference.optimization import InferenceOptions
 

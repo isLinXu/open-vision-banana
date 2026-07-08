@@ -91,7 +91,7 @@ class TestTrainingLoggerLogMetrics:
         logger.tensorboard_enabled = True
         logger._writer = mock_writer
 
-        logger.log_metrics(step=1, metrics={"loss": 0.5, "name": "test"})
+        logger.log_metrics(step=1, metrics={"loss": 0.5, "name": "test"})  # type: ignore[dict-item]
         assert mock_writer.add_scalar.call_count == 1
 
     def test_log_metrics_wandb_exception_handled(self):

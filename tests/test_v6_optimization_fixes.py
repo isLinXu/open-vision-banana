@@ -9,16 +9,14 @@ Covers:
 - Batch generation function signature
 """
 
-import numpy as np
-import torch
 import pytest
+import torch
 
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.training.optimization import (
     AdvancedAugmentation,
     SchedulerFactory,
 )
-from open_vision_banana.core.depth_mapper import DepthRGBMapper
-
 
 # ─── Test: depth_aware default ───────────────────────────────────────────────
 
@@ -63,7 +61,7 @@ class TestHueShift:
         for _ in range(50):
             result_img, _ = aug(image.clone(), target)
             # If hue shifted, the high value should have moved to G or B channel
-            r_max = result_img[0].max().item()
+            result_img[0].max().item()
             g_max = result_img[1].max().item()
             b_max = result_img[2].max().item()
             # If no shift: R should still be highest
@@ -275,7 +273,7 @@ class TestLatentCacheDataset:
             import torch.nn.functional as F
             return F.avg_pool2d(pixels, 8).squeeze(0)
 
-        cached_ds._encode = mock_encode
+        cached_ds._encode = mock_encode  # type: ignore[method-assign]
 
         # First access: should encode and cache
         sample0 = cached_ds[0]
@@ -298,14 +296,9 @@ class TestLatentCacheDataset:
 class TestBatchGenerationExists:
     def test_generate_image_batch_importable(self):
         """Verify that generate_image_batch is importable from the script."""
-        import importlib.util
-        import sys
 
         # The function is in scripts/generate_synthetic_data.py
         # We can't import it directly as a module, but we can check the source
-        script_path = (
-            torch.utils.data.Dataset.__module__  # just to get a valid path
-        )
         # Instead, read the file and check the function exists
         from pathlib import Path
         script = Path(__file__).resolve().parent.parent / "scripts" / "generate_synthetic_data.py"

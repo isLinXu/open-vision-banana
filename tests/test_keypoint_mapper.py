@@ -29,7 +29,7 @@ def test_keypoint_roundtrip() -> None:
     recovered_kp, recovered_vis = mapper.rgb_to_keypoints(rgb)
     assert recovered_kp.shape == (1, 5, 2)
     assert recovered_vis.shape == (1, 5)
-    assert recovered_vis[0, 3] == False  # invisible keypoint not recovered
+    assert not recovered_vis[0, 3]  # invisible keypoint not recovered
 
     # Check visible keypoints are close
     for i in [0, 1, 2, 4]:
@@ -45,7 +45,7 @@ def test_keypoint_visibility() -> None:
     keypoints = torch.tensor([[[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]]])
     visibility = torch.tensor([[True, False, True]])
 
-    rgb = mapper.keypoints_to_rgb(keypoints, visibility)
+    mapper.keypoints_to_rgb(keypoints, visibility)
     # Middle keypoint is invisible, so only 2 colors should be present
     # But they overlap at same location, so it's fine
 

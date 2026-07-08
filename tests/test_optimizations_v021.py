@@ -130,7 +130,7 @@ class TestAccelerateTrainerOptimizerStep:
             assert "setup_optimizer" not in str(exc)
 
 
-import pytest
+import pytest  # noqa: E402
 
 # ──────────────────────────────────────────────────────────────
 # P0: CheckpointManager._latest_checkpoint fix

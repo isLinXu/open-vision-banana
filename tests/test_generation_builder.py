@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from open_vision_banana.data.generation import build_generation_dataset
 from open_vision_banana.data.generation_builder import (
     build_synthetic_generation_dataset,
@@ -50,6 +52,7 @@ class TestGenerationBuilder:
 
 class TestWandbCheckpointLogging:
     def test_log_checkpoint_uploads_when_enabled(self, tmp_path: Path):
+        pytest.importorskip("wandb")
         ckpt_dir = tmp_path / "checkpoint-10"
         ckpt_dir.mkdir()
         (ckpt_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
