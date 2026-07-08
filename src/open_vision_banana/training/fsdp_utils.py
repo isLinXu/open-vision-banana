@@ -96,7 +96,7 @@ class FSDPWrapper:
                 buffer_dtype=torch.bfloat16,
             )
 
-        device = f"cuda:{self.local_rank}"
+        device = torch.device(f"cuda:{self.local_rank}")
         return FSDP(
             model.to(device),
             sharding_strategy=strategy_map.get(self.sharding_strategy, ShardingStrategy.FULL_SHARD),

@@ -65,7 +65,7 @@ class MixedVisionDataset(Dataset):
         self.vision_ratio = vision_ratio
         self.rng = torch.Generator().manual_seed(seed)
 
-        self.total_vision = sum(len(ds) for ds in vision_datasets)
+        self.total_vision: int = sum(len(ds) for ds in vision_datasets)  # type: ignore[misc]
         self._vision_lengths = [len(ds) for ds in vision_datasets]
 
         # Multi-colormap training augmentation (paper Section 3.2)

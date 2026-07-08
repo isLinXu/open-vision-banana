@@ -115,7 +115,7 @@ class GenerationDataset(Dataset):
         sample = self.samples[idx]
         img = Image.open(sample["image_path"]).convert("RGB")
         if img.size != (self.resolution, self.resolution):
-            img = img.resize((self.resolution, self.resolution), Image.LANCZOS)
+            img = img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
 
         target_rgb = torch.from_numpy(
             np.array(img, dtype=np.float32) / 255.0

@@ -16,8 +16,8 @@ Handles model inference + metric computation for all 10 supported tasks:
 from __future__ import annotations
 
 import logging
-
 import math
+from typing import Any
 
 import torch
 
@@ -30,11 +30,11 @@ from ..core.segmentation import SegmentationDecoder
 from .depth import evaluate_depth
 from .edge import evaluate_edge
 from .flow import evaluate_flow
+from .generation_preservation import evaluate_generation_preservation
 from .instance import evaluate_instance
 from .keypoint import evaluate_keypoints
 from .normal import evaluate_normals
 from .object_detection import evaluate_object_detection
-from .generation_preservation import evaluate_generation_preservation
 from .referring import evaluate_referring
 from .semantic import evaluate_semantic
 
@@ -84,7 +84,7 @@ class VisionEvaluator:
         expression: str | None = None,
         num_inference_steps: int = 1,
         strength: float = 0.85,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         """Evaluate a single batch without iterating a DataLoader.
 
         Convenience wrapper around ``evaluate()`` for ad-hoc batch evaluation.
@@ -104,7 +104,7 @@ class VisionEvaluator:
         Returns:
             Dictionary of metric name to value for this batch.
         """
-        batch = {
+        batch: dict[str, Any] = {
             "image": image.to(self.device),
             "target_rgb": target_rgb.to(self.device),
         }
@@ -138,7 +138,7 @@ class VisionEvaluator:
         expression: str | None = None,
         num_inference_steps: int = 1,
         strength: float = 0.85,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         """Run evaluation on a dataset.
 
         Supports all 10 vision tasks:
@@ -168,7 +168,7 @@ class VisionEvaluator:
             Dictionary of metric name → value (averaged over all batches).
         """
         self.model.eval()
-        all_metrics: dict[str, float] = {}
+        all_metrics: dict[str, Any] = {}
         n_batches = 0
         gen_real_rgb: list[torch.Tensor] = []
         gen_pred_rgb: list[torch.Tensor] = []
@@ -197,6 +197,7 @@ class VisionEvaluator:
             )
 
             # ── Decode & compute metrics ──────────────────────────────────
+            metrics: dict[str, Any]
             if task == "depth":
                 pred_depth = depth_mapper.rgb_to_depth(pred_rgb)
                 gt_depth = depth_mapper.rgb_to_depth(target_rgb)
@@ -272,13 +273,16 @@ class VisionEvaluator:
                     raise ValueError(
                         "gt_boxes and gt_labels are required for object detection evaluation."
                     )
+                pred_boxes: Any
+                pred_scores: Any
+                pred_labels: Any  # type: ignore[no-redef]
                 if batch.get("pred_boxes"):
                     pred_boxes = batch["pred_boxes"]
                     pred_scores = batch["pred_scores"]
                     pred_labels = batch["pred_labels"]
                 else:
                     bboxes, class_ids, scores = ObjectDetectionRGBMapper().rgb_to_bboxes(pred_rgb)
-                    pred_boxes, pred_scores, pred_labels = self._decode_detection_batch(
+                    pred_boxes, pred_scores, pred_labels = self._decode_detection_batch(  # type: ignore[assignment]
                         bboxes, class_ids, scores
                     )
                 metrics = evaluate_object_detection(
@@ -336,23 +340,24 @@ class VisionEvaluator:
             return {}
 
         for k in all_metrics:
-            if isinstance(all_metrics[k], list):
+            metric_value = all_metrics[k]
+            if isinstance(metric_value, list):
                 # Per-element mean, ignoring nan
-                n = len(all_metrics[k])
-                elem_len = len(all_metrics[k][0])
+                len(metric_value)
+                elem_len = len(metric_value[0])
                 result = []
                 for i in range(elem_len):
                     vals = [
                         batch[i]
-                        for batch in all_metrics[k]
+                        for batch in metric_value
                         if not (isinstance(batch[i], float) and math.isnan(batch[i]))
                     ]
                     result.append(sum(vals) / len(vals) if vals else float("nan"))
                 all_metrics[k] = result
-            elif isinstance(all_metrics[k], dict):
-                for sub_k in all_metrics[k]:
-                    if isinstance(all_metrics[k][sub_k], (int, float)):
-                        all_metrics[k][sub_k] /= n_batches
+            elif isinstance(metric_value, dict):
+                for sub_k in metric_value:
+                    if isinstance(metric_value[sub_k], (int, float)):
+                        metric_value[sub_k] /= n_batches
             else:
                 all_metrics[k] /= n_batches
 

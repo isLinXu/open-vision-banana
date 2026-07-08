@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -186,8 +187,8 @@ class DataConfig:
         self.generation_path = generation_path
         self.val_split = val_split
 
-    def to_dict(self) -> dict:
-        d = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "vision_ratio": self.vision_ratio,
             "generation_ratio": self.generation_ratio,
             "resolution": self.resolution,

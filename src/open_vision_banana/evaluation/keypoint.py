@@ -9,10 +9,7 @@ Standard metrics:
 
 from __future__ import annotations
 
-import math
-
 import torch
-
 
 SIGMAS_COCO = torch.tensor([
     0.026, 0.025, 0.025, 0.035, 0.035, 0.079, 0.072, 0.062, 0.079, 0.072,
@@ -119,11 +116,11 @@ def compute_pck(
         # Use bounding box diagonal as normalization
         x_range = gt_xy[..., 0].max(dim=1)[0] - gt_xy[..., 0].min(dim=1)[0]
         y_range = gt_xy[..., 1].max(dim=1)[0] - gt_xy[..., 1].min(dim=1)[0]
-        normalization_factor = torch.sqrt(x_range ** 2 + y_range ** 2 + 1e-10)  # [B]
+        nf = torch.sqrt(x_range ** 2 + y_range ** 2 + 1e-10)  # [B]
     else:
-        normalization_factor = torch.full((pred_kpts.shape[0],), normalization_factor, device=pred_kpts.device)
+        nf = torch.full((pred_kpts.shape[0],), normalization_factor, device=pred_kpts.device)
 
-    nf_exp = normalization_factor.unsqueeze(-1).clamp(min=1.0)  # [B, 1]
+    nf_exp = nf.unsqueeze(-1).clamp(min=1.0)  # [B, 1]
 
     results = {}
     for t in thresholds:

@@ -35,11 +35,11 @@ class VisualizationDecoder:
         self.rgb_mapper = rgb_mapper or RGBMapper()
         self.prompt_builder = PromptBuilder()
 
+        from ..core.depth_edge_mapper import DepthEdgeRGBMapper
         from ..core.edge_mapper import EdgeRGBMapper
         from ..core.flow_mapper import FlowRGBMapper
         from ..core.keypoint_mapper import KeypointRGBMapper
         from ..core.object_detection_mapper import ObjectDetectionRGBMapper
-        from ..core.depth_edge_mapper import DepthEdgeRGBMapper
 
         self._edge_mapper = EdgeRGBMapper(threshold=0.5)
         self._edge_mapper_cls = EdgeRGBMapper
@@ -217,10 +217,7 @@ class VisualizationDecoder:
             - "flow": [B, 2, H, W] (u, v).
             - "visualization": original rgb_image for display.
         """
-        if max_flow == 20.0:
-            mapper = self._flow_mapper
-        else:
-            mapper = self._flow_mapper_cls(max_flow=max_flow)
+        mapper = self._flow_mapper if max_flow == 20.0 else self._flow_mapper_cls(max_flow=max_flow)
         flow = mapper.rgb_to_flow(rgb_image)
         return {
             "flow": flow,

@@ -16,7 +16,7 @@ def evaluate_semantic(
     gt: torch.Tensor,
     num_classes: int,
     ignore_index: int = 255,
-) -> dict[str, float]:
+) -> dict[str, float | list[float]]:
     """Compute semantic segmentation metrics.
 
     Args:

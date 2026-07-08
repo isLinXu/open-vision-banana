@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
-from ._connectivity import CONNECTIVITY_SHIFTS, build_valid_mask, relabel_consecutive
-
 
 
 class GroupingMixin:
+    # Class-level type declarations for attributes provided by the
+    # composing SegmentationDecoder (mixin pattern).
+    color_tolerance: float
+
     def _compute_adaptive_tau(self, rgb_image: torch.Tensor) -> torch.Tensor:
         """Compute adaptive color tolerance map based on local image statistics.
 
@@ -312,7 +314,7 @@ class GroupingMixin:
         for _ in range(5):  # 5 iterations until convergence
             changed = False
             for dy, dx in shifts:
-                shifted_img = torch.roll(img, shifts=(-dy, -dx), dims=(0, 1))
+                torch.roll(img, shifts=(-dy, -dx), dims=(0, 1))
 
                 valid = torch.ones(H, W, dtype=torch.bool, device=device)
                 if dy == -1:
@@ -342,7 +344,7 @@ class GroupingMixin:
                 dst_indices = (src_y + dy) * W + (src_x + dx)
 
                 # Get current roots for src and dst
-                src_roots = labels[src_indices]
+                labels[src_indices]
                 dst_roots = labels[dst_indices]
 
                 # Compare src pixel color against dst component's seed color

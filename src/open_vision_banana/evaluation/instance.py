@@ -112,7 +112,7 @@ def evaluate_instance(
                 if j in matched_gt:
                     continue
                 if iou_matrix[i, j] > best_iou:
-                    best_iou = iou_matrix[i, j]
+                    best_iou = float(iou_matrix[i, j].item())
                     best_j = j
 
             if best_iou >= thresh and best_j >= 0:

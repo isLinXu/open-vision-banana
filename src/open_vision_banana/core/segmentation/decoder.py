@@ -13,13 +13,11 @@ from __future__ import annotations
 import logging
 
 import torch
-import torch.nn.functional as F
-
-logger = logging.getLogger(__name__)
-
 
 from .grouping import GroupingMixin
 from .postprocess import PostprocessMixin
+
+logger = logging.getLogger(__name__)
 
 
 class SegmentationDecoder(GroupingMixin, PostprocessMixin):

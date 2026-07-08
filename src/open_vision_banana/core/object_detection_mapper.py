@@ -346,41 +346,41 @@ class ObjectDetectionRGBMapper:
                     scores_b.append(component_mask.float().mean().item())
 
             if bboxes_b:
-                bboxes_b = torch.tensor(bboxes_b, dtype=torch.float32)
-                class_ids_b = torch.tensor(class_ids_b, dtype=torch.long)
-                scores_b = torch.tensor(scores_b, dtype=torch.float32)
+                bboxes_t = torch.tensor(bboxes_b, dtype=torch.float32)
+                class_ids_t = torch.tensor(class_ids_b, dtype=torch.long)
+                scores_t = torch.tensor(scores_b, dtype=torch.float32)
 
                 # P0 fix: Apply NMS per class to remove duplicate detections.
                 # Without NMS, overlapping connected components from the same
                 # object produce multiple near-identical detections.
-                keep_mask = torch.ones(len(bboxes_b), dtype=torch.bool)
-                for c in class_ids_b.unique():
-                    c_mask = class_ids_b == c
+                keep_mask = torch.ones(len(bboxes_t), dtype=torch.bool)
+                for c in class_ids_t.unique():
+                    c_mask = class_ids_t == c
                     c_indices = c_mask.nonzero(as_tuple=True)[0]
                     if len(c_indices) <= 1:
                         continue
                     # Convert (x, y, w, h) → (x1, y1, x2, y2) for NMS
-                    c_boxes = bboxes_b[c_indices]
+                    c_boxes = bboxes_t[c_indices]
                     c_boxes_xyxy = torch.stack([
                         c_boxes[:, 0],
                         c_boxes[:, 1],
                         c_boxes[:, 0] + c_boxes[:, 2],
                         c_boxes[:, 1] + c_boxes[:, 3],
                     ], dim=1)
-                    c_scores = scores_b[c_indices]
+                    c_scores = scores_t[c_indices]
                     keep_local = _nms(c_boxes_xyxy, c_scores, iou_threshold)
                     # Build keep mask: keep only the selected indices for this class
                     c_keep_bool = torch.zeros(len(c_indices), dtype=torch.bool)
                     c_keep_bool[keep_local] = True
                     keep_mask[c_indices] = c_keep_bool
 
-                bboxes_b = bboxes_b[keep_mask]
-                class_ids_b = class_ids_b[keep_mask]
-                scores_b = scores_b[keep_mask]
+                bboxes_t = bboxes_t[keep_mask]
+                class_ids_t = class_ids_t[keep_mask]
+                scores_t = scores_t[keep_mask]
 
-                all_bboxes.append(bboxes_b)
-                all_class_ids.append(class_ids_b)
-                all_scores.append(scores_b)
+                all_bboxes.append(bboxes_t)
+                all_class_ids.append(class_ids_t)
+                all_scores.append(scores_t)
             else:
                 all_bboxes.append(torch.zeros(0, 4))
                 all_class_ids.append(torch.zeros(0, dtype=torch.long))

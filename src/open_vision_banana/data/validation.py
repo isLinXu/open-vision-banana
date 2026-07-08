@@ -70,6 +70,7 @@ def _load_rgb_size(path: Path) -> tuple[tuple[int, int], tuple[float, float]]:
     with Image.open(path) as img:
         rgb = img.convert("RGB")
         extrema = rgb.getextrema()
+        assert len(extrema) == 3, "Expected RGB image with 3 bands"
         mins = (extrema[0][0], extrema[1][0], extrema[2][0])
         maxs = (extrema[0][1], extrema[1][1], extrema[2][1])
         return rgb.size, (min(mins), max(maxs))

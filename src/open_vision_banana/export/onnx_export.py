@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -96,7 +97,7 @@ class NormalRGBMapperONNX(nn.Module):
 
 def export_mapper_onnx(
     mapper_type: str,
-    output_path: str,
+    output_path: str | Path,
     input_shape: tuple = (1, 1, 256, 256),
     opset_version: int = 18,
 ) -> None:
@@ -113,7 +114,7 @@ def export_mapper_onnx(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if mapper_type == "depth_to_rgb":
-        model = DepthRGBMapperONNX()
+        model: nn.Module = DepthRGBMapperONNX()
         model.eval()
         dummy_input = torch.rand(*input_shape).clamp(0, 100)   # depth in metres
 
@@ -184,8 +185,8 @@ def export_mapper_onnx(
 
 
 def export_full_pipeline_onnx(
-    model,
-    output_dir: str,
+    model: Any,
+    output_dir: str | Path,
     opset_version: int = 18,
 ) -> None:
     """Export the full trained pipeline (transformer + VAE) to ONNX.
@@ -199,6 +200,21 @@ def export_full_pipeline_onnx(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Resolve the transformer module flexibly: tests pass a bare .transformer,
+    # while the full VisionBanana pipeline nests it under .generator._t2i_pipe.
+    transformer = getattr(model, "transformer", None)
+    if transformer is None:
+        gen = getattr(model, "generator", None)
+        if gen is not None:
+            pipe = getattr(gen, "_t2i_pipe", None) or getattr(gen, "pipe", None)
+            if pipe is not None:
+                transformer = getattr(pipe, "transformer", None)
+    if transformer is None:
+        raise AttributeError(
+            "Could not resolve 'transformer' from model. "
+            "Expected model.transformer or model.generator._t2i_pipe.transformer."
+        )
+
     # Dummy tensors matching FLUX transformer's expected input shapes:
     #   hidden_states      [B, 16, H/8, W/8]  — VAE latent (16-channel)
     #   timestep           [B]                  — continuous timestep in [0, 1]
@@ -208,7 +224,7 @@ def export_full_pipeline_onnx(
     dummy_text_emb = torch.randn(1, 77, 4096)
 
     torch.onnx.export(
-        model.generator._t2i_pipe.transformer,
+        transformer,
         (dummy_hidden, dummy_timestep, dummy_text_emb),
         str(output_dir / "transformer.onnx"),
         opset_version=opset_version,

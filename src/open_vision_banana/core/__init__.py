@@ -9,14 +9,14 @@ Provides reversible RGB mapping for all vision tasks:
 - AdaptiveDepthRGBMapper: adaptive precision depth mapping
 """
 
+from .adaptive_depth_mapper import AdaptiveDepthRGBMapper
 from .depth_edge_mapper import DepthEdgeRGBMapper
+from .depth_mapper import DepthRGBMapper
 from .edge_mapper import EdgeRGBMapper
 from .flow_mapper import FlowRGBMapper
 from .keypoint_mapper import KeypointRGBMapper
-from .object_detection_mapper import ObjectDetectionRGBMapper
-from .adaptive_depth_mapper import AdaptiveDepthRGBMapper
-from .depth_mapper import DepthRGBMapper
 from .normal_mapper import NormalRGBMapper
+from .object_detection_mapper import ObjectDetectionRGBMapper
 from .rgb_mapper import RGBMapper
 from .segmentation import SegmentationDecoder
 from .union_find import UnionFind

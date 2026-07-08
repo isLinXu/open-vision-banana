@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import torch
+
 # 16-connectivity: orthogonal + diagonal + knight's move (paper Appendix A)
 CONNECTIVITY_SHIFTS = [
     (-1, 0), (1, 0), (0, -1), (0, 1),
@@ -11,10 +13,8 @@ CONNECTIVITY_SHIFTS = [
 ]
 
 
-def build_valid_mask(h: int, w: int, dy: int, dx: int, device) -> "torch.Tensor":
+def build_valid_mask(h: int, w: int, dy: int, dx: int, device) -> torch.Tensor:
     """Border mask for a shift offset on an H×W grid."""
-    import torch
-
     valid = torch.ones(h, w, dtype=torch.bool, device=device)
     if dy == -1:
         valid[0, :] = False
@@ -35,7 +35,7 @@ def build_valid_mask(h: int, w: int, dy: int, dx: int, device) -> "torch.Tensor"
     return valid
 
 
-def relabel_consecutive(labels: "torch.Tensor") -> "torch.Tensor":
+def relabel_consecutive(labels: torch.Tensor) -> torch.Tensor:
     """Relabel component IDs to consecutive integers (background → 0)."""
     unique_labels, inverse = labels.reshape(-1).unique(return_inverse=True)
     is_bg = unique_labels < 0

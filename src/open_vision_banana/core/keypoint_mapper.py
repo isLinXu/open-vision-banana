@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import torch
 
-
 # COCO 17 keypoint color palette (predefined, distinguishable)
 COCO_KEYPOINT_COLORS = torch.tensor(
     [

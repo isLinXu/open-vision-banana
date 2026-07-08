@@ -485,8 +485,8 @@ class AdvancedAugmentation:
         size = int(min(H, W) * self.cutout_size)
         if size <= 0:
             return image
-        top = np.random.randint(0, H - size + 1) if H > size else 0
-        left = np.random.randint(0, W - size + 1) if W > size else 0
+        top = np.random.randint(0, H - size + 1) if size < H else 0
+        left = np.random.randint(0, W - size + 1) if size < W else 0
         image = image.clone()
         image[:, top:top+size, left:left+size] = 0.0
         return image

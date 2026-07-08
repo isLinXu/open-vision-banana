@@ -17,6 +17,7 @@ import json
 import logging
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any
 
 import torch
 from PIL import Image
@@ -131,8 +132,8 @@ class BaseGenerator:
         self.enable_sequential_cpu_offload = self.inference_options.enable_sequential_cpu_offload
 
         # Both pipelines are loaded lazily to save memory when only one is needed.
-        self._t2i_pipe = None  # FluxPipeline (text → image)
-        self._i2i_pipe = None  # FluxImg2ImgPipeline (image + text → image)
+        self._t2i_pipe: Any = None  # FluxPipeline (text → image)
+        self._i2i_pipe: Any = None  # FluxImg2ImgPipeline (image + text → image)
 
         # KV-cache for text encoder outputs: avoids redundant CLIP/T5
         # forward passes when the same prompt is used for repeated generation.
@@ -480,10 +481,7 @@ class BaseGenerator:
         target_modules = config.get("target_modules", ["to_k", "to_v"])
 
         # rsLoRA scale = alpha / sqrt(rank); standard LoRA scale = alpha / rank
-        if use_rslora:
-            scale = lora_alpha / (lora_rank ** 0.5)
-        else:
-            scale = lora_alpha / lora_rank
+        scale = lora_alpha / lora_rank ** 0.5 if use_rslora else lora_alpha / lora_rank
 
         logger.info(
             "Manual LoRA merge: rank=%d, alpha=%d, rslora=%s, scale=%.4f, targets=%s",

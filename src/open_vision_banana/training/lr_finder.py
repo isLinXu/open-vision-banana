@@ -51,8 +51,8 @@ class LRFinder:
         self.losses: list[float] = []
 
         # Save original state for restore
-        self._model_state = None
-        self._optimizer_state = None
+        self._model_state: dict | None = None
+        self._optimizer_state: dict | None = None
 
     def range_test(
         self,

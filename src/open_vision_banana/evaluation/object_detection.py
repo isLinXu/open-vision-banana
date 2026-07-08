@@ -17,8 +17,6 @@ import logging
 import math
 from typing import Any
 
-import torch
-
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +54,7 @@ def _image_size_from_boxes(
 ) -> tuple[int, int]:
     max_x = max_y = 1.0
     for boxes in boxes_list:
-        for x1, y1, x2, y2 in boxes:
+        for _x1, _y1, x2, y2 in boxes:
             max_x = max(max_x, x2)
             max_y = max(max_y, y2)
     return max(int(math.ceil(max_x)), 1), max(int(math.ceil(max_y)), 1)
@@ -70,10 +68,10 @@ def _build_coco_gt(
     images: list[dict[str, Any]] = []
     annotations: list[dict[str, Any]] = []
     ann_id = 1
-    for img_id, (boxes, labels) in enumerate(zip(gt_boxes, gt_labels), start=1):
+    for img_id, (boxes, labels) in enumerate(zip(gt_boxes, gt_labels, strict=False), start=1):
         w, h = _image_size_from_boxes([boxes])
         images.append({"id": img_id, "width": w, "height": h})
-        for box, label in zip(boxes, labels):
+        for box, label in zip(boxes, labels, strict=False):
             xywh = _xyxy_to_xywh(box)
             area = max(xywh[2], 0.0) * max(xywh[3], 0.0)
             annotations.append(
@@ -98,9 +96,9 @@ def _build_coco_dt(
     """Build COCO-format detection results."""
     results: list[dict[str, Any]] = []
     for img_id, (boxes, scores, labels) in enumerate(
-        zip(pred_boxes, pred_scores, pred_labels), start=1
+        zip(pred_boxes, pred_scores, pred_labels, strict=False), start=1
     ):
-        for box, score, label in zip(boxes, scores, labels):
+        for box, score, label in zip(boxes, scores, labels, strict=False):
             results.append(
                 {
                     "image_id": img_id,
@@ -120,11 +118,11 @@ def evaluate_object_detection_pycocotools(
     gt_labels: list[list[int]],
     num_classes: int,
     iou_thresholds: list[float] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """COCO-standard AP/AR via pycocotools (requires optional dependency)."""
+    import numpy as np
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
-    import numpy as np
 
     if iou_thresholds is None:
         iou_thresholds = [round(0.50 + 0.05 * i, 2) for i in range(10)]
@@ -143,10 +141,7 @@ def evaluate_object_detection_pycocotools(
     }
     coco_gt.createIndex()
 
-    if detections:
-        coco_dt = coco_gt.loadRes(detections)
-    else:
-        coco_dt = coco_gt.loadRes([])
+    coco_dt = coco_gt.loadRes(detections) if detections else coco_gt.loadRes([])
 
     coco_eval = COCOeval(coco_gt, coco_dt, iouType="bbox")
     coco_eval.params.iouThrs = np.asarray(iou_thresholds, dtype=np.float64)
@@ -155,7 +150,7 @@ def evaluate_object_detection_pycocotools(
     coco_eval.summarize()
 
     stats = coco_eval.stats
-    result: dict[str, float] = {
+    result: dict[str, Any] = {
         "mAP@[0.5:0.95]": float(stats[0]),
         "AP@0.5": float(stats[1]),
         "AP@0.75": float(stats[2]),
@@ -204,31 +199,31 @@ def evaluate_object_detection_fallback(
     gt_labels: list[list[int]],
     num_classes: int,
     iou_thresholds: list[float] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Lightweight AP implementation (no external deps beyond torch)."""
     if iou_thresholds is None:
         iou_thresholds = [round(0.50 + 0.05 * i, 2) for i in range(10)]
 
-    aps_per_threshold = {t: [] for t in iou_thresholds}
+    aps_per_threshold: dict[float, list] = {t: [] for t in iou_thresholds}
     per_class_ap50: dict[int, float] = {}
 
     for cls in range(1, num_classes + 1):
         all_pred = []
-        for img_idx, (boxes, scores, labels) in enumerate(zip(pred_boxes, pred_scores, pred_labels)):
-            for box, score, label in zip(boxes, scores, labels):
+        for img_idx, (boxes, scores, labels) in enumerate(zip(pred_boxes, pred_scores, pred_labels, strict=False)):
+            for box, score, label in zip(boxes, scores, labels, strict=False):
                 if label == cls:
                     all_pred.append({"img_idx": img_idx, "box": box, "score": score})
 
         all_gt = []
-        for img_idx, (boxes, labels) in enumerate(zip(gt_boxes, gt_labels)):
-            for box, label in zip(boxes, labels):
+        for img_idx, (boxes, labels) in enumerate(zip(gt_boxes, gt_labels, strict=False)):
+            for box, label in zip(boxes, labels, strict=False):
                 if label == cls:
                     all_gt.append({"img_idx": img_idx, "box": box, "matched": {t: False for t in iou_thresholds}})
 
         if not all_gt:
             continue
 
-        all_pred.sort(key=lambda x: x["score"], reverse=True)
+        all_pred.sort(key=lambda x: float(x["score"]), reverse=True)
 
         for thresh in iou_thresholds:
             tp = 0
@@ -261,7 +256,7 @@ def evaluate_object_detection_fallback(
         ap50 = aps_per_threshold[0.5][-1] if aps_per_threshold[0.5] else 0.0
         per_class_ap50[cls] = ap50
 
-    result: dict[str, float] = {"eval_backend": "fallback"}
+    result: dict[str, Any] = {"eval_backend": "fallback"}
     for thresh in iou_thresholds:
         if aps_per_threshold[thresh]:
             result[f"AP@{thresh:.2f}"] = sum(aps_per_threshold[thresh]) / len(aps_per_threshold[thresh])

@@ -96,7 +96,7 @@ def compute_fid(
 def _get_inception(device: torch.device | str) -> torch.nn.Module:
     global _inception_model
     if _inception_model is None:
-        from torchvision.models import inception_v3, Inception_V3_Weights
+        from torchvision.models import Inception_V3_Weights, inception_v3
 
         weights = Inception_V3_Weights.DEFAULT
         model = inception_v3(weights=weights, transform_input=False)

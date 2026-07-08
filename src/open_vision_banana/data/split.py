@@ -50,7 +50,7 @@ def split_vision_datasets(
     if not datasets or val_ratio <= 0.0:
         return datasets, None
 
-    combined = ConcatDataset(datasets)
+    combined: ConcatDataset = ConcatDataset(datasets)
     train_part, val_part = split_dataset(combined, val_ratio, seed=seed)
     return [train_part], val_part
 

@@ -9,6 +9,7 @@ Each loader produces (prompt, image, target_rgb) triples where:
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 
 import numpy as np
@@ -83,7 +84,7 @@ class BaseVisionDataset(Dataset):
         self.split = split
         self.resolution = resolution
         self.task_mix_weight = task_mix_weight
-        self.samples = []
+        self.samples: list[dict] = []
         self._scan()
 
     def _scan(self) -> None:
@@ -97,7 +98,7 @@ class BaseVisionDataset(Dataset):
         """Load image as tensor [3, H, W] in [-1, 1]."""
         img = Image.open(path).convert("RGB")
         if img.size[0] != self.resolution or img.size[1] != self.resolution:
-            img = img.resize((self.resolution, self.resolution), Image.LANCZOS)
+            img = img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
         tensor = _pil_to_tensor(img).float() / 255.0
         return tensor * 2.0 - 1.0
 
@@ -170,7 +171,7 @@ class ScanNetNormalDataset(BaseVisionDataset):
 
         normal_img = Image.open(sample["target"]).convert("RGB")
         if normal_img.size != (self.resolution, self.resolution):
-            normal_img = normal_img.resize((self.resolution, self.resolution), Image.LANCZOS)
+            normal_img = normal_img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
         target_rgb = _pil_to_tensor(normal_img).float() / 255.0
 
         prompt = PromptBuilder.build_normal_prompt()
@@ -296,7 +297,7 @@ class SACoInstanceDataset(BaseVisionDataset):
 
         inst_img = Image.open(sample["target"]).convert("RGB")
         if inst_img.size != (self.resolution, self.resolution):
-            inst_img = inst_img.resize((self.resolution, self.resolution), Image.LANCZOS)
+            inst_img = inst_img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
         target_rgb = _pil_to_tensor(inst_img).float() / 255.0
 
         prompt = PromptBuilder.build_instance_prompt("objects")
@@ -698,7 +699,7 @@ class ADE20KDataset(BaseVisionDataset):
 
     TASK_TYPE = "semantic"
 
-    ADE20K_COLORS = {
+    ADE20K_COLORS: dict[int, tuple[int, int, int]] = {
         # Core 20 classes (full palette would be 150 colors)
         # Using a deterministic hash-based color assignment for all 150 classes
     }
@@ -1052,7 +1053,7 @@ class COCODetectionDataset(BaseVisionDataset):
         with open(ann_file) as f:
             coco = json_mod.load(f)
 
-        img_to_anns = {}
+        img_to_anns: dict[str, list] = {}
         for ann in coco["annotations"]:
             img_id = ann["image_id"]
             if img_id not in img_to_anns:
@@ -1167,7 +1168,7 @@ class COCOStuffDataset(BaseVisionDataset):
         with open(ann_file) as f:
             stuff = json_mod.load(f)
 
-        img_to_anns = {}
+        img_to_anns: dict[str, list] = {}
         for ann in stuff["annotations"]:
             img_id = ann["image_id"]
             if img_id not in img_to_anns:
@@ -1709,7 +1710,7 @@ class PreEncodedDepthDataset(BaseVisionDataset):
         target_img = Image.open(sample["target"]).convert("RGB")
         if target_img.size != (self.resolution, self.resolution):
             target_img = target_img.resize(
-                (self.resolution, self.resolution), Image.LANCZOS
+                (self.resolution, self.resolution), Image.Resampling.LANCZOS
             )
         target_rgb = _pil_to_tensor(target_img).float() / 255.0
 

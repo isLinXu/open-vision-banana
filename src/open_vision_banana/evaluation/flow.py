@@ -33,9 +33,12 @@ def evaluate_flow(
         pred = pred * valid_mask.float()
         gt = gt * valid_mask.float()
         denom = valid_mask.sum().float().clamp(min=1e-10)
+    if valid_mask is not None:
+        pred = pred * valid_mask.float()
+        gt = gt * valid_mask.float()
+        denom = valid_mask.sum().float().clamp(min=1e-10)
     else:
-        denom = pred.numel() / 2  # per-pixel count (B*H*W)
-        denom = torch.tensor(denom, dtype=torch.float32, device=pred.device)
+        denom = torch.tensor(pred.numel() / 2, dtype=torch.float32, device=pred.device)
 
     diff = pred - gt
     epe = torch.sqrt(diff[:, 0:1] ** 2 + diff[:, 1:2] ** 2 + 1e-10)

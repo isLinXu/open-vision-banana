@@ -34,8 +34,9 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any
 
 import torch
 
@@ -111,13 +112,13 @@ class ModelConfig:
 # Store factory functions instead of instantiated ModelConfig objects.
 # Configs are created on first access via get_model_config(), reducing import
 # overhead and enabling future dynamic registration without touching this file.
-_REGISTRY_FACTORIES: dict[str, callable] = {}
+_REGISTRY_FACTORIES: dict[str, Callable[[], ModelConfig]] = {}
 
 # Cache for already-instantiated configs
 _REGISTRY_CACHE: dict[str, ModelConfig] = {}
 
 
-def _register_model(name: str, factory: callable) -> None:
+def _register_model(name: str, factory: Callable[[], ModelConfig]) -> None:
     """Register a model config factory."""
     _REGISTRY_FACTORIES[name] = factory
 
@@ -804,13 +805,13 @@ class PipelineComponents:
     """Container for loaded pipeline components."""
     unet: torch.nn.Module  # UNet or Transformer (aliased as 'unet' for backward compat)
     vae: torch.nn.Module
-    text_encoder: Optional[torch.nn.Module]
-    text_encoder_2: Optional[torch.nn.Module]
+    text_encoder: torch.nn.Module | None
+    text_encoder_2: torch.nn.Module | None
     tokenizer: object
     config: ModelConfig = None
-    text_encoder_3: Optional[torch.nn.Module] = None  # SD3 uses 3 text encoders
-    tokenizer_2: Optional[object] = None
-    tokenizer_3: Optional[object] = None
+    text_encoder_3: torch.nn.Module | None = None  # SD3 uses 3 text encoders
+    tokenizer_2: object | None = None
+    tokenizer_3: object | None = None
     scheduler: object = None
 
     @property
@@ -881,7 +882,7 @@ def load_pipeline(
         backbone = getattr(pipe, "transformer", None)
         if backbone is None:
             # Some pipelines might still use 'unet' attribute
-            backbone = getattr(pipe, "unet")
+            backbone = pipe.unet
     else:
         backbone = pipe.unet
 
@@ -955,7 +956,7 @@ def encode_text(
     device: torch.device,
     dtype: torch.dtype,
     negative: bool = False,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, Any]:
     """Encode text prompts into hidden states + optional pooled embeddings.
 
     Handles:
@@ -1109,12 +1110,12 @@ def encode_text(
 
 def build_added_cond_kwargs(
     config: ModelConfig,
-    pooled_embeds: Optional[torch.Tensor],
+    pooled_embeds: torch.Tensor | None,
     resolution: tuple[int, int],
     device: torch.device,
     dtype: torch.dtype,
     batch_size: int = 1,
-) -> Optional[dict]:
+) -> dict | None:
     """Build added_cond_kwargs for SDXL/Kolors-family models.
 
     Returns None for non-SDXL/Kolors models.
@@ -1144,8 +1145,8 @@ def build_added_cond_kwargs(
 def apply_lora(
     unet: torch.nn.Module,
     config: ModelConfig,
-    rank: Optional[int] = None,
-    alpha: Optional[int] = None,
+    rank: int | None = None,
+    alpha: int | None = None,
     use_rslora: bool = True,
 ) -> torch.nn.Module:
     """Apply LoRA adapters to backbone (UNet or Transformer) with model-appropriate target modules."""
@@ -1175,15 +1176,15 @@ def backbone_forward(
     timesteps: torch.Tensor,
     encoder_hidden_states: torch.Tensor,
     config: ModelConfig,
-    added_cond_kwargs: Optional[dict] = None,
-    guidance: Optional[float] = None,
-    attention_mask: Optional[torch.Tensor] = None,
-    pooled_embeds: Optional[torch.Tensor] = None,
-    txt_ids: Optional[torch.Tensor] = None,
-    img_ids: Optional[torch.Tensor] = None,
-    original_size: Optional[tuple] = None,
-    target_size: Optional[tuple] = None,
-    crop_coords: Optional[tuple] = None,
+    added_cond_kwargs: dict | None = None,
+    guidance: float | None = None,
+    attention_mask: torch.Tensor | tuple | None = None,
+    pooled_embeds: torch.Tensor | None = None,
+    txt_ids: torch.Tensor | None = None,
+    img_ids: torch.Tensor | None = None,
+    original_size: tuple | None = None,
+    target_size: tuple | None = None,
+    crop_coords: tuple | None = None,
 ) -> torch.Tensor:
     """Unified backbone forward that handles architecture differences.
 
@@ -1206,10 +1207,12 @@ def backbone_forward(
     HunyuanDiT: transformer(latents, t, enc_hidden, text_embedding_mask, enc_hidden_t5, text_embedding_mask_t5, image_meta_size, style, image_rotary_emb)
     """
     if config.backbone_type == "unet":
-        kwargs = {}
+        unet_kwargs: dict[str, Any] = {}
         if config.needs_added_cond_kwargs and added_cond_kwargs is not None:
-            kwargs["added_cond_kwargs"] = added_cond_kwargs
-        return backbone(latents, timesteps, encoder_hidden_states, **kwargs).sample
+            unet_kwargs["added_cond_kwargs"] = added_cond_kwargs
+        if config.needs_attention_mask and attention_mask is not None:
+            unet_kwargs["encoder_attention_mask"] = attention_mask
+        return backbone(latents, timesteps, encoder_hidden_states, **unet_kwargs).sample
 
     # ── Transformer-based models ──
     if config.family == "flux":
@@ -1282,19 +1285,19 @@ def backbone_forward(
         )[0]
 
     elif config.family == "cogview4":
-        kwargs = {}
+        cogview_kwargs: dict[str, Any] = {}
         if original_size is not None:
-            kwargs["original_size"] = original_size
+            cogview_kwargs["original_size"] = original_size
         if target_size is not None:
-            kwargs["target_size"] = target_size
+            cogview_kwargs["target_size"] = target_size
         if crop_coords is not None:
-            kwargs["crop_coords"] = crop_coords
+            cogview_kwargs["crop_coords"] = crop_coords
         return backbone(
             hidden_states=latents,
             encoder_hidden_states=encoder_hidden_states,
             timestep=timesteps,
             return_dict=False,
-            **kwargs,
+            **cogview_kwargs,
         )[0]
 
     elif config.family == "aura-flow":
@@ -1396,7 +1399,7 @@ def unet_forward(
     timesteps: torch.Tensor,
     encoder_hidden_states: torch.Tensor,
     config: ModelConfig,
-    added_cond_kwargs: Optional[dict] = None,
+    added_cond_kwargs: dict | None = None,
 ) -> torch.Tensor:
     """Backward-compatible alias for backbone_forward (UNet models only)."""
     return backbone_forward(
@@ -1426,7 +1429,6 @@ def vae_encode(
     FLUX.2: retrieve_latents(vae.encode(img)) then patchify
     CogView4: vae.encode(img).latent_dist.mode() * scaling
     """
-    from diffusers.utils.torch_utils import randn_tensor
 
     # Encode
     if config.vae_has_latent_dist:
@@ -1434,10 +1436,7 @@ def vae_encode(
     else:
         # Some custom VAEs (e.g. SANA's AutoencoderDC) may return sample directly
         enc_out = vae.encode(images)
-        if hasattr(enc_out, 'latent_dist'):
-            latents = enc_out.latent_dist.mode()
-        else:
-            latents = enc_out.sample
+        latents = enc_out.latent_dist.mode() if hasattr(enc_out, 'latent_dist') else enc_out.sample
 
     # Apply scaling
     scaling = config.vae_scaling_factor
@@ -1480,10 +1479,7 @@ def vae_decode(
 
     # Decode
     decoded = vae.decode(latents, return_dict=False)
-    if isinstance(decoded, tuple):
-        sample = decoded[0]
-    else:
-        sample = decoded.sample
+    sample = decoded[0] if isinstance(decoded, tuple) else decoded.sample
 
     return sample
 

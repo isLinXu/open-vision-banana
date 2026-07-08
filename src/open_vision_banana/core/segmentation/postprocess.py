@@ -6,8 +6,13 @@ import torch
 import torch.nn.functional as F
 
 
-
 class PostprocessMixin:
+    # Class-level type declarations for attributes provided by the
+    # composing SegmentationDecoder (mixin pattern).
+    erosion_threshold: float
+    color_tolerance: float
+    bbox_expansion_factor: float
+
     def _noise_pruning(self, labels: torch.Tensor, min_area: float) -> torch.Tensor:
         """Stage 3: Remove components smaller than θ_size * (H*W).
 
@@ -90,11 +95,11 @@ class PostprocessMixin:
             eroded_areas.append(chunk_eroded.sum(dim=(2, 3)))
             original_areas.append(chunk_map.sum(dim=(2, 3)))
 
-        eroded_areas = torch.cat(eroded_areas).squeeze(1)  # [K]
-        original_areas = torch.cat(original_areas).squeeze(1)  # [K]
+        eroded_areas_t = torch.cat(eroded_areas).squeeze(1)  # [K]
+        original_areas_t = torch.cat(original_areas).squeeze(1)  # [K]
 
         # Determine which labels to remove
-        ratio = eroded_areas / (original_areas + 1e-8)
+        ratio = eroded_areas_t / (original_areas_t + 1e-8)
         remove_mask = ratio < self.erosion_threshold
 
         # Build removal lookup

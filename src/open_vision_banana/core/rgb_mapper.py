@@ -9,6 +9,8 @@ Routes to the appropriate mapper based on task type:
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 from .depth_edge_mapper import DepthEdgeRGBMapper
@@ -73,7 +75,7 @@ class RGBMapper:
         background_color: tuple = (0, 0, 0),
         grouping_mode: str = "adjacent",
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> Any:
         """Decode RGB visualization back to vision task output.
 
         Args:

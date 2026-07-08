@@ -247,36 +247,32 @@ class VisionBanana:
             )
             result["rgb_output"] = rgb_output
             B = images.shape[0]
-            per_image = []
-            for i in range(B):
-                item: dict = {}
-                for key, val in result.items():
-                    if isinstance(val, torch.Tensor) and val.dim() > 0 and val.shape[0] == B:
-                        item[key] = val[i : i + 1]
-                    elif isinstance(val, list) and len(val) == B:
-                        item[key] = val[i]
-                    else:
-                        item[key] = val
-                if prompts is not None:
-                    item["prompt"] = prompts[i]
-                per_image.append(item)
+            per_image = self._split_batch_result(result, B)
+            for i, item in enumerate(per_image):
+                item["prompt"] = prompts[i]
             return per_image
 
         result = self.predict(image=images, task=task, **kwargs)
         B = images.shape[0]
+        return self._split_batch_result(result, B)
 
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _split_batch_result(self, result: dict, batch_size: int) -> list[dict]:
+        """Split a batched result dict into per-image dicts."""
         per_image = []
-        for i in range(B):
+        for i in range(batch_size):
             item: dict = {}
             for key, val in result.items():
-                if isinstance(val, torch.Tensor) and val.dim() > 0 and val.shape[0] == B:
+                if isinstance(val, torch.Tensor) and val.dim() > 0 and val.shape[0] == batch_size:
                     item[key] = val[i : i + 1]
-                elif isinstance(val, list) and len(val) == B:
+                elif isinstance(val, list) and len(val) == batch_size:
                     item[key] = val[i]
                 else:
                     item[key] = val
             per_image.append(item)
-
         return per_image
 
     def _build_prompt(
@@ -620,61 +616,55 @@ class VisionBanana:
         result["rgb_output"] = last_result.get("rgb_output")
         return result
 
+    def _export_depth_torchscript(self, output_path: Path, input_shape: tuple) -> None:
+        from ..core.depth_mapper import DepthRGBMapper
+
+        mapper = DepthRGBMapper()
+
+        class DepthDecoderScript(torch.nn.Module):
+            def __init__(self, mapper):
+                super().__init__()
+                self.mapper = mapper
+
+            def forward(self, rgb: torch.Tensor) -> torch.Tensor:
+                return self.mapper.rgb_to_depth(rgb)
+
+        script_model = DepthDecoderScript(mapper)
+        dummy_input = torch.rand(*input_shape)
+        scripted = torch.jit.trace(script_model, dummy_input)
+        scripted.save(str(output_path))
+
+    def _export_normal_torchscript(self, output_path: Path, input_shape: tuple) -> None:
+        from ..core.normal_mapper import NormalRGBMapper
+
+        mapper = NormalRGBMapper()
+
+        class NormalDecoderScript(torch.nn.Module):
+            def __init__(self, mapper):
+                super().__init__()
+                self.mapper = mapper
+
+            def forward(self, rgb: torch.Tensor) -> torch.Tensor:
+                return self.mapper.rgb_to_normal(rgb)
+
+        script_model = NormalDecoderScript(mapper)
+        dummy_input = torch.rand(*input_shape)
+        scripted = torch.jit.trace(script_model, dummy_input)
+        scripted.save(str(output_path))
+
     def export_torchscript(
         self,
         output_path: str | Path,
         task: str = "depth",
         input_shape: tuple = (1, 3, 512, 512),
     ) -> None:
-        """Export the RGB decoding pipeline as TorchScript.
-
-        Only exports the decoder (RGB → vision output), not the
-        full diffusion model (which is too large for TorchScript).
-
-        Args:
-            output_path: Path to save the TorchScript model.
-            task: Task type for the decoder.
-            input_shape: Input tensor shape for tracing.
-        """
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if task == "depth":
-            from ..core.depth_mapper import DepthRGBMapper
-
-            mapper = DepthRGBMapper()
-
-            class DepthDecoderScript(torch.nn.Module):
-                def __init__(self, mapper):
-                    super().__init__()
-                    self.mapper = mapper
-
-                def forward(self, rgb: torch.Tensor) -> torch.Tensor:
-                    return self.mapper.rgb_to_depth(rgb)
-
-            script_model = DepthDecoderScript(mapper)
-            dummy_input = torch.rand(*input_shape)
-            scripted = torch.jit.trace(script_model, dummy_input)
-            scripted.save(str(output_path))
-
+            self._export_depth_torchscript(output_path, input_shape)
         elif task == "normal":
-            from ..core.normal_mapper import NormalRGBMapper
-
-            mapper = NormalRGBMapper()
-
-            class NormalDecoderScript(torch.nn.Module):
-                def __init__(self, mapper):
-                    super().__init__()
-                    self.mapper = mapper
-
-                def forward(self, rgb: torch.Tensor) -> torch.Tensor:
-                    return self.mapper.rgb_to_normal(rgb)
-
-            script_model = NormalDecoderScript(mapper)
-            dummy_input = torch.rand(*input_shape)
-            scripted = torch.jit.trace(script_model, dummy_input)
-            scripted.save(str(output_path))
-
+            self._export_normal_torchscript(output_path, input_shape)
         else:
             raise ValueError(
                 f"TorchScript export not supported for task: {task}. Choose from: depth, normal"

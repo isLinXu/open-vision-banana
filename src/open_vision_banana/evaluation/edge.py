@@ -142,7 +142,7 @@ def evaluate_edge_dataset(
 
     ois_f1s = []
 
-    for pred, gt in zip(preds, gts):
+    for pred, gt in zip(preds, gts, strict=False):
         if gt.dtype != torch.bool:
             gt = gt > 0.5
         gt = gt.bool()
@@ -174,9 +174,9 @@ def evaluate_edge_dataset(
         p = global_tp[ti] / (global_tp[ti] + global_fp[ti] + 1e-10)
         r = global_tp[ti] / (global_tp[ti] + global_fn[ti] + 1e-10)
         f1 = 2 * p * r / (p + r + 1e-10)
-        ods_f1s.append(f1)
-        ods_ps.append(p)
-        ods_rs.append(r)
+        ods_f1s.append(float(f1))
+        ods_ps.append(float(p))
+        ods_rs.append(float(r))
 
     best_idx = int(torch.tensor(ods_f1s).argmax().item())
 
