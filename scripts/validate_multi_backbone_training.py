@@ -20,25 +20,21 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from open_vision_banana.model_registry import (
-    ModelConfig,
     PipelineComponents,
     apply_lora,
     backbone_forward,
     build_added_cond_kwargs,
     encode_text,
     get_model_config,
-    list_models,
     vae_decode,
     vae_encode,
 )
-
 
 # ─── Mock modules ───────────────────────────────────────────────────────────
 

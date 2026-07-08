@@ -34,15 +34,14 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from open_vision_banana.model_registry import (
+    backbone_forward,
+    build_added_cond_kwargs,
+    encode_text,
     get_model_config,
     list_models,
     load_pipeline,
-    vae_decode,
-    vae_encode,
-    encode_text,
-    backbone_forward,
-    build_added_cond_kwargs,
     prepare_position_ids,
+    vae_decode,
 )
 
 logging.basicConfig(
@@ -471,7 +470,7 @@ def main():
         prompts = load_prompts_file(Path(args.prompts_file))
     else:
         prompts = DEFAULT_PROMPTS.copy()
-    
+
     if not prompts:
         logger.error("No prompts available!")
         return
@@ -528,7 +527,7 @@ def main():
             all_exist = all((images_dir / fn).exists() for fn in batch_filenames)
             if all_exist:
                 logger.info(f"[{batch_start+1}/{args.num_images}] Batch already exists, skipping")
-                for fn, pr, sd in zip(batch_filenames, batch_prompts, batch_seeds):
+                for fn, pr, sd in zip(batch_filenames, batch_prompts, batch_seeds, strict=False):
                     captions.append({"filename": fn, "caption": pr, "seed": sd})
                     successful += 1
                 continue
@@ -542,7 +541,7 @@ def main():
                     seeds=batch_seeds,
                 )
 
-                for img, fn, pr, sd in zip(batch_images, batch_filenames, batch_prompts, batch_seeds):
+                for img, fn, pr, sd in zip(batch_images, batch_filenames, batch_prompts, batch_seeds, strict=False):
                     img.save(images_dir / fn, quality=95)
                     captions.append({"filename": fn, "caption": pr, "seed": sd})
                     successful += 1

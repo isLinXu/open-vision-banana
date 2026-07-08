@@ -302,8 +302,8 @@ def run_smoke_test(
 
     # ── 8. Generation dataset builder ─────────────────────────────────────────
     logger.info("[8/10] Synthetic generation dataset builder …")
-    from open_vision_banana.data.generation_builder import build_synthetic_generation_dataset
     from open_vision_banana.data.generation import build_generation_dataset
+    from open_vision_banana.data.generation_builder import build_synthetic_generation_dataset
 
     gen_dir = tempfile.mkdtemp(prefix="ovb_gen_")
     try:

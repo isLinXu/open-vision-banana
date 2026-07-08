@@ -31,7 +31,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # 日志配置 —— 统一格式，避免重复 handler
@@ -90,7 +89,7 @@ def _get_registry() -> dict[str, dict]:
         sys.exit(1)
 
     entries: dict[str, dict] = {}
-    for name in REGISTRY.keys():
+    for name in REGISTRY:
         cfg: ModelConfig = REGISTRY[name]
         entries[name] = {
             "model_id": cfg.model_id,
@@ -107,7 +106,7 @@ def _get_registry() -> dict[str, dict]:
 def _download_with_resume(
     repo_id: str,
     *,
-    cache_dir: Optional[str] = None,
+    cache_dir: str | None = None,
     resume: bool = True,
     force: bool = False,
     local_files_only: bool = False,
@@ -183,7 +182,7 @@ def _calculate_dir_size(path: Path) -> float:
     return total / 1e9
 
 
-def _print_model_list(entries: dict[str, dict], max_memory: Optional[float] = None) -> None:
+def _print_model_list(entries: dict[str, dict], max_memory: float | None = None) -> None:
     """打印模型列表，可选按内存预算过滤。"""
     if max_memory is not None:
         filtered = {

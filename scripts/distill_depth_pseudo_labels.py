@@ -70,7 +70,7 @@ def discover_source_images(
     paths: set[Path] = set()
 
     if source_list and source_list.exists():
-        with open(source_list, "r") as f:
+        with open(source_list) as f:
             for line in f:
                 p = Path(line.strip())
                 if p.exists() and p.suffix.lower() in SUPPORTED_EXTS:
@@ -144,10 +144,7 @@ def predict_depth(
 
     # Normalize to [0, 1] — Depth-Anything gives relative depth
     d_min, d_max = depth_arr.min(), depth_arr.max()
-    if d_max > d_min:
-        depth_arr = (depth_arr - d_min) / (d_max - d_min)
-    else:
-        depth_arr = np.zeros_like(depth_arr)
+    depth_arr = (depth_arr - d_min) / (d_max - d_min) if d_max > d_min else np.zeros_like(depth_arr)
 
     depth_tensor = torch.from_numpy(depth_arr).unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
     return depth_tensor.to(device)

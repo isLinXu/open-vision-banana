@@ -107,7 +107,7 @@ def prepare_hypersim(
 
         color = Image.open(color_path).convert("RGB")
         if resolution is not None:
-            color = color.resize((resolution, resolution), Image.LANCZOS)
+            color = color.resize((resolution, resolution), Image.Resampling.LANCZOS)
 
         depth = _load_depth_meters(depth_path)
         if resolution is not None:

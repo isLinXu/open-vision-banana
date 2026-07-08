@@ -26,9 +26,7 @@ from open_vision_banana.inference.checkpoint import (
     CheckpointNotAvailableError,
     download_lora_from_hub,
     get_registry_entry,
-    is_registry_placeholder,
     list_registry_checkpoints,
-    load_checkpoint_registry,
     resolve_lora_repo_id,
 )
 

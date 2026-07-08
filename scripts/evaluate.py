@@ -107,9 +107,7 @@ def main():
         dataset_task = "coco_stuff"
     elif dataset_task == "keypoint":
         dataset_task = "coco_detection"
-    elif dataset_task == "depth_edge":
-        dataset_task = "depth"
-    elif dataset_task == "generation_preservation":
+    elif dataset_task == "depth_edge" or dataset_task == "generation_preservation":
         dataset_task = "depth"
 
     dataset = build_dataset(

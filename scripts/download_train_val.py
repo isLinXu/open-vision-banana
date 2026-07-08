@@ -41,13 +41,12 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
-from urllib.parse import urlparse
+from typing import Any
 
 import numpy as np
 import torch
@@ -265,7 +264,7 @@ class DownloadState:
     failed_datasets: list[str] = field(default_factory=list)
 
     @classmethod
-    def load(cls, path: Path) -> "DownloadState":
+    def load(cls, path: Path) -> DownloadState:
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -739,7 +738,7 @@ def split_train_val(
     indices = np.arange(n_total)
     rng.shuffle(indices)
     train_idx = set(indices[:n_train])
-    val_idx = set(indices[n_train:])
+    set(indices[n_train:])
 
     # 创建输出目录
     train_img_dir = output_dir / "train" / "images"
@@ -865,7 +864,7 @@ def download_and_prepare(
         logger.info("Download phase already completed (resume).")
 
     # ── 2. Prepare ───────────────────────────────────────────────────────
-    if config.prepare_fn is not None and not dataset_key == "nyu":
+    if config.prepare_fn is not None and dataset_key != "nyu":
         if args.dry_run:
             logger.info("[DRY-RUN] Would prepare dataset into %s", unified_dir)
         else:
@@ -960,7 +959,7 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # list
-    list_parser = subparsers.add_parser("list", help="列出所有支持的数据集")
+    subparsers.add_parser("list", help="列出所有支持的数据集")
 
     # download
     dl_parser = subparsers.add_parser("download", help="下载并划分数据集")

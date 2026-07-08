@@ -32,13 +32,12 @@ from __future__ import annotations
 
 import argparse
 import logging
-import subprocess
 import sys
 import urllib.request
 import zipfile
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +187,7 @@ def prepare_scannet_normal(raw_dir: Path, output_dir: Path) -> int:
     # ScanNet layout: sceneXXXX_XX/color/*.jpg + sceneXXXX_XX/normal/*.png
     import numpy as np
     from PIL import Image
+
     from open_vision_banana.core.normal_mapper import NormalRGBMapper
 
     img_dir = output_dir / "images"
@@ -278,7 +278,6 @@ def prepare_refcocog_referring(raw_dir: Path, output_dir: Path) -> int:
     logger.info("RefCOCOg preparation: scanning %s", raw_dir)
     # RefCOCOg requires images from COCO 2014 train/val split
     # refs(data) contains {ref_id, ann_id, sentence, bbox, mask}
-    import json
 
     img_dir = output_dir / "images"
     tgt_dir = output_dir / "targets"
@@ -300,7 +299,7 @@ def prepare_refcocog_referring(raw_dir: Path, output_dir: Path) -> int:
         return 0
 
     written = 0
-    for ref in refs_data:
+    for _ref in refs_data:
         # Each ref has: ref_id, annotation_id, category_id, sentences, etc.
         # Image source must be COCO 2014
         pass  # Stub — requires COCO images for full implementation
@@ -366,7 +365,7 @@ def list_datasets() -> None:
         size = f"{spec.size_estimate_gb:.1f}GB"
         print(f"  {name:<25} {spec.task:<12} {size:<8} {login:<8} {spec.license:<15}")
     print("-" * 70)
-    print(f"\nUsage: python scripts/download_data.py --dataset <name> --output <dir>")
+    print("\nUsage: python scripts/download_data.py --dataset <name> --output <dir>")
 
 
 def parse_args() -> argparse.Namespace:

@@ -12,7 +12,9 @@ Usage:
 """
 
 import argparse
+import json
 import time
+from pathlib import Path
 
 import torch
 
@@ -81,6 +83,12 @@ def main():
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--iterations", type=int, default=50)
     parser.add_argument("--device", type=str, default=None)
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="JSON output path for structured benchmark results",
+    )
     args = parser.parse_args()
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -163,6 +171,7 @@ def main():
     print(f"  {'Operation':<35s} {'Median (ms)':>12s} {'P95 (ms)':>12s}")
     print(f"  {'-'*35} {'-'*12} {'-'*12}")
 
+    results: dict[str, dict[str, float]] = {}
     for label, stats in [
         ("Depth encode", stats_enc),
         ("Depth decode", stats_dec),
@@ -173,9 +182,30 @@ def main():
         ("Unified decode(depth)", stats_u_dec),
     ]:
         print(f"  {label:<35s} {stats['median_ms']:>12.2f} {stats['p95_ms']:>12.2f}")
+        results[label] = {
+            "median_ms": stats["median_ms"],
+            "p95_ms": stats["p95_ms"],
+            "mean_ms": stats["mean_ms"],
+            "std_ms": stats["std_ms"],
+            "min_ms": stats["min_ms"],
+            "max_ms": stats["max_ms"],
+        }
 
     if mem_enc is not None:
         print(f"\n  Peak GPU memory: {mem_enc:.1f} MB (depth encode)")
+        results["_meta"] = {
+            "peak_gpu_memory_mb": mem_enc,
+            "resolution": res,
+            "device": device,
+            "iterations": iters,
+        }
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\n  Results saved to: {out_path}")
 
 
 if __name__ == "__main__":

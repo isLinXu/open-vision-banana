@@ -199,16 +199,14 @@ DATASET_REGISTRY = {
     "virtual_kitti": {
         "name": "Virtual KITTI 2",
         "task": "depth",
-        "urls": [
-            {
-                "url": "https://europa.eu/
-        ],
+        "urls": [],
         "expected_structure": {
             "Scene01/frames/rgb": "*.jpg",
             "Scene01/frames/depth": "*.png",
         },
         "size_mb": 7000,
         "description": "Synthetic KITTI with weather/time, 50K frames, perfect GT",
+        "note": "Virtual KITTI 2 requires registration at https://europe.naverlabs.com/proxy-virtual-worlds-vkitti-2/ — download manually",
     },
     "tum_rgbd": {
         "name": "TUM RGB-D",

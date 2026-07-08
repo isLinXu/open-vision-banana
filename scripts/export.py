@@ -59,6 +59,7 @@ def main():
 
     if args.quantization == "int8":
         import torch
+
         from open_vision_banana.export.onnx_export import DepthRGBMapperONNX, NormalRGBMapperONNX
         from open_vision_banana.inference.optimization import quantize_mapper_int8
 

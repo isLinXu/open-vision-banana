@@ -31,8 +31,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-import yaml
 import torch
+import yaml
 
 from open_vision_banana.inference.optimization import (
     InferenceOptions,
@@ -76,11 +76,11 @@ def list_presets() -> None:
         for k, v in cfg.items():
             print(f"    {k}: {v}")
         if notes:
-            print(f"  Expected impact:")
+            print("  Expected impact:")
             for key, note in notes.items():
                 print(f"    {key}: {note}")
 
-    print(f"\nUsage: python scripts/optimize_inference.py --profile <name>")
+    print("\nUsage: python scripts/optimize_inference.py --profile <name>")
 
 
 def options_from_preset(name: str) -> InferenceOptions:

@@ -213,12 +213,11 @@ def main():
         logger.info(
             "MPS: enabling bfloat16 autocast (GradScaler disabled — CUDA only)."
         )
-    if device in ("mps", "cpu"):
-        if num_workers > 0:
-            logger.warning(
-                f"num_workers={num_workers} may cause hangs on {device} — forcing 0."
-            )
-            num_workers = 0
+    if device in ("mps", "cpu") and num_workers > 0:
+        logger.warning(
+            f"num_workers={num_workers} may cause hangs on {device} — forcing 0."
+        )
+        num_workers = 0
 
     # Load base FLUX.1 model
     logger.info("Loading base FLUX.1 model…")
@@ -244,8 +243,9 @@ def main():
         if is_main_process:
             logger.info("FSDP enabled (world_size=%d)", fsdp_wrapper.world_size)
     elif args.ddp:
-        from open_vision_banana.training.utils import DDPWrapper
         from torch.utils.data import DistributedSampler
+
+        from open_vision_banana.training.utils import DDPWrapper
         ddp_wrapper = DDPWrapper()
         ddp_wrapper.initialize()
         is_main_process = ddp_wrapper.is_main()

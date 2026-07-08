@@ -265,11 +265,11 @@ def _run_mapper_only_benchmark(
             t0 = time.perf_counter()
             with torch.no_grad():
                 if task == "depth":
-                    rgb = mapper.depth_to_rgb(x)
-                    _ = mapper.rgb_to_depth(rgb)
+                    rgb = mapper.depth_to_rgb(x)  # type: ignore[attr-defined]
+                    _ = mapper.rgb_to_depth(rgb)  # type: ignore[attr-defined]
                 else:
-                    rgb = mapper.normal_to_rgb(x)
-                    _ = mapper.rgb_to_normal(rgb)
+                    rgb = mapper.normal_to_rgb(x)  # type: ignore[attr-defined]
+                    _ = mapper.rgb_to_normal(rgb)  # type: ignore[attr-defined]
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             times.append((time.perf_counter() - t0) * 1000)

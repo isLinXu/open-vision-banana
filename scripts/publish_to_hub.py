@@ -29,9 +29,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +81,7 @@ RGB parameterization.
             card += f"| {k} | {v} |\n"
         card += "\n"
 
-    card += f"""## Metrics
+    card += """## Metrics
 
 """
     if metrics:

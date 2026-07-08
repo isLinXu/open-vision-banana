@@ -15,9 +15,7 @@ Output: /Users/gatilin/PycharmProjects/open-vision-banana/output/monitor_report.
 """
 
 import json
-import os
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -63,7 +61,7 @@ def parse_training_log(log_path: Path) -> dict:
         return {}
 
     try:
-        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(log_path, encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()
     except Exception:
         return {}
@@ -228,7 +226,7 @@ def main():
     ckpts = report["checkpoints"]
     disk = report["disk_space"]
 
-    print(f"=== Open-Vision-Banana MPS Training Monitor ===")
+    print("=== Open-Vision-Banana MPS Training Monitor ===")
     print(f"Time: {now}")
     print(f"Process: {proc['status'].upper()}", end="")
     if proc["status"] == "running":

@@ -281,7 +281,7 @@ def _load_state(state_path: str | None) -> dict[str, Any]:
         logger.info("Resume state 文件不存在, 将从头开始评估: %s", path)
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             state = json.load(f)
         logger.info(
             "Loaded resume state: 已完成 %d / %d batches",
@@ -331,8 +331,8 @@ def _save_visualization(
 ) -> None:
     """将单张 prediction 与 ground truth 并排保存为 PNG."""
     try:
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         pred = pred_rgb[sample_idx].detach().cpu().clamp(0, 1).permute(1, 2, 0).numpy()
         gt = gt_rgb[sample_idx].detach().cpu().clamp(0, 1).permute(1, 2, 0).numpy()
