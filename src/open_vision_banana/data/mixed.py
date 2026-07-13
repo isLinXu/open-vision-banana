@@ -107,7 +107,18 @@ class MixedVisionDataset(Dataset):
             # Multi-colormap training augmentation: attach random colormap for depth tasks
             if isinstance(sample, dict) and sample.get("task") == "depth":
                 cmap_idx = int(torch.randint(len(self.colormaps), (1,), generator=self.rng).item())
-                sample["colormap"] = self.colormaps[cmap_idx]
+                colormap = self.colormaps[cmap_idx]
+                sample["colormap"] = colormap
+                # 当色图非 cube_edge 时，动态重编码 target_rgb (roundtrip 误差 < 0.5%)
+                if colormap != "cube_edge" and "target_rgb" in sample:
+                    from ..core.depth_mapper import DepthRGBMapper
+                    mapper = DepthRGBMapper()
+                    target_rgb = sample["target_rgb"]
+                    if isinstance(target_rgb, torch.Tensor):
+                        # DepthRGBMapper expects [B, C, H, W]; add batch dim
+                        depth = mapper.rgb_to_depth(target_rgb.unsqueeze(0)).squeeze(0)
+                        mapper.set_colormap(colormap)
+                        sample["target_rgb"] = mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
             return sample
         else:
             assert self.generation_dataset is not None
