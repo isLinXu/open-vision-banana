@@ -65,7 +65,9 @@ class ModelConfig:
 
     # VAE
     vae_scaling_factor: float = 0.18215  # value scaling; None = read from vae.config.scaling_factor
+    vae_shift_factor: float | None = None  # shift factor (FLUX=0.1159, Z-Image=0.1159, SD=None)
     vae_downsample_factor: int = 8  # spatial downsample
+    vae_latent_channels: int = 4  # SD=4, FLUX/Z-Image=16
 
     # LoRA
     lora_target_modules: list = field(default_factory=lambda: [
@@ -300,14 +302,16 @@ def _build_registry() -> None:
 
     _register_model("z-image", lambda: ModelConfig(
         name="z-image",
-        model_id="Z-a-o/Z-Image-Turbo",
+        model_id="Tongyi-MAI/Z-Image",
         family="z-image",
         backbone_type="transformer",
         num_text_encoders=1,
         needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=None,
+        cross_attention_dim=2560,
+        vae_scaling_factor=0.3611,
+        vae_shift_factor=0.1159,
         vae_downsample_factor=8,
+        vae_latent_channels=16,
         memory_budget_gb=24.0,
         pipeline_class="ZImagePipeline",
         default_resolution=1024,
@@ -316,12 +320,11 @@ def _build_registry() -> None:
         default_lora_rank=32,
         default_lora_alpha=64,
         lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
             "w1", "w2", "w3",
-            "linear",
-            "in_proj", "out_proj",
         ],
         vae_has_latent_dist=False,
-        description="Z-Image-Turbo (6B) — Alibaba, single-stream DiT, Apache-2.0",
+        description="Z-Image (6B base) — Alibaba Tongyi-MAI, single-stream DiT with Qwen3 text encoder, Apache-2.0",
     ))
 
     _register_model("sana-600m", lambda: ModelConfig(
@@ -1545,6 +1548,40 @@ def encode_text(
         text_lens = attention_mask.sum(dim=1).to(dtype=torch.long)
         return encoder_hidden_states.to(dtype), (attention_mask, text_lens)
 
+    # ── Z-Image: Qwen3 text encoder with chat template + hidden_states[-2] ──
+    if config.family == "z-image":
+        # Z-Image uses Qwen3Model as text encoder with chat template + thinking mode
+        # It takes hidden_states[-2] (penultimate layer) and filters by attention_mask
+        # Apply chat template (matching ZImagePipeline._encode_prompt)
+        prompt_list = prompts if isinstance(prompts, list) else [prompts]
+        for i, prompt_item in enumerate(prompt_list):
+            messages = [{"role": "user", "content": prompt_item}]
+            prompt_list[i] = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=True,
+            )
+
+        text_inputs = tokenizer(
+            prompt_list,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
+        )
+        input_ids = text_inputs.input_ids.to(device)
+        attention_mask = text_inputs.attention_mask.to(device)
+
+        # Qwen3: output_hidden_states=True via kwargs, take penultimate layer
+        outputs = text_encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+        )
+        encoder_hidden_states = outputs.hidden_states[-2]
+        return encoder_hidden_states.to(dtype), attention_mask
+
     # ── Standard tokenization for all other models ──
     tokenized = tokenizer(
         prompts, padding="max_length", max_length=max_length,
@@ -1709,11 +1746,22 @@ def backbone_forward(
         )[0]
 
     elif config.family == "z-image":
-        # Z-Image: positional args (latent_input, timestep, enc_hidden)
-        return backbone(
-            latents, timesteps, encoder_hidden_states,
+        # Z-Image: transformer expects list inputs with frame dimension
+        # Pipeline does: latents.unsqueeze(2) → [B, C, 1, H, W] → unbind(0) → [[C, 1, H, W], ...]
+        latents_5d = latents.unsqueeze(2)  # [B, C, H, W] → [B, C, 1, H, W]
+        latent_list = list(latents_5d.unbind(dim=0))
+        # cap_feats: passed as single tensor [B, seq, dim] (matching pipeline behavior)
+        output = backbone(
+            latent_list, timesteps, encoder_hidden_states,
             return_dict=False,
         )[0]
+        # Z-Image returns list[Tensor] — stack into batch
+        if isinstance(output, (list, tuple)):
+            output = torch.stack(output, dim=0)
+        # Output shape: [B, C, 1, H, W] → squeeze frame dim → [B, C, H, W]
+        if output.dim() == 5 and output.shape[2] == 1:
+            output = output.squeeze(2)
+        return output
 
     elif config.family == "sana":
         return backbone(
@@ -2042,7 +2090,7 @@ def vae_encode(
 
     SD family: vae.encode(img).latent_dist.mode() * scaling_factor
     SANA/AuraFlow: vae.encode(img).latent_dist.mode() (scaling applied at decode)
-    Z-Image/Lumina2/Chroma: vae.encode(img).latent_dist.mode() * scaling (shift at decode)
+    Z-Image/Lumina2/Chroma: (vae.encode(img).latent_dist.mode() - shift) * scaling
     Qwen-Image: vae.encode(img).latent_dist.mode() * scaling
     FLUX.2: retrieve_latents(vae.encode(img)) then patchify
     CogView4: vae.encode(img).latent_dist.mode() * scaling
@@ -2056,15 +2104,21 @@ def vae_encode(
         enc_out = vae.encode(images)
         latents = enc_out.latent_dist.mode() if hasattr(enc_out, 'latent_dist') else enc_out.sample
 
-    # Apply scaling
+    # Apply scaling (and shift for FLUX/Z-Image style VAEs)
     scaling = config.vae_scaling_factor
-    if scaling is not None:
-        latents = latents * scaling
-    else:
-        # Read from vae.config if available
+    if scaling is None:
         cfg_scaling = getattr(vae.config, 'scaling_factor', None)
-        if cfg_scaling is not None:
-            latents = latents * cfg_scaling
+        scaling = cfg_scaling if cfg_scaling is not None else 1.0
+
+    shift = config.vae_shift_factor
+    if shift is None:
+        shift = getattr(vae.config, 'shift_factor', None) or 0.0
+
+    # Z-Image/FLUX VAE: latents = (encoded - shift) * scaling
+    if shift != 0.0:
+        latents = (latents - shift) * scaling
+    else:
+        latents = latents * scaling
 
     return latents
 

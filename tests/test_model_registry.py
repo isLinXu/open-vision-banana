@@ -276,6 +276,7 @@ class TestVaeHelpers:
     def test_vae_encode_with_scaling(self):
         vae = MagicMock()
         vae.encode.return_value.latent_dist.mode.return_value = torch.ones(1, 4, 32, 32)
+        vae.config = MagicMock(spec=[])  # no attributes → getattr returns default
         cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1, vae_scaling_factor=0.5)
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         assert torch.allclose(latents, torch.ones(1, 4, 32, 32) * 0.5)
@@ -283,6 +284,7 @@ class TestVaeHelpers:
     def test_vae_encode_without_scaling(self):
         vae = MagicMock()
         vae.encode.return_value.latent_dist.mode.return_value = torch.ones(1, 4, 32, 32)
+        vae.config = MagicMock(spec=["scaling_factor"])
         vae.config.scaling_factor = 0.25
         cfg = ModelConfig(name="t", model_id="t", family="sana", num_text_encoders=1, vae_scaling_factor=None)
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
@@ -292,11 +294,25 @@ class TestVaeHelpers:
         vae = MagicMock()
         vae.encode.return_value = MagicMock(spec=[])
         vae.encode.return_value.sample = torch.ones(1, 4, 32, 32)
+        vae.config = MagicMock(spec=["scaling_factor"])
         vae.config.scaling_factor = 1.0
         cfg = ModelConfig(name="t", model_id="t", family="sana", num_text_encoders=1, vae_has_latent_dist=False, vae_scaling_factor=None)
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         assert isinstance(latents, torch.Tensor)
         assert torch.allclose(latents, torch.ones(1, 4, 32, 32))
+
+    def test_vae_encode_with_shift(self):
+        """Z-Image/FLUX VAE: latents = (encoded - shift) * scaling"""
+        vae = MagicMock()
+        vae.encode.return_value.latent_dist.mode.return_value = torch.ones(1, 4, 32, 32)
+        vae.config = MagicMock(spec=[])
+        cfg = ModelConfig(
+            name="t", model_id="t", family="z-image", num_text_encoders=1,
+            vae_scaling_factor=0.3611, vae_shift_factor=0.1159,
+        )
+        latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
+        expected = (torch.ones(1, 4, 32, 32) - 0.1159) * 0.3611
+        assert torch.allclose(latents, expected, atol=1e-6)
 
     def test_vae_decode_with_scaling(self):
         vae = MagicMock()

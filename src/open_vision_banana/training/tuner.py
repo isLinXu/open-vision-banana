@@ -171,6 +171,7 @@ class VisionTaskDataset(_Dataset):
             "prompt": sample["prompt"],
             "image": image,
             "target_rgb": target_rgb,
+            "task": self.task,
         }
 
 
@@ -1208,8 +1209,8 @@ class InstructionTuner:
         except Exception as e:
             logger.warning(f"VAE encoding failed ({e}); using zero latents.")
             B, _, H, W = images.shape
-            # Use model's expected latent channels (FLUX=16, others=4)
-            latent_ch = 16 if self.model_config.family == "flux" else 4
+            # Use model's expected latent channels (FLUX/Z-Image=16, others=4)
+            latent_ch = self.model_config.vae_latent_channels
             vae_sf = self.model_config.vae_downsample_factor
             return torch.zeros(
                 B, latent_ch, H // vae_sf, W // vae_sf,
@@ -1236,7 +1237,16 @@ class InstructionTuner:
            pooled_projections and passed to the transformer, enabling
            text-conditional generation.
         """
-        target_rgb = batch["target_rgb"]
+        target_rgb = batch.get("target_rgb")
+        # Handle None (generation task) or list format
+        if target_rgb is None:
+            # Generation task: use input image as target
+            target_rgb = batch.get("image")
+        if target_rgb is None:
+            raise ValueError("Both target_rgb and image are None in batch")
+        if isinstance(target_rgb, list):
+            target_rgb = torch.stack(target_rgb) if all(isinstance(t, torch.Tensor) for t in target_rgb) else target_rgb[0]
+
         input_images = batch.get("image")
         prompts: list[str] = batch.get("prompt", [""])
         if isinstance(prompts, str):
@@ -1264,6 +1274,15 @@ class InstructionTuner:
                 aug_targets.append(aug_tgt)
             target_rgb = torch.stack(aug_targets)
             input_images = torch.stack(aug_images)
+
+        # ── Colormap augmentation logging (paper Section 3.2) ─────────────
+        colormaps = batch.get("colormap")
+        if colormaps is not None:
+            unique_cmaps = set(colormaps)
+            if len(unique_cmaps) > 1 or "cube_edge" not in unique_cmaps:
+                logger.debug(
+                    f"Colormap augmentation active: {dict((c, colormaps.count(c)) for c in unique_cmaps)}"
+                )
 
         # ── P0-2: VAE encoding — work in latent space ───────────────────
         # Convert target_rgb [0,1] → [-1,1] before VAE encoding.
@@ -1496,10 +1515,13 @@ class InstructionTuner:
                     pooled_embeds=pooled_prompt_embeds,
                 )
             except TypeError as e:
-                if "input_ids" in str(e):
+                # PEFT mis-route: wrapper calls forward with wrong param names
+                # (e.g. "hidden_states" for Z-Image/Qwen-Image, "input_ids" for text encoders)
+                err_str = str(e)
+                if "input_ids" in err_str or "hidden_states" in err_str or "got an unexpected" in err_str or "positional argument" in err_str:
                     logger.warning(
-                        "PEFT mis-route detected for %s; bypassing wrapper.",
-                        self.model_config.family,
+                        "PEFT mis-route detected for %s (%s); bypassing wrapper.",
+                        self.model_config.family, err_str[:100],
                     )
                     self._use_direct_forward = True
                     transformer = self.peft_model.base_model.model  # type: ignore[union-attr]
