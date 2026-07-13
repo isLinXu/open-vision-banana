@@ -1,0 +1,100 @@
+# Z-Image LoRA 训练配置 (MPS)
+# ================================
+# Base: Z-Image (6B) — Alibaba Tongyi-MAI, single-stream DiT
+# Apple Silicon (MPS) 128GB 统一内存优化
+
+# 基础模型
+model:
+  name: "z-image"
+  dtype: "bfloat16"
+  local_path: "/Users/gatilin/MyWork/models/ms_cache/models/models/Tongyi-MAI--Z-Image/snapshots/master"
+
+# LoRA 配置 (rsLoRA, higher rank for 6B model)
+lora:
+  rank: 128
+  alpha: 256
+  rs_lora: true
+  target_modules:
+    - "to_q"
+    - "to_k"
+    - "to_v"
+    - "to_out.0"
+    - "w1"
+    - "w2"
+    - "w3"
+  dropout: 0.0
+
+# 优化器
+optimizer:
+  lr: 2.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 500
+  max_grad_norm: 1.0
+
+# 输出
+output_dir: "output/zimage_checkpoints"
+
+# 日志
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana-zimage"
+  wandb_log_checkpoints: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs/zimage"
+  run_name: "zimage_lora_v1"
+
+# 训练参数 (MPS 优化, 6B model)
+training:
+  epochs: 3
+  gradient_accumulation_steps: 16      # 模拟 batch_size=16
+  use_amp: true
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 500
+  eval_every: 250
+  max_keep: 3
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+# 数据 (扩展数据集)
+data:
+  vision_ratio: 0.1
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 1                        # 6B model on MPS, conservative
+  num_workers: 0                       # MPS must be 0
+  augmentation: true
+  val_split: 0.05
+  generation_path: "data/vb_zimage_train/generation"
+
+  # 训练任务数据 (多任务)
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_zimage_train/depth"
+          split: "train"
+    semantic_segmentation:
+      datasets:
+        - name: "vb_zimage_train/segmentation"
+          split: "train"
+    edge_detection:
+      datasets:
+        - name: "vb_zimage_train/edge"
+          split: "train"
+
+# 深度 RGB 映射参数
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

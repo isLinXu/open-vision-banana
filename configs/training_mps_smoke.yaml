@@ -1,0 +1,79 @@
+# MPS Smoke Test 配置 — 快速验证训练 pipeline
+# ===========================================
+# 使用极小规模数据，50 steps 内验证:
+# 1. 数据加载 + MixedVisionDataset 色图增强
+# 2. LoRA 训练 loop 通畅
+# 3. Checkpoint 保存正常
+
+model:
+  name: "/Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 10
+  max_grad_norm: 1.0
+
+output_dir: "output/checkpoints_mps_smoke"
+
+logging:
+  wandb_enabled: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_mps_smoke"
+  run_name: "mps_smoke"
+
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1
+  use_amp: false
+  use_ema: false                        # smoke test 不需要 EMA
+  save_every: 10
+  eval_every: 999                       # disable eval
+  max_keep: 2
+  seed: 42
+  log_every: 5
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+data:
+  vision_ratio: 1.0                     # 纯视觉，不混合生成（简化）
+  generation_ratio: 0.0
+  resolution: 256                       # 更小的分辨率加速
+  batch_size: 1
+  num_workers: 0
+  augmentation: false                   # smoke test 不需要增强
+  val_split: 0.0
+
+  # 色图增强验证
+  colormaps:
+    - "cube_edge"
+    - "plasma"
+
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_depth_300"          # 小数据集快速跑通
+          split: "train"
+
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0
