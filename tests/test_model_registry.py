@@ -197,6 +197,41 @@ class TestPublicAPI:
         assert auto_select_model(4.0) == "sd15"
         assert auto_select_model(3.0) == "sd15"
 
+    def test_new_models_registered(self):
+        """Verify 5 new model families are in the registry."""
+        models = list_models()
+        for name in ("longcat-image", "lumina", "nucleusmoe-image", "ernie-image", "hidream-image"):
+            assert name in models, f"{name} not found in registry"
+
+    def test_new_model_configs(self):
+        """Verify ModelConfig fields for new models."""
+        for name, family, backbone_type in [
+            ("longcat-image", "longcat-image", "transformer"),
+            ("lumina", "lumina", "transformer"),
+            ("nucleusmoe-image", "nucleusmoe-image", "transformer"),
+            ("ernie-image", "ernie-image", "transformer"),
+            ("hidream-image", "hidream-image", "transformer"),
+        ]:
+            cfg = get_model_config(name)
+            assert cfg.family == family
+            assert cfg.backbone_type == backbone_type
+            assert cfg.pipeline_class.endswith("Pipeline")
+
+    def test_resolve_new_model_paths(self):
+        """Verify path resolution for new model families."""
+        from open_vision_banana.model_registry import resolve_model_config
+        for basename, expected_family in [
+            ("LongCat-Image", "longcat-image"),
+            ("Lumina-Next-SFT-diffusers", "lumina"),
+            ("NucleusMoE-Image", "nucleusmoe-image"),
+            ("Ernie-Image", "ernie-image"),
+            ("HiDream-I1-Full", "hidream-image"),
+        ]:
+            cfg = resolve_model_config(f"/fake/path/{basename}")
+            assert cfg.family == expected_family, (
+                f"Path '{basename}' resolved to '{cfg.family}', expected '{expected_family}'"
+            )
+
 
 class TestPipelineComponents:
     """PipelineComponents dataclass and transformer alias."""
@@ -687,6 +722,73 @@ class TestBackboneForward:
                 backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
                 torch.randn(1, 77, 768), cfg
             )
+
+    # ── New model families (2026-07-12) ──
+
+    def test_longcat_image(self):
+        cfg = self._make_config("longcat-image", "transformer",
+                                needs_guidance_in_forward=True, needs_position_ids=True)
+        backbone = self._make_transformer_backbone()
+        backbone_forward(
+            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
+            torch.randn(1, 77, 2048), cfg, guidance=4.0,
+        )
+        _, kwargs = backbone.call_args
+        assert kwargs["guidance"] == 4.0
+        assert "txt_ids" in kwargs
+        assert "img_ids" in kwargs
+
+    def test_lumina(self):
+        cfg = self._make_config("lumina", "transformer", needs_attention_mask=True)
+        backbone = self._make_transformer_backbone()
+        backbone_forward(
+            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
+            torch.randn(1, 77, 2048), cfg, attention_mask=torch.ones(1, 77)
+        )
+        _, kwargs = backbone.call_args
+        assert kwargs["encoder_mask"] is not None
+
+    def test_nucleusmoe_image(self):
+        cfg = self._make_config("nucleusmoe-image", "transformer",
+                                needs_attention_mask=True, vae_downsample_factor=16)
+        backbone = self._make_transformer_backbone()
+        backbone_forward(
+            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
+            torch.randn(1, 77, 2048), cfg, attention_mask=torch.ones(1, 77)
+        )
+        _, kwargs = backbone.call_args
+        assert "img_shapes" in kwargs
+        assert kwargs["encoder_hidden_states_mask"] is not None
+
+    def test_ernie_image(self):
+        cfg = self._make_config("ernie-image", "transformer", needs_attention_mask=True)
+        backbone = self._make_transformer_backbone()
+        mask = torch.ones(1, 77)
+        text_lens = mask.sum(dim=1).to(dtype=torch.long)
+        backbone_forward(
+            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
+            torch.randn(1, 77, 2048), cfg, attention_mask=(mask, text_lens)
+        )
+        _, kwargs = backbone.call_args
+        assert kwargs["text_bth"] is not None
+        assert kwargs["text_lens"] is not None
+
+    def test_hidream_image(self):
+        cfg = self._make_config("hidream-image", "transformer",
+                                needs_t5_and_clip=True, vae_downsample_factor=16)
+        backbone = self._make_transformer_backbone()
+        pooled = torch.randn(1, 1024)
+        llama_hidden = torch.randn(1, 77, 4096)
+        llama_mask = torch.ones(1, 77)
+        backbone_forward(
+            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
+            torch.randn(1, 77, 4096), cfg,
+            attention_mask=(pooled, llama_hidden, llama_mask)
+        )
+        _, kwargs = backbone.call_args
+        assert kwargs["encoder_hidden_states_t5"] is not None
+        assert "img_ids" in kwargs
+        assert "img_sizes" in kwargs
 
 
 class TestApplyLora:

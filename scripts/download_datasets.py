@@ -17,12 +17,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -239,7 +236,7 @@ def check_tool(name: str) -> bool:
 def download_file(url: str, output_path: Path, timeout: int = 300) -> bool:
     """Download a file using wget or curl."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     if check_tool("wget"):
         cmd = ["wget", "-c", "-O", str(output_path), "--timeout", str(timeout), url]
     elif check_tool("curl"):
@@ -247,7 +244,7 @@ def download_file(url: str, output_path: Path, timeout: int = 300) -> bool:
     else:
         logger.error("Neither wget nor curl available. Please install one.")
         return False
-    
+
     logger.info(f"Downloading {url} → {output_path}")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 30)
@@ -267,7 +264,7 @@ def extract_archive(archive_path: Path, output_dir: Path) -> bool:
     """Extract a zip or tar archive."""
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = archive_path.suffix.lower()
-    
+
     if suffix == ".zip":
         if not check_tool("unzip"):
             logger.error("unzip not available")
@@ -281,7 +278,7 @@ def extract_archive(archive_path: Path, output_dir: Path) -> bool:
     else:
         logger.error(f"Unknown archive format: {suffix}")
         return False
-    
+
     logger.info(f"Extracting {archive_path.name} → {output_dir}")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -302,19 +299,19 @@ def prepare_nyu(output_dir: Path) -> bool:
     logger.info("NYU Depth v2 requires manual download or HF dataset.")
     logger.info("  Option 1: Download from https://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html")
     logger.info("  Option 2: Use HuggingFace: huggingface-cli download patriziapol/stratified-depth-dataset-nyu-depth-v2")
-    
+
     # Try to use HF dataset if available
     try:
         from datasets import load_dataset
         logger.info("Attempting HuggingFace download...")
         ds = load_dataset("patriziapol/stratified-depth-dataset-nyu-depth-v2", split="train")
         logger.info(f"Loaded {len(ds)} samples from HF")
-        
+
         img_dir = output_dir / "images"
         depth_dir = output_dir / "depths"
         img_dir.mkdir(parents=True, exist_ok=True)
         depth_dir.mkdir(parents=True, exist_ok=True)
-        
+
         for i, sample in enumerate(ds):
             if i >= 500:  # Limit for quick testing
                 break
@@ -324,14 +321,14 @@ def prepare_nyu(output_dir: Path) -> bool:
                 import numpy as np
                 depth = np.array(sample["depth"])
                 np.save(depth_dir / f"nyu_{i:04d}.npy", depth)
-        
+
         logger.info(f"Saved {min(500, len(ds))} samples to {output_dir}")
         return True
     except ImportError:
         logger.info("datasets library not installed. Install: pip install datasets")
     except Exception as e:
         logger.warning(f"HF download failed: {e}")
-    
+
     return False
 
 
@@ -342,7 +339,7 @@ def prepare_diode(output_dir: Path, download_dir: Path) -> bool:
         logger.info("DIODE download not available. Please download manually:")
         logger.info("  http://diode-dataset.s3.amazonaws.com/train_val.tar.gz")
         return False
-    
+
     if extract_archive(archive, output_dir):
         logger.info(f"DIODE extracted to {output_dir}")
         return True
@@ -356,7 +353,7 @@ def prepare_kitti(output_dir: Path, download_dir: Path) -> bool:
         logger.info("KITTI download requires registration. Please download manually:")
         logger.info("  https://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_prediction")
         return False
-    
+
     if extract_archive(archive, output_dir):
         logger.info(f"KITTI extracted to {output_dir}")
         return True
@@ -366,13 +363,12 @@ def prepare_kitti(output_dir: Path, download_dir: Path) -> bool:
 def prepare_ade20k(output_dir: Path, download_dir: Path) -> bool:
     """Prepare ADE20K dataset."""
     archive = download_dir / "ADEChallengeData2016.zip"
-    if not archive.exists():
-        if not download_file(
-            "http://data.csail.mit.edu/places/ADEchallenge/ADEChallengeData2016.zip",
-            archive,
-        ):
-            return False
-    
+    if not archive.exists() and not download_file(
+        "http://data.csail.mit.edu/places/ADEchallenge/ADEChallengeData2016.zip",
+        archive,
+    ):
+        return False
+
     if extract_archive(archive, output_dir):
         # Move to expected structure
         extracted = output_dir / "ADEChallengeData2016"
@@ -388,12 +384,12 @@ def prepare_coco_stuff(output_dir: Path, download_dir: Path) -> bool:
     logger.info("COCO-Stuff requires downloading COCO images + stuff annotations.")
     logger.info("  Images: http://images.cocodataset.org/zips/train2017.zip")
     logger.info("  Annotations: http://calvin.inf.ed.ac.uk/wp-content/uploads/data/cocostuffdataset/stuffthingmaps_trainval2017.zip")
-    
+
     # Try HuggingFace as alternative
     try:
         from datasets import load_dataset
         logger.info("Attempting HF COCO download...")
-        ds = load_dataset("detection-datasets/coco", split="train", streaming=True)
+        load_dataset("detection-datasets/coco", split="train", streaming=True)
         logger.info("COCO streaming dataset available from HF")
         logger.info("To save locally, use: ds.save_to_disk()")
         return True
@@ -401,21 +397,20 @@ def prepare_coco_stuff(output_dir: Path, download_dir: Path) -> bool:
         logger.info("datasets library not available for HF download")
     except Exception as e:
         logger.warning(f"HF download failed: {e}")
-    
+
     return False
 
 
 def prepare_sintel(output_dir: Path, download_dir: Path) -> bool:
     """Prepare Sintel optical flow dataset."""
     archive = download_dir / "MPI-Sintel-complete.zip"
-    if not archive.exists():
-        if not download_file(
-            "http://files.is.tue.mpg.de/sintel/MPI-Sintel-complete.zip",
-            archive,
-            timeout=600,
-        ):
+    if not archive.exists() and not download_file(
+        "http://files.is.tue.mpg.de/sintel/MPI-Sintel-complete.zip",
+        archive,
+        timeout=600,
+    ):
             return False
-    
+
     if extract_archive(archive, output_dir):
         logger.info(f"Sintel extracted to {output_dir}")
         return True
@@ -429,7 +424,7 @@ def prepare_flyingthings3d(output_dir: Path, download_dir: Path) -> bool:
     if not archive.exists():
         logger.info("Download from: https://lmb.informatik.uni-freiburg.de/data/FlyingThings3D/")
         return False
-    
+
     if extract_archive(archive, output_dir):
         logger.info(f"FlyingThings3D extracted to {output_dir}")
         return True
@@ -444,36 +439,35 @@ def download_dataset(dataset_name: str, output_dir: Path, download_dir: Path) ->
     if dataset_name not in DATASET_REGISTRY:
         logger.error(f"Unknown dataset: {dataset_name}")
         return False
-    
+
     config = DATASET_REGISTRY[dataset_name]
-    logger.info(f"=" * 60)
+    logger.info("=" * 60)
     logger.info(f"Dataset: {config['name']}")
     logger.info(f"Task: {config['task']}")
     logger.info(f"Description: {config['description']}")
     logger.info(f"Expected size: ~{config['size_mb']} MB")
     if "note" in config:
         logger.info(f"Note: {config['note']}")
-    logger.info(f"=" * 60)
-    
+    logger.info("=" * 60)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     download_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Download all URLs
     for url_info in config.get("urls", []):
         if url_info.get("optional", False):
             logger.info(f"Skipping optional: {url_info['filename']}")
             continue
-        
+
         output_path = download_dir / url_info["filename"]
         if output_path.exists():
             logger.info(f"Already downloaded: {output_path}")
             continue
-        
-        if not download_file(url_info["url"], output_path):
-            if not url_info.get("optional", False):
+
+        if not download_file(url_info["url"], output_path) and not url_info.get("optional", False):
                 logger.error(f"Failed to download required file: {url_info['filename']}")
                 return False
-    
+
     # Prepare dataset-specific structure
     if dataset_name == "nyu":
         return prepare_nyu(output_dir)
@@ -520,24 +514,21 @@ def main():
     parser.add_argument("--list", action="store_true",
                         help="List all available datasets and exit")
     args = parser.parse_args()
-    
+
     if args.list:
         list_datasets()
         return
-    
+
     output_dir = Path(args.output_dir)
     download_dir = Path(args.download_dir)
-    
-    if args.dataset == "all":
-        datasets = list(DATASET_REGISTRY.keys())
-    else:
-        datasets = [args.dataset]
-    
+
+    datasets = list(DATASET_REGISTRY.keys()) if args.dataset == "all" else [args.dataset]
+
     results = {}
     for ds_name in datasets:
         success = download_dataset(ds_name, output_dir / f"vb_v6_{ds_name}", download_dir)
         results[ds_name] = success
-    
+
     # Summary
     print("\n" + "=" * 60)
     print("Download Summary")
@@ -545,7 +536,7 @@ def main():
     for ds_name, success in results.items():
         status = "✅ Success" if success else "❌ Failed / Manual required"
         print(f"  {ds_name:20s} | {status}")
-    
+
     # Save manifest
     manifest_path = output_dir / "dataset_manifest.json"
     with open(manifest_path, "w") as f:
@@ -558,3 +549,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    main()
+main()

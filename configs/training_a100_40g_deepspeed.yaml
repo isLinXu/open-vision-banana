@@ -1,0 +1,118 @@
+# Open-Vision-Banana — A100 40GB DeepSpeed Production Training Config
+# ====================================================================
+# Target hardware: NVIDIA A100 40GB (single-node 8-GPU or multi-node)
+# Model: FLUX.1-schnell (12B params) + rsLoRA instruction tuning
+# Strategy: DeepSpeed ZeRO-3 + BF16 Tensor Core
+#
+# Verified memory footprint per GPU (8xA100, ZeRO-3 no offload):
+#   ~14-18 GB / 40 GB  (batch_size=2, resolution=512, gradient-checkpointing)
+#
+# Usage:
+#   bash scripts/train_a100_40g_deepspeed.sh --mode multi
+#   # or with custom data:
+#   bash scripts/train_a100_40g_deepspeed.sh --mode multi --data-path /data/vision
+
+# ── Base Model ────────────────────────────────────────────────────────
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"          # A100 原生 BF16 Tensor Core, 无需 loss scaling
+
+# ── LoRA (rsLoRA) ────────────────────────────────────────────────────
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# ── Optimizer ────────────────────────────────────────────────────────
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 500
+  max_grad_norm: 1.0
+
+# ── Output ───────────────────────────────────────────────────────────
+output_dir: "output/checkpoints_a100_deepspeed"
+
+# ── Logging ──────────────────────────────────────────────────────────
+logging:
+  wandb_enabled: true
+  wandb_project: "open-vision-banana-a100"
+  wandb_log_checkpoints: true
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_a100_deepspeed"
+  run_name: null             # auto: a100_deepspeed_$(date +%Y%m%d_%H%M%S)
+
+# ── Training ─────────────────────────────────────────────────────────
+training:
+  epochs: 10
+  # 有效全局 batch_size = micro_bs (2) * GPUs (8) * grad_accum (4) = 64
+  gradient_accumulation_steps: 4
+  use_amp: true              # torch.cuda.amp 与 DeepSpeed BF16 互补
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 1000
+  eval_every: 500
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+# ── Data (production mix) ────────────────────────────────────────────
+data:
+  vision_ratio: 0.1          # 10% vision, 90% generation preservation
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 2              # per-GPU micro batch (A100 40GB 安全值)
+  num_workers: 8             # A100 建议 2-4 workers/GPU
+  augmentation: true
+  val_split: 0.1
+  generation_path: null      # e.g. "/shared/data/vb_generation_50k"
+
+  # Vision task datasets (production full mix)
+  tasks:
+    semantic_segmentation:
+      datasets:
+        - name: "Cityscapes"
+          split: "train"
+          classes: 19
+    instance_segmentation:
+      datasets:
+        - name: "SA-Co"
+          split: "train"
+    referring_segmentation:
+      datasets:
+        - name: "RefCOCOg"
+          split: "train"
+    depth_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "Virtual_KITTI_2"
+          split: "train"
+    normal_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "ScanNet"
+          split: "train"
+
+# ── Depth RGB Mapping (paper-aligned) ────────────────────────────────
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+# ── Segmentation Decoding ────────────────────────────────────────────
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

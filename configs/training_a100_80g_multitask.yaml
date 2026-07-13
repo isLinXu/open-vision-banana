@@ -1,0 +1,111 @@
+# Open-Vision-Banana A100-80GB Multi-Task Training Configuration
+# =============================================================
+# Optimized for multi-task vision understanding on A100 80GB:
+#   depth + normal + semantic + instance + edge + keypoint
+#
+# Adjusted for heavier task mixture — lower vision_ratio per task but
+# higher aggregate batch throughput via larger effective batch.
+#
+# Usage:
+#   DDP:   bash scripts/launch_training_a100_80g_ddp.sh --config configs/training_a100_80g_multitask.yaml
+#   FSDP:  bash scripts/launch_training_a100_80g_fsdp.sh --config configs/training_a100_80g_multitask.yaml
+
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+lora:
+  rank: 128                       # higher rank for multi-task capacity
+  alpha: 256
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+    - "to_q"                     # expand target modules for richer task representations
+  dropout: 0.05                   # light regularization for multi-task
+
+optimizer:
+  lr: 2.0e-5                      # lower LR for higher-rank multi-task training
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 1000
+  max_grad_norm: 1.0
+
+output_dir: "output/checkpoints_a100_80g_multitask"
+
+logging:
+  wandb_enabled: true
+  wandb_project: "open-vision-banana-a100"
+  wandb_run_name: "a100_multitask"
+  wandb_log_checkpoints: true
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_a100_80g_multitask"
+  run_name: "a100_80g_multitask"
+
+training:
+  epochs: 15
+  gradient_accumulation_steps: 4   # effective batch = 4 × nGPU × 4 = 128 @ 8×A100
+  use_amp: true
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 1000
+  eval_every: 500
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: 7
+  early_stopping_min_delta: 1.0e-4
+
+data:
+  vision_ratio: 0.2                # 20% vision (higher for multi-task)
+  generation_ratio: 0.8
+  resolution: 512
+  batch_size: 4
+  num_workers: 8
+  augmentation: true
+  val_split: 0.1
+  generation_path: "data/vb_generation_5k"
+
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_depth_pseudo_5k"
+          split: "train"
+        - name: "vb_v4_depth_2k"
+          split: "train"
+    normal_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "ScanNet"
+          split: "train"
+    semantic_segmentation:
+      datasets:
+        - name: "Cityscapes"
+          split: "train"
+          classes: 19
+    instance_segmentation:
+      datasets:
+        - name: "SA-Co"
+          split: "train"
+    edge_detection:
+      datasets:
+        - name: "BSDS500"
+          split: "train"
+    keypoint_detection:
+      datasets:
+        - name: "COCO"
+          split: "train"
+
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

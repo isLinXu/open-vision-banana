@@ -1,0 +1,113 @@
+# Open-Vision-Banana A100-80GB Production Training Configuration
+# =============================================================
+# Target hardware: NVIDIA A100-SXM4-80GB (SM80, TensorFloat-32 / bfloat16 native)
+# Verified compatible: PyTorch >= 2.1, CUDA >= 11.8, transformers >= 4.38
+#
+# Design principles:
+#   - Maximize A100 Tensor Core throughput via bfloat16 + AMP
+#   - Effective batch size 64 (4 per GPU × 8 GPUs × 2 grad-accum)
+#   - Aggressive data prefetch (num_workers=8) to keep GPU saturated
+#   - EMA + gradient checkpointing for training stability & scaling headroom
+#
+# Usage:
+#   Single GPU:      python scripts/train.py --config configs/training_a100_80g.yaml --data-path data/vb_depth_pseudo_5k
+#   DDP 8×A100:      bash scripts/launch_training_a100_80g_ddp.sh
+#   FSDP 8×A100:     bash scripts/launch_training_a100_80g_fsdp.sh
+#   DeepSpeed Z3:    bash scripts/launch_training_a100_80g_deepspeed.sh
+
+# ── Base Model ─────────────────────────────────────────────────────────
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"           # A100 Tensor Core native; faster than float16, same range as float32
+
+# ── LoRA Configuration (rsLoRA) ────────────────────────────────────────
+lora:
+  rank: 64                    # 0.5%–1% of total params trainable
+  alpha: 128                  # rsLoRA: alpha / sqrt(rank) scaling
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# ── Optimizer & LR Schedule ────────────────────────────────────────────
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 500           # ~1% of total steps for 50k dataset @ batch 64
+  max_grad_norm: 1.0
+
+# ── Output & Checkpointing ─────────────────────────────────────────────
+output_dir: "output/checkpoints_a100_80g"
+
+# ── Logging (W&B + TensorBoard dual-channel) ───────────────────────────
+logging:
+  wandb_enabled: true
+  wandb_project: "open-vision-banana-a100"
+  wandb_run_name: null        # auto-generated: a100_{task}_{timestamp}
+  wandb_entity: null
+  wandb_log_checkpoints: true # upload LoRA checkpoints as W&B artifacts
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_a100_80g"
+  run_name: "a100_80g_prod"
+
+# ── Training Loop ──────────────────────────────────────────────────────
+training:
+  epochs: 10
+  gradient_accumulation_steps: 2   # effective batch = 4 × nGPU × 2
+  use_amp: true                    # bfloat16 autocast on A100 Tensor Cores
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 1000
+  eval_every: 500
+  max_keep: 5                      # retain last 5 checkpoints (rotating)
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null    # disable by default; set 5 for auto-stop
+  early_stopping_min_delta: 0.0
+
+# ── Data Loading & Mixing ──────────────────────────────────────────────
+data:
+  vision_ratio: 0.1                # 10% vision / 90% generation (paper mix)
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 4                    # per-GPU local batch; 80GB fits comfortably
+  num_workers: 8                   # saturate A100 with CPU→GPU prefetch
+  augmentation: true
+  val_split: 0.1                   # 10% validation split
+  generation_path: "data/vb_generation_5k"
+
+  # Vision task datasets (expand as needed)
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_depth_pseudo_5k"
+          split: "train"
+        - name: "vb_v4_depth_2k"
+          split: "train"
+    normal_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+    semantic_segmentation:
+      datasets:
+        - name: "Cityscapes"
+          split: "train"
+          classes: 19
+
+# ── Depth RGB Mapping Parameters (paper) ───────────────────────────────
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+# ── Normal RGB Mapping (identity) ──────────────────────────────────────
+normal_mapping: {}
+
+# ── Segmentation Decoding Parameters (paper Appendix A) ────────────────
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

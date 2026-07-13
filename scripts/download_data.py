@@ -39,6 +39,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import torch
+
 logger = logging.getLogger(__name__)
 
 

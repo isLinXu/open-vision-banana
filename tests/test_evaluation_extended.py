@@ -264,8 +264,8 @@ class TestGenerationPreservation:
         real = torch.randn(10, 64)
         gen = torch.randn(10, 64)
         text = torch.randn(10, 64)
-        pred_rgb = torch.rand(2, 3, 8, 8)
-        target_rgb = torch.rand(2, 3, 8, 8)
+        pred_rgb = torch.rand(2, 3, 32, 32)
+        target_rgb = torch.rand(2, 3, 32, 32)
         metrics = evaluate_generation_preservation(
             real, gen, text_features=text, pred_rgb=pred_rgb, target_rgb=target_rgb
         )

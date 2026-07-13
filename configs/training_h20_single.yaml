@@ -1,0 +1,118 @@
+# H20 Single-GPU Training Configuration
+# =====================================
+# Optimized for NVIDIA H20 (Hopper, 96GB HBM3) single-card training.
+# Target: maximize throughput on 96GB VRAM with bfloat16 + AMP.
+#
+# Hardware assumptions:
+#   - 1 x H20 96GB
+#   - CUDA 12.x + PyTorch 2.3+ (Hopper sm_90 support)
+#   - Shared filesystem for data / checkpoints
+#
+# Usage:
+#   bash scripts/launch_h20_single.sh --data-path /path/to/data
+
+# Base Model
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+# LoRA Configuration (rsLoRA scaling — paper default)
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# Optimizer Configuration
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 500
+  max_grad_norm: 1.0
+
+# Output
+output_dir: "output/checkpoints_h20_single"
+
+# Logging (TensorBoard + optional W&B)
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana-h20"
+  wandb_log_checkpoints: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_h20_single"
+  run_name: "h20_single_flux"
+
+# Training Parameters (H20 96GB optimized)
+training:
+  epochs: 10
+  # Effective batch_size = 4 * 2 = 8 (fits comfortably in 96GB HBM3)
+  gradient_accumulation_steps: 2
+  use_amp: true            # bfloat16 autocast + GradScaler on CUDA
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 1000
+  eval_every: 500
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+# Data (H20 optimized — high num_workers for CUDA)
+data:
+  vision_ratio: 0.1
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 4            # per-GPU local batch (96GB allows bs=4 @ 512²)
+  num_workers: 8           # CUDA: safe to use multi-process DataLoader
+  augmentation: true
+  val_split: 0.1
+  generation_path: null    # override via CLI: --generation-path /path/to/gen
+
+  # Multi-task vision datasets (uncomment tasks as needed)
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "Virtual_KITTI_2"
+          split: "train"
+    normal_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "ScanNet"
+          split: "train"
+    semantic_segmentation:
+      datasets:
+        - name: "Cityscapes"
+          split: "train"
+          classes: 19
+    instance_segmentation:
+      datasets:
+        - name: "SA-Co"
+          split: "train"
+    referring_segmentation:
+      datasets:
+        - name: "RefCOCOg"
+          split: "train"
+
+# Depth RGB Mapping Parameters (from paper)
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+# Normal RGB Mapping (identity)
+normal_mapping: {}
+
+# Segmentation Decoding Parameters (from paper Appendix A)
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

@@ -40,7 +40,7 @@ class TrainingLogger:
             try:
                 import wandb
 
-                self._wandb = wandb.init(  # type: ignore[attr-defined]
+                self._wandb = wandb.init(
                     project=wandb_project,
                     name=run_label,
                     entity=wandb_entity,
@@ -75,7 +75,7 @@ class TrainingLogger:
             try:
                 import wandb
 
-                wandb.log(metrics, step=step)  # type: ignore[attr-defined]
+                wandb.log(metrics, step=step)
             except Exception:
                 logger.debug("Failed to log metrics to W&B", exc_info=True)
 
@@ -90,7 +90,7 @@ class TrainingLogger:
             try:
                 import wandb
 
-                wandb.config.update(hparams)  # type: ignore[attr-defined]
+                wandb.config.update(hparams)
             except Exception:
                 logger.debug("Failed to log hyperparams to W&B", exc_info=True)
 
@@ -125,7 +125,7 @@ class TrainingLogger:
             import wandb
 
             safe_alias = alias.replace("/", "-").replace(" ", "_")
-            artifact = wandb.Artifact(  # type: ignore[attr-defined]
+            artifact = wandb.Artifact(
                 name=f"vision-banana-lora-{safe_alias}",
                 type="model",
                 metadata=metadata or {},
@@ -133,7 +133,7 @@ class TrainingLogger:
             artifact.add_dir(str(ckpt_path))
             logged = self._wandb.log_artifact(artifact)
             if step is not None:
-                wandb.log({"checkpoint/uploaded": 1}, step=step)  # type: ignore[attr-defined]
+                wandb.log({"checkpoint/uploaded": 1}, step=step)
             logger.info("Uploaded W&B checkpoint artifact: %s", logged.name)
         except Exception as exc:
             logger.warning("Failed to upload W&B checkpoint artifact: %s", exc)
@@ -143,7 +143,7 @@ class TrainingLogger:
         if self._wandb is not None:
             import wandb
 
-            wandb.finish()  # type: ignore[attr-defined]
+            wandb.finish()
             self._wandb = None
 
         if self._writer is not None:

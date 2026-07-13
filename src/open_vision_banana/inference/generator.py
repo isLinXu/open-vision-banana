@@ -22,6 +22,7 @@ from typing import Any
 import torch
 from PIL import Image
 
+from ..model_registry import ModelConfig, resolve_model_config
 from .checkpoint import resolve_lora_path
 from .optimization import InferenceOptions, apply_pipeline_optimizations
 
@@ -163,11 +164,34 @@ class BaseGenerator:
     # ------------------------------------------------------------------
 
     def _load_model(self) -> None:
-        """Load FLUX.1 text-to-image pipeline and optionally apply LoRA."""
-        from diffusers import FluxPipeline
+        """Load text-to-image pipeline and optionally apply LoRA.
 
-        logger.info(f"Loading FLUX.1 pipeline from {self.model_name!r} …")
-        pipe = FluxPipeline.from_pretrained(
+        Auto-detects the model family from the model_name path/ID using
+        the model registry, and loads the appropriate diffusers pipeline.
+        Supports FLUX, Z-Image, Qwen-Image, Hunyuan-Image, SDXL, and all
+        23+ registered model families.
+        """
+        # Resolve the model config from the registry
+        self.model_config: ModelConfig = resolve_model_config(self.model_name)
+        family = self.model_config.family
+        pipe_class_name = self.model_config.pipeline_class
+
+        logger.info(
+            f"Loading {pipe_class_name} ({family}) from {self.model_name!r} …"
+        )
+
+        # Lazy-import the correct pipeline class
+        import importlib
+        try:
+            mod = importlib.import_module("diffusers")
+            PipeClass = getattr(mod, pipe_class_name)
+        except (ImportError, AttributeError) as e:
+            raise ImportError(
+                f"Pipeline class '{pipe_class_name}' not found in diffusers. "
+                f"This may require a newer diffusers version. Error: {e}"
+            ) from e
+
+        pipe = PipeClass.from_pretrained(
             self.model_name,
             torch_dtype=self.dtype,
         )
@@ -195,42 +219,98 @@ class BaseGenerator:
             pipe = pipe.to(self.device)
 
         self._t2i_pipe = pipe
-        logger.info("FLUX.1 pipeline loaded successfully")
+        logger.info(f"{pipe_class_name} loaded successfully (family={family})")
 
     def _get_i2i_pipe(self):
-        """Lazily build the img2img pipeline by sharing weights with t2i."""
+        """Lazily build the img2img pipeline by sharing weights with t2i.
+
+        Maps each model family to its corresponding img2img pipeline class.
+        Falls back to reusing the t2i pipeline directly if no img2img variant
+        exists (some pipelines support image input via __call__).
+        """
         if self._i2i_pipe is not None:
             return self._i2i_pipe
 
-        from diffusers import FluxImg2ImgPipeline
+        family = getattr(self, "model_config", None)
+        family = family.family if family is not None else "flux"
 
-        logger.info("Building img2img pipeline from shared components …")
+        # Map family → (img2img_class_name, component_keys)
+        _i2i_map = {
+            "flux": ("FluxImg2ImgPipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer",
+                "text_encoder_2", "tokenizer_2", "transformer",
+            ]),
+            "z-image": ("ZImagePipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer", "transformer",
+            ]),
+            "qwen-image": ("QwenImagePipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer", "transformer",
+            ]),
+            "hunyuan-image": ("HunyuanImagePipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer",
+                "text_encoder_2", "tokenizer_2", "transformer",
+            ]),
+            "sd15": ("StableDiffusionImg2ImgPipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer", "unet",
+            ]),
+            "sd2": ("StableDiffusionImg2ImgPipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer", "unet",
+            ]),
+            "sdxl": ("StableDiffusionXLImg2ImgPipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer",
+                "text_encoder_2", "tokenizer_2", "unet",
+            ]),
+            "sana": ("SanaImg2ImgPipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer", "transformer",
+            ]),
+            "aura-flow": ("AuraFlowPipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer", "transformer",
+            ]),
+        }
+
+        cls_name, comp_keys = _i2i_map.get(family, (None, None))
+
         t2i = self._t2i_pipe
-        self._i2i_pipe = FluxImg2ImgPipeline(
-            scheduler=t2i.scheduler,
-            vae=t2i.vae,
-            text_encoder=t2i.text_encoder,
-            tokenizer=t2i.tokenizer,
-            text_encoder_2=t2i.text_encoder_2,
-            tokenizer_2=t2i.tokenizer_2,
-            transformer=t2i.transformer,
-        )
 
-        applied = apply_pipeline_optimizations(self._i2i_pipe, self.inference_options)
-        if applied:
-            logger.info("Applied inference optimizations to img2img pipeline: %s", ", ".join(applied))
-        if not self.inference_options.enable_sequential_cpu_offload:
-            self._i2i_pipe = self._i2i_pipe.to(self.device)
+        if cls_name is not None:
+            import importlib
+            try:
+                mod = importlib.import_module("diffusers")
+                I2IClass = getattr(mod, cls_name)
+                components = {k: getattr(t2i, k) for k in comp_keys if hasattr(t2i, k)}
+                logger.info(f"Building {cls_name} from shared components …")
+                self._i2i_pipe = I2IClass(**components)
+            except (ImportError, AttributeError):
+                logger.warning(
+                    f"{cls_name} not available in diffusers; "
+                    "falling back to t2i pipeline for img2img."
+                )
+                self._i2i_pipe = t2i
+        else:
+            # No img2img variant — reuse t2i (some pipelines accept image input)
+            logger.info(
+                f"No img2img pipeline mapping for family '{family}'; "
+                "using t2i pipeline directly."
+            )
+            self._i2i_pipe = t2i
+
+        if self._i2i_pipe is not t2i:
+            applied = apply_pipeline_optimizations(self._i2i_pipe, self.inference_options)
+            if applied:
+                logger.info("Applied inference optimizations to img2img pipeline: %s", ", ".join(applied))
+            if not self.inference_options.enable_sequential_cpu_offload:
+                self._i2i_pipe = self._i2i_pipe.to(self.device)
 
         logger.info("Img2img pipeline ready")
         return self._i2i_pipe
 
     @torch.no_grad()
     def encode_prompts(self, prompts: list[str]) -> dict[str, torch.Tensor | None]:
-        """Batch-encode text prompts via FLUX dual encoders (P1-12).
+        """Batch-encode text prompts via the pipeline's text encoders.
 
-        Encodes all prompts in one ``encode_prompt`` call when possible, and
-        caches each prompt's embeddings individually for LRU reuse.
+        Delegates to ``encode_prompt`` on the pipeline when available (FLUX,
+        SDXL, etc.). For models without ``encode_prompt``, falls back to
+        the registry's ``encode_text`` helper.
 
         Returns:
             Dict with ``prompt_embeds`` [B, seq, D] and ``pooled_prompt_embeds``.
@@ -249,19 +329,74 @@ class BaseGenerator:
                 }
 
         device = torch.device(self.device) if isinstance(self.device, str) else self.device
-        text_outputs = self._t2i_pipe.encode_prompt(
-            prompt=prompts,
-            prompt_2=prompts,
-            device=device,
-            num_images_per_prompt=1,
-            max_sequence_length=512,
-        )
-        if isinstance(text_outputs, (tuple, list)) and len(text_outputs) >= 3:
-            prompt_embeds = text_outputs[0]
-            pooled_prompt_embeds = text_outputs[2]
+        pipe = self._t2i_pipe
+
+        # Use the pipeline's encode_prompt if available (FLUX, SDXL, SD3, etc.)
+        if hasattr(pipe, "encode_prompt"):
+            family = getattr(self.model_config, "family", "flux")
+
+            # FLUX uses dual-encoder encode_prompt with prompt_2 and max_sequence_length
+            if family == "flux":
+                text_outputs = pipe.encode_prompt(
+                    prompt=prompts,
+                    prompt_2=prompts,
+                    device=device,
+                    num_images_per_prompt=1,
+                    max_sequence_length=512,
+                )
+            elif family == "hunyuan-image":
+                # HunyuanImage also uses dual-encoder but may have different max_length
+                max_len = getattr(self.model_config, "text_encoder_max_length", 256)
+                text_outputs = pipe.encode_prompt(
+                    prompt=prompts,
+                    prompt_2=prompts,
+                    device=device,
+                    num_images_per_prompt=1,
+                    max_sequence_length=max_len,
+                )
+            else:
+                # Generic fallback — let the pipeline handle its own encode_prompt
+                try:
+                    text_outputs = pipe.encode_prompt(
+                        prompt=prompts,
+                        device=device,
+                        num_images_per_prompt=1,
+                    )
+                except TypeError:
+                    # Some pipelines need prompt_2 for dual-encoder
+                    text_outputs = pipe.encode_prompt(
+                        prompt=prompts,
+                        prompt_2=prompts,
+                        device=device,
+                        num_images_per_prompt=1,
+                    )
+
+            if isinstance(text_outputs, (tuple, list)) and len(text_outputs) >= 3:
+                prompt_embeds = text_outputs[0]
+                pooled_prompt_embeds = text_outputs[2]
+            else:
+                prompt_embeds = text_outputs[0]
+                pooled_prompt_embeds = text_outputs[1] if len(text_outputs) > 1 else None
         else:
-            prompt_embeds = text_outputs[0]
-            pooled_prompt_embeds = text_outputs[1] if len(text_outputs) > 1 else None
+            # Fallback: use registry's encode_text for models without encode_prompt
+            from ..model_registry import PipelineComponents, encode_text
+
+            components = PipelineComponents(
+                unet=getattr(pipe, "transformer", getattr(pipe, "unet", None)),
+                vae=pipe.vae,
+                text_encoder=getattr(pipe, "text_encoder", None),
+                text_encoder_2=getattr(pipe, "text_encoder_2", None),
+                text_encoder_3=getattr(pipe, "text_encoder_3", None),
+                tokenizer=getattr(pipe, "tokenizer", None),
+                tokenizer_2=getattr(pipe, "tokenizer_2", None),
+                tokenizer_3=getattr(pipe, "tokenizer_3", None),
+                scheduler=getattr(pipe, "scheduler", None),
+                config=self.model_config,
+            )
+            prompt_embeds, pooled_or_mask = encode_text(
+                components, prompts, device, self.dtype
+            )
+            pooled_prompt_embeds = pooled_or_mask
 
         prompt_embeds = prompt_embeds.to(device)
         if pooled_prompt_embeds is not None:

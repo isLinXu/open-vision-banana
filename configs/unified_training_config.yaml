@@ -1,0 +1,146 @@
+# Open-Vision-Banana Unified Training Configuration
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Production-grade configuration template for all training modes:
+#   • single_gpu   – single NVIDIA GPU (RTX 4090 / A100 / H100)
+#   • ddp          – multi-GPU single/multi-node via torchrun
+#   • fsdp         – Fully Sharded Data Parallel (12B+ model memory efficiency)
+#   • deepspeed    – DeepSpeed ZeRO-3 (extreme memory optimization)
+#   • mps          – Apple Silicon M1/M2/M3 (unified memory)
+#   • cpu          – CPU-only fallback / debugging
+#
+# Usage:
+#   bash scripts/unified_launch.sh --config configs/unified_training_config.yaml --mode <MODE>
+#
+# Override via CLI or env vars:
+#   OVB_BATCH_SIZE=4 OVB_LR=1e-4 bash scripts/unified_launch.sh --config configs/unified_training_config.yaml
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# ═════════════════════════════════════════════════════════════════════
+# 1. MODEL CONFIGURATION
+# ═════════════════════════════════════════════════════════════════════
+model:
+  # Base model: FLUX.1-schnell (open weights) or local path
+  # For gated access (FLUX.1-dev), set HF_TOKEN env var
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"           # bfloat16 (A100/H100) | float16 (RTX) | float32 (CPU debug)
+
+# ═════════════════════════════════════════════════════════════════════
+# 2. LoRA CONFIGURATION (rsLoRA per paper)
+# ═════════════════════════════════════════════════════════════════════
+lora:
+  rank: 64                    # 0.5%-1% of total params at rank=64
+  alpha: 128                  # rsLoRA: alpha / sqrt(rank) scaling
+  rs_lora: true               # Enable rank-stabilized LoRA (paper)
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# ═════════════════════════════════════════════════════════════════════
+# 3. OPTIMIZER CONFIGURATION
+# ═════════════════════════════════════════════════════════════════════
+optimizer:
+  lr: 5.0e-5                  # Learning rate (paper default)
+  weight_decay: 0.01
+  scheduler: "cosine"         # cosine | cosine_restarts | polynomial | constant | one_cycle
+  warmup_steps: 500
+  max_grad_norm: 1.0          # Gradient clipping
+
+# ═════════════════════════════════════════════════════════════════════
+# 4. OUTPUT & CHECKPOINTING
+# ═════════════════════════════════════════════════════════════════════
+output_dir: "output/checkpoints"
+
+# ═════════════════════════════════════════════════════════════════════
+# 5. LOGGING (W&B + TensorBoard)
+# ═════════════════════════════════════════════════════════════════════
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana"
+  wandb_run_name: null        # auto-generated if null
+  wandb_log_checkpoints: false   # upload LoRA checkpoints as W&B artifacts
+  tensorboard_enabled: false
+  tensorboard_dir: "output/runs"
+  run_name: null
+
+# ═════════════════════════════════════════════════════════════════════
+# 6. TRAINING LOOP CONFIGURATION
+# ═════════════════════════════════════════════════════════════════════
+training:
+  epochs: 10
+  gradient_accumulation_steps: 1
+  use_amp: true               # Automatic Mixed Precision
+  use_ema: true               # Exponential Moving Average
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 1000            # Save checkpoint every N steps
+  eval_every: 500             # Evaluate every N steps
+  max_keep: 5                 # Max checkpoints to retain
+  seed: 42
+  log_every: 10               # Log every N steps
+  early_stopping_patience: null    # null = disabled; set to N for patience
+  early_stopping_min_delta: 0.0
+
+# ═════════════════════════════════════════════════════════════════════
+# 7. DATA CONFIGURATION
+# ═════════════════════════════════════════════════════════════════════
+data:
+  # Vision-to-generation data mixing ratio (paper: 9:1 = 0.1 vision)
+  vision_ratio: 0.1           # 10% vision task data
+  generation_ratio: 0.9       # 90% generation preservation data
+  resolution: 512             # Training resolution
+  batch_size: 8               # Per-device batch size
+  num_workers: 4              # DataLoader workers (MPS/CPU: must be 0)
+  augmentation: true
+  val_split: 0.0              # Validation split ratio (e.g. 0.1 = 10%)
+  generation_path: null       # Path to generation preservation dataset
+
+  # Vision task datasets (uncomment to enable)
+  tasks:
+    # semantic_segmentation:
+    #   datasets:
+    #     - name: "Cityscapes"
+    #       split: "train"
+    #       classes: 19
+    # instance_segmentation:
+    #   datasets:
+    #     - name: "SA-Co"
+    #       split: "train"
+    # referring_segmentation:
+    #   datasets:
+    #     - name: "RefCOCOg"
+    #       split: "train"
+    depth_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "Virtual_KITTI_2"
+          split: "train"
+    # normal_estimation:
+    #   datasets:
+    #     - name: "Hypersim"
+    #       split: "train"
+    #     - name: "ScanNet"
+    #       split: "train"
+
+# ═════════════════════════════════════════════════════════════════════
+# 8. DEPTH RGB MAPPING (paper parameters)
+# ═════════════════════════════════════════════════════════════════════
+depth_mapping:
+  lam: -3.0                   # Power transform shape parameter
+  c: 3.333                    # Scale parameter (10/3)
+
+# ═════════════════════════════════════════════════════════════════════
+# 9. NORMAL RGB MAPPING (identity – no tunable params)
+# ═════════════════════════════════════════════════════════════════════
+normal_mapping: {}
+
+# ═════════════════════════════════════════════════════════════════════
+# 10. SEGMENTATION DECODING (paper Appendix A)
+# ═════════════════════════════════════════════════════════════════════
+segmentation:
+  color_tolerance: 14.0        # τ for background init
+  min_area_fraction: 2.0e-4    # θ_size for noise pruning
+  erosion_threshold: 0.1       # θ_erosion for boundary elimination
+  bbox_expansion_factor: 5.0   # γ for spatial merging

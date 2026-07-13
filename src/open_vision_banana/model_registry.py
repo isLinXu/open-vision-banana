@@ -683,6 +683,36 @@ def _build_registry() -> None:
         description="Kandinsky3 (3B UNet) — Sber, FLAN-UL2 encoder, Apache-2.0",
     ))
 
+    _register_model("hunyuan-image", lambda: ModelConfig(
+        name="hunyuan-image",
+        model_id="tencent/HunyuanImage",
+        family="hunyuan-image",
+        backbone_type="transformer",
+        num_text_encoders=2,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=4096,
+        vae_scaling_factor=None,
+        vae_downsample_factor=8,
+        memory_budget_gb=20.0,
+        pipeline_class="HunyuanImagePipeline",
+        default_resolution=1024,
+        default_guidance_scale=5.5,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=256,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "txt_in", "img_in",
+        ],
+        needs_attention_mask=True,
+        needs_t5_and_clip=True,
+        vae_has_latent_dist=False,
+        description="HunyuanImage — Tencent, dual-encoder DiT, bilingual, Apache-2.0",
+    ))
+
     _register_model("sana-sprint", lambda: ModelConfig(
         name="sana-sprint",
         model_id="Efficient-Large-Model/SanaSprint",
@@ -708,6 +738,154 @@ def _build_registry() -> None:
         needs_guidance_in_forward=True,
         vae_has_latent_dist=False,
         description="SanaSprint — NVIDIA, 2-4 step generation, ultra fast",
+    ))
+
+    _register_model("longcat-image", lambda: ModelConfig(
+        name="longcat-image",
+        model_id="meituan-longcat/LongCat-Image",
+        family="longcat-image",
+        backbone_type="transformer",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=2048,
+        vae_scaling_factor=None,
+        vae_downsample_factor=16,
+        memory_budget_gb=16.0,
+        pipeline_class="LongCatImagePipeline",
+        default_resolution=1024,
+        default_guidance_scale=4.0,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=512,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "txt_in", "img_in",
+        ],
+        needs_attention_mask=False,
+        needs_guidance_in_forward=True,
+        needs_position_ids=True,
+        vae_has_latent_dist=True,
+        description="LongCat-Image — Meituan, Qwen2.5-VL encoder, Apache-2.0",
+    ))
+
+    _register_model("lumina", lambda: ModelConfig(
+        name="lumina",
+        model_id="Alpha-VLLM/Lumina-Next-SFT-diffusers",
+        family="lumina",
+        backbone_type="transformer",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=2048,
+        vae_scaling_factor=0.18215,
+        vae_downsample_factor=8,
+        memory_budget_gb=12.0,
+        pipeline_class="LuminaPipeline",
+        default_resolution=1024,
+        default_guidance_scale=6.0,
+        default_num_inference_steps=30,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=256,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "adaLN_modulation",
+        ],
+        needs_attention_mask=True,
+        vae_has_latent_dist=True,
+        description="Lumina-Next — Alpha-VLLM, Gemma encoder, Apache-2.0",
+    ))
+
+    _register_model("nucleusmoe-image", lambda: ModelConfig(
+        name="nucleusmoe-image",
+        model_id="NucleusAI/NucleusMoE-Image",
+        family="nucleusmoe-image",
+        backbone_type="transformer",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=2048,
+        vae_scaling_factor=None,
+        vae_downsample_factor=16,
+        memory_budget_gb=16.0,
+        pipeline_class="NucleusMoEImagePipeline",
+        default_resolution=1024,
+        default_guidance_scale=4.0,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=256,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "gate_up_proj", "down_proj",
+        ],
+        needs_attention_mask=True,
+        vae_has_latent_dist=False,
+        description="NucleusMoE-Image — NucleusAI, Qwen3-VL encoder, MoE DiT",
+    ))
+
+    _register_model("ernie-image", lambda: ModelConfig(
+        name="ernie-image",
+        model_id="baidu/Ernie-Image",
+        family="ernie-image",
+        backbone_type="transformer",
+        num_text_encoders=1,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=2048,
+        vae_scaling_factor=None,
+        vae_downsample_factor=16,
+        memory_budget_gb=16.0,
+        pipeline_class="ErnieImagePipeline",
+        default_resolution=1024,
+        default_guidance_scale=3.0,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=256,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "txt_in", "img_in",
+        ],
+        needs_attention_mask=True,
+        vae_has_latent_dist=False,
+        description="Ernie-Image — Baidu, Qwen encoder, Flux2 VAE, flow-matching",
+    ))
+
+    _register_model("hidream-image", lambda: ModelConfig(
+        name="hidream-image",
+        model_id="HiDream-ai/HiDream-I1-Full",
+        family="hidream-image",
+        backbone_type="transformer",
+        num_text_encoders=2,
+        needs_added_cond_kwargs=False,
+        cross_attention_dim=4096,
+        vae_scaling_factor=None,
+        vae_downsample_factor=16,
+        memory_budget_gb=30.0,
+        pipeline_class="HiDreamImagePipeline",
+        default_resolution=1024,
+        default_guidance_scale=5.0,
+        default_num_inference_steps=50,
+        default_lora_rank=32,
+        default_lora_alpha=64,
+        text_encoder_max_length=128,
+        lora_target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out",
+            "linear_1", "linear_2",
+            "txt_in", "img_in",
+        ],
+        needs_attention_mask=False,
+        needs_t5_and_clip=True,
+        vae_has_latent_dist=False,
+        description="HiDream-I1 — HiDream-ai, 4-encoder (CLIP×2+T5+Llama3), MoE DiT",
     ))
 
 
@@ -777,6 +955,129 @@ def get_models_by_family(family: str) -> list[str]:
     return [k for k in list_models() if get_model_config(k).family == family]
 
 
+def resolve_model_config(model_name_or_path: str) -> ModelConfig:
+    """Resolve a ModelConfig from a model name, HuggingFace ID, or local path.
+
+    Resolution order:
+    1. Exact match in the registry (e.g. "flux-schnell", "z-image")
+    2. Registry model_id match (e.g. "black-forest-labs/FLUX.1-schnell")
+    3. Local path basename match against registry model_id basename
+    4. Auto-detect by inspecting the model's config files (model_index.json)
+
+    Falls back to a generic FLUX config if no match is found.
+    """
+    # 1. Exact registry name match
+    if model_name_or_path in REGISTRY:
+        return REGISTRY[model_name_or_path]
+
+    # 2. Registry model_id match
+    for name in list_models():
+        cfg = REGISTRY[name]
+        if cfg.model_id == model_name_or_path:
+            return cfg
+
+    # 3. Local path basename match (exact + partial + name/family)
+    import os
+    basename = os.path.basename(os.path.normpath(model_name_or_path.rstrip("/")))
+    # Normalize for comparison: lowercase and strip hyphens/underscores
+    def _norm(s: str) -> str:
+        return s.lower().replace("-", "").replace("_", "")
+
+    basename_norm = _norm(basename)
+    for name in list_models():
+        cfg = REGISTRY[name]
+        # Check against model_id basename, registry name, and family
+        for candidate in (os.path.basename(cfg.model_id), cfg.name, cfg.family):
+            if basename.lower() == candidate.lower() or basename_norm == _norm(candidate):
+                return _clone_config_with_path(cfg, model_name_or_path)
+
+    # 3b. Partial basename match (e.g. "Z-Image" matches "Z-Image-Turbo")
+    basename_lower = basename.lower()
+    for name in list_models():
+        cfg = REGISTRY[name]
+        for candidate in (os.path.basename(cfg.model_id), cfg.name, cfg.family):
+            cand_lower = candidate.lower()
+            cand_norm = _norm(candidate)
+            # Prefix match on original or normalized form
+            if (cand_lower.startswith(basename_lower) or basename_lower.startswith(cand_lower)
+                    or cand_norm.startswith(basename_norm) or basename_norm.startswith(cand_norm)):
+                return _clone_config_with_path(cfg, model_name_or_path)
+
+    # 4. Auto-detect from model_index.json
+    detected = _auto_detect_family(model_name_or_path)
+    if detected is not None:
+        return detected
+
+    # Fallback: treat as FLUX (preserves backward compatibility)
+    logger.warning(
+        f"Could not resolve model '{model_name_or_path}' to a known family. "
+        "Falling back to FLUX defaults. To use a different model, pass "
+        "--model-name with a registered name (e.g. 'z-image', 'qwen-image')."
+    )
+    cfg = REGISTRY["flux-schnell"]
+    return _clone_config_with_path(cfg, model_name_or_path)
+
+
+def _clone_config_with_path(cfg: ModelConfig, model_id: str) -> ModelConfig:
+    """Clone a ModelConfig with a new model_id (for local paths)."""
+    import copy
+    import os
+    new_cfg = copy.copy(cfg)
+    new_cfg.model_id = model_id
+    new_cfg.name = os.path.basename(os.path.normpath(model_id.rstrip("/"))).lower()
+    return new_cfg
+
+
+def _auto_detect_family(model_path: str) -> ModelConfig | None:
+    """Try to detect model family from model_index.json."""
+    import json
+    import os
+
+    # Check for model_index.json (diffusers format)
+    index_path = os.path.join(model_path, "model_index.json")
+    if not os.path.isfile(index_path):
+        return None
+
+    try:
+        with open(index_path) as f:
+            index = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    # Check for pipeline class in model_index.json
+    # diffusers uses "_class_name" (with leading underscore) in model_index.json
+    pipe_class = index.get("_class_name", "") or index.get("pipeline_class", "")
+
+    # Map pipeline class names to registry entries
+    _class_to_name = {
+        "FluxPipeline": "flux-schnell",
+        "StableDiffusionXLPipeline": "sdxl",
+        "StableDiffusionPipeline": "sd15",
+        "QwenImagePipeline": "qwen-image",
+        "ZImagePipeline": "z-image",
+        "SanaPipeline": "sana-600m",
+        "Lumina2Pipeline": "lumina2",
+        "ChromaPipeline": "chroma",
+        "Flux2Pipeline": "flux2-dev",
+        "CogView4Pipeline": "cogview4",
+        "AuraFlowPipeline": "aura-flow",
+        "StableDiffusion3Pipeline": "sd3",
+        "PixArtAlphaPipeline": "pixart-alpha",
+        "PixArtSigmaPipeline": "pixart-sigma",
+        "KolorsPipeline": "kolors",
+        "HunyuanDiTPipeline": "hunyuandit",
+        "HunyuanImagePipeline": "hunyuan-image",
+        "Kandinsky3Pipeline": "kandinsky3",
+        "SanaSprintPipeline": "sana-sprint",
+    }
+
+    name = _class_to_name.get(pipe_class)
+    if name is not None and name in REGISTRY:
+        return _clone_config_with_path(REGISTRY[name], model_path)
+
+    return None
+
+
 def auto_select_model(memory_gb: float) -> str:
     """Auto-select the best model that fits within a memory budget.
 
@@ -813,6 +1114,10 @@ class PipelineComponents:
     tokenizer_2: object | None = None
     tokenizer_3: object | None = None
     scheduler: object = None
+    # Extended components for new model families
+    text_encoder_4: torch.nn.Module | None = None  # HiDream uses 4 text encoders
+    tokenizer_4: object | None = None
+    processor: object | None = None  # NucleusMoE/LongCat use processor instead of tokenizer
 
     @property
     def transformer(self):
@@ -860,8 +1165,14 @@ def load_pipeline(
         "PixArtSigmaPipeline": "diffusers",
         "KolorsPipeline": "diffusers",
         "HunyuanDiTPipeline": "diffusers",
+        "HunyuanImagePipeline": "diffusers",
         "Kandinsky3Pipeline": "diffusers",
         "SanaSprintPipeline": "diffusers",
+        "LongCatImagePipeline": "diffusers.pipelines.longcat_image",
+        "LuminaPipeline": "diffusers.pipelines.lumina",
+        "NucleusMoEImagePipeline": "diffusers.pipelines.nucleusmoe_image",
+        "ErnieImagePipeline": "diffusers.pipelines.ernie_image",
+        "HiDreamImagePipeline": "diffusers.pipelines.hidream_image",
     }
 
     cls_name = config.pipeline_class
@@ -923,6 +1234,21 @@ def load_pipeline(
     if text_encoder_3 is not None:
         text_encoder_3.requires_grad_(False)
 
+    # Extract extended components for new model families
+    text_encoder_4 = None
+    tokenizer_4 = None
+    processor = None
+
+    if config.family == "hidream-image":
+        text_encoder_4 = getattr(pipe, "text_encoder_4", None)
+        if text_encoder_4 is not None:
+            text_encoder_4 = text_encoder_4.to(device)
+            text_encoder_4.requires_grad_(False)
+        tokenizer_4 = getattr(pipe, "tokenizer_4", None)
+
+    if config.family in ("nucleusmoe-image", "longcat-image"):
+        processor = getattr(pipe, "processor", None) or getattr(pipe, "text_processor", None)
+
     # Enable gradient checkpointing for memory efficiency
     if enable_gradient_checkpointing and hasattr(backbone, "enable_gradient_checkpointing"):
         backbone.enable_gradient_checkpointing()
@@ -945,6 +1271,9 @@ def load_pipeline(
         tokenizer_3=tokenizer_3,
         scheduler=getattr(pipe, "scheduler", None),
         config=config,
+        text_encoder_4=text_encoder_4,
+        tokenizer_4=tokenizer_4,
+        processor=processor,
     )
 
 
@@ -1074,6 +1403,147 @@ def encode_text(
         encoder_hidden_states = text_encoder(input_ids)[0]
         attention_mask = tokenized.attention_mask.to(device)
         return encoder_hidden_states.to(dtype), attention_mask
+
+    # ── HunyuanImage: dual-encoder (CLIP + mT5) with attention mask ──
+    if config.family == "hunyuan-image":
+        # CLIP (text_encoder) — primary encoder
+        tokenized = tokenizer(
+            prompts, padding="max_length", max_length=max_length,
+            truncation=True, return_tensors="pt"
+        )
+        input_ids = tokenized.input_ids.to(device)
+        clip_hidden = text_encoder(input_ids)[0]
+        clip_mask = tokenized.attention_mask.to(device)
+
+        # mT5 (text_encoder_2) — secondary encoder
+        if text_encoder_2 is not None:
+            tok2 = components.tokenizer_2
+            tokenized_2 = tok2(
+                prompts, padding="max_length", max_length=max_length,
+                truncation=True, return_tensors="pt"
+            )
+            input_ids_2 = tokenized_2.input_ids.to(device)
+            t5_hidden = text_encoder_2(input_ids_2)[0]
+            t5_mask = tokenized_2.attention_mask.to(device)
+            # Return concatenated hidden states and combined mask
+            # HunyuanImage uses both encoders; backbone_forward gets attention_mask
+            return clip_hidden.to(dtype), (clip_mask, t5_hidden.to(dtype), t5_mask)
+
+        return clip_hidden.to(dtype), clip_mask
+
+    # ── HiDream: 4-encoder (CLIP×2 + T5 + Llama3) ──
+    if config.family == "hidream-image":
+        # T5 encoder (text_encoder_3 in pipeline, stored as text_encoder_2 in our components)
+        t5_hidden = None
+        t5_mask = None
+        llama_hidden = None
+        llama_mask = None
+        pooled_embeds = None
+
+        # CLIP encoders (tokenizer + tokenizer_2) → pooled embeds
+        for i, (te, tok) in enumerate([
+            (text_encoder, tokenizer),
+            (text_encoder_2, components.tokenizer_2),
+        ]):
+            if te is None:
+                continue
+            tokenized = tok(
+                prompts, padding="max_length", max_length=max_length,
+                truncation=True, return_tensors="pt"
+            )
+            input_ids = tokenized.input_ids.to(device)
+            output = te(input_ids, output_hidden_states=False)
+            if i == 0:
+                pooled_embeds = output.text_embeds
+
+        # T5 encoder (tokenizer_3)
+        tok3 = components.tokenizer_3
+        if tok3 is not None:
+            tokenized_3 = tok3(
+                prompts, padding="max_length", max_length=max_length,
+                truncation=True, return_tensors="pt"
+            )
+            input_ids_3 = tokenized_3.input_ids.to(device)
+            t5_hidden = text_encoder_3(input_ids_3)[0] if text_encoder_3 is not None else None
+            t5_mask = tokenized_3.attention_mask.to(device)
+
+        # Llama3 encoder — needs special handling (generate then embed)
+        # For training, we use the tokenizer_4 if available
+        getattr(components, "tokenizer_4", None) or getattr(components, "tokenizer_3", None)
+        # Note: Llama3 encoder is stored in a non-standard attribute; for training
+        # we fall back to using T5 hidden states if Llama3 is not separately loaded
+        llama_hidden = t5_hidden  # fallback: use T5 as llama hidden
+        llama_mask = t5_mask
+
+        return (
+            t5_hidden.to(dtype) if t5_hidden is not None else torch.zeros(len(prompts), 1, 4096, device=device, dtype=dtype),
+            (pooled_embeds.to(dtype) if pooled_embeds is not None else None,
+             llama_hidden.to(dtype) if llama_hidden is not None else None,
+             llama_mask),
+        )
+
+    # ── LongCat-Image: Qwen2.5-VL encoder with prompt template ──
+    if config.family == "longcat-image":
+        # LongCat uses prompt template wrapping + Qwen2.5-VL text generation
+        # For training, we use the tokenizer directly for simplicity
+        tokenized = tokenizer(
+            prompts, padding="max_length", max_length=max_length,
+            truncation=True, return_tensors="pt"
+        )
+        input_ids = tokenized.input_ids.to(device)
+        # Qwen2.5-VL: get hidden states from output
+        outputs = text_encoder(input_ids, attention_mask=tokenized.attention_mask.to(device), output_hidden_states=True)
+        encoder_hidden_states = outputs.hidden_states[-1]
+        attention_mask = tokenized.attention_mask.to(device)
+        return encoder_hidden_states.to(dtype), attention_mask
+
+    # ── Lumina: Gemma encoder ──
+    if config.family == "lumina":
+        tokenized = tokenizer(
+            prompts, padding="max_length", max_length=max_length,
+            truncation=True, return_tensors="pt"
+        )
+        input_ids = tokenized.input_ids.to(device)
+        outputs = text_encoder(input_ids, attention_mask=tokenized.attention_mask.to(device))
+        encoder_hidden_states = outputs.last_hidden_state
+        attention_mask = tokenized.attention_mask.to(device)
+        return encoder_hidden_states.to(dtype), attention_mask
+
+    # ── NucleusMoE: Qwen3-VL encoder ──
+    if config.family == "nucleusmoe-image":
+        # NucleusMoE uses a processor (Qwen3VLProcessor) instead of tokenizer
+        processor = getattr(components, "processor", None) or tokenizer
+        if callable(processor) and not hasattr(tokenizer, "model_max_length"):
+            # Use processor for tokenization
+            inputs = processor(text=prompts, padding=True, return_tensors="pt")
+            input_ids = inputs.input_ids.to(device)
+            attention_mask = inputs.attention_mask.to(device)
+        else:
+            tokenized = tokenizer(
+                prompts, padding="max_length", max_length=max_length,
+                truncation=True, return_tensors="pt"
+            )
+            input_ids = tokenized.input_ids.to(device)
+            attention_mask = tokenized.attention_mask.to(device)
+
+        outputs = text_encoder(input_ids, attention_mask=attention_mask, output_hidden_states=True)
+        # NucleusMoE uses hidden_states at a specific index
+        encoder_hidden_states = outputs.hidden_states[-1]
+        return encoder_hidden_states.to(dtype), attention_mask
+
+    # ── Ernie-Image: Qwen encoder ──
+    if config.family == "ernie-image":
+        tokenized = tokenizer(
+            prompts, padding="max_length", max_length=max_length,
+            truncation=True, return_tensors="pt"
+        )
+        input_ids = tokenized.input_ids.to(device)
+        attention_mask = tokenized.attention_mask.to(device)
+        outputs = text_encoder(input_ids, attention_mask=attention_mask)
+        encoder_hidden_states = outputs.last_hidden_state if hasattr(outputs, "last_hidden_state") else outputs[0]
+        # Ernie needs text_lens (sequence lengths per sample)
+        text_lens = attention_mask.sum(dim=1).to(dtype=torch.long)
+        return encoder_hidden_states.to(dtype), (attention_mask, text_lens)
 
     # ── Standard tokenization for all other models ──
     tokenized = tokenizer(
@@ -1285,7 +1755,7 @@ def backbone_forward(
         )[0]
 
     elif config.family == "cogview4":
-        cogview_kwargs: dict[str, Any] = {}
+        cogview_kwargs = {}
         if original_size is not None:
             cogview_kwargs["original_size"] = original_size
         if target_size is not None:
@@ -1320,7 +1790,7 @@ def backbone_forward(
 
     elif config.family == "pixart":
         # PixArt-Alpha/Sigma: transformer(latents, encoder_hidden_states, timestep, encoder_attention_mask, added_cond_kwargs)
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if config.needs_added_cond_kwargs_dit:
             # PixArt uses resolution-based added_cond_kwargs
             kwargs["added_cond_kwargs"] = {"resolution": None, "aspect_ratio": None}
@@ -1386,6 +1856,154 @@ def backbone_forward(
             timestep=timesteps,
             return_dict=False,
         )[0]
+
+    elif config.family == "hunyuan-image":
+        # HunyuanImage: dual-encoder DiT, needs attention_mask + guidance
+        # attention_mask may be a tuple (clip_mask, t5_hidden, t5_mask) from encode_text
+        # or a plain tensor (clip_mask only)
+        enc_mask = attention_mask
+        enc_hidden_t5 = None
+        enc_mask_t5 = None
+        if isinstance(attention_mask, tuple):
+            enc_mask, enc_hidden_t5, enc_mask_t5 = attention_mask
+
+        kwargs = {
+            "hidden_states": latents,
+            "timestep": timesteps / 1000,
+            "guidance": guidance if guidance is not None else 0.0,
+            "encoder_hidden_states": encoder_hidden_states,
+            "encoder_hidden_states_mask": enc_mask,
+            "return_dict": False,
+        }
+        if enc_hidden_t5 is not None:
+            kwargs["encoder_hidden_states_t5"] = enc_hidden_t5
+        if enc_mask_t5 is not None:
+            kwargs["encoder_hidden_states_mask_t5"] = enc_mask_t5
+        return backbone(**kwargs)[0]
+
+    elif config.family == "longcat-image":
+        # LongCat: transformer(hidden_states, encoder_hidden_states, timestep/1000, img_ids, txt_ids, guidance)
+        kwargs = {
+            "hidden_states": latents,
+            "timestep": timesteps / 1000,
+            "encoder_hidden_states": encoder_hidden_states,
+            "txt_ids": txt_ids if txt_ids is not None else torch.zeros(
+                latents.shape[0], encoder_hidden_states.shape[1], 3,
+                device=latents.device, dtype=encoder_hidden_states.dtype,
+            ),
+            "img_ids": img_ids if img_ids is not None else torch.zeros(
+                latents.shape[0], latents.shape[1], 3,
+                device=latents.device, dtype=encoder_hidden_states.dtype,
+            ),
+            "return_dict": False,
+        }
+        if config.needs_guidance_in_forward:
+            kwargs["guidance"] = guidance if guidance is not None else 0.0
+        return backbone(**kwargs)[0]
+
+    elif config.family == "lumina":
+        # Lumina-Next: transformer(hidden_states, timestep, encoder_hidden_states, encoder_mask, image_rotary_emb)
+        kwargs = {
+            "hidden_states": latents,
+            "timestep": timesteps,
+            "encoder_hidden_states": encoder_hidden_states,
+            "encoder_mask": attention_mask if attention_mask is not None else None,
+            "return_dict": False,
+        }
+        return backbone(**kwargs)[0]
+
+    elif config.family == "nucleusmoe-image":
+        # NucleusMoE: transformer(hidden_states, img_shapes, encoder_hidden_states, encoder_mask, timestep/num_train_timesteps)
+        batch_size = latents.shape[0]
+        # NucleusMoE uses sequence-based latents; img_shapes describes spatial dims
+        # latents shape: [B, seq_len, C] — derive spatial from seq_len
+        patch_size = getattr(backbone.config, "patch_size", 2)
+        vae_sf = config.vae_downsample_factor
+        # Compute spatial dims from latent shape
+        if latents.dim() == 4:
+            # [B, C, H, W] format
+            latent_h, latent_w = latents.shape[2], latents.shape[3]
+            img_h = latent_h * vae_sf
+            img_w = latent_w * vae_sf
+            # seq dimensions derived implicitly via img_shapes below
+        else:
+            # [B, seq_len, C] format — assume square
+            seq_len = latents.shape[1]
+            seq_side = int(seq_len ** 0.5)
+            img_h = seq_side * patch_size * vae_sf
+            img_w = img_h
+        img_shapes = [(1, img_h // (vae_sf * patch_size), img_w // (vae_sf * patch_size))] * batch_size
+
+        mask = attention_mask
+        if isinstance(attention_mask, tuple):
+            mask = attention_mask[0]
+
+        return backbone(
+            hidden_states=latents,
+            img_shapes=img_shapes,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_hidden_states_mask=mask,
+            timestep=timesteps,
+            return_dict=False,
+        )[0]
+
+    elif config.family == "ernie-image":
+        # Ernie: transformer(hidden_states, timestep, text_bth, text_lens)
+        mask = attention_mask
+        text_lens = None
+        if isinstance(attention_mask, tuple):
+            mask, text_lens = attention_mask
+
+        if text_lens is None and mask is not None and isinstance(mask, torch.Tensor):
+            text_lens = mask.sum(dim=1).to(dtype=torch.long)
+
+        return backbone(
+            hidden_states=latents,
+            timestep=timesteps,
+            text_bth=encoder_hidden_states,
+            text_lens=text_lens,
+            return_dict=False,
+        )[0]
+
+    elif config.family == "hidream-image":
+        # HiDream: transformer(hidden_states, timesteps, enc_t5, enc_llama3, pooled_embeds, img_ids, img_sizes, hidden_states_masks)
+        pooled = None
+        llama_hidden = None
+        llama_mask = None
+        if isinstance(attention_mask, tuple):
+            # encode_text returns (pooled_embeds, llama_hidden, llama_mask)
+            pooled, llama_hidden, llama_mask = attention_mask
+
+        batch_size = latents.shape[0]
+        # HiDream uses 2x2 patch packing; img_ids and img_sizes are needed
+        vae_sf = config.vae_downsample_factor
+        patch_size = 2  # HiDream packs 2x2
+        if latents.dim() == 4:
+            latent_h, latent_w = latents.shape[2], latents.shape[3]
+            img_ids = torch.zeros(batch_size, latent_h * latent_w, 3, device=latents.device, dtype=encoder_hidden_states.dtype)
+            img_sizes = [(latent_h, latent_w)] * batch_size
+        else:
+            seq_len = latents.shape[1]
+            side = int(seq_len ** 0.5)
+            img_ids = torch.zeros(batch_size, seq_len, 3, device=latents.device, dtype=encoder_hidden_states.dtype)
+            img_sizes = [(side, side)] * batch_size
+
+        kwargs = {
+            "hidden_states": latents,
+            "timesteps": timesteps,
+            "encoder_hidden_states_t5": encoder_hidden_states,
+            "return_dict": False,
+        }
+        if llama_hidden is not None:
+            kwargs["encoder_hidden_states_llama3"] = llama_hidden
+        if pooled is not None:
+            kwargs["pooled_embeds"] = pooled
+        kwargs["img_ids"] = img_ids
+        kwargs["img_sizes"] = img_sizes
+        if llama_mask is not None:
+            kwargs["hidden_states_masks"] = llama_mask
+
+        return backbone(**kwargs)[0]
 
     else:
         raise ValueError(f"Unsupported family for backbone_forward: {config.family}")

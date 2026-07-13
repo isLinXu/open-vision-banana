@@ -1,0 +1,115 @@
+# H20 8x DDP Training Configuration
+# =================================
+# Optimized for 8 x NVIDIA H20 (Hopper, 96GB HBM3 each) via DDP.
+# Effective batch size = 2 (per-GPU) * 8 (GPUs) * 4 (accum) = 64.
+#
+# Hardware assumptions:
+#   - 8 x H20 96GB on single node (NVLink / NVSwitch)
+#   - CUDA 12.x + PyTorch 2.3+ (Hopper sm_90)
+#   - Shared filesystem (NFS / Lustre / local RAID)
+#
+# Usage:
+#   bash scripts/launch_h20_ddp.sh --data-path /path/to/data
+
+# Base Model
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+# LoRA Configuration (rsLoRA scaling)
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+# Optimizer Configuration
+optimizer:
+  lr: 5.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 500
+  max_grad_norm: 1.0
+
+# Output
+output_dir: "output/checkpoints_h20_ddp8"
+
+# Logging (TensorBoard + optional W&B)
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana-h20-ddp"
+  wandb_log_checkpoints: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs_h20_ddp8"
+  run_name: "h20_ddp8_flux"
+
+# Training Parameters (8x H20 DDP optimized)
+training:
+  epochs: 10
+  # Effective batch size = 2 * 8 GPUs * 4 accum = 64
+  gradient_accumulation_steps: 4
+  use_amp: true
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  save_every: 1000
+  eval_every: 500
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+# Data (DDP: each GPU loads its own shard)
+data:
+  vision_ratio: 0.1
+  generation_ratio: 0.9
+  resolution: 512
+  batch_size: 2            # per-GPU local batch (conservative for 8-GPU DDP)
+  num_workers: 4           # per-GPU DataLoader workers
+  augmentation: true
+  val_split: 0.1
+  generation_path: null
+
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "Virtual_KITTI_2"
+          split: "train"
+    normal_estimation:
+      datasets:
+        - name: "Hypersim"
+          split: "train"
+        - name: "ScanNet"
+          split: "train"
+    semantic_segmentation:
+      datasets:
+        - name: "Cityscapes"
+          split: "train"
+          classes: 19
+    instance_segmentation:
+      datasets:
+        - name: "SA-Co"
+          split: "train"
+    referring_segmentation:
+      datasets:
+        - name: "RefCOCOg"
+          split: "train"
+
+# Depth RGB Mapping Parameters
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

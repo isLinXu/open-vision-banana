@@ -19,6 +19,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset as _Dataset
 
+from ..model_registry import ModelConfig, resolve_model_config
+from ..model_registry import vae_encode as registry_vae_encode
 from .checkpoint import CheckpointManager
 from .early_stopping import EarlyStopping
 from .logging import TrainingLogger
@@ -208,7 +210,30 @@ class InstructionTuner:
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
         self.lr = lr
-        self.target_modules = target_modules or ["to_k", "to_v"]
+
+        # ── Resolve model config from the base model ───────────────────
+        # This enables multi-model support: the tuner adapts its text
+        # encoding, VAE encoding, and forward pass to the detected family.
+        model_name = getattr(model, "model_name", None) or getattr(model, "DEFAULT_MODEL", None)
+        if model_name is not None:
+            self.model_config: ModelConfig = resolve_model_config(model_name)
+        else:
+            # Fallback for raw pipelines without a BaseGenerator wrapper
+            self.model_config = resolve_model_config(
+                getattr(model, "name", "black-forest-labs/FLUX.1-schnell")
+            )
+
+        family = self.model_config.family
+        logger.info(f"InstructionTuner: resolved model family='{family}', "
+                     f"pipeline='{self.model_config.pipeline_class}'")
+
+        # Use model-appropriate LoRA target modules if not explicitly set
+        if target_modules is not None:
+            self.target_modules = target_modules
+        else:
+            self.target_modules = self.model_config.lora_target_modules or ["to_k", "to_v"]
+            logger.info(f"Using model-specific LoRA targets: {self.target_modules}")
+
         self.channel_loss_weights = channel_loss_weights
         self.use_logit_normal_timesteps = use_logit_normal_timesteps
         self.use_min_snr = use_min_snr
@@ -898,24 +923,39 @@ class InstructionTuner:
             "stopped_early": stopped_early,
         }
 
-    def _encode_text(self, prompts: list[str], device: torch.device) -> dict[str, torch.Tensor]:
-        """Encode text prompts to encoder_hidden_states using FLUX's text encoders.
+    def _encode_text(self, prompts: list[str], device: torch.device) -> dict[str, torch.Tensor | None]:
+        """Encode text prompts using the model's text encoders (multi-model).
 
-        FLUX.1 uses a dual-encoder setup:
-        - CLIP (text_encoder): produces pooled_projections [B, D_clip]
-        - T5 (text_encoder_2): produces prompt_embeds [B, seq_len, D_t5]
+        Routes to the appropriate encoding strategy based on model family:
+        - FLUX: pipeline.encode_prompt (dual CLIP+T5)
+        - Hunyuan-Image / SDXL / SD3: pipeline.encode_prompt (dual-encoder)
+        - Qwen-Image / Z-Image / SANA / etc.: registry encode_text
 
-        Returns a dict with keys ``prompt_embeds`` and ``pooled_prompt_embeds``.
-        Falls back to zero tensors when the pipeline's text encoders are not
-        accessible (e.g. unit tests with a mock model).
+        Returns dict with prompt_embeds, pooled_prompt_embeds, text_ids, attention_mask.
         """
         pipeline = getattr(self.base_model, "_t2i_pipe", None) or getattr(
             self.base_model, "pipe", None
         )
         if pipeline is None:
-            # base_model may itself be a diffusers pipeline
             pipeline = self.base_model
 
+        family = self.model_config.family
+
+        # FLUX family: use pipeline.encode_prompt (dual CLIP+T5)
+        if family == "flux":
+            return self._encode_text_flux(prompts, device, pipeline)
+
+        # SDXL, SD3: dual-encoder with pipeline.encode_prompt + pooled embeds
+        if family in ("sdxl", "sd3"):
+            max_len = getattr(self.model_config, "text_encoder_max_length", 512)
+            return self._encode_text_dual_encoder(prompts, device, pipeline, max_len)
+
+        # All other families (hunyuan-image, qwen-image, z-image, sana, etc.):
+        # use registry encode_text which handles attention masks, guidance, etc.
+        return self._encode_text_registry(prompts, device, pipeline)
+
+    def _encode_text_flux(self, prompts, device, pipeline):
+        """FLUX-specific text encoding via pipeline.encode_prompt."""
         try:
             # MPS + bfloat16 can trigger "Placeholder storage has not been
             # allocated on MPS device!" for T5.  Temporarily cast text
@@ -981,6 +1021,7 @@ class InstructionTuner:
                     else None
                 ),
                 "text_ids": text_ids.to(device=device, dtype=model_dtype) if text_ids is not None else None,
+                "attention_mask": None,
             }
 
         except Exception as e:
@@ -988,26 +1029,152 @@ class InstructionTuner:
                 f"Text encoding failed ({e}); falling back to zero conditioning. "
                 "The model will train without text guidance for this batch."
             )
-            # Graceful fallback: zero embeddings — model still trains the flow
-            # objective but without text conditioning.  Useful for smoke tests.
             B = len(prompts)
             return {
                 "prompt_embeds": torch.zeros(B, 1, 4096, device=device),
                 "pooled_prompt_embeds": torch.zeros(B, 768, device=device),
                 "text_ids": torch.zeros(1, 3, device=device),
+                "attention_mask": None,
+            }
+
+    def _encode_text_dual_encoder(self, prompts, device, pipeline, max_length=512):
+        """Dual-encoder text encoding for HunyuanImage, SDXL, SD3, etc."""
+        try:
+            encoders = [getattr(pipeline, "text_encoder", None), getattr(pipeline, "text_encoder_2", None)]
+            original_dtypes = []
+            for enc in encoders:
+                if enc is not None:
+                    original_dtypes.append(enc.dtype)
+                    enc.to(torch.float32)
+                else:
+                    original_dtypes.append(None)
+
+            try:
+                with torch.no_grad():
+                    text_outputs = pipeline.encode_prompt(
+                        prompt=prompts,
+                        prompt_2=prompts,
+                        device=device,
+                        num_images_per_prompt=1,
+                        max_sequence_length=max_length,
+                    )
+            finally:
+                for enc, dtype in zip(encoders, original_dtypes, strict=False):
+                    if enc is not None and dtype is not None:
+                        enc.to(dtype)
+
+            prompt_embeds = text_outputs[0]
+            pooled_prompt_embeds = None
+            for item in text_outputs[1:]:
+                if item is None:
+                    continue
+                if item.dim() == 2:
+                    pooled_prompt_embeds = item
+
+            model_dtype = next(self.peft_model.parameters()).dtype
+            return {
+                "prompt_embeds": prompt_embeds.to(device=device, dtype=model_dtype),
+                "pooled_prompt_embeds": (
+                    pooled_prompt_embeds.to(device=device, dtype=model_dtype)
+                    if pooled_prompt_embeds is not None else None
+                ),
+                "text_ids": None,
+                "attention_mask": None,
+            }
+        except Exception as e:
+            logger.warning(f"Dual-encoder text encoding failed ({e}); using zero conditioning.")
+            B = len(prompts)
+            return {
+                "prompt_embeds": torch.zeros(B, 1, 4096, device=device),
+                "pooled_prompt_embeds": None,
+                "text_ids": None,
+                "attention_mask": None,
+            }
+
+    def _encode_text_registry(self, prompts, device, pipeline):
+        """Registry-based text encoding for Qwen-Image, Z-Image, SANA, etc."""
+        try:
+            from ..model_registry import PipelineComponents, encode_text
+
+            components = PipelineComponents(
+                unet=getattr(pipeline, "transformer", getattr(pipeline, "unet", None)),
+                vae=pipeline.vae,
+                text_encoder=getattr(pipeline, "text_encoder", None),
+                text_encoder_2=getattr(pipeline, "text_encoder_2", None),
+                text_encoder_3=getattr(pipeline, "text_encoder_3", None),
+                tokenizer=getattr(pipeline, "tokenizer", None),
+                tokenizer_2=getattr(pipeline, "tokenizer_2", None),
+                tokenizer_3=getattr(pipeline, "tokenizer_3", None),
+                scheduler=getattr(pipeline, "scheduler", None),
+                config=self.model_config,
+                text_encoder_4=getattr(pipeline, "text_encoder_4", None),
+                tokenizer_4=getattr(pipeline, "tokenizer_4", None),
+                processor=getattr(pipeline, "processor", None) or getattr(pipeline, "text_processor", None),
+            )
+
+            model_dtype = next(self.peft_model.parameters()).dtype
+
+            encoders = [components.text_encoder, components.text_encoder_2]
+            original_dtypes = []
+            for enc in encoders:
+                if enc is not None:
+                    original_dtypes.append(enc.dtype)
+                    enc.to(torch.float32)
+                else:
+                    original_dtypes.append(None)
+
+            try:
+                with torch.no_grad():
+                    encoder_hidden_states, pooled_or_mask = encode_text(
+                        components, prompts, device, torch.float32
+                    )
+            finally:
+                for enc, dtype in zip(encoders, original_dtypes, strict=False):
+                    if enc is not None and dtype is not None:
+                        enc.to(dtype)
+
+            encoder_hidden_states = encoder_hidden_states.to(device=device, dtype=model_dtype)
+
+            result: dict[str, Any] = {
+                "prompt_embeds": encoder_hidden_states,
+                "pooled_prompt_embeds": None,
+                "text_ids": None,
+                "attention_mask": None,
+            }
+
+            if self.model_config.needs_attention_mask and pooled_or_mask is not None:
+                if isinstance(pooled_or_mask, torch.Tensor):
+                    result["attention_mask"] = pooled_or_mask.to(device=device, dtype=model_dtype)
+                elif isinstance(pooled_or_mask, tuple):
+                    # HunyuanImage: (clip_mask, t5_hidden, t5_mask) — cast each element
+                    casted = []
+                    for m in pooled_or_mask:
+                        if isinstance(m, torch.Tensor):
+                            casted.append(m.to(device=device, dtype=model_dtype))
+                        else:
+                            casted.append(m)
+                    result["attention_mask"] = tuple(casted)
+            elif pooled_or_mask is not None and isinstance(pooled_or_mask, torch.Tensor):
+                result["pooled_prompt_embeds"] = pooled_or_mask.to(device=device, dtype=model_dtype)
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Text encoding failed ({e}); using zero conditioning.")
+            B = len(prompts)
+            return {
+                "prompt_embeds": torch.zeros(B, 1, 4096, device=device),
+                "pooled_prompt_embeds": None,
+                "text_ids": None,
+                "attention_mask": None,
             }
 
     def _encode_latents(self, images: torch.Tensor) -> torch.Tensor:
-        """Encode pixel-space images to VAE latents.
+        """Encode pixel-space images to VAE latents (multi-model).
 
-        FLUX uses a 16-channel VAE with 8× spatial compression:
-            [B, 3, H, W] → [B, 16, H/8, W/8]
-
-        The encoded latents are scaled by the VAE's scaling_factor before
-        being passed to the transformer (standard diffusers convention).
-
-        Falls back to a lightweight 1×1 conv proxy when the VAE is not
-        accessible (e.g. unit tests or CPU-only smoke runs).
+        Uses the registry's vae_encode helper which handles model-specific
+        scaling factors and encoding conventions. Falls back to a lightweight
+        proxy when the VAE is not accessible (e.g. unit tests).
         """
         pipeline = getattr(self.base_model, "_t2i_pipe", None) or getattr(
             self.base_model, "pipe", None
@@ -1021,11 +1188,6 @@ class InstructionTuner:
                 "VAE not found on pipeline; using identity proxy for latents. "
                 "Training will proceed but latent statistics will be incorrect."
             )
-            # Identity proxy: spatial downsample only, keep original channels.
-            # We intentionally do NOT expand to 16 ch here — the downstream
-            # transformer mock / shape-mismatch handler deals with channel
-            # differences.  Keeping 3 ch preserves compatibility with unit-test
-            # mocks whose Conv2d layers expect 3-channel input.
             B, C, H, W = images.shape
             latent_h, latent_w = max(1, H // 8), max(1, W // 8)
             latents = torch.nn.functional.adaptive_avg_pool2d(images, (latent_h, latent_w))
@@ -1033,26 +1195,26 @@ class InstructionTuner:
 
         try:
             with torch.no_grad():
-                # images expected in [-1, 1] by the VAE
-                # Ensure input dtype and device match VAE weights to avoid
-                # "Input type and bias type should be the same" and
-                # "input and weight must be on the same device" on MPS.
                 vae_device = next(vae.parameters()).device
                 vae_dtype = next(vae.parameters()).dtype
                 images = images.to(device=vae_device, dtype=vae_dtype)
-                latent_dist = vae.encode(images).latent_dist
-                latents = latent_dist.sample()
-                # Apply VAE scaling factor (FLUX default: 0.3611)
-                scaling_factor = getattr(vae.config, "scaling_factor", 0.3611)
-                latents = latents * scaling_factor
-                # Cast to model dtype to avoid MPS dtype mismatches
+
+                # Use registry vae_encode for model-appropriate scaling
+                latents = registry_vae_encode(vae, images, self.model_config)
+
                 model_dtype = next(self.peft_model.parameters()).dtype
                 latents = latents.to(dtype=model_dtype)
             return latents
         except Exception as e:
             logger.warning(f"VAE encoding failed ({e}); using zero latents.")
             B, _, H, W = images.shape
-            return torch.zeros(B, 16, H // 8, W // 8, device=images.device, dtype=images.dtype)
+            # Use model's expected latent channels (FLUX=16, others=4)
+            latent_ch = 16 if self.model_config.family == "flux" else 4
+            vae_sf = self.model_config.vae_downsample_factor
+            return torch.zeros(
+                B, latent_ch, H // vae_sf, W // vae_sf,
+                device=images.device, dtype=images.dtype,
+            )
 
     def _training_step(self, batch: dict) -> torch.Tensor:
         """Single training step — rectified flow velocity prediction in latent space.
@@ -1158,19 +1320,16 @@ class InstructionTuner:
                         drop_p, uncond["pooled_prompt_embeds"], pooled_prompt_embeds
                     )
 
-        # ── Prepare hidden_states for FLUX transformer ──────────────────
-        # FLUX uses a 2×2 latent packing: [B, 16, H, W] → [B, (H/2)*(W/2), 64]
-        # The transformer's x_embedder is nn.Linear(64, inner_dim), so it
-        # expects the packed sequence form with 64 channels.
+        # ── Prepare hidden_states for the model's transformer/UNet ──────
         latent_h, latent_w = noisy_latents.shape[-2], noisy_latents.shape[-1]
         latent_channels = noisy_latents.shape[1]
         model_dtype = next(self.peft_model.parameters()).dtype
+        family = self.model_config.family
 
-        # Only apply FLUX 2×2 packing when we have real 16-channel VAE latents.
-        # When using the identity-proxy fallback (no VAE), latents retain their
-        # original channel count (e.g. 3) — packing would reshape [B,3,H,W] to
-        # [B, patches, 12], breaking mock/test transformers that expect 3 ch.
-        if latent_channels == 16:
+        attention_mask = text_cond.get("attention_mask")
+
+        # FLUX uses 2x2 latent packing: [B, 16, H, W] -> [B, (H/2)*(W/2), 64]
+        if family == "flux" and latent_channels == 16:
             noisy_latents_input = self._pack_latents(
                 noisy_latents.detach(), batch_size, latent_channels, latent_h, latent_w
             )
@@ -1179,58 +1338,29 @@ class InstructionTuner:
                 batch_size, packed_h, packed_w, device, noisy_latents.dtype
             )
         else:
+            # Non-FLUX models: use latents directly without packing
             noisy_latents_input = noisy_latents.detach()
-            img_ids = self._prepare_latent_image_ids(
-                batch_size, latent_h, latent_w, device, noisy_latents.dtype
+            img_ids = None
+
+        # ── Forward pass ────────────────────────────────────────────────
+        # Route to the appropriate forward strategy based on model family.
+        if family == "flux":
+            predicted_velocity = self._forward_flux(
+                noisy_latents_input, timesteps, prompt_embeds,
+                pooled_prompt_embeds, text_ids, img_ids,
+                model_dtype, device, batch_size,
             )
-
-        # ── Forward pass — use probed signature ────────────────────────
-        # The forward mode was detected at init time via _probe_forward_signature,
-        # eliminating the per-step try/except fallback chain.
-        # Cast all inputs to the model's dtype to avoid MPS dtype mismatches.
-        forward_kwargs: dict = {
-            "hidden_states": noisy_latents_input.to(model_dtype),
-            "timestep": timesteps.to(model_dtype),
-            "encoder_hidden_states": prompt_embeds.to(model_dtype),
-        }
-        if self._forward_mode == "full":
-            forward_kwargs["pooled_projections"] = pooled_prompt_embeds.to(model_dtype)
-            forward_kwargs["txt_ids"] = text_ids.to(model_dtype)
-            forward_kwargs["img_ids"] = img_ids.to(model_dtype)
-
-        # ── Run FLUX transformer forward ──────────────────────────────
-
-        # P0-7: Bypass PEFT wrapper when mis-route is detected at init time.
-        # This avoids the per-step TypeError exception overhead.
-        if self._use_direct_forward:
-            predicted_velocity = self._direct_forward(forward_kwargs)
         else:
-            try:
-                predicted_velocity = self.peft_model(**forward_kwargs)
-            except TypeError as e:
-                if "input_ids" in str(e):
-                    if not getattr(self, "_peft_misroute_warned", False):
-                        logger.warning(
-                            "PEFT wrapper mis-routed forward call (%s); "
-                            "falling back to unwrapped transformer forward. "
-                            "(This warning is shown only once.)", e
-                        )
-                        self._peft_misroute_warned = True
-                    # Late detection: switch to direct forward for remaining steps
-                    self._use_direct_forward = True
-                    predicted_velocity = self._direct_forward(forward_kwargs)
-                else:
-                    raise
+            # Non-FLUX: use registry backbone_forward for unified calling convention
+            predicted_velocity = self._forward_registry(
+                noisy_latents_input, timesteps, prompt_embeds,
+                pooled_prompt_embeds, attention_mask,
+                model_dtype, device,
+            )
 
         # Extract tensor from Transformer2DModelOutput if needed
         if hasattr(predicted_velocity, "sample"):
             predicted_velocity = predicted_velocity.sample
-
-        # Handle FLUX output: transformer returns [B, (H/2)*(W/2), C*4] (packed sequence).
-        # Unpack back to [B, C, H, W] to match velocity_target.
-        if predicted_velocity.dim() == 3 and velocity_target.dim() == 4:
-            H, W = velocity_target.shape[-2], velocity_target.shape[-1]
-            predicted_velocity = self._unpack_latents(predicted_velocity, H, W)
 
         # Ensure shape matches velocity_target before computing loss.
         # (Some transformers return a different channel/spatial layout.)
@@ -1246,6 +1376,155 @@ class InstructionTuner:
                 predicted_velocity = predicted_velocity[:, : velocity_target.shape[1]]
 
         return self._compute_flow_loss(predicted_velocity, velocity_target, timesteps)
+
+    def _forward_flux(
+        self, noisy_latents_input, timesteps, prompt_embeds,
+        pooled_prompt_embeds, text_ids, img_ids,
+        model_dtype, device, batch_size,
+    ) -> torch.Tensor:
+        """FLUX-specific forward pass with PEFT wrapper handling."""
+        forward_kwargs: dict = {
+            "hidden_states": noisy_latents_input.to(model_dtype),
+            "timestep": timesteps.to(model_dtype),
+            "encoder_hidden_states": prompt_embeds.to(model_dtype),
+        }
+        if self._forward_mode == "full":
+            forward_kwargs["pooled_projections"] = (
+                pooled_prompt_embeds.to(model_dtype)
+                if pooled_prompt_embeds is not None
+                else torch.zeros(batch_size, 768, device=device, dtype=model_dtype)
+            )
+            if text_ids is not None:
+                forward_kwargs["txt_ids"] = text_ids.to(model_dtype)
+            if img_ids is not None:
+                forward_kwargs["img_ids"] = img_ids.to(model_dtype)
+
+        if self._use_direct_forward:
+            predicted_velocity = self._direct_forward(forward_kwargs)
+        else:
+            try:
+                predicted_velocity = self.peft_model(**forward_kwargs)
+            except TypeError as e:
+                if "input_ids" in str(e):
+                    if not getattr(self, "_peft_misroute_warned", False):
+                        logger.warning(
+                            "PEFT wrapper mis-routed forward call (%s); "
+                            "falling back to unwrapped transformer forward. "
+                            "(This warning is shown only once.)", e
+                        )
+                        self._peft_misroute_warned = True
+                    self._use_direct_forward = True
+                    predicted_velocity = self._direct_forward(forward_kwargs)
+                else:
+                    raise
+
+        if hasattr(predicted_velocity, "sample"):
+            predicted_velocity = predicted_velocity.sample
+
+        # Handle FLUX packed output: [B, (H/2)*(W/2), C*4] -> [B, C, H, W]
+        if predicted_velocity.dim() == 3:
+            # Unpack using the original latent spatial dims
+            # Infer H, W from the packed sequence length
+            seq_len = predicted_velocity.shape[1]
+            # packed_h * packed_w = seq_len, and H = 2*packed_h
+            import math
+            side = int(math.isqrt(seq_len))
+            if side * side == seq_len:
+                predicted_velocity = self._unpack_latents(predicted_velocity, side * 2, side * 2)
+
+        return predicted_velocity
+
+    def _forward_registry(
+        self, noisy_latents_input, timesteps, prompt_embeds,
+        pooled_prompt_embeds, attention_mask,
+        model_dtype, device,
+    ) -> torch.Tensor:
+        """Registry-based forward pass for non-FLUX models.
+
+        Uses backbone_forward() from the model registry which handles
+        architecture-specific calling conventions for Qwen-Image, Z-Image,
+        SANA, Lumina2, HunyuanDiT, PixArt, SD1.5/2.1, SDXL, etc.
+        """
+        from ..model_registry import backbone_forward
+
+        # Cast inputs to model dtype
+        noisy_latents_input = noisy_latents_input.to(model_dtype)
+        timesteps = timesteps.to(model_dtype)
+        prompt_embeds = prompt_embeds.to(model_dtype)
+        if pooled_prompt_embeds is not None:
+            pooled_prompt_embeds = pooled_prompt_embeds.to(model_dtype)
+        if attention_mask is not None and isinstance(attention_mask, torch.Tensor):
+            attention_mask = attention_mask.to(model_dtype)
+
+        # Get guidance scale for models that need it
+        guidance = None
+        if self.model_config.needs_guidance_in_forward:
+            guidance = self.model_config.default_guidance_scale
+
+        # Use PEFT-wrapped model as the backbone
+        backbone = self.peft_model
+
+        # Handle PEFT mis-route for non-FLUX models too
+        if self._use_direct_forward:
+            # Bypass PEFT wrapper, call underlying model directly
+            transformer = self.peft_model.base_model.model  # type: ignore[union-attr]
+            from diffusers.utils.peft_utils import scale_lora_layers, unscale_lora_layers
+            scale_lora_layers(transformer, 1.0)
+            try:
+                predicted_velocity = backbone_forward(
+                    backbone=transformer,
+                    latents=noisy_latents_input,
+                    timesteps=timesteps,
+                    encoder_hidden_states=prompt_embeds,
+                    config=self.model_config,
+                    guidance=guidance,
+                    attention_mask=attention_mask,
+                    pooled_embeds=pooled_prompt_embeds,
+                )
+            finally:
+                unscale_lora_layers(transformer, 1.0)
+        else:
+            try:
+                predicted_velocity = backbone_forward(
+                    backbone=backbone,
+                    latents=noisy_latents_input,
+                    timesteps=timesteps,
+                    encoder_hidden_states=prompt_embeds,
+                    config=self.model_config,
+                    guidance=guidance,
+                    attention_mask=attention_mask,
+                    pooled_embeds=pooled_prompt_embeds,
+                )
+            except TypeError as e:
+                if "input_ids" in str(e):
+                    logger.warning(
+                        "PEFT mis-route detected for %s; bypassing wrapper.",
+                        self.model_config.family,
+                    )
+                    self._use_direct_forward = True
+                    transformer = self.peft_model.base_model.model  # type: ignore[union-attr]
+                    from diffusers.utils.peft_utils import scale_lora_layers, unscale_lora_layers
+                    scale_lora_layers(transformer, 1.0)
+                    try:
+                        predicted_velocity = backbone_forward(
+                            backbone=transformer,
+                            latents=noisy_latents_input,
+                            timesteps=timesteps,
+                            encoder_hidden_states=prompt_embeds,
+                            config=self.model_config,
+                            guidance=guidance,
+                            attention_mask=attention_mask,
+                            pooled_embeds=pooled_prompt_embeds,
+                        )
+                    finally:
+                        unscale_lora_layers(transformer, 1.0)
+                else:
+                    raise
+
+        if hasattr(predicted_velocity, "sample"):
+            predicted_velocity = predicted_velocity.sample
+
+        return predicted_velocity
 
     def _compute_flow_loss(
         self,

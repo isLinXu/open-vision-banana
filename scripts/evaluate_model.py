@@ -447,7 +447,7 @@ def main() -> int:
         logger.info("Dtype       : %s", args.dtype)
         logger.info("Batch size  : %d", args.batch_size)
         logger.info("Resolution  : %d", args.resolution)
-        logger.info("DDP         : %s", "enabled (world_size=%d)" % world_size if use_ddp else "disabled")
+        logger.info("DDP         : %s", f"enabled (world_size={world_size})" if use_ddp else "disabled")
         logger.info("Resume      : %s", args.resume_state or "no")
 
     # ── 加载模型 ──────────────────────────────────────────────────────
