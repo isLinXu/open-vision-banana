@@ -2,7 +2,7 @@
 
 **Image Generators are Generalist Vision Learners** — Open-source implementation of Vision Banana.
 
-Vision Banana demonstrates that state-of-the-art visual understanding can emerge from image generation pretraining. By instruction-tuning FLUX.1 [schnell] on a mixture of its original training data alongside a small amount of vision task data, we obtain a model that achieves SOTA zero-shot transfer on segmentation, depth estimation, and surface normal estimation — all through the lens of image generation.
+Vision Banana demonstrates that state-of-the-art visual understanding can emerge from image generation pretraining. By instruction-tuning diffusion models (FLUX.1, ZImage, Qwen-Image, SANA, and more) on a mixture of their original training data alongside a small amount of vision task data, we obtain models that achieve SOTA zero-shot transfer on segmentation, depth estimation, and surface normal estimation — all through the lens of image generation.
 
 ## Core Idea
 
@@ -31,18 +31,18 @@ Vision Banana demonstrates that state-of-the-art visual understanding can emerge
 ┌─────────────────────────────────────────────────────────┐
 │                      Vision Banana                       │
 │                                                          │
-│  ┌─────────────┐   ┌─────────────┐   ┌──────────────┐  │
-│  │Prompt Builder│──▶│  FLUX.1     │──▶│  RGB Output  │  │
-│  │             │   │  [schnell]   │   │              │  │
-│  └─────────────┘   └─────────────┘   └──────────────┘  │
-│         │                │               │              │
-│         ▼                ▼               ▼              │
-│    Depth Decoder   Normal Decoder   Segmentation Decoder│
+│  ┌─────────────┐   ┌─────────────────────────┐   ┌──────┐│
+│  │Prompt Builder│──▶│  Diffusion Model        │──▶│ RGB  ││
+│  │             │   │  (FLUX.1 / ZImage /       │   │Output││
+│  └─────────────┘   │   Qwen-Image / SANA ...) │   └──────┘│
+│         │          └─────────────────────────┘      │    │
+│         ▼                │                         ▼    │
+│    Depth Decoder    Backbone (Transformer/UNet) Segmentation Decoder│
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │          Instruction Tuning (rsLoRA)             │   │
 │  │  ┌─────────────────────────────────────────┐     │   │
-│  │  │ LoRA rank=64, alpha=128                │     │   │
+│  │  │ LoRA rank=32~64, alpha=64~128          │     │   │
 │  │  │ rsLoRA scaling: α/√r                   │     │   │
 │  │  │ Data mix: 9:1 vision-to-language        │     │   │
 │  │  │ Params trained: 0.5%-1% of total        │     │   │
@@ -80,6 +80,8 @@ pip install -e ".[all]"
 
 ## Quick Start
 
+> 📖 **GPU Training Guide**: See [`docs/quick-start.md`](docs/quick-start.md) for the complete H20 / A100 / RTX training quick-start with copy-paste commands.
+
 ### Core Algorithms (no GPU required)
 
 ```python
@@ -104,13 +106,20 @@ decoder = SegmentationDecoder()
 instances = decoder.decode_instance(rgb)
 ```
 
-### Inference (requires GPU + 24GB VRAM)
+### Inference (requires GPU + 16-24GB VRAM)
 
 ```python
 from open_vision_banana import VisionBanana
 
 # Load model (local path, hf:repo/id, or registry:alias)
+# Supported models: flux-schnell, z-image, qwen-image, sana-600m, lumina2, chroma, etc.
 model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
+
+# Or specify a different base model (default is FLUX.1-schnell)
+model = VisionBanana.from_pretrained(
+    lora_path="path/to/checkpoint",
+    model_name="z-image",  # or "qwen-image", "sana-600m", etc.
+)
 
 # 16GB GPU: enable CPU offload
 model = VisionBanana.from_pretrained(
@@ -121,6 +130,17 @@ model = VisionBanana.from_pretrained(
 # Depth estimation
 result = model.predict(image=input_image, task="depth")
 ```
+
+**Supported Base Models** (via model registry):
+
+| Model | Family | Size | License | VRAM |
+|-------|--------|------|---------|------|
+| FLUX.1-schnell | flux | 12B | Apache-2.0 | ~24GB |
+| Z-Image-Turbo | z-image | 6B | Apache-2.0 | ~24GB |
+| Qwen-Image | qwen-image | ~6B | Apache-2.0 | ~24GB |
+| SANA-600M | sana | 600M | Apache-2.0 | ~12GB |
+| Lumina2 | lumina2 | ~3B | Apache-2.0 | ~16GB |
+| Chroma | chroma | ~3B | MIT | ~16GB |
 
 CLI with memory optimizations:
 
@@ -247,6 +267,26 @@ python scripts/publish_to_hub.py \
 
 ### Training
 
+> **Production Tip**: Use `scripts/unified_launch.sh` for all training modes — it auto-detects your GPU type and recommends the best strategy. See [`docs/quick-start.md`](docs/quick-start.md) for the complete GPU training guide (H20 / A100 / RTX).
+
+```bash
+# ─── Recommended: Universal launcher (auto-detects GPU & mode) ───
+bash scripts/unified_launch.sh --config configs/unified_training_config.yaml
+
+# Override mode manually
+bash scripts/unified_launch.sh --mode ddp     --config configs/training_config.yaml
+bash scripts/unified_launch.sh --mode fsdp    --config configs/training_config.yaml --gradient-checkpointing
+bash scripts/unified_launch.sh --mode deepspeed --config configs/training_config.yaml
+
+# Dry-run preview (no execution)
+bash scripts/unified_launch.sh --config configs/unified_training_config.yaml --dry-run
+
+# Environment variable overrides
+OVB_BATCH_SIZE=4 OVB_LR=1e-4 bash scripts/unified_launch.sh --config configs/training_config.yaml
+```
+
+**Legacy direct training** (for custom scripts or debugging):
+
 ```bash
 # Basic training with validation + early stopping
 python scripts/train.py \
@@ -278,6 +318,27 @@ deepspeed --num_gpus=8 scripts/train.py \
   --data-path vision_data/ --gradient-checkpointing \
   --batch-size 2 --epochs 10
 ```
+
+**Hardware-specific quick launch** (see `docs/quick-start.md` for full details):
+
+| GPU | VRAM | Config | Launcher |
+|-----|------|--------|----------|
+| H20 | 96GB | `configs/training_h20_single.yaml` | `bash scripts/launch_h20_single.sh` |
+| H20 ×8 | 96GB×8 | `configs/training_h20_ddp_8x.yaml` | `bash scripts/launch_h20_ddp.sh` |
+| A100-80GB | 80GB | `configs/training_a100_80g.yaml` | `bash scripts/launch_training_a100_80g.sh` |
+| A100-40GB | 40GB | `configs/training_a100_40g_deepspeed.yaml` | `bash scripts/train_a100_40g_deepspeed.sh` |
+| RTX 4090 | 24GB | `configs/unified_training_config.yaml` | `bash scripts/unified_launch.sh --mode deepspeed` |
+| MPS (Apple) | Unified | `configs/training_mps.yaml` | `bash scripts/unified_launch.sh --mode mps` |
+
+**Multi-model training** (train on ZImage, Qwen-Image, SANA, etc.):
+
+```bash
+# Train on Z-Image-Turbo instead of FLUX.1
+sed -i 's|black-forest-labs/FLUX.1-schnell|z-image|g' configs/unified_training_config.yaml
+bash scripts/unified_launch.sh --config configs/unified_training_config.yaml
+```
+
+All registered models: `flux-schnell`, `z-image`, `qwen-image`, `sana-600m`, `sana-1600m`, `lumina2`, `chroma`, `sdxl`, `sd3`, `pixart`, `cogview4`, `flux2-dev`, ...
 
 Generation dataset layout for 9:1 mix:
 
@@ -372,11 +433,14 @@ open-vision-banana/
 ├── src/open_vision_banana/
 │   ├── __init__.py              # Lazy imports, version
 │   ├── config.py                # Hierarchical config (8 sub-configs)
+│   ├── model_registry.py        # Multi-model registry (18+ families: FLUX, ZImage, Qwen, SANA, Lumina2...)
 │   ├── core/                    # Core algorithms (no external deps)
 │   │   ├── depth_mapper.py      # Power transform + 6 colormaps (cube-edge, plasma, inferno, viridis, grayscale, rainbow)
-│   │   ├── adaptive_depth_mapper.py  # Adaptive quantization mapper (roundtrip error ~0.45%)
+│   │   ├── adaptive_depth_mapper.py  # Adaptive quantization mapper (roundtrip error ~0.34%)
 │   │   ├── normal_mapper.py     # Linear normal ↔ RGB mapping
-│   │   ├── segmentation.py      # 5-stage instance segmentation decoder (adjacent + seed-based Union-Find)
+│   │   ├── segmentation/        # 5-stage instance segmentation decoder
+│   │   │   ├── decoder.py       # Adjacent + seed-based Union-Find
+│   │   │   └── utils.py         # Segmentation utilities
 │   │   ├── edge_mapper.py       # Edge detection: white edges on black background
 │   │   ├── flow_mapper.py       # Optical flow: HSV → RGB encoding/decoding
 │   │   ├── keypoint_mapper.py   # 2D keypoint detection: colored dots (speculative)
@@ -386,13 +450,13 @@ open-vision-banana/
 │   │   └── rgb_mapper.py       # Unified encode/decode interface for 10 tasks
 │   ├── inference/               # Model loading and generation
 │   │   ├── checkpoint.py        # LoRA checkpoint resolution (local / HF / registry)
-│   │   ├── generator.py         # FLUX.1 + LoRA wrapper
+│   │   ├── generator.py         # Multi-model + LoRA wrapper (18+ families)
 │   │   ├── pipeline.py          # VisionBanana unified model (10 tasks)
 │   │   ├── prompt.py            # Task-specific prompt builder (10 tasks)
 │   │   ├── decoder.py           # Visualization decoder (10 tasks)
 │   │   └── optimization.py      # Inference optimization presets + INT8 quantization
 │   ├── training/                # LoRA instruction tuning
-│   │   ├── tuner.py             # InstructionTuner + VisionTaskDataset
+│   │   ├── tuner.py             # InstructionTuner + VisionTaskDataset (multi-model aware)
 │   │   ├── trainer_interface.py # TrainerInterface ABC + 5 backends (Native/DDP/FSDP/DeepSpeed/Accelerate)
 │   │   ├── checkpoint.py        # CheckpointManager
 │   │   ├── early_stopping.py    # EarlyStopping with best-checkpoint saving
@@ -400,7 +464,9 @@ open-vision-banana/
 │   │   ├── lr_finder.py         # Learning rate finder
 │   │   ├── utils.py             # EMA, VisionAugmentation, gradient checkpointing
 │   │   ├── fsdp_utils.py        # FSDP wrapper (save/load with CPU offload)
-│   │   └── deepspeed_utils.py   # DeepSpeed ZeRO-3 initialization
+│   │   ├── deepspeed_utils.py   # DeepSpeed ZeRO-3 initialization
+│   │   ├── latent_cache.py      # Latent caching for faster training
+│   │   └── optimization.py      # Training optimization utilities
 │   ├── evaluation/              # Metrics for all vision tasks
 │   │   ├── depth.py             # AbsRel, SqRel, RMSE, δ thresholds
 │   │   ├── normal.py            # Angular error, cosine similarity
@@ -420,73 +486,6 @@ open-vision-banana/
 │       ├── validation.py        # Dataset integrity validation
 │       ├── generation.py        # GenerationDataset (synthetic / FLUX modes)
 │       └── generation_builder.py # Generation dataset builder
-├── tests/                       # 467 tests, 79% coverage
-│   ├── test_modules.py          # Core algorithm tests
-│   ├── test_training_utils.py   # Training utility tests
-│   ├── test_training_features.py # InstructionTuner + early stopping + split
-│   ├── test_training_logging.py # TrainingLogger (W&B / TB)
-│   ├── test_checkpoint_manager.py # CheckpointManager (22 tests)
-│   ├── test_evaluation.py       # Evaluation metric tests
-│   ├── test_evaluator.py        # VisionEvaluator (26 tests)
-│   ├── test_e2e.py              # ONNX export verification
-│   ├── test_onnx_export.py      # ONNX + TorchScript (21 tests)
-│   ├── test_colormap_enhancement.py    # Multi-colormap roundtrip tests
-│   ├── test_seed_based_segmentation.py # Seed-based Union-Find tests
-│   ├── test_segmentation_v040.py # S4 pre-filter + S5 vectorized merge tests
-│   ├── test_adaptive_depth.py   # Adaptive depth mapper (13 tests)
-│   ├── test_edge_mapper.py      # Edge detection tests
-│   ├── test_flow_mapper.py      # Optical flow tests
-│   ├── test_keypoint_mapper.py  # Keypoint detection tests
-│   ├── test_object_detection_mapper.py # Object detection tests
-│   ├── test_depth_edge_mapper.py # Depth edge tests
-│   ├── test_datasets.py         # Dataset loaders (32 tests)
-│   ├── test_data_config.py      # Data + config tests
-│   ├── test_validation.py       # Dataset validation tests
-│   ├── test_optimization.py     # Inference optimization presets
-│   ├── test_optimizations_v021.py # v0.2.1 P0/P1/P2 fixes
-│   ├── test_v03_features.py     # v0.3.0 feature tests
-│   ├── test_v03_coverage.py     # v0.3.x coverage tests
-│   ├── test_v032_features.py    # v0.3.2 FSDP/preset/validation tests
-│   ├── test_baselines.py        # SOTA baseline comparison
-│   ├── test_deepspeed.py        # DeepSpeed trainer tests
-│   ├── test_fsdp.py             # FSDP trainer tests
-│   ├── test_generation_builder.py # Generation dataset builder tests
-│   ├── test_integration.py      # Integration tests
-│   ├── test_phase2.py           # Phase 2 feature tests
-│   └── test_prepare_hypersim.py # Hypersim preprocessing tests
-├── configs/
-│   ├── training_config.yaml     # Default training configuration
-│   ├── checkpoint_registry.yaml # Hugging Face LoRA checkpoint aliases
-│   ├── optimization_presets.yaml # Inference optimization presets (5 profiles)
-│   └── deepspeed_zero3.json     # DeepSpeed ZeRO-3 config
-├── scripts/
-│   ├── demo.py                  # Algorithm demo (no GPU needed)
-│   ├── validate_data.py         # Dataset format validation
-│   ├── build_generation_dataset.py  # Synthetic / FLUX generation data builder
-│   ├── download_data.py          # Dataset downloader with registry
-│   ├── download_checkpoint.py   # Hugging Face LoRA download
-│   ├── prepare_hypersim.py      # Hypersim data preprocessing
-│   ├── optimize_inference.py    # Inference optimization helper
-│   ├── benchmark_pipeline.py    # End-to-end pipeline benchmark
-│   ├── visualize_attention.py   # Attention map visualization
-│   ├── publish_to_hub.py        # Publish LoRA to Hugging Face Hub
-│   ├── train.py                 # Training script
-│   ├── train_ddp.sh             # DDP launch script
-│   ├── train_fsdp.sh            # FSDP launch script
-│   ├── evaluate.py              # Evaluation script
-│   └── inference.py             # Inference script
-├── docker/                      # Docker images
-│   ├── Dockerfile               # CPU image
-│   ├── Dockerfile.gpu           # GPU image (CUDA 12.1)
-│   └── docker-compose.yml       # 4 services (dev/training/inference/notebook)
-├── docs/                        # Documentation
-│   ├── VISION_BANANA_PAPER_ALIGNMENT_REPORT_v3.md  # Paper alignment report (95%)
-│   └── DATASET_RESEARCH_REPORT.md                  # Full dataset research guide
-├── experiments/                 # Benchmark and ablation experiments
-├── notebooks/                   # Colab demo notebook
-├── templates/                   # Model card template
-├── paper/                       # Reference paper
-└── pyproject.toml               # pip-installable package config
 ```
 
 ## Key Algorithms
@@ -521,10 +520,11 @@ From Appendix A of the paper:
 
 ### 4. Instruction Tuning (rsLoRA)
 
-- LoRA rank=64, alpha=128 with rsLoRA scaling (α/√r)
+- LoRA rank=32~64, alpha=64~128 with rsLoRA scaling (α/√r) — model-family aware defaults
 - 9:1 visual-to-language data mixing ratio
 - Only 0.5%-1% of total parameters trained
 - Preserves 90%+ generation capability
+- Supports 18+ model families via unified registry
 
 ## Benchmarks (from paper)
 
@@ -669,21 +669,69 @@ mixed_ds = MixedVisionDataset(
 
 For the full dataset research report (including all download links, license details, and preprocessing pipelines), see [`DATASET_RESEARCH_REPORT.md`](DATASET_RESEARCH_REPORT.md).
 
-### Distributed Training (DDP / FSDP)
+### Distributed Training (DDP / FSDP / DeepSpeed)
+
+```bash
+# ─── H20 (96GB) ───
+# Single GPU
+bash scripts/launch_h20_single.sh --data-path vision_data/ --epochs 5
+
+# 8× H20 DDP
+bash scripts/launch_h20_ddp.sh --data-path /shared/data
+
+# 8× H20 FSDP (max throughput, 1024² resolution)
+bash scripts/launch_h20_fsdp.sh --data-path /shared/data --gradient-checkpointing
+
+# Multi-node 2×8 H20
+# Node 0 (master):
+bash scripts/launch_h20_ddp.sh \
+    --nodes 2 --node-rank 0 \
+    --master-addr 10.0.0.1 \
+    --data-path /shared/data
+# Node 1 (worker):
+bash scripts/launch_h20_ddp.sh \
+    --nodes 2 --node-rank 1 \
+    --master-addr 10.0.0.1 \
+    --data-path /shared/data
+
+# ─── A100-80GB ───
+# Unified auto-launcher
+bash scripts/launch_training_a100_80g.sh --data-path /shared/data
+
+# 8× A100 DDP
+bash scripts/launch_training_a100_80g_ddp.sh \
+    --config configs/training_a100_80g.yaml
+
+# 8× A100 FSDP + gradient-checkpointing
+bash scripts/launch_training_a100_80g_fsdp.sh --gradient-checkpointing
+
+# ─── A100-40GB (must use DeepSpeed ZeRO-3) ───
+# 8× A100 production
+bash scripts/train_a100_40g_deepspeed.sh \
+    --mode multi \
+    --data-path /shared/data \
+    --wandb \
+    --wandb-run-name "a100_40g_depth_v1"
+
+# Single-card debug (auto CPU offload)
+bash scripts/train_a100_40g_deepspeed.sh \
+    --mode single \
+    --data-path /data/small
+```
+
+**Legacy launch scripts** (still available):
 
 ```bash
 # DDP — single node, 4 GPUs
 bash scripts/train_ddp.sh --data-path vision_data/ --epochs 5
 
-# FSDP — single node, 8 GPUs (recommended for FLUX.1 12B)
+# FSDP — single node, 8 GPUs
 bash scripts/train_fsdp.sh --nodes 1 --gpus-per-node 8 \
   --data-path vision_data/ --epochs 5 --gradient-checkpointing
 
 # Multi-node FSDP (2 nodes × 8 GPUs)
-# Node 0 (master):
 bash scripts/train_fsdp.sh --nodes 2 --node-rank 0 \
   --master-addr 10.0.0.1 --data-path /shared/vision_data/
-# Node 1:
 bash scripts/train_fsdp.sh --nodes 2 --node-rank 1 \
   --master-addr 10.0.0.1 --data-path /shared/vision_data/
 ```
@@ -700,8 +748,11 @@ python scripts/validate_dataset.py --data-path vision_data/ --task all --output 
 ### Inference Optimization Presets
 
 ```bash
+# List available presets and VRAM impact
+python scripts/optimize_inference.py --list-presets
+
 # Use a preset profile (balanced | speed | memory | quality | cpu)
-python scripts/optimize_inference.py --preset configs/optimization_presets.yaml --profile balanced
+python scripts/optimize_inference.py --profile balanced --run --image data/sample.jpg --task depth
 
 # Profiles:
 #   balanced  — A10 / RTX 3090, model CPU offload + float16
@@ -730,6 +781,7 @@ docker compose -f docker/docker-compose.yml up notebook # Jupyter on :8888
 
 See `docker/README.md` for GPU requirements, troubleshooting, and multi-stage build details.
 
+```bash
 # Core algorithms (CPU)
 docker run --rm open-vision-banana:latest \
   python -c "from open_vision_banana.core import DepthRGBMapper; print('ok')"
