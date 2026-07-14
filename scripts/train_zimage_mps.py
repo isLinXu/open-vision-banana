@@ -54,10 +54,12 @@ def main():
     parser.add_argument("--save-every", type=int, default=50, help="Save every N steps")
     parser.add_argument("--log-every", type=int, default=5, help="Log every N steps")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size")
-    parser.add_argument("--grad-accum", type=int, default=4, help="Gradient accumulation steps")
+    parser.add_argument("--grad-accum", type=int, default=8, help="Gradient accumulation steps")
     parser.add_argument("--rank", type=int, default=128, help="LoRA rank")
     parser.add_argument("--alpha", type=int, default=256, help="LoRA alpha")
-    parser.add_argument("--resolution", type=int, default=256, help="Training resolution")
+    parser.add_argument("--resolution", type=int, default=384, help="Training resolution")
+    parser.add_argument("--balance-data", action="store_true", default=True,
+                        help="Balance task sampling (oversample minority tasks)")
     parser.add_argument("--no-ema", action="store_true", help="Disable EMA")
     parser.add_argument("--resume", action="store_true", help="Auto-resume from latest checkpoint")
     parser.add_argument("--resume-from", type=str, default=None, help="Resume from specific checkpoint dir")
@@ -211,10 +213,37 @@ def main():
         logger.error("No training data found! Run scripts/prepare_zimage_data.py first.")
         sys.exit(1)
 
-    # Combine all datasets
+    # Combine all datasets with balanced sampling
     from torch.utils.data import ConcatDataset
-    combined = ConcatDataset(datasets) if len(datasets) > 1 else datasets[0]
-    total_samples = len(combined)
+    if len(datasets) > 1:
+        if args.balance_data:
+            # WeightedRandomSampler: oversample minority tasks to balance
+            from torch.utils.data import WeightedRandomSampler
+            dataset_sizes = [len(d) for d in datasets]
+            max_size = max(dataset_sizes)
+            weights = []
+            for ds, sz in zip(datasets, dataset_sizes):
+                # Each sample in this task gets weight inversely proportional to task size
+                w = max_size / sz  # minority tasks get higher weight
+                weights.extend([w] * sz)
+            combined = ConcatDataset(datasets)
+            sampler = WeightedRandomSampler(
+                weights=weights, num_samples=len(combined), replacement=True
+            )
+            logger.info(f"Data balanced: " + ", ".join(
+                f"{name}={max_size / sz:.1f}x" for name, sz in
+                zip(["depth", "seg", "edge", "gen"], dataset_sizes) if sz > 0
+            ))
+            # With sampler, steps_per_epoch = total_samples (not affected by sampling)
+            total_samples = len(combined)
+        else:
+            combined = ConcatDataset(datasets)
+            sampler = None
+            total_samples = len(combined)
+    else:
+        combined = datasets[0]
+        sampler = None
+        total_samples = len(combined)
     logger.info(f"Total training samples: {total_samples}")
 
     # ─── Training ────────────────────────────────────────────────────────
@@ -226,9 +255,9 @@ def main():
     total_steps = args.epochs * steps_per_epoch
     if args.max_steps is not None:
         total_steps = min(total_steps, args.max_steps)
-    warmup_steps = min(100, max(1, total_steps // 10))
+    warmup_steps = min(200, max(1, total_steps // 10))  # 200 warmup for larger config
 
-    # Limit dataset to max_steps * grad_accum samples for early stopping
+    # Limit dataset to max_steps * grad_accum samples for early stopping (debug mode)
     if args.max_steps is not None:
         max_samples = args.max_steps * args.grad_accum
         if total_samples > max_samples:
@@ -236,6 +265,7 @@ def main():
             indices = list(range(max_samples))
             combined = Subset(combined, indices)
             total_samples = len(combined)
+            sampler = None  # Disable sampler in debug mode to avoid index mismatch
             logger.info(f"Limited dataset to {total_samples} samples for {args.max_steps} steps")
 
     logger.info(f"Starting training: {args.epochs} epochs, {total_samples} samples, "
@@ -297,6 +327,7 @@ def main():
         log_every=args.log_every,
         start_step=start_step,
         start_epoch=start_epoch,
+        train_sampler=sampler,
     )
 
     logger.info(f"Training complete! Result: {result}")

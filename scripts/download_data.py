@@ -309,8 +309,30 @@ def prepare_refcocog_referring(raw_dir: Path, output_dir: Path) -> int:
     return written
 
 
+def prepare_blendedmvs_depth(raw_dir: Path, output_dir: Path) -> int:
+    """Prepare BlendedMVS depth data from raw download.
+
+    Expects raw_dir to contain scene PID directories with blended_images/
+    and rendered_depth_maps/ subdirectories.
+    """
+    from prepare_blendedmvs import prepare_blendedmvs
+    return prepare_blendedmvs(raw_dir, output_dir, resolution=None, overwrite=False)
+
+
+def prepare_tartanair_depth(raw_dir: Path, output_dir: Path) -> int:
+    """Prepare TartanAir synthetic depth data from raw download.
+
+    Expects raw_dir to contain extracted TartanAir environments with
+    image_left/ and depth_left/ folders per trajectory.
+    """
+    from prepare_tartanair import prepare_tartanair
+    return prepare_tartanair(raw_dir, output_dir, resolution=None, overwrite=False)
+
+
 # Register preparation functions
 DATASET_REGISTRY["hypersim-depth"].prepare_fn = prepare_hypersim_depth
+DATASET_REGISTRY["blendedmvs-depth"].prepare_fn = prepare_blendedmvs_depth
+DATASET_REGISTRY["tartanair-depth"].prepare_fn = prepare_tartanair_depth
 DATASET_REGISTRY["scannet-normal"].prepare_fn = prepare_scannet_normal
 DATASET_REGISTRY["cityscapes-seg"].prepare_fn = prepare_cityscapes_seg
 DATASET_REGISTRY["refcocog-referring"].prepare_fn = prepare_refcocog_referring

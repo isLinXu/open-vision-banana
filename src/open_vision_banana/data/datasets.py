@@ -607,6 +607,171 @@ class DIODEDataset(BaseVisionDataset):
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
 
+class BlendedMVSDepthDataset(BaseVisionDataset):
+    """BlendedMVS dataset for synthetic metric depth estimation.
+
+    BlendedMVS provides **entirely synthetic depth data from Blender simulation
+    engines** — zero real-world depth data. This makes it ideal for training
+    depth estimation models when the paper mandates simulation-only depth.
+
+    The dataset contains 502 scenes with rendered RGB images and dense
+    ground-truth depth maps in PFM format. Some depth maps may be empty
+    (incomplete textured mesh); these are automatically filtered.
+
+    Expected directory structure (raw BlendedMVS layout)::
+
+        root_dir/
+          <PID>/
+            blended_images/
+              00000000.jpg
+              00000001.jpg
+              ...
+            rendered_depth_maps/
+              00000000.pfm
+              00000001.pfm
+              ...
+
+    Or pre-processed layout (after prepare_blendedmvs.py)::
+
+        root_dir/
+          images/    ← RGB input images (*.png)
+          targets/   ← Depth encoded as RGB via DepthRGBMapper
+
+    Depth values are in metric meters (float32 PFM from simulation).
+    """
+
+    TASK_TYPE = "depth"
+
+    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+        self.depth_mapper = DepthRGBMapper()
+        super().__init__(root_dir, split, resolution, **kwargs)
+
+    @staticmethod
+    def _read_pfm(path: Path) -> np.ndarray | None:
+        """Read a PFM depth file and return the depth array.
+
+        PFM format (grayscale, little-endian):
+            Pf
+            <width> <height>
+            <scale>   (negative = little-endian)
+            <raw float32 data>
+        """
+        import struct
+
+        try:
+            with open(path, "rb") as f:
+                header = f.readline().strip()
+                if header not in (b"Pf", b"PF"):
+                    return None
+                is_color = header == b"PF"
+
+                dims = f.readline().strip()
+                while dims.startswith(b"#") or dims == b"":
+                    dims = f.readline().strip()
+                width, height = map(int, dims.split())
+
+                scale_line = f.readline().strip()
+                scale = float(scale_line)
+                endian = "<" if scale < 0 else ">"
+
+                num_channels = 3 if is_color else 1
+                num_floats = width * height * num_channels
+                expected_bytes = num_floats * 4
+                raw = f.read()
+                if len(raw) < expected_bytes:
+                    return None
+
+                arr = np.frombuffer(raw, dtype=f"{endian}f4")
+                if len(arr) != num_floats:
+                    return None
+
+                if is_color:
+                    arr = arr.reshape((height, width, 3))[..., 0]
+                else:
+                    arr = arr.reshape((height, width))
+
+                arr = np.flipud(arr).copy()  # PFM stores bottom-to-top
+                return arr
+        except Exception:
+            return None
+
+    def _scan_raw(self) -> None:
+        """Scan raw BlendedMVS PID directory structure."""
+        for pid_dir in sorted(self.root_dir.rglob("*")):
+            if not pid_dir.is_dir():
+                continue
+            img_dir = pid_dir / "blended_images"
+            depth_dir = pid_dir / "rendered_depth_maps"
+            if not img_dir.exists() or not depth_dir.exists():
+                continue
+            for img_path in sorted(img_dir.glob("*.jpg")):
+                if "_masked" in img_path.stem:
+                    continue
+                depth_path = depth_dir / (img_path.stem + ".pfm")
+                if depth_path.exists():
+                    self.samples.append({"image": img_path, "target": depth_path})
+
+    def _scan_preprocessed(self) -> None:
+        """Scan pre-processed images/ + targets/ layout."""
+        img_dir = self.root_dir / "images"
+        tgt_dir = self.root_dir / "targets"
+        if not img_dir.exists() or not tgt_dir.exists():
+            return
+        for img_path in sorted(img_dir.iterdir()):
+            if img_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                continue
+            tgt_path = tgt_dir / (img_path.stem + ".png")
+            if not tgt_path.exists():
+                tgt_path = tgt_dir / (img_path.stem + ".jpg")
+            if tgt_path.exists():
+                self.samples.append({"image": img_path, "target": tgt_path})
+
+    def _scan(self) -> None:
+        if not self.root_dir.exists():
+            logger.warning(f"BlendedMVS directory not found: {self.root_dir}")
+            return
+        # Prefer pre-processed layout if available
+        if (self.root_dir / "images").exists() and (self.root_dir / "targets").exists():
+            self._scan_preprocessed()
+        else:
+            self._scan_raw()
+        if not self.samples:
+            logger.warning(f"No BlendedMVS samples found in {self.root_dir}")
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        image = self._load_image(sample["image"])
+
+        target_path = sample["target"]
+        if target_path.suffix == ".pfm":
+            # Raw PFM depth
+            depth_arr = self._read_pfm(target_path)
+            if depth_arr is None:
+                # Fallback to zero depth on read failure
+                depth = torch.zeros(1, self.resolution, self.resolution)
+            else:
+                depth = torch.from_numpy(depth_arr).float().unsqueeze(0)
+                depth = torch.clamp(depth, min=0.0)
+                # Resize to target resolution
+                depth = torch.nn.functional.interpolate(
+                    depth.unsqueeze(0),
+                    size=(self.resolution, self.resolution),
+                    mode="nearest",
+                ).squeeze(0)
+            target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+        else:
+            # Pre-encoded RGB target
+            target_img = Image.open(target_path).convert("RGB")
+            if target_img.size != (self.resolution, self.resolution):
+                target_img = target_img.resize(
+                    (self.resolution, self.resolution), Image.Resampling.LANCZOS
+                )
+            target_rgb = _pil_to_tensor(target_img).float() / 255.0
+
+        prompt = PromptBuilder.build_depth_prompt()
+        return self._tag_task({"prompt": prompt, "image": image, "target_rgb": target_rgb})
+
+
 class KITTIDataset(BaseVisionDataset):
     """KITTI dataset for autonomous driving depth estimation.
 
@@ -926,6 +1091,87 @@ class ETH3DDataset(BaseVisionDataset):
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb, "valid_mask": valid_mask.squeeze(0)}
+
+
+class TartanAirDepthDataset(BaseVisionDataset):
+    """TartanAir dataset for metric depth estimation from synthetic UE4 scenes.
+
+    TartanAir provides entirely synthetic data from Unreal Engine 4 environments,
+    including RGB images, metric depth maps, semantic segmentation, optical flow,
+    and camera poses. This loader uses only the RGB and depth modalities,
+    ensuring zero real-world depth data — satisfying the paper requirement for
+    purely synthetic depth training data.
+
+    Expected directory structure (after extraction from official zip files)::
+
+        root_dir/
+          ENV_NAME/
+            Easy/
+              P000/
+                image_left/      ← 000000_left.png, 000001_left.png, ...
+                depth_left/      ← 000000_left_depth.npy, 000001_left_depth.npy, ...
+              P001/
+                ...
+            Hard/
+              ...
+          ENV_NAME_2/
+            ...
+
+    Depth values are metric meters (float32 .npy).
+    """
+
+    TASK_TYPE = "depth"
+
+    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+        self.depth_mapper = DepthRGBMapper()
+        super().__init__(root_dir, split, resolution, **kwargs)
+
+    def _scan(self) -> None:
+        if not self.root_dir.exists():
+            logger.warning(f"TartanAir directory not found: {self.root_dir}")
+            return
+
+        # Scan canonical TartanAir layout: image_left/ + depth_left/
+        for img_dir in sorted(self.root_dir.rglob("image_left")):
+            if not img_dir.is_dir():
+                continue
+            depth_dir = img_dir.parent / "depth_left"
+            if not depth_dir.is_dir():
+                continue
+            for img_path in sorted(img_dir.glob("*.png")):
+                depth_name = img_path.stem + "_depth.npy"
+                depth_path = depth_dir / depth_name
+                if depth_path.exists():
+                    self.samples.append({"image": img_path, "target": depth_path})
+
+        logger.info(
+            "TartanAir: found %d samples under %s", len(self.samples), self.root_dir
+        )
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        image = self._load_image(sample["image"])
+
+        # Load metric depth from .npy (float32, meters)
+        import numpy as np
+        depth_arr = np.load(sample["target"]).astype(np.float32)
+        if depth_arr.ndim > 2:
+            depth_arr = depth_arr.squeeze()
+        depth = torch.from_numpy(depth_arr).float().unsqueeze(0)
+
+        # Replace inf/NaN with 0
+        depth = torch.where(torch.isfinite(depth), depth, torch.zeros_like(depth))
+        depth = depth.clamp(min=0.0)
+
+        depth = torch.nn.functional.interpolate(
+            depth.unsqueeze(0),
+            size=(self.resolution, self.resolution),
+            mode="nearest",
+        ).squeeze(0)
+
+        target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+        prompt = PromptBuilder.build_depth_prompt()
+        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
 
 class OASISNormalDataset(BaseVisionDataset):
@@ -1735,11 +1981,13 @@ def build_dataset(
         # Extended datasets (Phase 1: 5 datasets)
         "nyu_depth": NYUDepthDataset,
         "diode": DIODEDataset,
+        "blendedmvs": BlendedMVSDepthDataset,
         "kitti": KITTIDataset,
         "ade20k": ADE20KDataset,
         "sintel": SintelFlowDataset,
         # Extended datasets (Phase 2: 8 more datasets)
         "eth3d": ETH3DDataset,
+        "tartanair": TartanAirDepthDataset,
         "oasis": OASISNormalDataset,
         "coco_detection": COCODetectionDataset,
         "coco_stuff": COCOStuffDataset,
@@ -1765,10 +2013,12 @@ __all__ = [
     "RefCOCOgDataset",
     "NYUDepthDataset",
     "DIODEDataset",
+    "BlendedMVSDepthDataset",
     "KITTIDataset",
     "ADE20KDataset",
     "SintelFlowDataset",
     "ETH3DDataset",
+    "TartanAirDepthDataset",
     "OASISNormalDataset",
     "COCODetectionDataset",
     "COCOStuffDataset",
