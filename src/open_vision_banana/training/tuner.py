@@ -232,7 +232,10 @@ class InstructionTuner:
         if target_modules is not None:
             self.target_modules = target_modules
         else:
-            self.target_modules = self.model_config.lora_target_modules or ["to_k", "to_v"]
+            self.target_modules = self.model_config.lora_target_modules or [
+                "to_q", "to_k", "to_v", "to_out.0",
+                "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2",
+            ]
             logger.info(f"Using model-specific LoRA targets: {self.target_modules}")
 
         self.channel_loss_weights = channel_loss_weights
@@ -628,6 +631,8 @@ class InstructionTuner:
         is_main_process: bool = True,
         start_step: int = 0,
         start_epoch: int = 0,
+        resume_checkpoint: str | Path | None = None,
+        restore_rng_on_resume: bool = False,
     ) -> dict:
         """Train the LoRA instruction alignment.
 
@@ -659,7 +664,9 @@ class InstructionTuner:
             collate_fn=_collate_fn,
         )
 
-        total_steps = len(train_loader) * epochs // gradient_accumulation_steps
+        total_steps = (
+            len(train_loader) * epochs + gradient_accumulation_steps - 1
+        ) // gradient_accumulation_steps
         scheduler = self._create_scheduler(scheduler_type, total_steps, warmup_steps)
 
         device_type = self._detect_device_type()
@@ -701,8 +708,30 @@ class InstructionTuner:
         best_val_loss: float | None = None
         stopped_early = False
 
-        # Fast-forward LR scheduler to the resume step
-        if start_step > 0:
+        scheduler_state_loaded = False
+        if resume_checkpoint is not None:
+            resume_path = Path(resume_checkpoint)
+            resume_root = resume_path.parent
+            resume_step = start_step
+            if resume_step <= 0 and resume_path.name.startswith("checkpoint-"):
+                try:
+                    resume_step = int(resume_path.name.split("-")[-1])
+                except ValueError:
+                    resume_step = None
+            resume_manager = CheckpointManager(str(resume_root))
+            resume_manager.load(
+                self.peft_model,
+                optimizer=self.optimizer,
+                ema=self.ema,
+                scheduler=scheduler,
+                step=resume_step,
+                restore_rng=restore_rng_on_resume,
+            )
+            scheduler_state_loaded = (resume_path / "scheduler.pt").exists()
+            logger.info("Loaded full training state from %s", resume_path)
+
+        # Only fast-forward when no scheduler state was restored.
+        if start_step > 0 and not scheduler_state_loaded:
             for _ in range(start_step):
                 scheduler.step()
             logger.info(f"Resumed LR scheduler to step {start_step}, lr={scheduler.get_last_lr()[0]:.2e}")
@@ -712,6 +741,7 @@ class InstructionTuner:
                 train_sampler.set_epoch(epoch)
             epoch_loss = 0.0
             num_steps = 0
+            accumulated_steps = 0
 
             for step, batch in enumerate(train_loader):
                 if use_trainer_interface:
@@ -720,37 +750,58 @@ class InstructionTuner:
                         device_type, enabled=use_amp, dtype=torch.bfloat16
                     ):
                         loss = self._training_step(batch)
+                    if not torch.isfinite(loss).all():
+                        raise FloatingPointError(
+                            f"Non-finite loss at epoch {epoch}, batch {step}"
+                        )
                     stepped = trainer.train_step(self.peft_model, loss, step)
+                    accumulated_steps += 1
                 elif use_deepspeed:
                     loss = self._training_step(batch)
+                    if not torch.isfinite(loss).all():
+                        raise FloatingPointError(
+                            f"Non-finite loss at epoch {epoch}, batch {step}"
+                        )
                     self.deepspeed_engine.backward(loss / gradient_accumulation_steps)
+                    accumulated_steps += 1
                     stepped = (step + 1) % gradient_accumulation_steps == 0
                     if stepped:
                         self.deepspeed_engine.step()
                         scheduler.step()
                         self.optimizer.zero_grad(set_to_none=True)
                         global_step += 1
+                        accumulated_steps = 0
                 else:
                     # ── Legacy native path (backward compat) ──
                     with torch.autocast(device_type, enabled=use_amp, dtype=torch.bfloat16):
                         loss = self._training_step(batch)
+                    if not torch.isfinite(loss).all():
+                        self.optimizer.zero_grad(set_to_none=True)
+                        raise FloatingPointError(
+                            f"Non-finite loss at epoch {epoch}, batch {step}"
+                        )
                     scaled_loss = scaler.scale(loss / gradient_accumulation_steps)
                     scaled_loss.backward()
 
                     epoch_loss += loss.item()
                     num_steps += 1
+                    accumulated_steps += 1
 
                     if (step + 1) % gradient_accumulation_steps == 0:
                         scaler.unscale_(self.optimizer)
-                        torch.nn.utils.clip_grad_norm_(self.peft_model.parameters(), max_grad_norm)
+                        torch.nn.utils.clip_grad_norm_(
+                            self.peft_model.parameters(),
+                            max_grad_norm,
+                            error_if_nonfinite=True,
+                        )
                         scaler.step(self.optimizer)
                         scaler.update()
                         scheduler.step()
                         self.optimizer.zero_grad(set_to_none=True)
                         global_step += 1
-
-                    if self.ema is not None:
-                        self.ema.update(self._ema_module())
+                        accumulated_steps = 0
+                        if self.ema is not None:
+                            self.ema.update(self._ema_module())
 
                     running_loss: float = float(epoch_loss) / max(num_steps, 1)
                     current_lr = float(scheduler.get_last_lr()[0])
@@ -782,6 +833,7 @@ class InstructionTuner:
                     if stepped:
                         scheduler.step()
                         global_step += 1
+                        accumulated_steps = 0
 
                         if self.ema is not None:
                             self.ema.update(self._ema_module())
@@ -813,7 +865,10 @@ class InstructionTuner:
                     and is_main_process
                     and global_step > 0
                     and global_step % save_every == 0
+                    and global_step > start_step
+                    and getattr(self, "_last_saved_step", -1) != global_step
                 ):
+                    self._last_saved_step = global_step
                     ckpt_path = ckpt_manager.save(
                         peft_model=self.peft_model,
                         optimizer=self.optimizer,
@@ -868,9 +923,45 @@ class InstructionTuner:
                                         },
                                         step=global_step,
                                     )
-                        if early_stopper.should_stop:
-                            stopped_early = True
-                            break
+                            if early_stopper.should_stop:
+                                stopped_early = True
+                                break
+
+            # Do not carry an incomplete gradient window into the next epoch.
+            if accumulated_steps > 0:
+                if use_trainer_interface:
+                    if trainer.flush_accumulation(accumulated_steps):
+                        scheduler.step()
+                        global_step += 1
+                        if self.ema is not None:
+                            self.ema.update(self._ema_module())
+                elif use_deepspeed:
+                    scale = gradient_accumulation_steps / accumulated_steps
+                    for parameter in self.deepspeed_engine.module.parameters():
+                        if parameter.grad is not None:
+                            parameter.grad.mul_(scale)
+                    self.deepspeed_engine.step()
+                    scheduler.step()
+                    self.optimizer.zero_grad(set_to_none=True)
+                    global_step += 1
+                else:
+                    scaler.unscale_(self.optimizer)
+                    scale = gradient_accumulation_steps / accumulated_steps
+                    for parameter in self.peft_model.parameters():
+                        if parameter.grad is not None:
+                            parameter.grad.mul_(scale)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.peft_model.parameters(),
+                        max_grad_norm,
+                        error_if_nonfinite=True,
+                    )
+                    scaler.step(self.optimizer)
+                    scaler.update()
+                    scheduler.step()
+                    self.optimizer.zero_grad(set_to_none=True)
+                    global_step += 1
+                    if self.ema is not None:
+                        self.ema.update(self._ema_module())
 
             avg_loss = epoch_loss / max(num_steps, 1)
             logger.info(
@@ -1041,7 +1132,11 @@ class InstructionTuner:
     def _encode_text_dual_encoder(self, prompts, device, pipeline, max_length=512):
         """Dual-encoder text encoding for HunyuanImage, SDXL, SD3, etc."""
         try:
-            encoders = [getattr(pipeline, "text_encoder", None), getattr(pipeline, "text_encoder_2", None)]
+            encoders = [
+                getattr(pipeline, "text_encoder", None),
+                getattr(pipeline, "text_encoder_2", None),
+                getattr(pipeline, "text_encoder_3", None),  # SD3 T5-XXL
+            ]
             original_dtypes = []
             for enc in encoders:
                 if enc is not None:
@@ -1052,13 +1147,17 @@ class InstructionTuner:
 
             try:
                 with torch.no_grad():
-                    text_outputs = pipeline.encode_prompt(
+                    encode_kwargs = dict(
                         prompt=prompts,
                         prompt_2=prompts,
                         device=device,
                         num_images_per_prompt=1,
                         max_sequence_length=max_length,
                     )
+                    # SD3 has a third encoder (T5-XXL)
+                    if getattr(pipeline, "text_encoder_3", None) is not None:
+                        encode_kwargs["prompt_3"] = prompts
+                    text_outputs = pipeline.encode_prompt(**encode_kwargs)
             finally:
                 for enc, dtype in zip(encoders, original_dtypes, strict=False):
                     if enc is not None and dtype is not None:

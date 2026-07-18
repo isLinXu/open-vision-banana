@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
+import pickle
+import random
 from pathlib import Path
 
 import torch
@@ -75,6 +77,10 @@ class CheckpointManager:
         with open(ckpt_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
 
+        # Keep stochastic state with the checkpoint so a resumed run can
+        # reproduce sampling and augmentation decisions.
+        torch.save(self._capture_rng_state(), ckpt_dir / "rng_state.pt")
+
         logger.info(f"Checkpoint saved to {ckpt_dir}")
 
         # Prune old checkpoints
@@ -118,6 +124,8 @@ class CheckpointManager:
         with open(ckpt_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
 
+        torch.save(self._capture_rng_state(), ckpt_dir / "rng_state.pt")
+
         logger.info("Best checkpoint saved to %s (val_loss=%.6f)", ckpt_dir, val_loss)
         return ckpt_dir
 
@@ -128,6 +136,8 @@ class CheckpointManager:
         ema=None,
         scheduler=None,
         step: int | None = None,
+        restore_rng: bool = False,
+        allow_partial_resume: bool = False,
     ) -> dict:
         """Load a training checkpoint.
 
@@ -137,6 +147,8 @@ class CheckpointManager:
             ema: EMA model to load shadow params into.
             scheduler: LR scheduler to load state into.
             step: Specific step to load. If None, loads latest.
+            restore_rng: Restore Python, NumPy and PyTorch RNG state.
+            allow_partial_resume: Continue when adapter/EMA state is incomplete.
 
         Returns:
             Metadata dict with step, epoch, loss, lr.
@@ -153,8 +165,10 @@ class CheckpointManager:
         # Avoids PeftModel.from_pretrained which creates a second adapter and
         # causes double-wrapping that breaks the computation graph.
         try:
-            from peft import PeftModel
-            if isinstance(peft_model, PeftModel):
+            is_peft_model = hasattr(peft_model, "peft_config")
+            if is_peft_model:
+                from peft import PeftModel
+            if is_peft_model and isinstance(peft_model, PeftModel):
                 from safetensors.torch import load_file
                 weights_file = ckpt_dir / "adapter_model.safetensors"
                 if weights_file.exists():
@@ -170,24 +184,46 @@ class CheckpointManager:
                         elif k.endswith(".lora_B.weight"):
                             new_k = k.replace(".lora_B.weight", ".lora_B.default.weight")
                         state_dict[new_k] = v
+                    live_keys = set(peft_model.state_dict())
+                    matched_adapter_keys = {
+                        key for key in state_dict
+                        if key in live_keys and (".lora_A." in key or ".lora_B." in key)
+                    }
+                    if not matched_adapter_keys:
+                        raise RuntimeError("checkpoint contains no live LoRA adapter keys")
                     missing, unexpected = peft_model.load_state_dict(state_dict, strict=False)
-                    if missing:
-                        logger.warning(f"Missing keys during LoRA resume: {len(missing)} keys")
+                    missing_adapter = [
+                        key for key in missing
+                        if ".lora_A." in key or ".lora_B." in key
+                    ]
+                    if missing_adapter:
+                        message = f"Missing LoRA keys during resume: {len(missing_adapter)}"
+                        if not allow_partial_resume:
+                            raise RuntimeError(message)
+                        logger.warning(message)
                     if unexpected:
                         logger.warning(f"Unexpected keys during LoRA resume: {len(unexpected)} keys")
                     logger.info(f"LoRA weights loaded from {ckpt_dir}")
                 else:
-                    logger.warning(f"adapter_model.safetensors not found in {ckpt_dir}")
+                    raise FileNotFoundError(f"adapter_model.safetensors not found in {ckpt_dir}")
+        except ImportError as e:
+            if hasattr(peft_model, "peft_config") and not allow_partial_resume:
+                raise RuntimeError(f"PEFT load failed: {e}") from e
+            logger.debug("PEFT is unavailable; using generic checkpoint loading")
         except Exception as e:
-            logger.warning(f"PEFT load failed (non-fatal): {e}")
+            if not allow_partial_resume:
+                raise RuntimeError(f"PEFT load failed: {e}") from e
+            logger.warning(f"PEFT load failed (partial resume allowed): {e}")
 
         # Load EMA shadow params with key/shape validation (P1-16)
         if ema is not None:
             ema_path = ckpt_dir / "ema_weights.pt"
             if ema_path.exists():
-                loaded_ema = torch.load(ema_path, weights_only=False)
+                loaded_ema = torch.load(ema_path, weights_only=True)
                 self._apply_ema_shadow(ema, loaded_ema, ckpt_dir)
                 logger.info(f"EMA weights loaded from {ema_path}")
+            elif not allow_partial_resume:
+                raise FileNotFoundError(f"ema_weights.pt not found in {ckpt_dir}")
 
         # Load optimizer state
         if optimizer is not None:
@@ -206,6 +242,25 @@ class CheckpointManager:
                     torch.load(sched_path, weights_only=True)
                 )
 
+        if restore_rng:
+            rng_path = ckpt_dir / "rng_state.pt"
+            if not rng_path.exists():
+                logger.warning(f"rng_state.pt not found in {ckpt_dir} — skipping RNG restore")
+            else:
+                try:
+                    rng_state = torch.load(rng_path, weights_only=True)
+                except (pickle.UnpicklingError, RuntimeError) as exc:
+                    # Legacy checkpoints contain Python/NumPy objects. Do not
+                    # re-enable unsafe deserialization just to restore RNG.
+                    logger.warning(
+                        "RNG state in %s is not weights-only loadable; "
+                        "skipping legacy RNG restore: %s",
+                        rng_path,
+                        exc,
+                    )
+                else:
+                    self._restore_rng_state(rng_state)
+
         # Load metadata
         metadata_path = ckpt_dir / "metadata.json"
         if metadata_path.exists():
@@ -220,6 +275,11 @@ class CheckpointManager:
     @staticmethod
     def _apply_ema_shadow(ema, loaded: dict, ckpt_dir: Path) -> None:
         """Merge EMA shadow params with validation warnings for mismatched keys."""
+        if not isinstance(loaded, dict) or not all(
+            isinstance(key, str) and isinstance(value, torch.Tensor)
+            for key, value in loaded.items()
+        ):
+            raise TypeError(f"Invalid EMA payload in {ckpt_dir}")
         if not ema.shadow_params:
             ema.shadow_params = loaded
             return
@@ -259,6 +319,71 @@ class CheckpointManager:
                 shape_mismatch[:5],
             )
         ema.shadow_params = merged
+
+    @staticmethod
+    def _capture_rng_state() -> dict:
+        """Capture RNGs in a ``weights_only``-safe tensor/scalar payload."""
+        python_state = random.getstate()
+        state = {
+            "python": {
+                "version": int(python_state[0]),
+                "state": torch.tensor(python_state[1], dtype=torch.int64),
+                "gauss_next": python_state[2],
+            },
+            "torch": torch.get_rng_state(),
+        }
+        try:
+            import numpy as np
+
+            numpy_state = np.random.get_state()
+            state["numpy"] = {
+                "algorithm": str(numpy_state[0]),
+                "state": torch.from_numpy(numpy_state[1].copy()),
+                "position": int(numpy_state[2]),
+                "has_gauss": int(numpy_state[3]),
+                "cached_gaussian": float(numpy_state[4]),
+            }
+        except ImportError:
+            pass
+        if torch.cuda.is_available():
+            state["cuda"] = torch.cuda.get_rng_state_all()
+        return state
+
+    @staticmethod
+    def _restore_rng_state(state: dict) -> None:
+        """Restore a safe RNG payload produced by ``_capture_rng_state``."""
+        python_state = state["python"]
+        if isinstance(python_state, dict):
+            random.setstate(
+                (
+                    int(python_state["version"]),
+                    tuple(int(value) for value in python_state["state"].tolist()),
+                    python_state.get("gauss_next"),
+                )
+            )
+        else:
+            # Keep direct compatibility for callers holding an in-memory
+            # legacy state; checkpoint files use the safe dict format above.
+            random.setstate(python_state)
+        torch.set_rng_state(state["torch"])
+        if "numpy" in state:
+            import numpy as np
+
+            numpy_state = state["numpy"]
+            if isinstance(numpy_state, dict):
+                np.random.set_state(
+                    (
+                        str(numpy_state["algorithm"]),
+                        numpy_state["state"].cpu().numpy().astype("uint32", copy=False),
+                        int(numpy_state["position"]),
+                        int(numpy_state["has_gauss"]),
+                        float(numpy_state["cached_gaussian"]),
+                    )
+                )
+            else:
+                np.random.set_state(numpy_state)
+        if "cuda" in state and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(state["cuda"])
 
     @staticmethod
     def _ckpt_step(path: Path) -> int:

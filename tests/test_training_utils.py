@@ -6,6 +6,8 @@ import torch.nn as nn
 
 from open_vision_banana.evaluation.depth import evaluate_depth
 from open_vision_banana.evaluation.referring import evaluate_referring
+from open_vision_banana.training.optimization import MemoryManager
+from open_vision_banana.training.trainer_interface import NativeTrainer
 from open_vision_banana.training.utils import DDPWrapper, EMAModel, VisionAugmentation
 
 # ──────────────────────────────────────────────────────────────
@@ -155,3 +157,46 @@ class TestDDPWrapper:
 
         ddp2 = DDPWrapper(world_size=4, rank=2)
         assert ddp2.is_main() is False
+
+
+class TestNativeTrainerAccumulation:
+    """Verify partial accumulation is committed and bad losses are rejected."""
+
+    def test_flushes_partial_window(self):
+        model = nn.Linear(1, 1, bias=False)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = NativeTrainer(device="cpu", use_amp=False, gradient_accumulation_steps=4)
+        trainer.setup_optimizer(optimizer)
+
+        for step in range(3):
+            loss = (model(torch.ones(1, 1)) - 1.0).square().mean()
+            assert trainer.train_step(model, loss, step) is False
+
+        before = model.weight.detach().clone()
+        assert trainer.flush_accumulation(3) is True
+        assert not torch.equal(model.weight.detach(), before)
+
+    def test_rejects_nonfinite_loss(self):
+        model = nn.Linear(1, 1)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = NativeTrainer(device="cpu", use_amp=False)
+        trainer.setup_optimizer(optimizer)
+        with pytest.raises(FloatingPointError, match="Non-finite loss"):
+            trainer.train_step(model, torch.tensor(float("nan")), 0)
+
+
+class TestMemoryManager:
+    """Verify MPS memory uses host capacity instead of a fixed 32GB guess."""
+
+    def test_mps_total_memory_uses_psutil(self, monkeypatch):
+        import sys
+        import types
+
+        fake_psutil = types.SimpleNamespace(
+            virtual_memory=lambda: types.SimpleNamespace(total=24 * 1_000_000_000)
+        )
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        manager = MemoryManager.__new__(MemoryManager)
+        manager._mps_available = True
+        manager._cuda_available = False
+        assert manager.total_memory_gb() == pytest.approx(24.0)

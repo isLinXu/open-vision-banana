@@ -159,7 +159,7 @@ class FSDPWrapper:
 
     def load_checkpoint(self, model: nn.Module, path: str) -> None:
         """Load FSDP-compatible checkpoint."""
-        state_dict = torch.load(path, map_location="cpu")
+        state_dict = torch.load(path, map_location="cpu", weights_only=True)
         self.load_full_state_dict(model, state_dict)
         self.barrier()
 

@@ -313,18 +313,26 @@ def main():
         logger.info(f"Resuming from {args.resume}")
         from open_vision_banana.training.checkpoint import CheckpointManager
         resume_path = Path(args.resume)
-        if resume_path.name.startswith("checkpoint-"):
-            ckpt_parent = resume_path.parent
+        if resume_path.is_dir() and resume_path.name.startswith("checkpoint-"):
+            resume_checkpoint = resume_path
+        elif resume_path.is_dir():
+            resume_checkpoint = CheckpointManager(str(resume_path))._latest_checkpoint()
+            if resume_checkpoint is None:
+                raise FileNotFoundError(f"No numbered checkpoint found in {resume_path}")
         else:
-            ckpt_parent = resume_path
-        ckpt = CheckpointManager(str(ckpt_parent))
-        meta = ckpt.load(tuner.peft_model)
-        resume_step = meta.get('step', 0)
-        resume_epoch = meta.get('epoch', 0)
+            resume_checkpoint = resume_path.parent
+        meta_path = resume_checkpoint / "metadata.json" if resume_checkpoint.is_dir() else resume_checkpoint.parent / "metadata.json"
+        if not meta_path.exists():
+            raise FileNotFoundError(f"Checkpoint metadata not found: {meta_path}")
+        import json
+        meta = json.loads(meta_path.read_text())
+        resume_step = meta.get("step", 0)
+        resume_epoch = meta.get("epoch", 0)
         logger.info(f"Resumed from step={resume_step}, epoch={resume_epoch}")
     else:
         resume_step = 0
         resume_epoch = 0
+        resume_checkpoint = None
 
     # Build datasets
     vision_datasets = []
@@ -434,6 +442,8 @@ def main():
         is_main_process=is_main_process,
         start_step=resume_step,
         start_epoch=resume_epoch,
+        resume_checkpoint=resume_checkpoint,
+        restore_rng_on_resume=resume_checkpoint is not None,
     )
 
     if fsdp_wrapper is not None:

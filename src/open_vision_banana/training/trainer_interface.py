@@ -162,6 +162,7 @@ class NativeTrainer(TrainerInterface):
         torch.nn.utils.clip_grad_norm_(
             self._optimizer.param_groups[0]["params"],
             max_norm=self.max_grad_norm,
+            error_if_nonfinite=True,
         )
         self.scaler.step(self._optimizer)
         self.scaler.update()
@@ -191,6 +192,10 @@ class NativeTrainer(TrainerInterface):
                 loss = compute_loss(model, batch)
                 stepped = trainer.train_step(model, loss, step)
         """
+        if not torch.isfinite(loss).all():
+            raise FloatingPointError(
+                f"Non-finite loss at accumulation step {step_in_accumulation}"
+            )
         scaled_loss = loss / self.gradient_accumulation_steps
         self.backward(scaled_loss)
 
@@ -199,6 +204,22 @@ class NativeTrainer(TrainerInterface):
             self.optimizer_step()
             self._optimizer.zero_grad()
         return do_step
+
+    def flush_accumulation(self, accumulated_steps: int) -> bool:
+        """Commit a final partial accumulation window at epoch end."""
+        if accumulated_steps <= 0:
+            return False
+        if self._optimizer is None:
+            raise RuntimeError("flush_accumulation() called before setup_optimizer()")
+        if accumulated_steps != self.gradient_accumulation_steps:
+            scale = self.gradient_accumulation_steps / accumulated_steps
+            for group in self._optimizer.param_groups:
+                for parameter in group["params"]:
+                    if parameter.grad is not None:
+                        parameter.grad.mul_(scale)
+        self.optimizer_step()
+        self._optimizer.zero_grad()
+        return True
 
     def save_checkpoint(
         self,
@@ -235,7 +256,7 @@ class NativeTrainer(TrainerInterface):
                 logger.info(f"PEFT checkpoint loaded from {ckpt_dir}")
             elif (ckpt_dir / "model.pt").exists():
                 model.load_state_dict(
-                    torch.load(ckpt_dir / "model.pt", weights_only=False)
+                    torch.load(ckpt_dir / "model.pt", map_location="cpu", weights_only=True)
                 )
                 logger.info(f"Checkpoint loaded from {ckpt_dir / 'model.pt'}")
             elif (ckpt_dir / "adapter_config.json").exists():

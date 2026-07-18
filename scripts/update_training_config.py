@@ -43,8 +43,6 @@ import copy
 import logging
 import shutil
 import sys
-from collections.abc import Sequence
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -138,7 +136,7 @@ def load_config(path: Path) -> dict[str, Any]:
         logger.error("Config file not found: %s", path)
         return {}
     try:
-        with open(path, "r") as f:
+        with open(path) as f:
             return yaml.safe_load(f) or {}
     except Exception as e:
         logger.error("Failed to load config: %s", e)
@@ -404,7 +402,10 @@ def build_default_synthetic_config(
             "rank": lora_rank,
             "alpha": lora_alpha,
             "rs_lora": True,
-            "target_modules": ["to_k", "to_v"],
+            "target_modules": [
+                "to_q", "to_k", "to_v", "to_out.0",
+                "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2",
+            ],
             "dropout": 0.0,
         },
         "optimizer": {

@@ -92,7 +92,10 @@ class TestConfigSystem:
         assert cfg.lora.rank == 64
         assert cfg.lora.alpha == 128
         assert cfg.lora.rs_lora is True
-        assert cfg.lora.target_modules == ["to_k", "to_v"]
+        assert cfg.lora.target_modules == [
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2",
+        ]
         assert cfg.lora.dropout == 0.0
         assert cfg.optimizer.lr == 5e-5
         assert cfg.optimizer.weight_decay == 0.01

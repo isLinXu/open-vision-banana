@@ -1,9 +1,11 @@
 """Tests for training/checkpoint.py — CheckpointManager class."""
 
 import json
+import random
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -183,6 +185,50 @@ class TestCheckpointSave:
 
 
 class TestCheckpointLoad:
+    def test_rng_checkpoint_is_weights_only_loadable(self, tmp_path):
+        """RNG state must not require unsafe pickle deserialization."""
+        state = CheckpointManager._capture_rng_state()
+        path = tmp_path / "rng_state.pt"
+        torch.save(state, path)
+        loaded = torch.load(path, weights_only=True)
+        assert isinstance(loaded["python"]["state"], torch.Tensor)
+        assert isinstance(loaded["numpy"]["state"], torch.Tensor)
+
+    def test_restore_rng_state(self, tmp_path):
+        """RNG restoration should reproduce the next random samples."""
+        mgr = CheckpointManager(str(tmp_path))
+        model = MockPEFTModel()
+        opt = torch.optim.SGD(model.linear.parameters(), lr=0.01)
+
+        random.seed(123)
+        np.random.seed(123)
+        torch.manual_seed(123)
+        mgr.save(model, opt, step=10, epoch=1, loss=0.5, lr=1e-4)
+        expected = (random.random(), float(np.random.rand()), torch.rand(1).item())
+
+        random.seed(999)
+        np.random.seed(999)
+        torch.manual_seed(999)
+        mgr.load(MockPEFTModel(), torch.optim.SGD(MockPEFTModel().linear.parameters(), lr=0.01), restore_rng=True)
+        actual = (random.random(), float(np.random.rand()), torch.rand(1).item())
+
+        assert actual == pytest.approx(expected)
+
+    def test_legacy_rng_state_is_skipped_without_unsafe_load(self, tmp_path, caplog):
+        """Old object-based RNG payloads must not force unsafe deserialization."""
+        mgr = CheckpointManager(str(tmp_path))
+        model = MockPEFTModel()
+        opt = torch.optim.SGD(model.linear.parameters(), lr=0.01)
+        ckpt_dir = mgr.save(model, opt, step=10, epoch=1, loss=0.5, lr=1e-4)
+        legacy = {
+            "python": random.getstate(),
+            "torch": torch.get_rng_state(),
+            "numpy": np.random.get_state(),
+        }
+        torch.save(legacy, ckpt_dir / "rng_state.pt")
+        mgr.load(model, opt, restore_rng=True)
+        assert "not weights-only loadable" in caplog.text
+
     def test_load_latest(self, tmp_path):
         """Should load the latest checkpoint when step is None."""
         mgr = CheckpointManager(str(tmp_path))

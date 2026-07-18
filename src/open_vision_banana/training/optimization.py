@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from typing import Any
 
 import numpy as np
@@ -85,8 +86,21 @@ class MemoryManager:
         """Return total device memory in GB."""
         if self._cuda_available:
             return torch.cuda.get_device_properties(self.device).total_memory / 1e9
-        # MPS: heuristic based on system memory (not precise)
-        return 32.0  # Assume 32GB M1 Pro
+        if self._mps_available:
+            # Apple Silicon uses unified memory; prefer the host total rather
+            # than assuming a particular M1/M2/M3 configuration.
+            try:
+                import psutil
+                total = psutil.virtual_memory().total
+            except (ImportError, AttributeError, OSError):
+                try:
+                    page_size = os.sysconf("SC_PAGE_SIZE")
+                    page_count = os.sysconf("SC_PHYS_PAGES")
+                    total = page_size * page_count
+                except (AttributeError, OSError, ValueError):
+                    total = 0
+            return total / 1e9
+        return 0.0
 
     def should_clear(self) -> bool:
         """Check if memory usage exceeds threshold."""

@@ -116,7 +116,10 @@ class LoRAConfig:
         self.rank = rank
         self.alpha = alpha
         self.rs_lora = rs_lora
-        self.target_modules = target_modules or ["to_k", "to_v"]
+        self.target_modules = target_modules or [
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2",
+        ]
         self.dropout = dropout
 
     def to_dict(self) -> dict:

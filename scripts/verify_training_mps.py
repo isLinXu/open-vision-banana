@@ -276,7 +276,10 @@ def main() -> None:
 
     model = inject_lora(
         model,
-        target_modules=["to_k", "to_v"],
+        target_modules=[
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2",
+        ],
         rank=args.lora_rank,
         alpha=args.lora_alpha,
         use_rslora=True,

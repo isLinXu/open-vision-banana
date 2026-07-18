@@ -177,7 +177,7 @@ class TestCheckpointEMASafety:
         for name in ema2.shadow_params:
             ema2.shadow_params[name].fill_(0.0)
 
-        ema2.shadow_params = torch.load(str(ema_path), weights_only=False)
+        ema2.shadow_params = torch.load(str(ema_path), weights_only=True)
 
         for name, tensor in ema2.shadow_params.items():
             assert tensor.mean().item() == pytest.approx(3.14, abs=1e-4), (
