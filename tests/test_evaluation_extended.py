@@ -13,6 +13,7 @@ from open_vision_banana.evaluation.generation_preservation import (
     compute_fid_proxy,
     compute_perceptual_similarity,
     evaluate_generation_preservation,
+    extract_rgb_features,
 )
 from open_vision_banana.evaluation.keypoint import (
     SIGMAS_COCO,
@@ -259,6 +260,18 @@ class TestGenerationPreservation:
         target = torch.rand(2, 3, 8, 8)
         sim = compute_perceptual_similarity(pred, target)
         assert sim >= 0.0
+
+    def test_dependency_free_rgb_feature_proxy(self):
+        rgb = torch.rand(4, 3, 16, 20)
+        features = extract_rgb_features(rgb, pool_size=4)
+        assert features.shape == (4, 3 * 4 * 4 + 6)
+        metrics = evaluate_generation_preservation(
+            real_rgb=rgb,
+            gen_rgb=rgb,
+            feature_extractor=extract_rgb_features,
+        )
+        assert metrics["FID_proxy"] == pytest.approx(0.0, abs=1e-5)
+        assert metrics["diversity_score"] >= 0.0
 
     def test_full_generation_preservation(self):
         real = torch.randn(10, 64)

@@ -27,6 +27,12 @@ from ..core.keypoint_mapper import KeypointRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
 from ..core.object_detection_mapper import ObjectDetectionRGBMapper
 from ..core.segmentation import SegmentationDecoder
+from .benchmark import (
+    DepthAccumulator,
+    NormalAccumulator,
+    SemanticAccumulator,
+    benchmark_valid_mask,
+)
 from .depth import evaluate_depth
 from .edge import evaluate_edge
 from .flow import evaluate_flow
@@ -84,6 +90,8 @@ class VisionEvaluator:
         expression: str | None = None,
         num_inference_steps: int = 1,
         strength: float = 0.85,
+        seed: int | None = None,
+        dataset_name: str | None = None,
     ) -> dict[str, Any]:
         """Evaluate a single batch without iterating a DataLoader.
 
@@ -114,7 +122,7 @@ class VisionEvaluator:
         # Build a single-batch dataloader-like iterable
         single_batch_loader = [batch]
 
-        return self.evaluate(
+        metrics = self.evaluate(
             dataloader=single_batch_loader,
             task=task,
             class_color_map=class_color_map,
@@ -122,8 +130,16 @@ class VisionEvaluator:
             expression=expression,
             num_inference_steps=num_inference_steps,
             strength=strength,
+            seed=seed,
+            dataset_name=dataset_name,
             max_batches=1,
         )
+        # Preserve the convenience API's historical scalar-float contract;
+        # dataset-level evaluation keeps integer sample counts intact.
+        return {
+            key: float(value) if isinstance(value, int | float) else value
+            for key, value in metrics.items()
+        }
 
     @torch.no_grad()
     def evaluate(
@@ -138,6 +154,8 @@ class VisionEvaluator:
         expression: str | None = None,
         num_inference_steps: int = 1,
         strength: float = 0.85,
+        seed: int | None = None,
+        dataset_name: str | None = None,
     ) -> dict[str, Any]:
         """Run evaluation on a dataset.
 
@@ -172,6 +190,13 @@ class VisionEvaluator:
         n_batches = 0
         gen_real_rgb: list[torch.Tensor] = []
         gen_pred_rgb: list[torch.Tensor] = []
+        depth_accumulator = DepthAccumulator() if task == "depth" else None
+        normal_accumulator = NormalAccumulator() if task == "normal" else None
+        semantic_accumulator = (
+            SemanticAccumulator(num_classes if num_classes is not None else len(class_color_map or {}))
+            if task == "semantic"
+            else None
+        )
 
         # Pre-instantiate shared decoders once (not per batch)
         depth_mapper = DepthRGBMapper() if task in ("depth", "depth_edge") else None
@@ -194,18 +219,34 @@ class VisionEvaluator:
                 expression=expression or batch.get("expression"),
                 num_inference_steps=num_inference_steps,
                 strength=strength,
+                seed=None if seed is None else seed + batch_idx,
             )
 
             # ── Decode & compute metrics ──────────────────────────────────
             metrics: dict[str, Any]
             if task == "depth":
                 pred_depth = depth_mapper.rgb_to_depth(pred_rgb)
-                gt_depth = depth_mapper.rgb_to_depth(target_rgb)
+                gt_depth = batch.get("gt_depth")
+                if gt_depth is None:
+                    gt_depth = depth_mapper.rgb_to_depth(target_rgb)
+                else:
+                    gt_depth = gt_depth.to(self.device)
+                valid_mask = batch.get("valid_mask")
+                valid_mask = benchmark_valid_mask(dataset_name or "", gt_depth, valid_mask)
+                if depth_accumulator is not None:
+                    depth_accumulator.update(pred_depth, gt_depth, valid_mask)
                 metrics = evaluate_depth(pred_depth, gt_depth)
 
             elif task == "normal":
                 pred_normal = normal_mapper.rgb_to_normal(pred_rgb)
-                gt_normal = normal_mapper.rgb_to_normal(target_rgb)
+                gt_normal = batch.get("gt_normal")
+                if gt_normal is None:
+                    gt_normal = normal_mapper.rgb_to_normal(target_rgb)
+                else:
+                    gt_normal = gt_normal.to(self.device)
+                valid_mask = batch.get("valid_mask")
+                if normal_accumulator is not None:
+                    normal_accumulator.update(pred_normal, gt_normal, valid_mask)
                 metrics = evaluate_normals(pred_normal, gt_normal)
 
             elif task == "semantic":
@@ -216,7 +257,13 @@ class VisionEvaluator:
                         "Pass it as an argument or include it in the dataloader batch."
                     )
                 pred_labels = seg_decoder.decode_semantic(pred_rgb, cmap)
-                gt_labels = seg_decoder.decode_semantic(target_rgb, cmap)
+                gt_labels = batch.get("gt_labels")
+                if gt_labels is None:
+                    gt_labels = seg_decoder.decode_semantic(target_rgb, cmap)
+                else:
+                    gt_labels = gt_labels.to(self.device)
+                if semantic_accumulator is not None:
+                    semantic_accumulator.update(pred_labels, gt_labels)
                 metrics = evaluate_semantic(pred_labels, gt_labels, num_classes if num_classes is not None else len(cmap))
 
             elif task == "instance":
@@ -339,6 +386,13 @@ class VisionEvaluator:
             logger.warning("evaluate() called on an empty dataloader — returning empty metrics")
             return {}
 
+        if task == "depth" and depth_accumulator is not None:
+            return depth_accumulator.compute()
+        if task == "normal" and normal_accumulator is not None:
+            return normal_accumulator.compute()
+        if task == "semantic" and semantic_accumulator is not None:
+            return semantic_accumulator.compute()
+
         for k in all_metrics:
             metric_value = all_metrics[k]
             if isinstance(metric_value, list):
@@ -442,6 +496,7 @@ class VisionEvaluator:
         expression: str | None = None,
         num_inference_steps: int = 1,
         strength: float = 0.85,
+        seed: int | None = None,
     ) -> torch.Tensor:
         """Run model inference and return a [B, 3, H, W] RGB tensor in [0, 1].
 
@@ -457,6 +512,7 @@ class VisionEvaluator:
                 task=task,
                 num_inference_steps=num_inference_steps,
                 strength=strength,
+                seed=seed,
             )
             if task == "semantic":
                 if class_color_map is None:

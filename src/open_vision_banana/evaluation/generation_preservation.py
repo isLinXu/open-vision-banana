@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
@@ -31,7 +32,8 @@ def _lpips_available() -> bool:
     try:
         import lpips  # noqa: F401
         return True
-    except ImportError:
+    except Exception as exc:
+        logger.debug("LPIPS is unavailable: %s", exc)
         return False
 
 
@@ -39,7 +41,8 @@ def _scipy_available() -> bool:
     try:
         import scipy.linalg  # noqa: F401
         return True
-    except ImportError:
+    except Exception as exc:
+        logger.debug("SciPy is unavailable: %s", exc)
         return False
 
 
@@ -132,6 +135,33 @@ def extract_inception_features(
     return feats
 
 
+def extract_rgb_features(
+    rgb: torch.Tensor,
+    *,
+    pool_size: int = 8,
+) -> torch.Tensor:
+    """Extract deterministic, dependency-free RGB features.
+
+    This is intentionally a proxy for FID, not an Inception replacement.  It
+    is useful for smoke tests and offline health checks where downloading
+    ImageNet weights is not acceptable.  Callers should record the feature
+    backend alongside the resulting metric.
+    """
+    if rgb.dim() != 4 or rgb.shape[1] != 3:
+        raise ValueError(f"rgb must have shape [N,3,H,W], got {tuple(rgb.shape)}")
+    if pool_size < 1:
+        raise ValueError("pool_size must be positive")
+    if not torch.isfinite(rgb).all():
+        raise ValueError("rgb contains NaN or Inf values")
+    pooled = F.adaptive_avg_pool2d(rgb.float(), (pool_size, pool_size))
+    channel_mean = rgb.float().mean(dim=(-2, -1), keepdim=True)
+    channel_std = rgb.float().std(dim=(-2, -1), keepdim=True, unbiased=False)
+    return torch.cat(
+        [pooled.flatten(1), channel_mean.flatten(1), channel_std.flatten(1)],
+        dim=1,
+    )
+
+
 def _get_lpips_model(device: torch.device | str, net: str = "alex") -> torch.nn.Module:
     global _lpips_model
     if _lpips_model is None:
@@ -199,6 +229,7 @@ def evaluate_generation_preservation(
     *,
     real_rgb: torch.Tensor | None = None,
     gen_rgb: torch.Tensor | None = None,
+    feature_extractor: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> dict[str, float]:
     """Run generation-preservation evaluation.
 
@@ -207,10 +238,11 @@ def evaluate_generation_preservation(
     """
     results: dict[str, float] = {}
 
+    extractor = feature_extractor or extract_inception_features
     if real_features is None and real_rgb is not None:
-        real_features = extract_inception_features(real_rgb)
+        real_features = extractor(real_rgb)
     if gen_features is None and gen_rgb is not None:
-        gen_features = extract_inception_features(gen_rgb)
+        gen_features = extractor(gen_rgb)
     if gen_features is None:
         raise ValueError("gen_features or gen_rgb is required")
 
@@ -264,5 +296,6 @@ __all__ = [
     "compute_perceptual_similarity",
     "compute_lpips",
     "extract_inception_features",
+    "extract_rgb_features",
     "evaluate_generation_preservation",
 ]

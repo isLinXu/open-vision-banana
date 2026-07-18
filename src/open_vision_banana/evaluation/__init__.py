@@ -15,11 +15,12 @@ Provides:
 VisionEvaluator: Unified evaluation runner for all 10 tasks.
 """
 
+from .benchmark import DepthAccumulator, NormalAccumulator, SemanticAccumulator
 from .depth import evaluate_depth
 from .edge import evaluate_edge, evaluate_edge_dataset
 from .evaluator import VisionEvaluator
 from .flow import evaluate_flow
-from .generation_preservation import evaluate_generation_preservation
+from .generation_preservation import evaluate_generation_preservation, extract_rgb_features
 from .instance import compute_iou_box, compute_iou_mask, evaluate_instance
 from .keypoint import evaluate_keypoints
 from .normal import evaluate_normals
@@ -39,7 +40,11 @@ __all__ = [
     "evaluate_keypoints",
     "evaluate_object_detection",
     "evaluate_generation_preservation",
+    "extract_rgb_features",
     "compute_iou_mask",
     "compute_iou_box",
     "VisionEvaluator",
+    "DepthAccumulator",
+    "NormalAccumulator",
+    "SemanticAccumulator",
 ]

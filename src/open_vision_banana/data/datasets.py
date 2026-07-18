@@ -20,6 +20,13 @@ from torch.utils.data import Dataset
 from ..core.depth_mapper import DepthRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
 from ..inference.prompt import PromptBuilder
+from .benchmark_io import (
+    find_matching_file,
+    load_normal,
+    load_scalar,
+    resize_normal,
+    resize_scalar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +103,8 @@ class BaseVisionDataset(Dataset):
 
     def _load_image(self, path: str | Path) -> torch.Tensor:
         """Load image as tensor [3, H, W] in [-1, 1]."""
-        img = Image.open(path).convert("RGB")
+        with Image.open(path) as source:
+            img = source.convert("RGB")
         if img.size[0] != self.resolution or img.size[1] != self.resolution:
             img = img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
         tensor = _pil_to_tensor(img).float() / 255.0
@@ -142,9 +150,16 @@ class HypersimDepthDataset(BaseVisionDataset):
             mode="nearest",
         ).squeeze(0)
 
+        valid_mask = depth > 0
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_depth": depth,
+            "valid_mask": valid_mask.squeeze(0),
+        }
 
 
 class ScanNetNormalDataset(BaseVisionDataset):
@@ -173,9 +188,16 @@ class ScanNetNormalDataset(BaseVisionDataset):
         if normal_img.size != (self.resolution, self.resolution):
             normal_img = normal_img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
         target_rgb = _pil_to_tensor(normal_img).float() / 255.0
+        gt_normal = self.normal_mapper.rgb_to_normal(target_rgb.unsqueeze(0)).squeeze(0)
 
         prompt = PromptBuilder.build_normal_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_normal": gt_normal,
+            "valid_mask": torch.isfinite(gt_normal).all(dim=0),
+        }
 
 
 class CityscapesSegDataset(BaseVisionDataset):
@@ -205,6 +227,14 @@ class CityscapesSegDataset(BaseVisionDataset):
         "bicycle": (119, 11, 32),
     }
 
+    # Official Cityscapes labelIds -> trainIds mapping. Labels not listed are
+    # ignored during evaluation, including license plate and void regions.
+    CITYSCAPES_LABEL_TO_TRAIN = {
+        7: 0, 8: 1, 11: 2, 12: 3, 13: 4, 17: 5, 19: 6, 20: 7,
+        21: 8, 22: 9, 23: 10, 24: 11, 25: 12, 26: 13, 27: 14,
+        28: 15, 31: 16, 32: 17, 33: 18,
+    }
+
     def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
         super().__init__(root_dir, split, resolution, **kwargs)
 
@@ -229,8 +259,12 @@ class CityscapesSegDataset(BaseVisionDataset):
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
 
-        label_img = Image.open(sample["target"])
-        label = _pil_to_tensor(label_img).long().squeeze(0)
+        with Image.open(sample["target"]) as label_img:
+            label = _pil_to_tensor(label_img).long().squeeze(0)
+        mapped = torch.full_like(label, 255)
+        for label_id, train_id in self.CITYSCAPES_LABEL_TO_TRAIN.items():
+            mapped[label == label_id] = train_id
+        label = mapped
         label = label.unsqueeze(0).unsqueeze(0).float()
         label = (
             torch.nn.functional.interpolate(
@@ -243,7 +277,12 @@ class CityscapesSegDataset(BaseVisionDataset):
 
         target_rgb = self._label_to_rgb(label)
         prompt = PromptBuilder.build_semantic_prompt(self.CITYSCAPES_COLORS)
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_labels": label,
+        }
 
     # Build a [num_classes, 3] color palette tensor at class level (lazy, cached).
     _COLOR_PALETTE: torch.Tensor | None = None
@@ -542,9 +581,17 @@ class NYUDepthDataset(BaseVisionDataset):
             mode="nearest",
         ).squeeze(0)
 
+        valid_mask = torch.isfinite(depth) & (depth > 0)
+        depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_depth": depth,
+            "valid_mask": valid_mask.squeeze(0),
+        }
 
 
 class DIODEDataset(BaseVisionDataset):
@@ -583,7 +630,8 @@ class DIODEDataset(BaseVisionDataset):
         for rgb_path in sorted(split_dir.rglob("*_rgb.png")):
             depth_path = Path(str(rgb_path).replace("_rgb.png", "_depth.npy"))
             if depth_path.exists():
-                self.samples.append({"image": rgb_path, "target": depth_path})
+                mask_path = Path(str(rgb_path).replace("_rgb.png", "_depth_mask.npy"))
+                self.samples.append({"image": rgb_path, "target": depth_path, "mask": mask_path if mask_path.exists() else None})
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -600,11 +648,165 @@ class DIODEDataset(BaseVisionDataset):
         ).squeeze(0)
 
         # Mask invalid depth (DIODE uses -1 for invalid)
-        depth = torch.where(depth < 0, torch.zeros_like(depth), depth)
+        valid_mask = (depth >= 0) & torch.isfinite(depth)
+        if sample.get("mask") is not None:
+            mask = torch.from_numpy(np.load(sample["mask"])).bool().unsqueeze(0)
+            mask = torch.nn.functional.interpolate(
+                mask.unsqueeze(0).float(),
+                size=(self.resolution, self.resolution),
+                mode="nearest",
+            ).squeeze(0).bool()
+            valid_mask &= mask
+        depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
 
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_depth": depth,
+            "valid_mask": valid_mask.squeeze(0),
+        }
+
+
+class IBimsDepthDataset(NYUDepthDataset):
+    """iBims-1 depth benchmark with flexible RGB/depth folder matching."""
+
+    def _scan(self) -> None:
+        image_dir = self.root_dir / "images"
+        if not image_dir.exists():
+            image_dir = self.root_dir / "rgb"
+        depth_dir = self.root_dir / "depths"
+        if not depth_dir.exists():
+            depth_dir = self.root_dir / "depth"
+        if not image_dir.exists() or not depth_dir.exists():
+            logger.warning("iBims image/depth directories not found under %s", self.root_dir)
+            return
+        for image_path in sorted(image_dir.rglob("*")):
+            if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                continue
+            depth_path = find_matching_file(
+                depth_dir,
+                image_path.stem,
+                (".png", ".npy", ".pfm"),
+            )
+            if depth_path is not None:
+                self.samples.append({"image": image_path, "target": depth_path})
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        image = self._load_image(sample["image"])
+        depth = resize_scalar(
+            load_scalar(sample["target"], scale=0.001 if sample["target"].suffix == ".png" else 1.0),
+            self.resolution,
+        )
+        valid_mask = torch.isfinite(depth) & (depth > 0) & (depth < 100)
+        depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
+        target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+        return {
+            "prompt": PromptBuilder.build_depth_prompt(),
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_depth": depth,
+            "valid_mask": valid_mask.squeeze(0),
+        }
+
+
+class NYUNormalDataset(BaseVisionDataset):
+    """NYU surface-normal benchmark adapter."""
+
+    TASK_TYPE = "normal"
+
+    def __init__(self, root_dir, split="val", resolution=512, **kwargs) -> None:
+        self.normal_mapper = NormalRGBMapper()
+        super().__init__(root_dir, split, resolution, **kwargs)
+
+    def _scan(self) -> None:
+        image_dir = self.root_dir / "images"
+        normal_dir = self.root_dir / "normals"
+        if not image_dir.exists() or not normal_dir.exists():
+            logger.warning("NYU normal image/normal directories not found under %s", self.root_dir)
+            return
+        for image_path in sorted(image_dir.rglob("*")):
+            if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                continue
+            normal_path = find_matching_file(normal_dir, image_path.stem, (".npy", ".png"))
+            if normal_path is not None:
+                self.samples.append({"image": image_path, "target": normal_path})
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        image = self._load_image(sample["image"])
+        normal = resize_normal(load_normal(sample["target"]), self.resolution)
+        target_rgb = self.normal_mapper.normal_to_rgb(normal.unsqueeze(0)).squeeze(0)
+        return {
+            "prompt": PromptBuilder.build_normal_prompt(),
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_normal": normal,
+            "valid_mask": torch.isfinite(normal).all(dim=0),
+        }
+
+
+class DIODENormalDataset(BaseVisionDataset):
+    """DIODE surface-normal benchmark adapter."""
+
+    TASK_TYPE = "normal"
+
+    def __init__(self, root_dir, split="val", resolution=512, **kwargs) -> None:
+        self.normal_mapper = NormalRGBMapper()
+        super().__init__(root_dir, split, resolution, **kwargs)
+
+    def _scan(self) -> None:
+        split_dir = self.root_dir / self.split
+        if not split_dir.exists():
+            split_dir = self.root_dir
+        for image_path in sorted(split_dir.rglob("*")):
+            if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                continue
+            normal_path = find_matching_file(
+                image_path.parent,
+                image_path.stem.replace("_rgb", ""),
+                (".npy", ".png"),
+            )
+            if normal_path is not None:
+                self.samples.append({"image": image_path, "target": normal_path})
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        image = self._load_image(sample["image"])
+        normal = resize_normal(load_normal(sample["target"]), self.resolution)
+        target_rgb = self.normal_mapper.normal_to_rgb(normal.unsqueeze(0)).squeeze(0)
+        return {
+            "prompt": PromptBuilder.build_normal_prompt(),
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_normal": normal,
+            "valid_mask": torch.isfinite(normal).all(dim=0),
+        }
+
+
+class VirtualKITTINormalDataset(DIODENormalDataset):
+    """Virtual KITTI 2 surface-normal benchmark adapter."""
+
+    def _scan(self) -> None:
+        for rgb_dir in sorted(self.root_dir.rglob("rgb")):
+            normal_dir = rgb_dir.parent / "normal"
+            if not normal_dir.exists():
+                normal_dir = rgb_dir.parent / "normals"
+            if not normal_dir.exists():
+                continue
+            for image_path in sorted(rgb_dir.rglob("*")):
+                if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                    continue
+                normal_path = find_matching_file(
+                    normal_dir,
+                    image_path.stem,
+                    (".png", ".npy"),
+                )
+                if normal_path is not None:
+                    self.samples.append({"image": image_path, "target": normal_path})
 
 
 class BlendedMVSDepthDataset(BaseVisionDataset):
@@ -656,8 +858,6 @@ class BlendedMVSDepthDataset(BaseVisionDataset):
             <scale>   (negative = little-endian)
             <raw float32 data>
         """
-        import struct
-
         try:
             with open(path, "rb") as f:
                 header = f.readline().strip()
@@ -840,7 +1040,13 @@ class KITTIDataset(BaseVisionDataset):
 
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb, "valid_mask": valid_mask.squeeze(0)}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_depth": depth,
+            "valid_mask": valid_mask.squeeze(0),
+        }
 
 
 class ADE20KDataset(BaseVisionDataset):
@@ -1090,7 +1296,13 @@ class ETH3DDataset(BaseVisionDataset):
 
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb, "valid_mask": valid_mask.squeeze(0)}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_depth": depth,
+            "valid_mask": valid_mask.squeeze(0),
+        }
 
 
 class TartanAirDepthDataset(BaseVisionDataset):
@@ -1234,7 +1446,14 @@ class OASISNormalDataset(BaseVisionDataset):
         normal = normal / (normal.norm(dim=0, keepdim=True) + 1e-10)
         target_rgb = self.normal_mapper.normal_to_rgb(normal.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_normal_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        valid_mask = torch.isfinite(normal).all(dim=0) & (normal.norm(dim=0) > 1e-6)
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "gt_normal": normal,
+            "valid_mask": valid_mask,
+        }
 
 
 class COCODetectionDataset(BaseVisionDataset):
@@ -1980,6 +2199,8 @@ def build_dataset(
         "referring": RefCOCOgDataset,
         # Extended datasets (Phase 1: 5 datasets)
         "nyu_depth": NYUDepthDataset,
+        "ibims": IBimsDepthDataset,
+        "nyu_normal": NYUNormalDataset,
         "diode": DIODEDataset,
         "blendedmvs": BlendedMVSDepthDataset,
         "kitti": KITTIDataset,
@@ -1989,6 +2210,8 @@ def build_dataset(
         "eth3d": ETH3DDataset,
         "tartanair": TartanAirDepthDataset,
         "oasis": OASISNormalDataset,
+        "diode_normal": DIODENormalDataset,
+        "vkitti_normal": VirtualKITTINormalDataset,
         "coco_detection": COCODetectionDataset,
         "coco_stuff": COCOStuffDataset,
         "refcoco": RefCOCODataset,
@@ -2012,6 +2235,8 @@ __all__ = [
     "SACoInstanceDataset",
     "RefCOCOgDataset",
     "NYUDepthDataset",
+    "IBimsDepthDataset",
+    "NYUNormalDataset",
     "DIODEDataset",
     "BlendedMVSDepthDataset",
     "KITTIDataset",
@@ -2020,6 +2245,8 @@ __all__ = [
     "ETH3DDataset",
     "TartanAirDepthDataset",
     "OASISNormalDataset",
+    "DIODENormalDataset",
+    "VirtualKITTINormalDataset",
     "COCODetectionDataset",
     "COCOStuffDataset",
     "RefCOCODataset",
