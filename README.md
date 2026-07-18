@@ -227,6 +227,29 @@ python scripts/benchmark_pipeline.py --mapper-only --resolution 512 --num-sample
 python scripts/benchmark_pipeline.py --mapper-only --output benchmark_results.json
 ```
 
+### Reproducible generation health check
+
+The generation-preservation command records the dataset fingerprint, seed,
+successful/failed sample counts, and a JSONL failure sidecar. Its default
+`rgb_proxy` feature backend is offline and is a health proxy only; it must not
+be reported as the GenAI-Bench win rate. Use `--feature-backend inception`
+only when the local Inception weights are already available or downloading
+them is explicitly allowed.
+
+```bash
+python scripts/evaluate_generation_preservation.py \
+  --model-name black-forest-labs/FLUX.1-schnell \
+  --dataset-root data/vb_generation_5k \
+  --output-json reports/generation_health.json \
+  --max-samples 32
+```
+
+### Optional FastAPI serving
+
+Serving is isolated from the core install. Load the model in deployment code,
+then create the app with `open_vision_banana.serving.create_app(model)` and
+run it with Uvicorn after installing the optional `serving` extra.
+
 ### Data Preparation
 
 ```bash
