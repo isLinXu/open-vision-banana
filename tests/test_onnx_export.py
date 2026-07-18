@@ -262,3 +262,23 @@ class TestExportFullPipelineOnnx:
         export_full_pipeline_onnx(model, str(output_dir))
         assert output_dir.exists()
         assert (output_dir / "transformer.onnx").exists()
+
+    def test_export_resolves_nested_pipeline_transformer(self, tmp_path):
+        """VisionBanana-style nesting should resolve the transformer module."""
+
+        class MockTransformer(nn.Module):
+            def forward(self, hidden, timestep, text_emb):
+                return hidden
+
+        class MockPipe:
+            transformer = MockTransformer()
+
+        class MockGenerator:
+            _t2i_pipe = MockPipe()
+
+        class MockModel:
+            generator = MockGenerator()
+
+        output_dir = tmp_path / "nested-pipeline"
+        export_full_pipeline_onnx(MockModel(), output_dir)
+        assert (output_dir / "transformer.onnx").exists()

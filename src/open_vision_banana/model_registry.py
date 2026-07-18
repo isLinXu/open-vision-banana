@@ -523,7 +523,9 @@ def _build_registry() -> None:
         num_text_encoders=3,
         needs_added_cond_kwargs=False,
         cross_attention_dim=4096,
-        vae_scaling_factor=None,
+        vae_scaling_factor=0.3611,
+        vae_shift_factor=0.1159,
+        vae_latent_channels=16,
         vae_downsample_factor=8,
         memory_budget_gb=20.0,
         pipeline_class="StableDiffusion3Pipeline",
@@ -1320,16 +1322,37 @@ def encode_text(
     config = components.config
     max_length = config.text_encoder_max_length
 
+    def _hidden_states(output: Any, *, penultimate: bool = False) -> torch.Tensor:
+        """Normalize tuple/model-output variants from HF and test doubles."""
+        hidden_states = getattr(output, "hidden_states", None)
+        if penultimate and isinstance(hidden_states, (tuple, list)) and len(hidden_states) >= 2:
+            candidate = hidden_states[-2]
+            if isinstance(candidate, torch.Tensor):
+                return candidate
+        candidate = getattr(output, "last_hidden_state", None)
+        if isinstance(candidate, torch.Tensor):
+            return candidate
+        if isinstance(output, (tuple, list)) and output and isinstance(output[0], torch.Tensor):
+            return output[0]
+        candidate = output[0]
+        if not isinstance(candidate, torch.Tensor):
+            raise TypeError(f"Text encoder returned no tensor hidden states: {type(output)!r}")
+        return candidate
+
+    def _pooled(output: Any) -> torch.Tensor | None:
+        candidate = getattr(output, "text_embeds", None)
+        return candidate if isinstance(candidate, torch.Tensor) else None
+
     # ── SD3: triple text encoder (CLIP×2 + T5) ──
     if config.family == "sd3":
         # CLIP text encoders (tokenizer + tokenizer_2)
         prompt_embeds_list = []
-        pooled_prompt_embeds = None
+        pooled_list = []
 
-        for i, (te, tok) in enumerate([
+        for te, tok in [
             (text_encoder, tokenizer),
             (text_encoder_2, components.tokenizer_2),
-        ]):
+        ]:
             if te is None:
                 continue
             tokenized = tok(
@@ -1337,13 +1360,19 @@ def encode_text(
                 truncation=True, return_tensors="pt"
             )
             input_ids = tokenized.input_ids.to(device)
-            output = te(input_ids, output_hidden_states=False)
-            prompt_embeds_list.append(output.last_hidden_state)
-            if i == 0:
-                pooled_prompt_embeds = output.text_embeds
+            # SD3 uses penultimate hidden state, not last_hidden_state
+            output = te(input_ids, output_hidden_states=True)
+            prompt_embeds_list.append(_hidden_states(output, penultimate=True))
+            # Collect pooled embeddings from both CLIP encoders
+            pooled = _pooled(output)
+            if pooled is not None:
+                pooled_list.append(pooled)
 
-        # Concatenate CLIP hidden states
+        # Concatenate CLIP hidden states along feature dim: [768 + 1280 = 2048]
         encoder_hidden_states = torch.cat(prompt_embeds_list, dim=-1)
+
+        # Pooled: concatenate CLIP-L and CLIP-G pooled embeddings
+        pooled_prompt_embeds = torch.cat(pooled_list, dim=-1) if pooled_list else None
 
         # T5 encoder (tokenizer_3)
         if text_encoder_3 is not None:
@@ -1355,7 +1384,7 @@ def encode_text(
             input_ids_3 = tokenized_3.input_ids.to(device)
             t5_output = text_encoder_3(input_ids_3)
             # Pad/truncate T5 to same length as CLIP
-            t5_hidden = t5_output.last_hidden_state
+            t5_hidden = _hidden_states(t5_output)
             if t5_hidden.shape[1] < max_length:
                 pad_len = max_length - t5_hidden.shape[1]
                 t5_hidden = torch.nn.functional.pad(t5_hidden, (0, 0, 0, pad_len))
@@ -1363,9 +1392,6 @@ def encode_text(
                 t5_hidden = t5_hidden[:, :max_length]
             encoder_hidden_states = torch.cat([encoder_hidden_states, t5_hidden], dim=-2)
 
-        attention_mask = torch.ones(
-            encoder_hidden_states.shape[:2], device=device, dtype=dtype
-        )
         return encoder_hidden_states.to(dtype), pooled_prompt_embeds.to(dtype) if pooled_prompt_embeds is not None else None
 
     # ── HunyuanDiT: bilingual CLIP + mT5 ──
@@ -1556,7 +1582,10 @@ def encode_text(
         prompt_list = prompts if isinstance(prompts, list) else [prompts]
         for i, prompt_item in enumerate(prompt_list):
             messages = [{"role": "user", "content": prompt_item}]
-            prompt_list[i] = tokenizer.apply_chat_template(
+            apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
+            if not callable(apply_chat_template):
+                raise TypeError("Z-Image tokenizer must provide apply_chat_template()")
+            prompt_list[i] = apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
@@ -2115,10 +2144,7 @@ def vae_encode(
         shift = getattr(vae.config, 'shift_factor', None) or 0.0
 
     # Z-Image/FLUX VAE: latents = (encoded - shift) * scaling
-    if shift != 0.0:
-        latents = (latents - shift) * scaling
-    else:
-        latents = latents * scaling
+    latents = (latents - shift) * scaling if shift != 0.0 else latents * scaling
 
     return latents
 

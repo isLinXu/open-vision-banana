@@ -178,6 +178,18 @@ class TestPublicAPI:
         assert "flux-dev" in models
         assert models == sorted(models)
 
+    def test_registry_capability_matrix(self):
+        """Every registered family exposes the fields required by loaders."""
+        assert list_models()
+        for name in list_models():
+            cfg = get_model_config(name)
+            assert cfg.pipeline_class
+            assert cfg.family
+            assert cfg.num_text_encoders >= 1
+            assert cfg.default_resolution > 0
+            assert cfg.memory_budget_gb > 0
+            assert cfg.lora_target_modules
+
     def test_get_models_by_family(self):
         sdxl_models = get_models_by_family("sdxl")
         assert "sdxl" in sdxl_models
