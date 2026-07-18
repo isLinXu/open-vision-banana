@@ -379,9 +379,9 @@ def main():
 
             input_pil = load_image(img_path, res)
 
-            # Load target
+            # Load target (skip for generation task — targets are .txt prompts)
             target_pil = None
-            if tgt_dir.exists():
+            if task != "generation" and tgt_dir.exists():
                 tgt_candidates = list(tgt_dir.glob(img_path.stem + "*"))
                 if not tgt_candidates:
                     tgt_candidates = sorted(tgt_dir.glob("*"))

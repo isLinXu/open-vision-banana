@@ -1,0 +1,106 @@
+# SD3-Medium LoRA 训练配置 (MPS)
+# ================================
+# Base: Stable Diffusion 3 Medium (2B MMDiT) — triple encoder (CLIP-L + CLIP-G + T5-XXL)
+# Flow Matching + 16-channel VAE
+# Apple Silicon (MPS) 128GB 统一内存优化
+
+# 基础模型
+model:
+  name: "sd3"
+  dtype: "bfloat16"
+  local_path: "stabilityai/stable-diffusion-3-medium"
+
+# LoRA 配置 (标准 LoRA, 2B 模型用 rank=64)
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: false                # SD3 不使用 rsLoRA
+  target_modules:
+    - "to_q"
+    - "to_k"
+    - "to_v"
+    - "to_out.0"
+    - "to_q_context"
+    - "to_k_context"
+    - "to_v_context"
+    - "to_out_context"
+    - "context_embedder"
+    - "proj_out"
+    - "linear_1"
+    - "linear_2"
+  dropout: 0.0
+
+# 优化器
+optimizer:
+  lr: 2.0e-5
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 200
+  max_grad_norm: 1.0
+
+# 输出
+output_dir: "output/sd3_checkpoints"
+
+# 日志
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana-sd3"
+  wandb_log_checkpoints: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs/sd3"
+  run_name: "sd3_lora_v1"
+
+# 训练参数 (MPS 优化, 2B model)
+training:
+  epochs: 3
+  gradient_accumulation_steps: 8       # 2B model, less accum than 6B
+  use_amp: true
+  use_ema: true
+  ema_decay: 0.9999
+  ema_warmup_steps: 1000
+  save_every: 50
+  eval_every: 250
+  max_keep: 3
+  seed: 42
+  log_every: 5
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+# 数据 (复用 Z-Image 数据集)
+data:
+  vision_ratio: 0.1
+  generation_ratio: 0.9
+  resolution: 512                      # MPS 上 2B 模型用 512px
+  batch_size: 1
+  num_workers: 0                       # MPS must be 0
+  augmentation: true
+  val_split: 0.05
+  generation_path: "data/vb_zimage_train/generation"
+
+  # 训练任务数据 (多任务)
+  tasks:
+    depth_estimation:
+      datasets:
+        - name: "vb_zimage_train/depth"
+          split: "train"
+    semantic_segmentation:
+      datasets:
+        - name: "vb_zimage_train/segmentation"
+          split: "train"
+    edge_detection:
+      datasets:
+        - name: "vb_zimage_train/edge"
+          split: "train"
+
+# 深度 RGB 映射参数
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0
