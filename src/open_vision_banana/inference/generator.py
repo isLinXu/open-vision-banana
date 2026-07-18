@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 def _prompt_cache_key(prompt: str | list[str]) -> str:
     """Build a collision-resistant cache key for prompt embedding reuse."""
     if isinstance(prompt, str):
-        return prompt
+        return prompt if len(prompt) <= 256 else hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     return hashlib.sha256(
         json.dumps(prompt, ensure_ascii=False).encode("utf-8")
     ).hexdigest()
@@ -194,6 +194,7 @@ class BaseGenerator:
         pipe = PipeClass.from_pretrained(
             self.model_name,
             torch_dtype=self.dtype,
+            low_cpu_mem_usage=False,
         )
 
         if self.lora_path is not None:
@@ -265,6 +266,11 @@ class BaseGenerator:
             ]),
             "aura-flow": ("AuraFlowPipeline", [
                 "scheduler", "vae", "text_encoder", "tokenizer", "transformer",
+            ]),
+            "sd3": ("StableDiffusion3Img2ImgPipeline", [
+                "scheduler", "vae", "text_encoder", "tokenizer",
+                "text_encoder_2", "tokenizer_2", "text_encoder_3", "tokenizer_3",
+                "transformer",
             ]),
         }
 
@@ -495,6 +501,8 @@ class BaseGenerator:
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
                 strength=strength,
+                height=height,
+                width=width,
                 generator=generator,
                 **kwargs,
             )
@@ -509,7 +517,20 @@ class BaseGenerator:
                 **kwargs,
             )
 
-        return self._output_to_tensor(output)
+        output_tensor = self._output_to_tensor(output)
+        if image is not None:
+            # SD3 img2img can fall back to its native 1024px canvas when the
+            # constructed pipeline ignores height/width. Keep task outputs
+            # aligned with the input raster for downstream decoders/evaluators.
+            input_images = self._to_pil_list(image)
+            target_width, target_height = input_images[0].size
+            if output_tensor.shape[-2:] != (target_height, target_width):
+                output_tensor = torch.nn.functional.interpolate(
+                    output_tensor,
+                    size=(target_height, target_width),
+                    mode="nearest",
+                )
+        return output_tensor.clamp(0, 1)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -585,7 +606,7 @@ class BaseGenerator:
             self._prompt_cache.clear()  # invalidate cached embeddings
             logger.info("LoRA weights unloaded")
 
-    def _load_and_merge_lora(self, pipe, lora_path: str) -> None:
+    def _load_and_merge_lora(self, pipe, lora_path: str) -> int:
         """Load LoRA weights from safetensors and merge into base model.
 
         Bypasses the PEFT wrapper entirely — reads the adapter weights
@@ -613,7 +634,10 @@ class BaseGenerator:
         lora_rank = config.get("r", 64)
         lora_alpha = config.get("lora_alpha", 128)
         use_rslora = config.get("use_rslora", False)
-        target_modules = config.get("target_modules", ["to_k", "to_v"])
+        target_modules = config.get("target_modules", [
+            "to_q", "to_k", "to_v", "to_out.0",
+            "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2",
+        ])
 
         # rsLoRA scale = alpha / sqrt(rank); standard LoRA scale = alpha / rank
         scale = lora_alpha / lora_rank ** 0.5 if use_rslora else lora_alpha / lora_rank
@@ -664,8 +688,10 @@ class BaseGenerator:
                 logger.warning("Module '%s' has no 'weight' attribute, skipping", module_name)
                 continue
 
-            A = pair["lora_A"].to(module.weight.dtype)  # [rank, in_features]
-            B = pair["lora_B"].to(module.weight.dtype)  # [out_features, rank]
+            # Checkpoints are loaded on CPU while the pipeline may already be
+            # on MPS/CUDA; move adapter factors to the target layer first.
+            A = pair["lora_A"].to(device=module.weight.device, dtype=module.weight.dtype)
+            B = pair["lora_B"].to(device=module.weight.device, dtype=module.weight.dtype)
 
             # W += scale * B @ A
             delta = scale * (B @ A)
@@ -679,6 +705,7 @@ class BaseGenerator:
                 )
 
         logger.info("Manually merged %d LoRA layers into base model", merged_count)
+        return merged_count
 
     def enable_cpu_offload(self) -> None:
         """Enable sequential CPU offload on already-loaded pipelines."""

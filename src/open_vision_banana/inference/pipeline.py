@@ -23,6 +23,7 @@ All tasks share the same model weights — only the prompt changes.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -124,6 +125,7 @@ class VisionBanana:
         width: int = 1024,
         seed: int | None = None,
         prompt: str | None = None,
+        diagnostics_callback: Callable[[dict], None] | None = None,
     ) -> dict:
         """Run inference for a vision task.
 
@@ -143,12 +145,16 @@ class VisionBanana:
             seed: Random seed for reproducibility.
             prompt: Optional pre-built prompt string. If provided, it is used
                 directly instead of calling the task-specific prompt builder.
+            diagnostics_callback: Optional callback receiving JSON-safe call
+                metadata after a successful inference.
 
         Returns:
             Task-specific result dict with decoded outputs.
         """
         if task not in self.SUPPORTED_TASKS:
             raise ValueError(f"Unsupported task: {task}. Choose from: {self.SUPPORTED_TASKS}")
+        self._validate_image(image)
+        self._validate_inference_options(strength, num_inference_steps, height, width)
 
         if prompt is None:
             prompt = self._build_prompt(
@@ -160,6 +166,7 @@ class VisionBanana:
 
         logger.info(f"Running {task} prediction with prompt: {prompt[:100]}...")
 
+        started = time.perf_counter()
         rgb_output = self.generator.generate(
             prompt=prompt,
             image=image,
@@ -169,6 +176,7 @@ class VisionBanana:
             width=width,
             seed=seed,
         )
+        self._validate_rgb_output(image, rgb_output)
 
         result = self._decode_output(
             rgb_output=rgb_output,
@@ -180,6 +188,18 @@ class VisionBanana:
 
         result["prompt"] = prompt
         result["rgb_output"] = rgb_output
+        result["metadata"] = self._build_inference_metadata(
+            task=task,
+            image=image,
+            rgb_output=rgb_output,
+            seed=seed,
+            strength=strength,
+            num_inference_steps=num_inference_steps,
+            height=height,
+            width=width,
+        )
+        result["metadata"]["latency_ms"] = (time.perf_counter() - started) * 1000.0
+        self._emit_diagnostics(result["metadata"], diagnostics_callback)
 
         return result
 
@@ -211,12 +231,20 @@ class VisionBanana:
         Returns:
             List of result dicts, one per image.
         """
+        self._validate_image(images)
         if prompts is not None:
+            self._validate_inference_options(
+                kwargs.get("strength", 0.85),
+                kwargs.get("num_inference_steps", 1),
+                kwargs.get("height", 1024),
+                kwargs.get("width", 1024),
+            )
             if len(prompts) != images.shape[0]:
                 raise ValueError(
                     f"Number of prompts ({len(prompts)}) must match batch size ({images.shape[0]})"
                 )
             # P1-12: batch text encode + single img2img forward
+            started = time.perf_counter()
             text_cond = self.generator.encode_prompts(prompts)
             gen_kwargs = {
                 k: v
@@ -229,6 +257,7 @@ class VisionBanana:
                     "target_color",
                     "background_color",
                     "prompt",
+                    "diagnostics_callback",
                 )
             }
             rgb_output = self.generator.generate(
@@ -238,6 +267,7 @@ class VisionBanana:
                 pooled_prompt_embeds=text_cond["pooled_prompt_embeds"],
                 **gen_kwargs,
             )
+            self._validate_rgb_output(images, rgb_output)
             result = self._decode_output(
                 rgb_output=rgb_output,
                 task=task,
@@ -246,6 +276,18 @@ class VisionBanana:
                 background_color=kwargs.get("background_color", (0, 0, 0)),
             )
             result["rgb_output"] = rgb_output
+            result["metadata"] = self._build_inference_metadata(
+                task=task,
+                image=images,
+                rgb_output=rgb_output,
+                seed=kwargs.get("seed"),
+                strength=kwargs.get("strength", 0.85),
+                num_inference_steps=kwargs.get("num_inference_steps", 1),
+                height=kwargs.get("height", 1024),
+                width=kwargs.get("width", 1024),
+            )
+            result["metadata"]["latency_ms"] = (time.perf_counter() - started) * 1000.0
+            self._emit_diagnostics(result["metadata"], kwargs.get("diagnostics_callback"))
             B = images.shape[0]
             per_image = self._split_batch_result(result, B)
             for i, item in enumerate(per_image):
@@ -260,6 +302,90 @@ class VisionBanana:
     # Helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _validate_image(image: torch.Tensor) -> None:
+        """Validate the tensor contract before entering a diffusion pipeline."""
+        if not isinstance(image, torch.Tensor):
+            raise TypeError(f"image must be a torch.Tensor, got {type(image).__name__}")
+        if image.dim() not in (3, 4):
+            raise ValueError(
+                f"image must have shape [3,H,W] or [B,3,H,W], got {tuple(image.shape)}"
+            )
+        if image.shape[-3] != 3:
+            raise ValueError(f"image must have 3 channels, got {image.shape[-3]}")
+        if image.dim() == 4 and image.shape[0] < 1:
+            raise ValueError("image batch must contain at least one sample")
+        if image.shape[-2] < 1 or image.shape[-1] < 1:
+            raise ValueError(f"image spatial dimensions must be positive, got {tuple(image.shape[-2:])}")
+        if not torch.is_floating_point(image):
+            raise ValueError(f"image must use a floating dtype, got {image.dtype}")
+        if not torch.isfinite(image).all():
+            raise ValueError("image contains NaN or Inf values")
+        if image.min().item() < -1.00001 or image.max().item() > 1.00001:
+            raise ValueError("image values must be in [-1, 1]")
+
+    @staticmethod
+    def _validate_inference_options(
+        strength: float,
+        num_inference_steps: int,
+        height: int,
+        width: int,
+    ) -> None:
+        if not 0.0 < strength <= 1.0:
+            raise ValueError(f"strength must be in (0, 1], got {strength}")
+        if not isinstance(num_inference_steps, int) or num_inference_steps < 1:
+            raise ValueError("num_inference_steps must be a positive integer")
+        if height < 1 or width < 1:
+            raise ValueError("height and width must be positive")
+
+    @staticmethod
+    def _validate_rgb_output(image: torch.Tensor, rgb_output: torch.Tensor) -> None:
+        """Validate the generator output contract used by all decoders."""
+        if not isinstance(rgb_output, torch.Tensor):
+            raise TypeError(f"generator output must be a torch.Tensor, got {type(rgb_output).__name__}")
+        expected_batch = image.shape[0] if image.dim() == 4 else 1
+        expected_shape = tuple(image.shape[-2:])
+        if rgb_output.dim() != 4 or rgb_output.shape[0] != expected_batch or rgb_output.shape[1] != 3:
+            raise ValueError(f"generator output must have shape [B,3,H,W], got {tuple(rgb_output.shape)}")
+        if tuple(rgb_output.shape[-2:]) != expected_shape:
+            raise ValueError(
+                f"generator output raster {tuple(rgb_output.shape[-2:])} does not match input {expected_shape}"
+            )
+        if not torch.isfinite(rgb_output).all():
+            raise ValueError("generator output contains NaN or Inf values")
+
+    @staticmethod
+    def _build_inference_metadata(
+        task: str,
+        image: torch.Tensor,
+        rgb_output: torch.Tensor,
+        seed: int | None,
+        strength: float,
+        num_inference_steps: int,
+        height: int,
+        width: int,
+    ) -> dict:
+        return {
+            "task": task,
+            "batch_size": int(image.shape[0] if image.dim() == 4 else 1),
+            "input_shape": list(image.shape),
+            "output_shape": list(rgb_output.shape),
+            "seed": seed,
+            "strength": strength,
+            "num_inference_steps": num_inference_steps,
+            "requested_size": [height, width],
+        }
+
+    @staticmethod
+    def _emit_diagnostics(
+        metadata: dict,
+        callback: Callable[[dict], None] | None,
+    ) -> None:
+        """Emit JSON-safe per-call metadata without changing result keys."""
+        if callback is None:
+            return
+        callback({"event": "inference_complete", **dict(metadata)})
+
     def _split_batch_result(self, result: dict, batch_size: int) -> list[dict]:
         """Split a batched result dict into per-image dicts."""
         per_image = []
@@ -272,6 +398,12 @@ class VisionBanana:
                     item[key] = val[i]
                 else:
                     item[key] = val
+            if isinstance(item.get("metadata"), dict):
+                item["metadata"] = dict(item["metadata"])
+                item["metadata"]["batch_size"] = 1
+                if isinstance(item.get("rgb_output"), torch.Tensor):
+                    item["metadata"]["output_shape"] = list(item["rgb_output"].shape)
+                item["metadata"]["input_shape"] = [1, *list(item["metadata"]["input_shape"])[1:]]
             per_image.append(item)
         return per_image
 
@@ -475,14 +607,27 @@ class VisionBanana:
         Returns:
             Task-specific result dict with full-resolution outputs.
         """
+        if not isinstance(tile_size, int) or tile_size < 1:
+            raise ValueError("tile_size must be a positive integer")
+        if not isinstance(overlap, int) or overlap < 0 or overlap >= tile_size:
+            raise ValueError("overlap must be an integer in [0, tile_size)")
+        self._validate_image(image)
         if image.dim() == 3:
             image = image.unsqueeze(0)
         B, C, H, W = image.shape
-        assert B == 1, "predict_tiled only supports single-image inference"
+        if B != 1:
+            raise ValueError("predict_tiled only supports single-image inference")
+
+        # A rectangular input may be narrower than the requested square tile.
+        # Use the largest square that fits instead of generating negative
+        # slice offsets at the image boundary.
+        tile_size = min(tile_size, H, W)
 
         # If image fits within tile_size, fall back to standard predict
         if tile_size >= H and tile_size >= W:
             return self.predict(image, task, **kwargs)
+        if overlap >= tile_size:
+            raise ValueError("overlap must be smaller than the effective tile size")
 
         if task in self.DISCRETE_TILE_TASKS:
             return self._predict_tiled_discrete(image, task, tile_size, overlap, **kwargs)
@@ -497,19 +642,14 @@ class VisionBanana:
         weight = torch.zeros(1, 1, H, W, device=image.device)
 
         # Blending weight: cosine ramp at edges for smooth stitching
-        ramp = torch.linspace(0, 1, tile_size, device=image.device)
-        ramp = torch.minimum(ramp, torch.flip(ramp, [0]))
-        ramp = torch.clamp(ramp * float(tile_size) / (overlap + 1), 0, 1)
-        tile_weight = ramp.unsqueeze(0) * ramp.unsqueeze(1)  # [tile, tile]
-        tile_weight = tile_weight.unsqueeze(0).unsqueeze(0)  # [1,1,t,t]
-
-        all_results = []
-
         for i in range(tiles_h):
             for j in range(tiles_w):
                 y0 = min(i * stride, H - tile_size)
                 x0 = min(j * stride, W - tile_size)
                 y1, x1 = y0 + tile_size, x0 + tile_size
+                tile_weight = self._tile_blend_weight(
+                    tile_size, overlap, y0, x0, y1, x1, H, W, image.device
+                )
 
                 tile = image[:, :, y0:y1, x0:x1]
                 tile_result = self.predict(tile, task, **kwargs)
@@ -519,7 +659,8 @@ class VisionBanana:
                     rgb_sum[:, :, y0:y1, x0:x1] += tile_rgb * tile_weight
                     weight[:, :, y0:y1, x0:x1] += tile_weight
 
-                all_results.append(tile_result)
+                if tile_rgb is None:
+                    raise ValueError("tiled inference requires each tile to return rgb_output")
 
         # Blend RGB outputs
         weight = weight.clamp(min=1e-8)
@@ -533,6 +674,16 @@ class VisionBanana:
             background_color=kwargs.get("background_color", (0, 0, 0)),
         )
         result["rgb_output"] = rgb_output
+        result["metadata"] = {
+            "task": task,
+            "batch_size": 1,
+            "input_shape": list(image.shape),
+            "output_shape": list(rgb_output.shape),
+            "tile_size": tile_size,
+            "overlap": overlap,
+            "tile_count": tiles_h * tiles_w,
+            "tiled": True,
+        }
         return result
 
     def _predict_tiled_discrete(
@@ -549,11 +700,6 @@ class VisionBanana:
         tiles_h = max(1, (H - overlap + stride - 1) // stride)
         tiles_w = max(1, (W - overlap + stride - 1) // stride)
 
-        ramp = torch.linspace(0, 1, tile_size, device=image.device)
-        ramp = torch.minimum(ramp, torch.flip(ramp, [0]))
-        ramp = torch.clamp(ramp * float(tile_size) / (overlap + 1), 0, 1)
-        tile_weight = (ramp.unsqueeze(0) * ramp.unsqueeze(1)).unsqueeze(0).unsqueeze(0)
-
         if task == "semantic":
             class_color_map = kwargs.get("class_color_map")
             if not class_color_map:
@@ -566,6 +712,9 @@ class VisionBanana:
                     y0 = min(i * stride, H - tile_size)
                     x0 = min(j * stride, W - tile_size)
                     y1, x1 = y0 + tile_size, x0 + tile_size
+                    tile_weight = self._tile_blend_weight(
+                        tile_size, overlap, y0, x0, y1, x1, H, W, image.device
+                    )
                     tile = image[:, :, y0:y1, x0:x1]
                     tile_result = self.predict(tile, task, **kwargs)
                     labels = tile_result["mask"].long().squeeze(1)
@@ -575,10 +724,24 @@ class VisionBanana:
                     weight[:, :, y0:y1, x0:x1] += w
             weight = weight.clamp(min=1e-8)
             final_labels = vote.argmax(dim=1, keepdim=True)
+            colors = torch.tensor(
+                list(class_color_map.values()), device=image.device, dtype=torch.float32
+            ) / 255.0
+            rgb_output = colors[final_labels.squeeze(1)].permute(0, 3, 1, 2)
             return {
                 "mask": final_labels,
                 "class_names": list(class_color_map.keys()),
-                "rgb_output": tile_result.get("rgb_output"),
+                "rgb_output": rgb_output,
+                "metadata": {
+                    "task": task,
+                    "batch_size": 1,
+                    "input_shape": list(image.shape),
+                    "output_shape": list(rgb_output.shape),
+                    "tile_size": tile_size,
+                    "overlap": overlap,
+                    "tile_count": tiles_h * tiles_w,
+                    "tiled": True,
+                },
             }
 
         # Binary / edge-like discrete tasks: weighted vote then threshold
@@ -590,6 +753,9 @@ class VisionBanana:
                 y0 = min(i * stride, H - tile_size)
                 x0 = min(j * stride, W - tile_size)
                 y1, x1 = y0 + tile_size, x0 + tile_size
+                tile_weight = self._tile_blend_weight(
+                    tile_size, overlap, y0, x0, y1, x1, H, W, image.device
+                )
                 tile = image[:, :, y0:y1, x0:x1]
                 tile_result = self.predict(tile, task, **kwargs)
                 last_result = tile_result
@@ -613,8 +779,46 @@ class VisionBanana:
             result["edge_mask"] = final_mask
         elif task == "referring":
             result["mask"] = final_mask
-        result["rgb_output"] = last_result.get("rgb_output")
+        result["rgb_output"] = final_mask.float().expand(-1, 3, -1, -1)
+        result["metadata"] = {
+            "task": task,
+            "batch_size": 1,
+            "input_shape": list(image.shape),
+            "output_shape": list(result["rgb_output"].shape),
+            "tile_size": tile_size,
+            "overlap": overlap,
+            "tile_count": tiles_h * tiles_w,
+            "tiled": True,
+        }
         return result
+
+    @staticmethod
+    def _tile_blend_weight(
+        tile_size: int,
+        overlap: int,
+        y0: int,
+        x0: int,
+        y1: int,
+        x1: int,
+        height: int,
+        width: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Build overlap weights without zeroing the outer image border."""
+        y_weight = torch.ones(tile_size, device=device)
+        x_weight = torch.ones(tile_size, device=device)
+        if overlap:
+            ramp_up = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
+            ramp_down = torch.flip(ramp_up, [0])
+            if y0 > 0:
+                y_weight[:overlap] = ramp_up
+            if y1 < height:
+                y_weight[-overlap:] = ramp_down
+            if x0 > 0:
+                x_weight[:overlap] = ramp_up
+            if x1 < width:
+                x_weight[-overlap:] = ramp_down
+        return (y_weight[:, None] * x_weight[None, :]).unsqueeze(0).unsqueeze(0)
 
     def _export_depth_torchscript(self, output_path: Path, input_shape: tuple) -> None:
         from ..core.depth_mapper import DepthRGBMapper

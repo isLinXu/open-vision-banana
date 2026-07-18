@@ -143,6 +143,73 @@ class TestVisionBananaPipeline:
         with pytest.raises(ValueError, match="Unsupported task"):
             pipe.predict(image, task="super_resolution")
 
+    def test_predict_reports_metadata(self):
+        pipe = self._make_pipeline()
+        image = torch.rand(1, 3, 64, 64)
+        result = pipe.predict(image, task="depth", seed=7, num_inference_steps=2)
+        assert result["metadata"]["task"] == "depth"
+        assert result["metadata"]["seed"] == 7
+        assert result["metadata"]["input_shape"] == [1, 3, 64, 64]
+        assert result["metadata"]["output_shape"] == [1, 3, 64, 64]
+
+    def test_predict_emits_structured_diagnostics(self, tmp_path):
+        from open_vision_banana.inference.diagnostics import InferenceDiagnosticsWriter
+
+        pipe = self._make_pipeline()
+        image = torch.rand(1, 3, 64, 64)
+        path = tmp_path / "inference.jsonl"
+        with InferenceDiagnosticsWriter(path) as writer:
+            result = pipe.predict(image, task="depth", seed=11, diagnostics_callback=writer)
+
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        assert len(rows) == 1
+        assert rows[0]["event"] == "inference_complete"
+        assert rows[0]["task"] == "depth"
+        assert rows[0]["seed"] == 11
+        assert rows[0]["output_shape"] == result["metadata"]["output_shape"]
+        assert rows[0]["latency_ms"] >= 0
+
+    def test_invalid_image_contract_raises(self):
+        pipe = self._make_pipeline()
+        with pytest.raises(ValueError, match="3 channels"):
+            pipe.predict(torch.rand(1, 1, 16, 16), task="depth")
+        with pytest.raises(ValueError, match="NaN"):
+            pipe.predict(torch.full((1, 3, 16, 16), float("nan")), task="depth")
+
+    def test_invalid_inference_options_raise(self):
+        pipe = self._make_pipeline()
+        image = torch.rand(1, 3, 64, 64)
+        with pytest.raises(ValueError, match="strength"):
+            pipe.predict(image, task="depth", strength=0.0)
+        with pytest.raises(ValueError, match="positive integer"):
+            pipe.predict(image, task="depth", num_inference_steps=0)
+
+    def test_predict_tiled_continuous_preserves_raster(self):
+        pipe = self._make_pipeline()
+        image = torch.rand(1, 3, 80, 160)
+        result = pipe.predict_tiled(image, task="depth", tile_size=64, overlap=16)
+        assert result["depth"].shape[-2:] == (80, 160)
+        assert result["rgb_output"].shape == (1, 3, 80, 160)
+        assert result["metadata"]["tiled"] is True
+        assert result["metadata"]["tile_count"] > 1
+        assert torch.isfinite(result["rgb_output"]).all()
+        assert result["rgb_output"].abs().sum() > 0
+
+    def test_predict_tiled_discrete_returns_full_rgb(self):
+        pipe = self._make_pipeline(output_val=0.9)
+        image = torch.rand(1, 3, 80, 160)
+        result = pipe.predict_tiled(
+            image, task="referring", tile_size=64, overlap=16, expression="the object"
+        )
+        assert result["mask"].shape == (1, 1, 80, 160)
+        assert result["rgb_output"].shape == (1, 3, 80, 160)
+
+    def test_predict_tiled_rejects_invalid_overlap(self):
+        pipe = self._make_pipeline()
+        image = torch.rand(1, 3, 80, 160)
+        with pytest.raises(ValueError, match="overlap"):
+            pipe.predict_tiled(image, task="depth", tile_size=32, overlap=32)
+
 
 # ---------------------------------------------------------------------------
 # CityscapesSegDataset vectorized _label_to_rgb
@@ -549,6 +616,23 @@ class TestBaseGeneratorDtypeSync:
         with patch.object(BaseGenerator, '_load_model'):
             gen = BaseGenerator(model_name="dummy", dtype=torch.float16, device="cpu")
             assert gen.inference_options.dtype == "float16"
+
+
+class TestPromptCacheKey:
+    """Long prompts should not be retained verbatim as cache keys."""
+
+    def test_long_prompt_is_hashed(self):
+        from open_vision_banana.inference.generator import _prompt_cache_key
+
+        prompt = "x" * 257
+        key = _prompt_cache_key(prompt)
+        assert key != prompt
+        assert len(key) == 64
+
+    def test_short_prompt_is_readable(self):
+        from open_vision_banana.inference.generator import _prompt_cache_key
+
+        assert _prompt_cache_key("a cat") == "a cat"
 
     def test_explicit_inference_options_not_overridden(self):
         from unittest.mock import patch

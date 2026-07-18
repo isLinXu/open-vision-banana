@@ -44,6 +44,7 @@ def __getattr__(name):
         "PromptBuilder": ".inference.prompt",
         "VisualizationDecoder": ".inference.decoder",
         "VisionBanana": ".inference.pipeline",
+        "InferenceDiagnosticsWriter": ".inference.diagnostics",
         # Training
         "InstructionTuner": ".training.tuner",
         "EMAModel": ".training.utils",
@@ -61,6 +62,9 @@ def __getattr__(name):
         "DepthRGBMapperONNX": ".export.onnx_export",
         "NormalRGBMapperONNX": ".export.onnx_export",
         "export_mapper_onnx": ".export.onnx_export",
+        "export_full_pipeline_onnx": ".export.onnx_export",
+        # Serving imports FastAPI lazily inside create_app().
+        "create_app": ".serving.fastapi_app",
         # Data
         "build_dataset": ".data.datasets",
         "SACoInstanceDataset": ".data.datasets",
