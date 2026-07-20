@@ -171,6 +171,7 @@ class VisionTaskDataset(_Dataset):
             "prompt": sample["prompt"],
             "image": image,
             "target_rgb": target_rgb,
+            "target_rgb_range": "0_1",
             "task": self.task,
         }
 
@@ -582,13 +583,15 @@ class InstructionTuner:
         if pipeline is None:
             # Fallback: base_model may itself be a diffusers pipeline
             pipeline = self.base_model
-        transformer = getattr(pipeline, "transformer", None)
-        if transformer is None:
+        # SDXL/SD1.5/SD2 use pipeline.unet; FLUX/SD3/PixArt use pipeline.transformer
+        backbone = getattr(pipeline, "transformer", None) or getattr(pipeline, "unet", None)
+        if backbone is None:
             raise AttributeError(
-                f"Could not resolve 'transformer' from base_model. "
+                f"Could not resolve 'transformer' or 'unet' from base_model. "
                 f"base_model type: {type(self.base_model)}"
             )
-        self.peft_model = get_peft_model(transformer, lora_config)
+        transformer = backbone  # Keep variable name for dtype logic below
+        self.peft_model = get_peft_model(backbone, lora_config)
         self.peft_model.print_trainable_parameters()
 
         # Cast LoRA parameters to the base model's dtype.
@@ -1152,11 +1155,14 @@ class InstructionTuner:
                         prompt_2=prompts,
                         device=device,
                         num_images_per_prompt=1,
-                        max_sequence_length=max_length,
                     )
-                    # SD3 has a third encoder (T5-XXL)
+                    # SD3 uses a third T5-XXL encoder and accepts max_sequence_length
                     if getattr(pipeline, "text_encoder_3", None) is not None:
                         encode_kwargs["prompt_3"] = prompts
+                        encode_kwargs["max_sequence_length"] = max_length
+                    # SDXL (no text_encoder_3): StableDiffusionXLPipeline.encode_prompt
+                    # does NOT accept max_sequence_length — tokenizers are hard-capped
+                    # at 77. Passing it raises TypeError.
                     text_outputs = pipeline.encode_prompt(**encode_kwargs)
             finally:
                 for enc, dtype in zip(encoders, original_dtypes, strict=False):
@@ -1306,6 +1312,8 @@ class InstructionTuner:
                 latents = latents.to(dtype=model_dtype)
             return latents
         except Exception as e:
+            if self.model_config.family == "sdxl":
+                raise RuntimeError("SDXL VAE encoding failed; refusing silent fallback") from e
             logger.warning(f"VAE encoding failed ({e}); using zero latents.")
             B, _, H, W = images.shape
             # Use model's expected latent channels (FLUX/Z-Image=16, others=4)
@@ -1317,6 +1325,12 @@ class InstructionTuner:
             )
 
     def _training_step(self, batch: dict) -> torch.Tensor:
+        """Dispatch to the objective that belongs to the registered model family."""
+        if self.model_config.family == "sdxl":
+            return self._training_step_sdxl(batch)
+        return self._training_step_flow(batch)
+
+    def _training_step_flow(self, batch: dict) -> torch.Tensor:
         """Single training step — rectified flow velocity prediction in latent space.
 
         Implements the FLUX flow-matching objective:
@@ -1347,6 +1361,14 @@ class InstructionTuner:
             target_rgb = torch.stack(target_rgb) if all(isinstance(t, torch.Tensor) for t in target_rgb) else target_rgb[0]
 
         input_images = batch.get("image")
+        # P0-2: generation samples carry image=None so they route through the
+        # pure t2i branch (no img2img conditioning). The collate fn wraps
+        # per-sample Nones into a list ([None]), so unwrap it here; a batch
+        # whose samples all lack an input image must yield input_images=None.
+        if isinstance(input_images, list):
+            input_images = next(
+                (t for t in input_images if isinstance(t, torch.Tensor)), None
+            )
         prompts: list[str] = batch.get("prompt", [""])
         if isinstance(prompts, str):
             prompts = [prompts]
@@ -1385,7 +1407,13 @@ class InstructionTuner:
 
         # ── P0-2: VAE encoding — work in latent space ───────────────────
         # Convert target_rgb [0,1] → [-1,1] before VAE encoding.
-        target_pixels = target_rgb * 2.0 - 1.0  # [B, 3, H, W]
+        # VisionTaskDataset historically emits [0, 1], while generation emits
+        # [-1, 1].  New datasets may declare the range explicitly; retain the
+        # legacy default for existing callers and tests.
+        pixel_range = batch.get("target_rgb_range", "0_1")
+        if isinstance(pixel_range, list):
+            pixel_range = pixel_range[0]
+        target_pixels = target_rgb if pixel_range == "-1_1" else target_rgb * 2.0 - 1.0
         target_latents = self._encode_latents(target_pixels)  # [B, 16, H/8, W/8]
 
         input_latents = None
@@ -1483,17 +1511,81 @@ class InstructionTuner:
         # Ensure shape matches velocity_target before computing loss.
         # (Some transformers return a different channel/spatial layout.)
         if predicted_velocity.shape != velocity_target.shape:
-            logger.warning(
-                f"Shape mismatch: predicted {predicted_velocity.shape} vs "
-                f"target {velocity_target.shape}. Attempting adaptive pool."
+            raise RuntimeError(
+                f"Model output shape {tuple(predicted_velocity.shape)} does not match "
+                f"target shape {tuple(velocity_target.shape)}; refusing silent repair."
             )
-            predicted_velocity = torch.nn.functional.adaptive_avg_pool2d(
-                predicted_velocity, velocity_target.shape[-2:]
-            )
-            if predicted_velocity.shape[1] != velocity_target.shape[1]:
-                predicted_velocity = predicted_velocity[:, : velocity_target.shape[1]]
 
         return self._compute_flow_loss(predicted_velocity, velocity_target, timesteps)
+
+    def _training_step_sdxl(self, batch: dict) -> torch.Tensor:
+        """Scheduler-aware SDXL epsilon/v-prediction objective.
+
+        SDXL uses the discrete training scheduler; it must not consume the
+        continuous FLUX interpolation or input-target velocity target.
+        """
+        target = batch.get("target_rgb")
+        if target is None:
+            raise ValueError("SDXL batch requires target_rgb")
+        if isinstance(target, list):
+            target = torch.stack(target)
+        value_range = batch.get("target_rgb_range", "0_1")
+        if isinstance(value_range, list):
+            value_range = value_range[0]
+        pixels = target if value_range == "-1_1" else target * 2.0 - 1.0
+        device = next((p.device for p in self.peft_model.parameters()), pixels.device)
+        pixels = pixels.to(device)
+        b = pixels.shape[0]
+        z0 = self._encode_latents(pixels)
+
+        pipeline = getattr(self.base_model, "_t2i_pipe", None) or getattr(self.base_model, "pipe", None) or self.base_model
+        scheduler = getattr(pipeline, "scheduler", None)
+        if scheduler is None or not hasattr(scheduler, "add_noise"):
+            raise RuntimeError("SDXL training requires a pipeline scheduler with add_noise()")
+        cfg = getattr(scheduler, "config", scheduler)
+        n_train = int(getattr(cfg, "num_train_timesteps", 1000))
+        timesteps = torch.randint(0, n_train, (b,), device=device, dtype=torch.long)
+        noise = torch.randn_like(z0)
+        noisy = scheduler.add_noise(z0, noise, timesteps)
+
+        prompts = batch.get("prompt", [""] * b)
+        if isinstance(prompts, str):
+            prompts = [prompts]
+        text = self._encode_text(prompts, device)
+        prompt_embeds = text["prompt_embeds"]
+        pooled = text.get("pooled_prompt_embeds")
+        if pooled is None:
+            raise RuntimeError("SDXL requires pooled_prompt_embeds from both text encoders")
+        pred = self._forward_registry(
+            noisy, timesteps, prompt_embeds, pooled, text.get("attention_mask"),
+            next(self.peft_model.parameters()).dtype, device,
+            micro_conditioning=batch,
+        )
+        if hasattr(pred, "sample"):
+            pred = pred.sample
+        if pred.shape != z0.shape:
+            raise RuntimeError(f"SDXL output shape {tuple(pred.shape)} != latent shape {tuple(z0.shape)}")
+
+        prediction_type = str(getattr(cfg, "prediction_type", "epsilon"))
+        if prediction_type == "epsilon":
+            target_value = noise
+        elif prediction_type == "v_prediction":
+            if not hasattr(scheduler, "get_velocity"):
+                raise RuntimeError("v_prediction scheduler must implement get_velocity()")
+            target_value = scheduler.get_velocity(z0, noise, timesteps)
+        else:
+            raise ValueError(f"Unsupported SDXL scheduler prediction_type: {prediction_type}")
+        per_sample = (pred.float() - target_value.float()).square().mean(dim=(1, 2, 3))
+        if self.use_min_snr:
+            alpha = getattr(scheduler, "alphas_cumprod", None)
+            if alpha is None:
+                raise RuntimeError("Min-SNR requires scheduler.alphas_cumprod")
+            alpha = alpha.to(device=device, dtype=torch.float32)[timesteps]
+            snr = alpha / (1.0 - alpha).clamp_min(1e-12)
+            cap = torch.minimum(snr, torch.full_like(snr, self.min_snr_gamma))
+            weight = cap / (snr + 1.0 if prediction_type == "v_prediction" else snr.clamp_min(1e-12))
+            per_sample = per_sample * weight
+        return per_sample.mean()
 
     def _forward_flux(
         self, noisy_latents_input, timesteps, prompt_embeds,
@@ -1555,7 +1647,7 @@ class InstructionTuner:
     def _forward_registry(
         self, noisy_latents_input, timesteps, prompt_embeds,
         pooled_prompt_embeds, attention_mask,
-        model_dtype, device,
+        model_dtype, device, micro_conditioning=None,
     ) -> torch.Tensor:
         """Registry-based forward pass for non-FLUX models.
 
@@ -1563,11 +1655,11 @@ class InstructionTuner:
         architecture-specific calling conventions for Qwen-Image, Z-Image,
         SANA, Lumina2, HunyuanDiT, PixArt, SD1.5/2.1, SDXL, etc.
         """
-        from ..model_registry import backbone_forward
+        from ..model_registry import backbone_forward, build_added_cond_kwargs
 
         # Cast inputs to model dtype
         noisy_latents_input = noisy_latents_input.to(model_dtype)
-        timesteps = timesteps.to(model_dtype)
+        timesteps = timesteps if self.model_config.family == "sdxl" else timesteps.to(model_dtype)
         prompt_embeds = prompt_embeds.to(model_dtype)
         if pooled_prompt_embeds is not None:
             pooled_prompt_embeds = pooled_prompt_embeds.to(model_dtype)
@@ -1578,6 +1670,45 @@ class InstructionTuner:
         guidance = None
         if self.model_config.needs_guidance_in_forward:
             guidance = self.model_config.default_guidance_scale
+
+        # Build added_cond_kwargs for SDXL/Kolors-family UNet models.
+        # backbone_forward's UNet path requires added_cond_kwargs (not raw
+        # pooled_embeds); without this SDXL/SSD-1B training raises a shape
+        # error because the UNet expects pooled text_embeds + time_ids.
+        added_cond_kwargs = None
+        if self.model_config.needs_added_cond_kwargs and pooled_prompt_embeds is not None:
+            batch_size = noisy_latents_input.shape[0]
+            latent_h, latent_w = noisy_latents_input.shape[-2], noisy_latents_input.shape[-1]
+            # Prefer per-sample SDXL micro-conditioning metadata.  Falling
+            # back to the final canvas is only for legacy batches.
+            def _meta(name, default):
+                value = (micro_conditioning or {}).get(name, default)
+                if isinstance(value, list):
+                    value = torch.as_tensor(value, device=device)
+                if not isinstance(value, torch.Tensor):
+                    value = torch.full((batch_size, 2), value, device=device)
+                return value.to(device=device, dtype=model_dtype)
+
+            original = _meta("original_size", [latent_h * 8, latent_w * 8])
+            crop = _meta("crop_top_left", [0, 0])
+            target_size = _meta("target_size", [latent_h * 8, latent_w * 8])
+            if original.ndim == 1:
+                original = original.unsqueeze(0).expand(batch_size, -1)
+            if crop.ndim == 1:
+                crop = crop.unsqueeze(0).expand(batch_size, -1)
+            if target_size.ndim == 1:
+                target_size = target_size.unsqueeze(0).expand(batch_size, -1)
+            time_ids = torch.cat((original, crop, target_size), dim=1)
+            added_cond_kwargs = build_added_cond_kwargs(
+                config=self.model_config,
+                pooled_embeds=pooled_prompt_embeds,
+                resolution=(latent_h * 8, latent_w * 8),
+                device=device,
+                dtype=model_dtype,
+                batch_size=batch_size,
+            )
+            if added_cond_kwargs is not None:
+                added_cond_kwargs["time_ids"] = time_ids
 
         # Use PEFT-wrapped model as the backbone
         backbone = self.peft_model
@@ -1595,6 +1726,7 @@ class InstructionTuner:
                     timesteps=timesteps,
                     encoder_hidden_states=prompt_embeds,
                     config=self.model_config,
+                    added_cond_kwargs=added_cond_kwargs,
                     guidance=guidance,
                     attention_mask=attention_mask,
                     pooled_embeds=pooled_prompt_embeds,
@@ -1609,6 +1741,7 @@ class InstructionTuner:
                     timesteps=timesteps,
                     encoder_hidden_states=prompt_embeds,
                     config=self.model_config,
+                    added_cond_kwargs=added_cond_kwargs,
                     guidance=guidance,
                     attention_mask=attention_mask,
                     pooled_embeds=pooled_prompt_embeds,
@@ -1715,15 +1848,30 @@ class InstructionTuner:
 
 
 def _collate_fn(batch: list[dict]) -> dict:
-    """Custom collate function for vision task batches."""
+    """Schema-aware collate that rejects heterogeneous tensor/None fields."""
+    if not batch:
+        raise ValueError("Cannot collate an empty batch")
+    keys = set().union(*(sample.keys() for sample in batch))
     result: dict = {}
-    for key in batch[0]:
-        if isinstance(batch[0][key], torch.Tensor):
-            result[key] = torch.stack([b[key] for b in batch])
-        elif isinstance(batch[0][key], str):
-            result[key] = [b[key] for b in batch]
+    for key in keys:
+        values = [sample.get(key) for sample in batch]
+        if all(isinstance(v, torch.Tensor) for v in values):
+            try:
+                result[key] = torch.stack(values)
+            except RuntimeError as exc:
+                raise ValueError(f"Cannot stack field {key!r}: {[tuple(v.shape) for v in values]}") from exc
+        elif all(isinstance(v, str) for v in values):
+            result[key] = values
+        elif key == "image" and all(v is None for v in values):
+            # Generation has no visual condition; keep this explicit rather
+            # than manufacturing a zero image that can be mistaken for one.
+            result[key] = None
+        elif all(v is None for v in values):
+            result[key] = None
+        elif all(isinstance(v, (int, float, bool)) for v in values):
+            result[key] = values
         else:
-            result[key] = [b[key] for b in batch]
+            raise ValueError(f"Heterogeneous batch field {key!r}: {[type(v).__name__ for v in values]}")
     return result
 
 
