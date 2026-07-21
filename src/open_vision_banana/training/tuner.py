@@ -170,6 +170,7 @@ class VisionTaskDataset(_Dataset):
         return {
             "prompt": sample["prompt"],
             "image": image,
+            "image_range": "-1_1",
             "target_rgb": target_rgb,
             "target_rgb_range": "0_1",
             "task": self.task,
@@ -805,6 +806,13 @@ class InstructionTuner:
                         accumulated_steps = 0
                         if self.ema is not None:
                             self.ema.update(self._ema_module())
+
+                        # MPS memory management: clear cache periodically
+                        if global_step % 50 == 0:
+                            import gc
+                            gc.collect()
+                            if torch.backends.mps.is_available():
+                                torch.mps.empty_cache()
 
                     running_loss: float = float(epoch_loss) / max(num_steps, 1)
                     current_lr = float(scheduler.get_last_lr()[0])
@@ -1519,10 +1527,15 @@ class InstructionTuner:
         return self._compute_flow_loss(predicted_velocity, velocity_target, timesteps)
 
     def _training_step_sdxl(self, batch: dict) -> torch.Tensor:
-        """Scheduler-aware SDXL epsilon/v-prediction objective.
+        """Scheduler-aware SDXL epsilon/v-prediction objective with img2img.
 
-        SDXL uses the discrete training scheduler; it must not consume the
-        continuous FLUX interpolation or input-target velocity target.
+        For perception tasks (depth/normal/segmentation/edge), the input image
+        is encoded to latents and used as the img2img init latent — matching
+        the inference protocol (SDXLImg2ImgPipeline, strength≈0.85).
+        The scheduler adds noise to the *condition* latent (not target), and
+        the model predicts the noise that was added to reach that noised state.
+
+        For generation tasks (image=None), pure t2i: noise is added to target.
         """
         target = batch.get("target_rgb")
         if target is None:
@@ -1538,6 +1551,26 @@ class InstructionTuner:
         b = pixels.shape[0]
         z0 = self._encode_latents(pixels)
 
+        # ── Condition image (img2img) ───────────────────────────────────
+        input_images = batch.get("image")
+        if isinstance(input_images, list):
+            input_images = next(
+                (t for t in input_images if isinstance(t, torch.Tensor)), None
+            )
+        z_cond = None
+        if input_images is not None:
+            input_images = input_images.to(device)
+            # Encode condition image to latent space (same [-1,1] convention)
+            input_range = batch.get("image_range", "-1_1")
+            if isinstance(input_range, list):
+                input_range = input_range[0]
+            cond_pixels = input_images if input_range == "-1_1" else input_images * 2.0 - 1.0
+            z_cond = self._encode_latents(cond_pixels)
+            if z_cond.shape != z0.shape:
+                z_cond = torch.nn.functional.adaptive_avg_pool2d(
+                    z_cond, z0.shape[-2:]
+                )
+
         pipeline = getattr(self.base_model, "_t2i_pipe", None) or getattr(self.base_model, "pipe", None) or self.base_model
         scheduler = getattr(pipeline, "scheduler", None)
         if scheduler is None or not hasattr(scheduler, "add_noise"):
@@ -1546,7 +1579,17 @@ class InstructionTuner:
         n_train = int(getattr(cfg, "num_train_timesteps", 1000))
         timesteps = torch.randint(0, n_train, (b,), device=device, dtype=torch.long)
         noise = torch.randn_like(z0)
-        noisy = scheduler.add_noise(z0, noise, timesteps)
+
+        if z_cond is not None:
+            # img2img: add noise to condition latent, not target.
+            # The model sees noised condition and must predict noise.
+            # At inference, SDXLImg2ImgPipeline does the same: init_latent =
+            # add_noise(image_latent, noise, timesteps) for strength<1.0.
+            noisy = scheduler.add_noise(z_cond, noise, timesteps)
+            # Epsilon target remains the same noise regardless of init latent.
+        else:
+            # Pure t2i: add noise to target latent.
+            noisy = scheduler.add_noise(z0, noise, timesteps)
 
         prompts = batch.get("prompt", [""] * b)
         if isinstance(prompts, str):
@@ -1568,7 +1611,23 @@ class InstructionTuner:
 
         prediction_type = str(getattr(cfg, "prediction_type", "epsilon"))
         if prediction_type == "epsilon":
-            target_value = noise
+            if z_cond is not None:
+                # img2img: add_noise was applied to z_cond, not z0.
+                # EulerDiscreteScheduler.add_noise: noisy = z_cond + noise * sigma
+                # where sigma = scheduler.sigmas[index_for_timestep(t)].
+                # Euler denoising: pred_x0 = noisy - sigma * pred.
+                # To make pred_x0 = z0 (target), we need pred = (noisy - z0) / sigma.
+                # This is the mathematically correct target for EulerDiscrete.
+                step_indices = [
+                    scheduler.index_for_timestep(int(t), scheduler.timesteps.to(device))
+                    for t in timesteps
+                ]
+                sigma_vals = scheduler.sigmas.to(device=device, dtype=torch.float32)[step_indices]
+                sigma_vals = sigma_vals.view(-1, 1, 1, 1).clamp_min(1e-6)
+                target_value = (noisy - z0) / sigma_vals
+            else:
+                # Pure t2i: target = noise (standard epsilon prediction)
+                target_value = noise
         elif prediction_type == "v_prediction":
             if not hasattr(scheduler, "get_velocity"):
                 raise RuntimeError("v_prediction scheduler must implement get_velocity()")
@@ -1577,14 +1636,19 @@ class InstructionTuner:
             raise ValueError(f"Unsupported SDXL scheduler prediction_type: {prediction_type}")
         per_sample = (pred.float() - target_value.float()).square().mean(dim=(1, 2, 3))
         if self.use_min_snr:
-            alpha = getattr(scheduler, "alphas_cumprod", None)
-            if alpha is None:
-                raise RuntimeError("Min-SNR requires scheduler.alphas_cumprod")
-            alpha = alpha.to(device=device, dtype=torch.float32)[timesteps]
-            snr = alpha / (1.0 - alpha).clamp_min(1e-12)
+            # For EulerDiscrete: SNR = 1 / sigma^2 (signal scale=1, noise scale=sigma)
+            # For DDPM-style: SNR = alpha_bar / (1 - alpha_bar)
+            if hasattr(scheduler, "sigmas") and z_cond is not None:
+                snr = 1.0 / (sigma_vals.squeeze().float() ** 2 + 1e-12)
+            else:
+                alpha = getattr(scheduler, "alphas_cumprod", None)
+                if alpha is None:
+                    raise RuntimeError("Min-SNR requires scheduler.alphas_cumprod or sigmas")
+                alpha = alpha.to(device=device, dtype=torch.float32)[timesteps]
+                snr = alpha / (1.0 - alpha).clamp_min(1e-12)
             cap = torch.minimum(snr, torch.full_like(snr, self.min_snr_gamma))
             weight = cap / (snr + 1.0 if prediction_type == "v_prediction" else snr.clamp_min(1e-12))
-            per_sample = per_sample * weight
+            per_sample = per_sample * weight.view(per_sample.shape)
         return per_sample.mean()
 
     def _forward_flux(
