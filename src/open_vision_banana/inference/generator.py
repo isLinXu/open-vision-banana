@@ -205,7 +205,17 @@ class BaseGenerator:
             logger.info(f"Loading LoRA weights from {self._resolved_lora_path!r} …")
             try:
                 pipe.load_lora_weights(self._resolved_lora_path)
-                logger.info("LoRA weights loaded via pipe.load_lora_weights")
+                # Verify LoRA actually attached (diffusers can silently load 0 layers)
+                backbone = getattr(pipe, "transformer", None) or getattr(pipe, "unet", None)
+                lora_count = sum(
+                    1 for _, m in backbone.named_modules() if hasattr(m, "lora_A")
+                ) if backbone is not None else 0
+                if lora_count == 0:
+                    raise RuntimeError(
+                        f"pipe.load_lora_weights returned 0 LoRA layers "
+                        f"(key prefix mismatch)"
+                    )
+                logger.info("LoRA weights loaded via pipe.load_lora_weights (%d layers)", lora_count)
             except Exception as e:
                 logger.warning(
                     "pipe.load_lora_weights failed (%s); "
@@ -218,6 +228,18 @@ class BaseGenerator:
             logger.info("Applied inference optimizations: %s", ", ".join(applied))
         if not self.inference_options.enable_sequential_cpu_offload:
             pipe = pipe.to(self.device)
+
+        # Multi-task LoRA: ALL tasks (img2img + t2i) trained with sample (x0)
+        # prediction. The scheduler must use prediction_type="sample" for all
+        # calls so EulerDiscreteScheduler.step() extracts x0 directly.
+        if self.lora_path is not None and hasattr(pipe, "scheduler"):
+            old_pt = pipe.scheduler.config.get("prediction_type", "epsilon")
+            if old_pt != "sample":
+                pipe.scheduler.config["prediction_type"] = "sample"
+                logger.info(
+                    "Switched scheduler prediction_type: %s → sample "
+                    "(unified sample-prediction LoRA for all tasks)", old_pt
+                )
 
         self._t2i_pipe = pipe
         logger.info(f"{pipe_class_name} loaded successfully (family={family})")
@@ -495,6 +517,9 @@ class BaseGenerator:
         if image is not None:
             pil_images = self._to_pil_list(image)
             pipe = self._get_i2i_pipe()
+            # All tasks use sample prediction (unified with training)
+            if hasattr(pipe, "scheduler") and self.lora_path is not None:
+                pipe.scheduler.config["prediction_type"] = "sample"
             output = pipe(
                 prompt=prompt if encode_prompt else None,
                 image=pil_images,
@@ -507,6 +532,9 @@ class BaseGenerator:
                 **kwargs,
             )
         else:
+            # t2i: also uses sample prediction (unified with training)
+            if hasattr(self._t2i_pipe, "scheduler") and self.lora_path is not None:
+                self._t2i_pipe.scheduler.config["prediction_type"] = "sample"
             output = self._t2i_pipe(
                 prompt=prompt if encode_prompt else None,
                 num_inference_steps=num_inference_steps,
@@ -648,7 +676,19 @@ class BaseGenerator:
         )
 
         state_dict = load_file(str(weights_file))
-        transformer = pipe.transformer
+
+        # SD3/FLUX use pipe.transformer; SDXL/SD1.5/SD2 use pipe.unet
+        if hasattr(pipe, "transformer"):
+            backbone = pipe.transformer
+            backbone_attr = "transformer"
+        elif hasattr(pipe, "unet"):
+            backbone = pipe.unet
+            backbone_attr = "unet"
+        else:
+            raise AttributeError(
+                f"Pipeline has neither 'transformer' nor 'unet': {type(pipe).__name__}"
+            )
+        logger.info("Using backbone '%s' (%s) for LoRA merge", backbone_attr, type(backbone).__name__)
 
         # Group LoRA weights by module name
         # Key format: base_model.model.{module_name}.lora_A.weight
@@ -672,12 +712,12 @@ class BaseGenerator:
                 continue
 
             # Navigate to the target module
-            module = transformer
+            module = backbone
             for attr in module_name.split("."):
                 if hasattr(module, attr):
                     module = getattr(module, attr)
                 else:
-                    logger.warning("Module '%s' not found in transformer, skipping", module_name)
+                    logger.warning("Module '%s' not found in %s, skipping", module_name, backbone_attr)
                     module = None
                     break
 

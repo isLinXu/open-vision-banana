@@ -1582,14 +1582,28 @@ class InstructionTuner:
 
         if z_cond is not None:
             # img2img: add noise to condition latent, not target.
-            # The model sees noised condition and must predict noise.
+            # The model sees noised condition and must predict x0 (target latent).
             # At inference, SDXLImg2ImgPipeline does the same: init_latent =
             # add_noise(image_latent, noise, timesteps) for strength<1.0.
             noisy = scheduler.add_noise(z_cond, noise, timesteps)
-            # Epsilon target remains the same noise regardless of init latent.
         else:
             # Pure t2i: add noise to target latent.
             noisy = scheduler.add_noise(z0, noise, timesteps)
+
+        # ── scale_model_input — match inference exactly ────────────────────
+        # EulerDiscreteScheduler.scale_model_input divides by sqrt(sigma²+1).
+        # At inference, StableDiffusionXLImg2ImgPipeline applies this scaling
+        # BEFORE feeding latents to the UNet.  Without this, training feeds
+        # unscaled noisy latents (norm up to ~15x larger at high-noise steps)
+        # while inference feeds scaled ones, causing catastrophic distribution
+        # mismatch.
+        step_indices = [
+            scheduler.index_for_timestep(int(t), scheduler.timesteps.to(device))
+            for t in timesteps
+        ]
+        sigma_vals = scheduler.sigmas.to(device=device, dtype=noisy.dtype)[step_indices]
+        sigma_vals = sigma_vals.view(b, *([1] * (noisy.dim() - 1)))
+        model_input = noisy / ((sigma_vals ** 2 + 1) ** 0.5)
 
         prompts = batch.get("prompt", [""] * b)
         if isinstance(prompts, str):
@@ -1600,7 +1614,7 @@ class InstructionTuner:
         if pooled is None:
             raise RuntimeError("SDXL requires pooled_prompt_embeds from both text encoders")
         pred = self._forward_registry(
-            noisy, timesteps, prompt_embeds, pooled, text.get("attention_mask"),
+            model_input, timesteps, prompt_embeds, pooled, text.get("attention_mask"),
             next(self.peft_model.parameters()).dtype, device,
             micro_conditioning=batch,
         )
@@ -1610,36 +1624,17 @@ class InstructionTuner:
             raise RuntimeError(f"SDXL output shape {tuple(pred.shape)} != latent shape {tuple(z0.shape)}")
 
         prediction_type = str(getattr(cfg, "prediction_type", "epsilon"))
-        if prediction_type == "epsilon":
-            if z_cond is not None:
-                # img2img: add_noise was applied to z_cond, not z0.
-                # EulerDiscreteScheduler.add_noise: noisy = z_cond + noise * sigma
-                # where sigma = scheduler.sigmas[index_for_timestep(t)].
-                # Euler denoising: pred_x0 = noisy - sigma * pred.
-                # To make pred_x0 = z0 (target), we need pred = (noisy - z0) / sigma.
-                # This is the mathematically correct target for EulerDiscrete.
-                step_indices = [
-                    scheduler.index_for_timestep(int(t), scheduler.timesteps.to(device))
-                    for t in timesteps
-                ]
-                sigma_vals = scheduler.sigmas.to(device=device, dtype=torch.float32)[step_indices]
-                sigma_vals = sigma_vals.view(-1, 1, 1, 1).clamp_min(1e-6)
-                target_value = (noisy - z0) / sigma_vals
-            else:
-                # Pure t2i: target = noise (standard epsilon prediction)
-                target_value = noise
-        elif prediction_type == "v_prediction":
-            if not hasattr(scheduler, "get_velocity"):
-                raise RuntimeError("v_prediction scheduler must implement get_velocity()")
-            target_value = scheduler.get_velocity(z0, noise, timesteps)
-        else:
-            raise ValueError(f"Unsupported SDXL scheduler prediction_type: {prediction_type}")
+        # Unified sample (x0) prediction for ALL tasks (img2img + t2i).
+        # The model directly predicts x0 (the clean target latent).
+        target_value = z0
+        effective_pred_type = "sample"
+        # Compute sigma for SNR weighting (already computed above for scaling)
         per_sample = (pred.float() - target_value.float()).square().mean(dim=(1, 2, 3))
         if self.use_min_snr:
             # For EulerDiscrete: SNR = 1 / sigma^2 (signal scale=1, noise scale=sigma)
             # For DDPM-style: SNR = alpha_bar / (1 - alpha_bar)
-            if hasattr(scheduler, "sigmas") and z_cond is not None:
-                snr = 1.0 / (sigma_vals.squeeze().float() ** 2 + 1e-12)
+            if sigma_vals is not None:
+                snr = 1.0 / (sigma_vals.view(b).float() ** 2 + 1e-12)
             else:
                 alpha = getattr(scheduler, "alphas_cumprod", None)
                 if alpha is None:
@@ -1647,7 +1642,7 @@ class InstructionTuner:
                 alpha = alpha.to(device=device, dtype=torch.float32)[timesteps]
                 snr = alpha / (1.0 - alpha).clamp_min(1e-12)
             cap = torch.minimum(snr, torch.full_like(snr, self.min_snr_gamma))
-            weight = cap / (snr + 1.0 if prediction_type == "v_prediction" else snr.clamp_min(1e-12))
+            weight = cap / (snr + 1.0 if effective_pred_type == "v_prediction" else snr.clamp_min(1e-12))
             per_sample = per_sample * weight.view(per_sample.shape)
         return per_sample.mean()
 
