@@ -147,3 +147,14 @@ class TestInstructionTunerEarlyStopping:
         assert summary["global_step"] >= 1
         assert "stopped_early" in summary
         tb_logger.finish()
+
+    def test_vision_sample_contains_input_and_target(self, tmp_path: Path):
+        img_dir = tmp_path / "images"
+        tgt_dir = tmp_path / "targets"
+        img_dir.mkdir()
+        tgt_dir.mkdir()
+        Image.new("RGB", (8, 8), (0, 0, 0)).save(img_dir / "x.png")
+        Image.new("RGB", (8, 8), (255, 255, 255)).save(tgt_dir / "x.png")
+        sample = VisionTaskDataset(str(tmp_path), resolution=8, task="depth")[0]
+        assert sample["image"].shape == sample["target_rgb"].shape == (3, 8, 8)
+        assert not sample["image"].equal(sample["target_rgb"])
