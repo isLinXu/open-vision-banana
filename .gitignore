@@ -303,3 +303,6 @@ output/vb_paper_aligned_v3/
 # HF cache & model downloads
 hf_cache/
 models/
+
+# IDE / tool artifacts
+.qoder/
