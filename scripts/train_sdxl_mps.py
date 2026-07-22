@@ -13,6 +13,8 @@ SDXL-specific concerns:
   - Dual text encoder (CLIP-L + OpenCLIP-bigG) → concatenated hidden states + pooled embeds
   - added_cond_kwargs (pooled text_embeds + time_ids) required by SDXL UNet
   - scheduler-aware SDXL epsilon/v-prediction objective
+  - img2img vision tasks use SAMPLE (x0) prediction (stable target norm)
+  - text-to-image uses standard epsilon prediction
 
 Usage:
   python scripts/train_sdxl_mps.py                              # full training, defaults
@@ -75,6 +77,8 @@ def main():
     parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate")
     parser.add_argument("--max-steps", type=int, default=3000, help="Max steps")
     parser.add_argument("--save-every", type=int, default=200, help="Save every N steps")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Checkpoint directory (default: output/<model>_checkpoints)")
     parser.add_argument("--log-every", type=int, default=10, help="Log every N steps")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size")
     parser.add_argument("--grad-accum", type=int, default=8, help="Gradient accumulation steps")
@@ -340,7 +344,11 @@ def main():
     logger.info(f"Total training samples: {total_samples}")
 
     # ─── Training ────────────────────────────────────────────────────────
-    output_dir = PROJECT_ROOT / "output" / f"{args.model}_checkpoints"
+    output_dir = (
+        Path(args.output_dir).expanduser()
+        if args.output_dir
+        else PROJECT_ROOT / "output" / f"{args.model}_checkpoints"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     total_samples = len(combined)

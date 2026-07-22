@@ -302,7 +302,7 @@ def main():
     parser.add_argument("--lora-path", type=str, required=True, help="Path to LoRA weights (.pt or dir)")
     parser.add_argument("--model-path", type=str,
                         default=str(Path.home() / "MyWork/models/sd3-medium-diffusers"),
-                        help="SD3 model path")
+                        help="Model path or HF repo ID (e.g. segmind/SSD-1B)")
     parser.add_argument("--task", type=str, default="all", choices=["all"] + TASKS)
     parser.add_argument("--resolution", type=int, default=384)
     parser.add_argument("--num-inference-steps", type=int, default=25)
@@ -315,7 +315,7 @@ def main():
     logger.info(f"Device: {device}")
 
     # Load model
-    logger.info(f"Loading SD3 from {args.model_path}...")
+    logger.info(f"Loading model from {args.model_path}...")
     t0 = time.time()
     generator = BaseGenerator(
         model_name=args.model_path,
@@ -348,13 +348,20 @@ def main():
         if cfg_src.exists():
             shutil.copy2(cfg_src, adapter_dir / "adapter_config.json")
         else:
+            # Infer target modules from model family to avoid SD3/SDXL mismatch
+            model_short = str(args.model_path).lower()
+            if "ssd" in model_short or "sdxl" in model_short:
+                _lora_targets = ["to_q", "to_k", "to_v", "to_out.0",
+                                 "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2"]
+            else:
+                _lora_targets = ["to_q", "to_k", "to_v", "to_out.0",
+                                 "to_q_context", "to_k_context", "to_v_context",
+                                 "to_out_context", "context_embedder", "proj_out",
+                                 "linear_1", "linear_2"]
             with open(adapter_dir / "adapter_config.json", "w") as f:
                 json.dump({
                     "peft_type": "LORA", "r": 64, "lora_alpha": 128,
-                    "target_modules": ["to_q", "to_k", "to_v", "to_out.0",
-                                       "to_q_context", "to_k_context", "to_v_context",
-                                       "to_out_context", "context_embedder", "proj_out",
-                                       "linear_1", "linear_2"],
+                    "target_modules": _lora_targets,
                     "lora_dropout": 0.0, "bias": "none",
                 }, f)
 
@@ -363,13 +370,20 @@ def main():
     merged = generator._load_and_merge_lora(generator._t2i_pipe, str(adapter_dir))
     if not merged:
         raise RuntimeError(f"LoRA merge matched zero layers: {lora_path}")
-    logger.info("LoRA merged into SD3 transformer: %d layers", merged)
+    logger.info("LoRA merged into model: %d layers", merged)
 
     model = VisionBanana(base_generator=generator)
 
     # Output directory
+    model_short = str(args.model_path).lower()
+    if "ssd" in model_short:
+        eval_dir_name = "ssd-1b_eval_results"
+    elif "sdxl" in model_short:
+        eval_dir_name = "sdxl_eval_results"
+    else:
+        eval_dir_name = "sd3_eval_results"
     output_dir = Path(args.output_dir) if args.output_dir else \
-        PROJECT_ROOT / "output" / "sd3_eval_results"
+        PROJECT_ROOT / "output" / eval_dir_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Run evaluation

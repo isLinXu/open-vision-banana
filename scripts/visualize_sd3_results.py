@@ -48,10 +48,20 @@ DATA_DIRS = [
 ]
 OUTPUT_DIR = PROJECT_ROOT / "output" / "sd3_visualizations"
 
+# P0-3 fix: for segmentation, prefer the regenerated Cityscapes color data
+# (vb_snvc_train/segmentation) over the excluded ADE20K class-ID split.
+SEGMENTATION_DIR_OVERRIDE = PROJECT_ROOT / "data" / "vb_snvc_train" / "segmentation"
 
-def get_latest_checkpoint() -> Path | None:
-    """Find the latest checkpoint directory."""
-    ckpt_root = PROJECT_ROOT / "output" / "sd3_checkpoints"
+
+def get_latest_checkpoint(model_path: str = SD3_PATH) -> Path | None:
+    """Find the latest checkpoint directory for the given model family."""
+    model_short = Path(model_path).name.lower()
+    if "ssd" in model_short:
+        ckpt_root = PROJECT_ROOT / "output" / "ssd-1b_checkpoints"
+    elif "sdxl" in model_short:
+        ckpt_root = PROJECT_ROOT / "output" / "sdxl_checkpoints"
+    else:
+        ckpt_root = PROJECT_ROOT / "output" / "sd3_checkpoints"
     if not ckpt_root.exists():
         return None
     dirs = sorted(ckpt_root.glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[1]))
@@ -148,7 +158,7 @@ def make_grid(all_images: list[dict], output_dir: Path, ckpt_name: str) -> Path 
 
     draw.text(
         (margin, 8),
-        f"SD3-Medium LoRA Inference — {ckpt_name}",
+        f"LoRA Inference — {ckpt_name}",
         fill=(0, 0, 0),
         font=font_big,
     )
@@ -228,22 +238,32 @@ def main():
                         help="Samples per task")
     parser.add_argument("--resolution", type=int, default=256,
                         help="Inference resolution")
-    parser.add_argument("--steps", type=int, default=28,
-                        help="Inference steps")
-    parser.add_argument("--guidance-scale", type=float, default=7.0,
-                        help="CFG guidance scale")
+    parser.add_argument("--steps", type=int, default=None,
+                        help="Inference steps (SSD-1B defaults to 4)")
+    parser.add_argument("--guidance-scale", type=float, default=None,
+                        help="CFG guidance scale (SSD-1B defaults to 1.0)")
     parser.add_argument("--strength", type=float, default=0.85,
                         help="Img2img strength (higher=more creative)")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
     parser.add_argument("--model-path", type=str, default=SD3_PATH,
                         help="Model path or HF repo ID")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Output directory (default: auto from model name)")
     parser.add_argument("--tasks", type=str, default="all",
                         help="Comma-separated tasks: depth,normal,segmentation,edge,generation")
     args = parser.parse_args()
 
+    # SSD-1B is distilled and must be sampled with its low-step, low-CFG
+    # regime; SDXL/SD3 keep their conventional defaults.
+    model_short = Path(args.model_path).name.lower()
+    if args.steps is None:
+        args.steps = 4 if "ssd" in model_short else 28
+    if args.guidance_scale is None:
+        args.guidance_scale = 1.0 if "ssd" in model_short else 7.0
+
     # Resolve checkpoint
-    ckpt_path = Path(args.checkpoint) if args.checkpoint else get_latest_checkpoint()
+    ckpt_path = Path(args.checkpoint) if args.checkpoint else get_latest_checkpoint(args.model_path)
     if ckpt_path is None or not (ckpt_path / "adapter_model.safetensors").exists():
         logger.error(f"No valid checkpoint found at {ckpt_path}")
         sys.exit(1)
@@ -251,6 +271,14 @@ def main():
     logger.info(f"Using checkpoint: {ckpt_path}")
 
     # Setup output
+    global OUTPUT_DIR
+    if args.output_dir:
+        OUTPUT_DIR = Path(args.output_dir)
+    else:
+        # Auto: infer from model name to avoid overwriting SD3 results
+        model_short = Path(args.model_path).name.lower()
+        if "ssd" in model_short or "sdxl" in model_short:
+            OUTPUT_DIR = PROJECT_ROOT / "output" / f"{model_short}_visualizations"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUTPUT_DIR / "triptychs").mkdir(parents=True, exist_ok=True)
 
@@ -281,12 +309,16 @@ def main():
 
     for task in tasks:
         # Search all data directories for this task
+        # P0-3: segmentation uses the regenerated Cityscapes color split
         task_dir = None
-        for d in DATA_DIRS:
-            candidate = d / task
-            if (candidate / "images").exists():
-                task_dir = candidate
-                break
+        if task == "segmentation" and (SEGMENTATION_DIR_OVERRIDE / "images").exists():
+            task_dir = SEGMENTATION_DIR_OVERRIDE
+        if task_dir is None:
+            for d in DATA_DIRS:
+                candidate = d / task
+                if (candidate / "images").exists():
+                    task_dir = candidate
+                    break
         if task_dir is None or not task_dir.exists():
             logger.warning(f"Task dir not found for '{task}'")
             continue
