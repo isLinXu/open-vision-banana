@@ -439,7 +439,12 @@ class RefCOCOgDataset(BaseVisionDataset):
         target_rgb = self._load_mask(sample.get("ann_id"))
 
         prompt = PromptBuilder.build_referring_prompt(expression)
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "expression": expression,
+        }
 
     def _load_mask(self, ann_id: int | None) -> torch.Tensor:
         """Decode segmentation mask for a COCO annotation.

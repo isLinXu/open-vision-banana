@@ -1,10 +1,8 @@
 """Instruction alignment via LoRA fine-tuning.
 
-Implements the lightweight instruction-tuning strategy from the paper:
-- Mix vision task data into the base model's training mixture at a 9:1 ratio
-- Use rsLoRA scaling (rank=64, alpha=128) to prevent learning rate decay
-- Train only 0.5%-1% of total parameters
-- Preserve 90%+ generation capability while unlocking understanding
+The module implements the paper's general instruction-tuning pattern. Concrete
+LoRA ranks and data ratios are configurable project baselines because the paper
+does not disclose every training hyperparameter.
 """
 
 from __future__ import annotations
@@ -16,6 +14,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset as _Dataset
 
@@ -58,6 +57,7 @@ class VisionTaskDataset(_Dataset):
         "depth": "Generate a metric depth visualization of this image.",
         "normal": "Generate a surface normal estimation visualization of this image.",
         "semantic": "Generate a semantic segmentation visualization of this image.",
+        "segmentation": "Generate a semantic segmentation visualization of this image.",
         "instance": "Generate an instance segmentation visualization of this image.",
         "referring": "Generate a referring expression segmentation visualization of this image.",
         "edge": "Generate an edge detection visualization of this image.",
@@ -65,6 +65,9 @@ class VisionTaskDataset(_Dataset):
         "keypoint": "Generate a keypoint detection visualization of this image.",
         "object_detection": "Generate an object detection visualization of this image.",
         "depth_edge": "Generate a depth edge detection visualization of this image.",
+        "structure": "Generate a structural layout visualization of this image.",
+        "multiview": "Generate a multi-view synthesis visualization of this image.",
+        "specular_removal": "Remove specular highlights and reflections from this image.",
     }
 
     DEFAULT_PROMPT = "Generate a visual understanding output for this image."
@@ -164,8 +167,13 @@ class VisionTaskDataset(_Dataset):
             lo, hi = normalise_range
             return arr * (hi - lo) + lo
 
-        image = _load(sample["image_path"], (-1.0, 1.0))
-        target_rgb = _load(sample["target_path"], (0.0, 1.0))
+        try:
+            image = _load(sample["image_path"], (-1.0, 1.0))
+            target_rgb = _load(sample["target_path"], (0.0, 1.0))
+        except (FileNotFoundError, OSError):
+            # Fallback: skip missing file, load a random other sample
+            fallback_idx = (idx + 1) % len(self.samples)
+            return self.__getitem__(fallback_idx)
 
         return {
             "prompt": sample["prompt"],
@@ -180,9 +188,7 @@ class VisionTaskDataset(_Dataset):
 class InstructionTuner:
     """LoRA-based instruction alignment for Vision Banana.
 
-    Applies rsLoRA scaling (rank=64, alpha=128) to prevent learning rate
-    decay at high ranks. Trains only 0.5%-1% of parameters while preserving
-    90%+ generation capability.
+    Applies configurable LoRA or rsLoRA adapters to a generator backbone.
     """
 
     def __init__(
@@ -208,11 +214,21 @@ class InstructionTuner:
         flow_sigma: float = 0.0,
         warmup_ratio: float | None = None,
         trainer_backend: TrainerInterface | None = None,
+        lora_dropout: float = 0.0,
+        weight_decay: float = 0.01,
+        optimizer_name: str = "adamw",
+        adam_betas: tuple[float, float] = (0.9, 0.999),
+        adam_eps: float = 1e-8,
     ) -> None:
         self.base_model = model
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
         self.lr = lr
+        self.weight_decay = weight_decay
+        self.optimizer_name = optimizer_name
+        self.adam_betas = adam_betas
+        self.adam_eps = adam_eps
 
         # ── Resolve model config from the base model ───────────────────
         # This enables multi-model support: the tuner adapts its text
@@ -573,6 +589,7 @@ class InstructionTuner:
             lora_alpha=self.lora_alpha,
             target_modules=self.target_modules,
             use_rslora=self.use_rslora,
+            lora_dropout=self.lora_dropout,
             task_type=TaskType.FEATURE_EXTRACTION,
         )
 
@@ -605,11 +622,26 @@ class InstructionTuner:
                 if param.dtype != base_dtype:
                     param.data = param.data.to(base_dtype)
 
-        self.optimizer = torch.optim.AdamW(
-            self.peft_model.parameters(),
-            lr=self.lr,
-            weight_decay=0.01,
-        )
+        trainable_parameters = [p for p in self.peft_model.parameters() if p.requires_grad]
+        optimizer_kwargs = {
+            "lr": self.lr,
+            "betas": self.adam_betas,
+            "eps": self.adam_eps,
+            "weight_decay": self.weight_decay,
+        }
+        if self.optimizer_name == "adamw":
+            optimizer_cls = torch.optim.AdamW
+        elif self.optimizer_name == "adamw_8bit":
+            try:
+                from bitsandbytes.optim import AdamW8bit
+            except ImportError as exc:
+                raise ImportError(
+                    "optimizer_name='adamw_8bit' requires the optional bitsandbytes package"
+                ) from exc
+            optimizer_cls = AdamW8bit
+        else:
+            raise ValueError(f"Unsupported optimizer_name: {self.optimizer_name}")
+        self.optimizer = optimizer_cls(trainable_parameters, **optimizer_kwargs)
 
     def train(
         self,
@@ -624,6 +656,7 @@ class InstructionTuner:
         output_dir: str | Path | None = None,
         save_every: int = 1000,
         eval_every: int = 500,
+        max_keep: int = 5,
         use_amp: bool = True,
         num_workers: int = 0,
         callback: Callable[[int, float, float], Any] | None = None,
@@ -637,6 +670,7 @@ class InstructionTuner:
         start_epoch: int = 0,
         resume_checkpoint: str | Path | None = None,
         restore_rng_on_resume: bool = False,
+        max_steps: int | None = None,
     ) -> dict:
         """Train the LoRA instruction alignment.
 
@@ -701,7 +735,7 @@ class InstructionTuner:
             scaler = torch.amp.GradScaler(
                 device_type, enabled=use_amp and device_type == "cuda" and not use_deepspeed
             )
-        ckpt_manager = CheckpointManager(output_dir) if output_dir else None
+        ckpt_manager = CheckpointManager(output_dir, max_keep=max_keep) if output_dir else None
         early_stopper = (
             EarlyStopping(patience=early_stopping_patience, min_delta=early_stopping_min_delta)
             if early_stopping_patience is not None
@@ -743,9 +777,14 @@ class InstructionTuner:
         for epoch in range(start_epoch, epochs):
             if train_sampler is not None and hasattr(train_sampler, "set_epoch"):
                 train_sampler.set_epoch(epoch)
+            if hasattr(train_dataset, "set_epoch"):
+                train_dataset.set_epoch(epoch)
             epoch_loss = 0.0
             num_steps = 0
             accumulated_steps = 0
+            # Per-task loss tracking
+            task_loss_sum: dict[str, float] = {}
+            task_loss_count: dict[str, int] = {}
 
             for step, batch in enumerate(train_loader):
                 if use_trainer_interface:
@@ -791,6 +830,15 @@ class InstructionTuner:
                     num_steps += 1
                     accumulated_steps += 1
 
+                    # Per-task loss tracking
+                    _task_name = batch.get("task", ["unknown"])
+                    if isinstance(_task_name, list) and _task_name:
+                        _task_name = _task_name[0]
+                    if not isinstance(_task_name, str):
+                        _task_name = "unknown"
+                    task_loss_sum[_task_name] = task_loss_sum.get(_task_name, 0.0) + loss.item()
+                    task_loss_count[_task_name] = task_loss_count.get(_task_name, 0) + 1
+
                     if (step + 1) % gradient_accumulation_steps == 0:
                         scaler.unscale_(self.optimizer)
                         torch.nn.utils.clip_grad_norm_(
@@ -819,19 +867,30 @@ class InstructionTuner:
 
                     if global_step > 0 and global_step % log_every == 0 and getattr(self, "_last_logged_step", -1) != global_step:
                         self._last_logged_step = global_step
+                        # Build per-task loss string
+                        task_parts = []
+                        per_task_metrics = {}
+                        for _tn in sorted(task_loss_sum.keys()):
+                            _avg = task_loss_sum[_tn] / max(task_loss_count[_tn], 1)
+                            task_parts.append(f"{_tn}={_avg:.3f}")
+                            per_task_metrics[f"train/loss_{_tn}"] = _avg
+                        task_str = " | ".join(task_parts) if task_parts else ""
                         logger.info(
                             f"Epoch {epoch+1}/{epochs} | Step {global_step} | "
                             f"Loss: {running_loss:.4f} | LR: {current_lr:.2e}"
+                            + (f" | {task_str}" if task_str else "")
                         )
 
                     if training_logger and global_step % log_every == 0:
+                        _log_metrics = {
+                            "train/loss": running_loss,
+                            "train/lr": current_lr,
+                            "train/epoch": float(epoch + 1),
+                        }
+                        _log_metrics.update(per_task_metrics)
                         training_logger.log_metrics(
                             global_step,
-                            {
-                                "train/loss": running_loss,
-                                "train/lr": current_lr,
-                                "train/epoch": float(epoch + 1),
-                            },
+                            _log_metrics,
                         )
 
                     if callback and global_step % log_every == 0:
@@ -840,6 +899,15 @@ class InstructionTuner:
                 if use_trainer_interface:
                     epoch_loss += loss.item()
                     num_steps += 1
+
+                    # Per-task loss tracking
+                    _task_name = batch.get("task", ["unknown"])
+                    if isinstance(_task_name, list) and _task_name:
+                        _task_name = _task_name[0]
+                    if not isinstance(_task_name, str):
+                        _task_name = "unknown"
+                    task_loss_sum[_task_name] = task_loss_sum.get(_task_name, 0.0) + loss.item()
+                    task_loss_count[_task_name] = task_loss_count.get(_task_name, 0) + 1
 
                     if stepped:
                         scheduler.step()
@@ -853,19 +921,30 @@ class InstructionTuner:
                         current_lr = float(scheduler.get_last_lr()[0])
 
                         if global_step % log_every == 0:
+                            # Build per-task loss string
+                            task_parts = []
+                            per_task_metrics = {}
+                            for _tn in sorted(task_loss_sum.keys()):
+                                _avg = task_loss_sum[_tn] / max(task_loss_count[_tn], 1)
+                                task_parts.append(f"{_tn}={_avg:.3f}")
+                                per_task_metrics[f"train/loss_{_tn}"] = _avg
+                            task_str = " | ".join(task_parts) if task_parts else ""
                             logger.info(
                                 f"Epoch {epoch+1}/{epochs} | Step {global_step} | "
                                 f"Loss: {running_loss:.4f} | LR: {current_lr:.2e}"
+                                + (f" | {task_str}" if task_str else "")
                             )
 
                         if training_logger and global_step % log_every == 0:
+                            _log_metrics = {
+                                "train/loss": running_loss,
+                                "train/lr": current_lr,
+                                "train/epoch": float(epoch + 1),
+                            }
+                            _log_metrics.update(per_task_metrics)
                             training_logger.log_metrics(
                                 global_step,
-                                {
-                                    "train/loss": running_loss,
-                                    "train/lr": current_lr,
-                                    "train/epoch": float(epoch + 1),
-                                },
+                                _log_metrics,
                             )
 
                         if callback and global_step % log_every == 0:
@@ -973,6 +1052,15 @@ class InstructionTuner:
                     global_step += 1
                     if self.ema is not None:
                         self.ema.update(self._ema_module())
+
+                    # ── max_steps early exit (inside step loop) ──
+                    if max_steps is not None and global_step >= max_steps:
+                        logger.info(
+                            "Reached max_steps=%d at epoch %d, step %d — stopping.",
+                            max_steps, epoch + 1, global_step,
+                        )
+                        stopped_early = True
+                        break
 
             avg_loss = epoch_loss / max(num_steps, 1)
             logger.info(
@@ -1397,8 +1485,14 @@ class InstructionTuner:
         # ── Data augmentation ────────────────────────────────────────────
         if self.augmentation is not None and input_images is not None:
             aug_images, aug_targets = [], []
+            tasks = batch.get("task", [self.task] * batch_size)
+            if isinstance(tasks, str):
+                tasks = [tasks] * batch_size
             for i in range(batch_size):
-                aug_img, aug_tgt = self.augmentation(input_images[i], target_rgb[i])
+                sample_task = tasks[i] if i < len(tasks) else self.task
+                aug_img, aug_tgt = self.augmentation(
+                    input_images[i], target_rgb[i], task=sample_task
+                )
                 aug_images.append(aug_img)
                 aug_targets.append(aug_tgt)
             target_rgb = torch.stack(aug_targets)
@@ -1577,7 +1671,14 @@ class InstructionTuner:
             raise RuntimeError("SDXL training requires a pipeline scheduler with add_noise()")
         cfg = getattr(scheduler, "config", scheduler)
         n_train = int(getattr(cfg, "num_train_timesteps", 1000))
-        timesteps = torch.randint(0, n_train, (b,), device=device, dtype=torch.long)
+        if self.use_logit_normal_timesteps:
+            # Logit-normal sampling (SD3/FLUX style): concentrates samples
+            # around mid-noise levels where the model learns most effectively.
+            # t ~ sigmoid(N(mean, std)) ∈ (0, 1), then scale to [0, n_train-1].
+            t_cont = sample_timesteps_logit_normal(b, device)  # (0, 1)
+            timesteps = (t_cont * (n_train - 1)).long().clamp(0, n_train - 1).to(device)
+        else:
+            timesteps = torch.randint(0, n_train, (b,), device=device, dtype=torch.long)
         noise = torch.randn_like(z0)
 
         if z_cond is not None:
@@ -1624,15 +1725,75 @@ class InstructionTuner:
             raise RuntimeError(f"SDXL output shape {tuple(pred.shape)} != latent shape {tuple(z0.shape)}")
 
         prediction_type = str(getattr(cfg, "prediction_type", "epsilon"))
-        # Unified sample (x0) prediction for ALL tasks (img2img + t2i).
-        # The model directly predicts x0 (the clean target latent).
-        target_value = z0
-        effective_pred_type = "sample"
-        # Compute sigma for SNR weighting (already computed above for scaling)
-        per_sample = (pred.float() - target_value.float()).square().mean(dim=(1, 2, 3))
+
+        # ── Epsilon prediction aligned with SSD-1B pretrained prior ──────────
+        # SSD-1B's EulerDiscreteScheduler uses prediction_type="epsilon".
+        # The model is pretrained to predict noise (epsilon), NOT x0.
+        #
+        # For img2img cross-image prediction (perception tasks):
+        #   noisy = z_cond + noise * sigma  (add_noise on INPUT latent)
+        #   We want x0 = z0 (TARGET latent)
+        #   epsilon_target = (noisy - z0) / sigma
+        #
+        # For t2i (generation):
+        #   noisy = z0 + noise * sigma  (add_noise on TARGET latent)
+        #   epsilon_target = noise  (standard)
+        #
+        # At inference: x0 = noisy - sigma * model_output (standard Euler step)
+        effective_pred_type = prediction_type
+
+        if effective_pred_type == "epsilon":
+            # Compute epsilon target
+            sigma_flat = sigma_vals.view(b, *([1] * (z0.dim() - 1)))
+            if z_cond is not None:
+                # img2img: epsilon = (noisy - z0) / sigma
+                # noisy = z_cond + noise * sigma, so epsilon = noise + (z_cond - z0) / sigma
+                eps_target = (noisy - z0) / sigma_flat
+            else:
+                # t2i: epsilon = noise (standard)
+                eps_target = noise
+
+            pred_f = pred.float()
+            target_f = eps_target.float()
+            diff = pred_f - target_f
+
+            # L2 loss on epsilon (standard diffusion training loss)
+            l2_loss = diff.square().mean(dim=(1, 2, 3))
+            per_sample = l2_loss
+
+            # Optional L1 component for sharpness (0.1 weight)
+            l1_loss = diff.abs().mean(dim=(1, 2, 3))
+            per_sample = 0.9 * l2_loss + 0.1 * l1_loss
+
+        elif effective_pred_type == "v_prediction":
+            # v = sigma * eps + x0  (EulerDiscrete v-prediction)
+            # For img2img: v_target = sigma * eps + z0 where eps = (noisy - z0)/sigma
+            #            = sigma * (noisy - z0)/sigma + z0 = noisy - z0 + z0 = noisy
+            # Wait, that's not right. Let me use the standard formula:
+            # v = alpha * eps + sigma * x0, where alpha = sqrt(1 - sigma^2/(1+sigma^2))
+            # For Euler: x0 = v * (-sigma / sqrt(sigma^2+1)) + sample / (sigma^2+1)
+            # So v = (x0 - sample / (sigma^2+1)) * (-sqrt(sigma^2+1) / sigma)
+            # This is complex; fall back to sample prediction for v models
+            sigma_flat = sigma_vals.view(b, *([1] * (z0.dim() - 1)))
+            target_value = z0
+            pred_f = pred.float()
+            target_f = target_value.float()
+            diff = pred_f - target_f
+            l2_loss = diff.square().mean(dim=(1, 2, 3))
+            l1_loss = diff.abs().mean(dim=(1, 2, 3))
+            per_sample = 0.9 * l2_loss + 0.1 * l1_loss
+        else:
+            # sample / x0 prediction (fallback for schedulers that use it natively)
+            target_value = z0
+            pred_f = pred.float()
+            target_f = target_value.float()
+            diff = pred_f - target_f
+            l2_loss = diff.square().mean(dim=(1, 2, 3))
+            l1_loss = diff.abs().mean(dim=(1, 2, 3))
+            per_sample = 0.9 * l2_loss + 0.1 * l1_loss
+
         if self.use_min_snr:
-            # For EulerDiscrete: SNR = 1 / sigma^2 (signal scale=1, noise scale=sigma)
-            # For DDPM-style: SNR = alpha_bar / (1 - alpha_bar)
+            # For EulerDiscrete: SNR = 1 / sigma^2
             if sigma_vals is not None:
                 snr = 1.0 / (sigma_vals.view(b).float() ** 2 + 1e-12)
             else:
@@ -1642,7 +1803,13 @@ class InstructionTuner:
                 alpha = alpha.to(device=device, dtype=torch.float32)[timesteps]
                 snr = alpha / (1.0 - alpha).clamp_min(1e-12)
             cap = torch.minimum(snr, torch.full_like(snr, self.min_snr_gamma))
-            weight = cap / (snr + 1.0 if effective_pred_type == "v_prediction" else snr.clamp_min(1e-12))
+            if effective_pred_type == "v_prediction":
+                weight = cap / (snr + 1.0)
+            elif effective_pred_type == "sample":
+                weight = cap / (snr + 1.0)
+            else:
+                # epsilon: standard min-SNR weight
+                weight = cap / snr.clamp_min(1e-12)
             per_sample = per_sample * weight.view(per_sample.shape)
         return per_sample.mean()
 

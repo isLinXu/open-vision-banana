@@ -84,7 +84,9 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Experiment seed")
     parser.add_argument("--dry-run", action="store_true", help="Load model and exit")
     parser.add_argument("--task", type=str, default="all",
-                        choices=["all", "depth", "normal", "segmentation", "edge", "generation"],
+                        choices=["all", "depth", "normal", "segmentation", "edge", "generation",
+                        "depth_edge", "keypoint", "object_detection", "referring",
+                        "instance", "structure", "multiview", "specular_removal"],
                         help="Which task to train on")
     args = parser.parse_args()
 
@@ -236,6 +238,38 @@ def main():
     # Edge task (edge from vb_zimage_train, structure from vb_snvc_train)
     if args.task in ("all", "edge"):
         datasets.extend(_load_task_dirs("edge", "edge", "edge", max_per_task=args.max_per_task))
+
+    # Depth edge task
+    if args.task in ("all", "depth_edge"):
+        datasets.extend(_load_task_dirs("depth_edge", "depth_edge", "depth_edge", max_per_task=args.max_per_task))
+
+    # Keypoint task
+    if args.task in ("all", "keypoint"):
+        datasets.extend(_load_task_dirs("keypoint", "keypoint", "keypoint", max_per_task=args.max_per_task))
+
+    # Object detection task
+    if args.task in ("all", "object_detection"):
+        datasets.extend(_load_task_dirs("object_detection", "object_detection", "object_detection", max_per_task=args.max_per_task))
+
+    # Referring task
+    if args.task in ("all", "referring"):
+        datasets.extend(_load_task_dirs("referring", "referring", "referring", max_per_task=args.max_per_task))
+
+    # Instance segmentation task
+    if args.task in ("all", "instance"):
+        datasets.extend(_load_task_dirs("instance", "instance", "instance", max_per_task=args.max_per_task))
+
+    # Structure task
+    if args.task in ("all", "structure"):
+        datasets.extend(_load_task_dirs("structure", "structure", "structure", max_per_task=args.max_per_task))
+
+    # Multiview task
+    if args.task in ("all", "multiview"):
+        datasets.extend(_load_task_dirs("multiview", "multiview", "multiview", max_per_task=args.max_per_task))
+
+    # Specular removal task
+    if args.task in ("all", "specular_removal"):
+        datasets.extend(_load_task_dirs("specular_removal", "specular_removal", "specular_removal", max_per_task=args.max_per_task))
 
     # Generation task
     if args.task in ("all", "generation"):

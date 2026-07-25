@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -26,6 +26,32 @@ logger = logging.getLogger(__name__)
 
 _lpips_model: torch.nn.Module | None = None
 _inception_model: torch.nn.Module | None = None
+
+
+def evaluate_pairwise_preferences(decisions: Sequence[str]) -> dict[str, float | int]:
+    """Compute a GenAI-Bench-style win rate from recorded pairwise judgments.
+
+    Decisions must be ``"candidate"``, ``"baseline"``, or ``"tie"``. Ties
+    contribute half a win, matching common pairwise evaluation reporting.
+    """
+    normalized = [decision.strip().lower() for decision in decisions]
+    allowed = {"candidate", "baseline", "tie"}
+    invalid = sorted(set(normalized) - allowed)
+    if invalid:
+        raise ValueError(f"Unknown pairwise decisions: {invalid}")
+    if not normalized:
+        raise ValueError("At least one pairwise decision is required")
+    wins = normalized.count("candidate")
+    losses = normalized.count("baseline")
+    ties = normalized.count("tie")
+    total = len(normalized)
+    return {
+        "wins": wins,
+        "losses": losses,
+        "ties": ties,
+        "total": total,
+        "win_rate": (wins + 0.5 * ties) / total,
+    }
 
 
 def _lpips_available() -> bool:
@@ -297,5 +323,6 @@ __all__ = [
     "compute_lpips",
     "extract_inception_features",
     "extract_rgb_features",
+    "evaluate_pairwise_preferences",
     "evaluate_generation_preservation",
 ]

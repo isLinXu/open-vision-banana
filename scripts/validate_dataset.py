@@ -25,6 +25,8 @@ from typing import Any
 import torch
 from PIL import Image
 
+from open_vision_banana.data.validation import validate_vision_dataset
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -190,33 +192,43 @@ def main():
 
     tasks = ["depth", "normal", "semantic", "instance", "referring"] if args.task == "all" else [args.task]
     reports: dict[str, dict] = {}
+    has_errors = False
 
     for task in tasks:
-        task_path = data_path / task
+        direct_task_layout = (data_path / "images").is_dir() and (data_path / "targets").is_dir()
+        task_path = data_path if len(tasks) == 1 and direct_task_layout else data_path / task
         if not task_path.exists():
-            logger.warning("Task directory not found: %s", task_path)
+            logger.error("Task directory not found: %s", task_path)
+            reports[task] = {
+                "data_path": str(task_path),
+                "pair_count": 0,
+                "ok": False,
+                "errors": [{"level": "error", "message": "Task directory not found", "path": str(task_path)}],
+                "warnings": [],
+                "stats": {},
+            }
+            has_errors = True
             continue
 
-        report = validate_dataset(task_path, task)
+        report = validate_vision_dataset(task_path, task=task)
         reports[task] = report.to_dict()
+        has_errors = has_errors or not report.ok
 
         logger.info(
-            "[%s] Valid: %d/%d (%.1f%%) | Corrupt: %d | Missing targets: %d",
+            "[%s] Pairs: %d | Errors: %d | Warnings: %d",
             task,
-            report.valid_samples,
-            report.total_samples,
-            report.valid_ratio * 100,
-            report.corrupt_samples,
-            report.missing_targets,
+            report.pair_count,
+            len(report.errors),
+            len(report.warnings),
         )
         if report.warnings:
-            for w in report.warnings[:5]:
-                logger.warning("  ⚠ %s", w)
+            for issue in report.warnings[:5]:
+                logger.warning("  WARN %s", issue.message)
             if len(report.warnings) > 5:
                 logger.warning("  ... and %d more warnings", len(report.warnings) - 5)
         if report.errors:
-            for e in report.errors[:5]:
-                logger.error("  ✗ %s", e)
+            for issue in report.errors[:5]:
+                logger.error("  ERROR %s", issue.message)
             if len(report.errors) > 5:
                 logger.error("  ... and %d more errors", len(report.errors) - 5)
 
@@ -227,7 +239,7 @@ def main():
             json.dump(reports, f, indent=2)
         logger.info("Report saved to: %s", out_path)
 
-    return 0
+    return 1 if has_errors else 0
 
 
 if __name__ == "__main__":

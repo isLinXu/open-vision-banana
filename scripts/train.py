@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Training script for Open-Vision-Banana.
 
-Implements the instruction-tuning pipeline from the paper:
-- Mix vision task data at 9:1 ratio with base model's training data
-- Use rsLoRA (rank=64, alpha=128) for parameter-efficient fine-tuning
-- Train only 0.5%-1% of total parameters
-- Preserve 90%+ generation capability
+Implements the paper's generator instruction-tuning pattern with explicit,
+project-controlled data mixing and LoRA hyperparameters.
 
 Usage:
     python scripts/train.py --config configs/training_config.yaml
@@ -16,6 +13,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 from pathlib import Path
 
@@ -23,6 +21,7 @@ import torch
 
 from open_vision_banana import VisionBananaConfig
 from open_vision_banana.data import MixedVisionDataset, build_dataset, build_generation_dataset
+from open_vision_banana.training.tuner import VisionTaskDataset
 from open_vision_banana.data.split import split_vision_datasets
 from open_vision_banana.training.logging import create_training_logger_from_config
 
@@ -31,6 +30,51 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+DEFAULT_TASKS = [
+    "preencoded_depth", "depth", "normal", "semantic", "segmentation",
+    "instance", "referring", "edge", "flow", "keypoint", "object_detection",
+    "depth_edge", "structure", "multiview", "specular_removal",
+]
+TASK_ALIASES = {
+    "depth_estimation": "depth",
+    "normal_estimation": "normal",
+    "semantic_segmentation": "semantic",
+    "instance_segmentation": "instance",
+    "referring_segmentation": "referring",
+    "edge_detection": "edge",
+    "keypoint_detection": "keypoint",
+}
+
+
+def _configured_tasks(value) -> list[str]:
+    if value is None:
+        return list(DEFAULT_TASKS)
+    names = list(value) if isinstance(value, (list, dict)) else []
+    if not names:
+        raise ValueError("data.tasks must be a non-empty list or mapping")
+    tasks = []
+    for name in names:
+        task = TASK_ALIASES.get(str(name), str(name))
+        if task not in DEFAULT_TASKS:
+            raise ValueError(f"Unsupported task in data.tasks: {name}")
+        if task not in tasks:
+            tasks.append(task)
+    return tasks
+
+
+def _resolve_task_root(data_root: Path, task: str, task_dirs: dict[str, str]) -> Path:
+    configured = task_dirs.get(task)
+    if configured is None:
+        for alias, canonical in TASK_ALIASES.items():
+            if canonical == task and alias in task_dirs:
+                configured = task_dirs[alias]
+                break
+    if configured is not None:
+        path = Path(configured)
+        return path if path.is_absolute() else data_root / path
+    candidate = data_root / task
+    return candidate if candidate.exists() else data_root
 
 
 def parse_args():
@@ -53,9 +97,9 @@ def parse_args():
                         help="Path to generation preservation dataset (9:1 mix)")
     parser.add_argument("--vision-ratio", type=float, default=None,
                         help="Vision sampling ratio (default 0.1 = 10%% vision)")
-    parser.add_argument("--output-dir", type=str, default="output/checkpoints")
+    parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from checkpoint path")
     parser.add_argument("--val-split", type=float, default=None,
@@ -129,7 +173,7 @@ def main():
     # Load config
     config_path = Path(args.config)
     if config_path.exists():
-        cfg = VisionBananaConfig.from_yaml(config_path)
+        cfg = VisionBananaConfig.from_yaml(config_path, strict=True)
     else:
         logger.warning(f"Config file not found: {config_path}, using defaults")
         cfg = VisionBananaConfig()
@@ -137,6 +181,7 @@ def main():
     # Apply CLI overrides
     if args.model_name:
         cfg.model.name = args.model_name
+        cfg.model.local_path = None
     if args.lora_rank:
         cfg.lora.rank = args.lora_rank
     if args.lora_alpha:
@@ -151,6 +196,7 @@ def main():
         cfg.data.generation_path = args.generation_path
     if args.vision_ratio is not None:
         cfg.data.vision_ratio = args.vision_ratio
+        cfg.data.generation_ratio = 1.0 - args.vision_ratio
     if args.val_split is not None:
         cfg.data.val_split = args.val_split
     if args.early_stopping_patience is not None:
@@ -173,8 +219,44 @@ def main():
         cfg.logging.wandb_log_checkpoints = True
         cfg.logging.wandb_enabled = True
 
-    output_dir = args.output_dir if args.output_dir != "output/checkpoints" else cfg.output_dir
-    seed = args.seed
+    if args.ema_decay is not None:
+        cfg.training.ema_decay = args.ema_decay
+    if args.no_min_snr:
+        cfg.training.use_min_snr = False
+    if args.no_logit_normal_timesteps:
+        cfg.training.use_logit_normal_timesteps = False
+    if args.no_img2img_flow:
+        cfg.training.use_img2img_flow = False
+    if args.flow_sigma is not None:
+        cfg.training.flow_sigma = args.flow_sigma
+    if args.cfg_dropout_rate is not None:
+        cfg.training.cfg_dropout_rate = args.cfg_dropout_rate
+    if args.warmup_ratio is not None:
+        cfg.training.warmup_ratio = args.warmup_ratio
+    if args.gradient_checkpointing:
+        cfg.training.gradient_checkpointing = True
+    if args.scheduler:
+        cfg.optimizer.scheduler = args.scheduler
+    if args.colormaps:
+        cfg.data.colormaps = [
+            name.strip() for name in args.colormaps.split(",") if name.strip()
+        ]
+
+    output_dir = args.output_dir or cfg.output_dir
+    seed = args.seed if args.seed is not None else cfg.training.seed
+    cfg.output_dir = output_dir
+    cfg.training.seed = seed
+    configured_data_path = args.data_path or cfg.data.root
+    if configured_data_path is None:
+        raise ValueError("Training requires --data-path or data.root in the config")
+    data_path = Path(configured_data_path).expanduser()
+    if not data_path.exists():
+        raise FileNotFoundError(f"Training data root does not exist: {data_path}")
+    cfg.data.root = str(data_path.resolve())
+    if cfg.data.tasks is None:
+        cfg.data.tasks = list(DEFAULT_TASKS)
+    cfg.validate()
+
     device = args.device or _auto_device()
 
     # Set seed
@@ -186,7 +268,8 @@ def main():
     logger.info("=" * 60)
     logger.info("Vision Banana Training")
     logger.info("=" * 60)
-    logger.info(f"Base model: {cfg.model.name}")
+    effective_model_name = cfg.model.local_path or cfg.model.name
+    logger.info(f"Base model: {effective_model_name}")
     logger.info(f"LoRA rank: {cfg.lora.rank}, alpha: {cfg.lora.alpha} (rsLoRA)")
     logger.info(f"Learning rate: {cfg.optimizer.lr}")
     logger.info(f"Epochs: {cfg.training.epochs}, Batch size: {cfg.data.batch_size}")
@@ -218,6 +301,8 @@ def main():
             f"num_workers={num_workers} may cause hangs on {device} — forcing 0."
         )
         num_workers = 0
+    cfg.training.use_amp = use_amp
+    cfg.data.num_workers = num_workers
 
     # Load base FLUX.1 model
     logger.info("Loading base FLUX.1 model…")
@@ -253,8 +338,38 @@ def main():
         if is_main_process:
             logger.info("DDP enabled (world_size=%d)", ddp_wrapper.world_size)
 
+    if isinstance(cfg.data.tasks, dict):
+        logger.warning(
+            "Legacy mapping-style data.tasks detected: mapping keys select tasks, but nested "
+            "dataset metadata is recorded only. Use data.task_dirs for loader paths."
+        )
+    if is_main_process:
+        run_dir = Path(output_dir)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        cfg.to_yaml(run_dir / "training_config.yaml")
+        from open_vision_banana.reproducibility import build_experiment_manifest
+
+        manifest = build_experiment_manifest(
+            cfg,
+            repo_root=Path(__file__).resolve().parents[1],
+            fingerprint_mode="metadata",
+            require_data=True,
+        )
+        manifest["launch"] = {
+            "device": device,
+            "ddp": args.ddp,
+            "fsdp": args.fsdp,
+            "deepspeed": args.deepspeed,
+            "deepspeed_config": args.deepspeed_config if args.deepspeed else None,
+        }
+        (run_dir / "experiment_manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
     generator = BaseGenerator(
-        model_name=cfg.model.name,
+        model_name=effective_model_name,
+        lora_path=cfg.model.lora_path,
+        lora_revision=cfg.model.lora_revision,
         device=device,
         dtype=get_dtype(cfg.model.dtype),
     )
@@ -274,20 +389,29 @@ def main():
         model=generator,
         lora_rank=cfg.lora.rank,
         lora_alpha=cfg.lora.alpha,
+        lora_dropout=cfg.lora.dropout,
+        target_modules=cfg.lora.target_modules,
         use_rslora=cfg.lora.rs_lora,
         lr=cfg.optimizer.lr,
+        weight_decay=cfg.optimizer.weight_decay,
+        optimizer_name=cfg.optimizer.name,
+        adam_betas=cfg.optimizer.betas,
+        adam_eps=cfg.optimizer.eps,
         augmentation=augmentation,
         use_ema=cfg.training.use_ema,
-        ema_decay=args.ema_decay if args.ema_decay is not None else cfg.training.ema_decay,
-        use_min_snr=not args.no_min_snr,
-        use_logit_normal_timesteps=not args.no_logit_normal_timesteps,
-        use_img2img_flow=not args.no_img2img_flow,
-        flow_sigma=args.flow_sigma if args.flow_sigma is not None else 0.0,
-        cfg_dropout_rate=args.cfg_dropout_rate if args.cfg_dropout_rate is not None else 0.1,
-        warmup_ratio=args.warmup_ratio,
+        ema_decay=cfg.training.ema_decay,
+        ema_warmup_steps=cfg.training.ema_warmup_steps,
+        use_gradient_checkpointing=cfg.training.gradient_checkpointing,
+        use_min_snr=cfg.training.use_min_snr,
+        min_snr_gamma=cfg.training.min_snr_gamma,
+        use_logit_normal_timesteps=cfg.training.use_logit_normal_timesteps,
+        use_img2img_flow=cfg.training.use_img2img_flow,
+        flow_sigma=cfg.training.flow_sigma,
+        cfg_dropout_rate=cfg.training.cfg_dropout_rate,
+        warmup_ratio=cfg.training.warmup_ratio,
     )
 
-    if args.gradient_checkpointing or args.fsdp or args.deepspeed:
+    if args.fsdp or args.deepspeed:
         enable_gradient_checkpointing(tuner.peft_model)
 
     if args.deepspeed:
@@ -324,7 +448,6 @@ def main():
         meta_path = resume_checkpoint / "metadata.json" if resume_checkpoint.is_dir() else resume_checkpoint.parent / "metadata.json"
         if not meta_path.exists():
             raise FileNotFoundError(f"Checkpoint metadata not found: {meta_path}")
-        import json
         meta = json.loads(meta_path.read_text())
         resume_step = meta.get("step", 0)
         resume_epoch = meta.get("epoch", 0)
@@ -337,19 +460,43 @@ def main():
     # Build datasets
     vision_datasets = []
 
-    if args.data_path:
-        # Try preencoded_depth first (generic images/ + targets/ layout)
-        for task in [
-            "preencoded_depth", "depth", "normal", "semantic", "instance", "referring",
-            "edge", "flow", "keypoint", "object_detection", "depth_edge",
-        ]:
+    if data_path is not None:
+        for task in _configured_tasks(cfg.data.tasks):
+            task_root = _resolve_task_root(data_path, task, cfg.data.task_dirs)
+            loaded = False
+            # Try specialized build_dataset first
             try:
-                ds = build_dataset(task, args.data_path, resolution=cfg.data.resolution)
+                ds = build_dataset(task, str(task_root), resolution=cfg.data.resolution)
                 if len(ds) > 0:
+                    if hasattr(ds, "depth_mapper"):
+                        from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
+                        ds.depth_mapper = DepthRGBMapper(
+                            lam=cfg.depth_mapping.lam, c=cfg.depth_mapping.c
+                        )
                     vision_datasets.append(ds)
-                    logger.info(f"  Loaded {task}: {len(ds)} samples")
-            except Exception as e:
-                logger.warning(f"  Failed to load {task} from {args.data_path}: {e}")
+                    logger.info(f"  Loaded {task} (specialized): {len(ds)} samples")
+                    loaded = True
+            except Exception as exc:
+                logger.debug("Specialized loader failed for %s: %s", task, exc)
+
+            if loaded:
+                continue
+
+            # Fallback: generic images/targets layout via VisionTaskDataset
+            task_dir = task_root
+            if (task_dir / "images").exists():
+                try:
+                    ds = VisionTaskDataset(
+                        data_path=str(task_dir),
+                        resolution=cfg.data.resolution,
+                        task=task,
+                    )
+                    if ds.samples:
+                        vision_datasets.append(ds)
+                        logger.info(f"  Loaded {task} (generic): {len(ds)} samples")
+                except Exception as e:
+                    logger.warning(f"  Failed to load {task} from {task_root}: {e}")
 
     if not vision_datasets:
         logger.warning("No vision datasets loaded. Training requires data.")
@@ -360,15 +507,25 @@ def main():
     train_vision_datasets = vision_datasets
     if cfg.data.val_split > 0:
         train_vision_datasets, val_dataset = split_vision_datasets(
-            vision_datasets, cfg.data.val_split, seed=seed,
+            vision_datasets, cfg.data.val_split, seed=seed, source_level=True,
         )
         if val_dataset is not None:
             logger.info(f"  Validation set: {len(val_dataset)} samples")
 
     generation_dataset = None
-    if cfg.data.generation_path:
+    generation_path = cfg.data.generation_path
+    if generation_path is not None and data_path is not None:
+        configured_generation_path = Path(generation_path)
+        if not configured_generation_path.is_absolute() and not configured_generation_path.exists():
+            generation_path = str(data_path / configured_generation_path)
+    if generation_path is None and data_path is not None:
+        implicit_generation_path = data_path / "generation"
+        if (implicit_generation_path / "images").exists():
+            generation_path = str(implicit_generation_path)
+            logger.info("Using generation data discovered at %s", implicit_generation_path)
+    if generation_path:
         generation_dataset = build_generation_dataset(
-            cfg.data.generation_path,
+            generation_path,
             resolution=cfg.data.resolution,
         )
         if len(generation_dataset) == 0:
@@ -384,16 +541,19 @@ def main():
         )
         vision_ratio = 1.0
 
-    colormaps = None
-    if args.colormaps:
-        colormaps = [c.strip() for c in args.colormaps.split(",") if c.strip()]
-
     mixed_ds = MixedVisionDataset(
         vision_datasets=train_vision_datasets,
         generation_dataset=generation_dataset,
         vision_ratio=vision_ratio,
         seed=seed,
-        colormaps=colormaps,
+        colormaps=cfg.data.colormaps,
+        task_sampling=cfg.data.task_sampling,
+        task_weights={
+            TASK_ALIASES.get(task, task): weight
+            for task, weight in cfg.data.task_weights.items()
+        },
+        depth_lam=cfg.depth_mapping.lam,
+        depth_c=cfg.depth_mapping.c,
     )
     logger.info(f"  Mixed dataset: {mixed_ds}")
 
@@ -408,12 +568,15 @@ def main():
 
     training_logger = create_training_logger_from_config(cfg)
     training_logger.log_hyperparams({
-        "model": cfg.model.name,
+        "model": effective_model_name,
         "lora_rank": cfg.lora.rank,
         "lora_alpha": cfg.lora.alpha,
+        "lora_dropout": cfg.lora.dropout,
         "lr": cfg.optimizer.lr,
+        "weight_decay": cfg.optimizer.weight_decay,
         "batch_size": cfg.data.batch_size,
         "vision_ratio": vision_ratio,
+        "task_sampling": cfg.data.task_sampling,
         "epochs": cfg.training.epochs,
     })
 
@@ -432,6 +595,7 @@ def main():
         output_dir=output_dir,
         save_every=cfg.training.save_every,
         eval_every=cfg.training.eval_every,
+        max_keep=cfg.training.max_keep,
         use_amp=use_amp,
         num_workers=num_workers,
         training_logger=training_logger,
