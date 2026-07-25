@@ -18,7 +18,15 @@ from open_vision_banana.core.depth_mapper import (
 def test_available_colormaps() -> None:
     """Test that all expected colormaps are available."""
     names = get_available_colormaps()
-    expected = ["cube_edge", "plasma", "inferno", "viridis", "grayscale", "rainbow"]
+    expected = [
+        "cube_edge",
+        "legacy_cube_edge",
+        "plasma",
+        "inferno",
+        "viridis",
+        "grayscale",
+        "rainbow",
+    ]
     assert sorted(names) == sorted(expected), f"Expected {expected}, got {names}"
 
 
@@ -26,7 +34,7 @@ def test_cube_edge_colormap_default() -> None:
     """Test that cube_edge is the default and roundtrip is accurate."""
     mapper = DepthRGBMapper()
     assert mapper.colormap == "cube_edge"
-    assert mapper.colormap_keypoints.shape[0] == 6  # 6 keypoints
+    assert mapper.colormap_keypoints.shape[0] == 8  # Figure 5 Hilbert vertices
 
     depth = torch.rand(1, 1, 64, 64) * 50.0 + 1.0
     rgb = mapper.depth_to_rgb(depth)

@@ -292,7 +292,7 @@ plan_alignment_v2.md
 experiments/*.png
 
 # Training data & model checkpoints (too large for git)
-data/
+/data/
 *.pt
 *.safetensors
 *.ckpt

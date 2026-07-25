@@ -3,7 +3,7 @@
 From the paper (Section 3.2):
 - Apply power transform: f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
 - Parameters: λ=-3, c=10/3
-- Then map via cube-edge traversal colormap (black → blue → cyan → green → yellow → white)
+- Then map via the first-order 3D Hilbert path from black to white
 
 This maps unbounded depth values [0, ∞) to bounded RGB [0, 1]³.
 The curving prioritizes accuracy for nearby content (higher utility).
@@ -27,23 +27,42 @@ logger = logging.getLogger(__name__)
 # function that follows the edges of the RGB cube, traversing from black
 # to white, similarly to the first iteration of a 3D Hilbert curve.
 #
-# Path: Black(0,0,0) → Blue(0,0,1) → Cyan(0,1,1) → Green(0,1,0)
-#       → Yellow(1,1,0) → White(1,1,1)
+# Path shown in paper Figure 5:
+# Black(0,0,0) → Red(1,0,0) → Yellow(1,1,0) → Green(0,1,0)
+# → Cyan(0,1,1) → Blue(0,0,1) → Magenta(1,0,1) → White(1,1,1)
 # Each segment lies strictly on an edge of the RGB cube.
 
 # ──────────────────────────────────────────────────────────────
 # Multi-Colormap Keypoints for Depth Encoding (Paper Section 3.2)
 # ──────────────────────────────────────────────────────────────
 
-# Cube-edge colormap: Black → Blue → Cyan → Green → Yellow → White
+# First-order 3D Hilbert path. Equal 1/7 intervals reproduce the corner depths
+# annotated in Figure 5 after the paper's power transform (approximately
+# 0.8, 1.8, 3.2, 5.3, 8.7, and 16 metres).
 CUBE_EDGE_KEYPOINTS = torch.tensor(
     [
-        [0.00, 0.00, 0.00, 0.00],  # Black (near) — (0,0,0)
-        [0.20, 0.00, 0.00, 1.00],  # Blue         — (0,0,1)
-        [0.40, 0.00, 1.00, 1.00],  # Cyan         — (0,1,1)
-        [0.60, 0.00, 1.00, 0.00],  # Green        — (0,1,0)
-        [0.80, 1.00, 1.00, 0.00],  # Yellow       — (1,1,0)
-        [1.00, 1.00, 1.00, 1.00],  # White (far)  — (1,1,1)
+        [0.0 / 7.0, 0.00, 0.00, 0.00],  # Black   — (0,0,0)
+        [1.0 / 7.0, 1.00, 0.00, 0.00],  # Red     — (1,0,0)
+        [2.0 / 7.0, 1.00, 1.00, 0.00],  # Yellow  — (1,1,0)
+        [3.0 / 7.0, 0.00, 1.00, 0.00],  # Green   — (0,1,0)
+        [4.0 / 7.0, 0.00, 1.00, 1.00],  # Cyan    — (0,1,1)
+        [5.0 / 7.0, 0.00, 0.00, 1.00],  # Blue    — (0,0,1)
+        [6.0 / 7.0, 1.00, 0.00, 1.00],  # Magenta — (1,0,1)
+        [7.0 / 7.0, 1.00, 1.00, 1.00],  # White   — (1,1,1)
+    ],
+    dtype=torch.float32,
+)
+
+# Compatibility mapping used by checkpoints trained before the Figure 5 path
+# was corrected. It remains opt-in and is no longer the paper-aligned default.
+LEGACY_CUBE_EDGE_KEYPOINTS = torch.tensor(
+    [
+        [0.00, 0.00, 0.00, 0.00],
+        [0.20, 0.00, 0.00, 1.00],
+        [0.40, 0.00, 1.00, 1.00],
+        [0.60, 0.00, 1.00, 0.00],
+        [0.80, 1.00, 1.00, 0.00],
+        [1.00, 1.00, 1.00, 1.00],
     ],
     dtype=torch.float32,
 )
@@ -121,6 +140,7 @@ RAINBOW_KEYPOINTS = torch.tensor(
 # Colormap registry
 _COLORMAP_REGISTRY: dict[str, torch.Tensor] = {
     "cube_edge": CUBE_EDGE_KEYPOINTS,
+    "legacy_cube_edge": LEGACY_CUBE_EDGE_KEYPOINTS,
     "plasma": PLASMA_KEYPOINTS,
     "inferno": INFERNO_KEYPOINTS,
     "viridis": VIRIDIS_KEYPOINTS,
@@ -349,6 +369,7 @@ def get_available_colormaps() -> list[str]:
 __all__ = [
     "DepthRGBMapper",
     "CUBE_EDGE_KEYPOINTS",
+    "LEGACY_CUBE_EDGE_KEYPOINTS",
     "PLASMA_KEYPOINTS",
     "INFERNO_KEYPOINTS",
     "VIRIDIS_KEYPOINTS",
