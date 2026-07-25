@@ -15,7 +15,7 @@ Vision Banana demonstrates that state-of-the-art visual understanding can emerge
 | Semantic Segmentation | 2D | Color mapping: `{"cat": "red", "background": "yellow"}` | ✅ |
 | Instance Segmentation | 2D | "Each dog is colored differently" | ✅ |
 | Referring Expression Segmentation | 2D | "The man in pink t shirt is rendered solid white" | ✅ |
-| Metric Depth Estimation | 3D | Power transform + 6 colormaps (cube-edge/plasma/inferno/viridis/grayscale/rainbow) | ✅ |
+| Metric Depth Estimation | 3D | Power transform + 7 colormaps (including paper and legacy cube-edge paths) | ✅ |
 | Surface Normal Estimation | 3D | Direct linear mapping (x,y,z) → (R,G,B) | ✅ |
 | Edge Detection | 2D | "Edges are white, background is black" | ✅ Speculative |
 | Optical Flow | 2D | HSV encoding: direction=hue, magnitude=saturation | ✅ Speculative |
@@ -244,6 +244,28 @@ python scripts/evaluate_generation_preservation.py \
   --max-samples 32
 ```
 
+Paper-specific metrics are separate from the offline health proxies. SA-Co
+`pmF1`/`IL_MCC`/`cgF1` and RefCOCOg/ReasonSeg `cIoU`/`gIoU` are implemented in
+`open_vision_banana.evaluation`. The optional Gemini preprocessing stages can
+be run from resumable JSONL manifests:
+
+```bash
+export GEMINI_API_KEY="..."
+python scripts/run_paper_judges.py \
+  --mode saco-presence \
+  --manifest data/saco_queries.jsonl \
+  --output reports/saco_presence.jsonl
+
+python scripts/run_paper_judges.py \
+  --mode reasonseg-rewrite \
+  --manifest data/reasonseg_queries.jsonl \
+  --output reports/reasonseg_descriptions.jsonl
+```
+
+For GenAI-Bench-style human or external-judge records,
+`evaluate_pairwise_preferences()` reports `(wins + 0.5 * ties) / total`; the
+FID/LPIPS/CLIP health metrics remain explicitly labeled as proxies.
+
 ### Optional FastAPI serving
 
 Serving is isolated from the core install. Load the model in deployment code,
@@ -290,7 +312,29 @@ python scripts/publish_to_hub.py \
 
 ### Training
 
-> **Production Tip**: Use `scripts/unified_launch.sh` for all training modes — it auto-detects your GPU type and recommends the best strategy. See [`docs/quick-start.md`](docs/quick-start.md) for the complete GPU training guide (H20 / A100 / RTX).
+The paper does not disclose its base weights, exact data mixture, LoRA rank, or
+optimizer settings. The canonical configs therefore separate method reproduction
+from project optimization. See the [training and reproducibility design](docs/plans/2026-07-25-training-performance-reproducibility-design.md)
+for the evidence labels, ablation matrix, and promotion gates.
+
+```bash
+# Strict config validation and a content-addressed experiment manifest
+PYTHONPATH=src python scripts/validate_training_config.py \
+  --config configs/paper_reproduction_baseline.yaml \
+  --hash-mode content \
+  --output output/manifests/reproduction.json
+
+# Shared-adapter method-reproduction track
+PYTHONPATH=src python scripts/train.py \
+  --config configs/paper_reproduction_baseline.yaml
+
+# Project optimization track (run only after the baseline is frozen)
+PYTHONPATH=src python scripts/train.py \
+  --config configs/paper_optimized_multitask.yaml
+```
+
+For hardware-specific launch modes, `scripts/unified_launch.sh` supports single
+GPU, DDP, FSDP, and DeepSpeed. See [`docs/quick-start.md`](docs/quick-start.md).
 
 ```bash
 # ─── Recommended: Universal launcher (auto-detects GPU & mode) ───
@@ -308,7 +352,7 @@ bash scripts/unified_launch.sh --config configs/unified_training_config.yaml --d
 OVB_BATCH_SIZE=4 OVB_LR=1e-4 bash scripts/unified_launch.sh --config configs/training_config.yaml
 ```
 
-**Legacy direct training** (for custom scripts or debugging):
+**Direct overrides** (for custom experiments or debugging):
 
 ```bash
 # Basic training with validation + early stopping
@@ -521,7 +565,7 @@ Maps unbounded depth [0, ∞) to bounded RGB [0, 1]³ via power transform:
 f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
 ```
 
-Then maps via a **cube-edge traversal colormap** (black → blue → cyan → green → yellow → white) with piecewise-linear interpolation. Parameters: λ=-3, c=10/3.
+Then maps via the **first-order 3D Hilbert path shown in paper Figure 5** (black → red → yellow → green → cyan → blue → magenta → white) with piecewise-linear interpolation. Parameters: λ=-3, c=10/3. Older checkpoints can opt into `legacy_cube_edge` for the previous mapping.
 
 ### 2. Normal → RGB Mapping (Direct Linear)
 
@@ -662,7 +706,10 @@ python scripts/validate_dataset.py --data-path data/hypersim_depth/ --task depth
 
 ### Training Data Mixing Strategy
 
-The paper uses a **9:1 generation-to-vision data ratio** (≈10% vision task data). We recommend:
+The paper states that vision data is mixed at a low ratio but does not publish
+the exact value. This project uses a **9:1 generation-to-vision default**
+(≈10% vision task data), configurable through `vision_ratio` or
+`scripts/train_sdxl_mps.py --vision-ratio`:
 
 ```python
 from open_vision_banana.data import MixedVisionDataset, build_generation_dataset
@@ -821,11 +868,12 @@ Interactive Colab demo: [`notebooks/colab_demo.ipynb`](notebooks/colab_demo.ipyn
 If you use this codebase or build upon the Vision Banana paradigm, please cite the original paper:
 
 ```bibtex
-@article{visionbanana2025,
+@article{visionbanana2026,
   title={Image Generators are Generalist Vision Learners},
-  author={Shengbang Bang and Hezhen Hu and Zheng Qian and Chengyu Wang and Yi Tai and Yann LeCun and Tong Wang},
-  year={2025},
-  note={Google Research}
+  author={Gabeur, Valentin and others},
+  year={2026},
+  eprint={2604.20329},
+  archivePrefix={arXiv}
 }
 ```
 

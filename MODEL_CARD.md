@@ -6,12 +6,12 @@
 
 ### Model Description
 
-Vision Banana demonstrates that image generators are generalist vision learners. By instruction-tuning FLUX.1 [schnell] — a 12B-parameter rectified flow diffusion model — on a mixture of its original training data alongside a small proportion of vision task data, the model achieves state-of-the-art zero-shot transfer on semantic segmentation, instance segmentation, depth estimation, and surface normal estimation.
+Open-Vision-Banana is a method-aligned, open implementation of the Vision Banana paradigm. It instruction-tunes FLUX.1-schnell with shared LoRA adapters so that prompts select vision tasks and outputs remain RGB images. FLUX is an open substitute for the paper's closed Nano Banana Pro base; numerical equivalence has not been established.
 
 - **Developed by**: Open Vision Banana Contributors
 - **Model type**: Instruction-tuned diffusion model for vision understanding
 - **Languages**: English (prompts), Visual (outputs)
-- **License**: Apache 2.0 (code); FLUX.1 base model follows its own license
+- **License**: MIT (project code); base models and datasets follow their own licenses
 - **Base model**: FLUX.1 [schnell] by Black Forest Labs
 
 ### Intended Uses
@@ -20,6 +20,7 @@ Vision Banana demonstrates that image generators are generalist vision learners.
 |:-----|:------|:-------|:---------------|
 | Semantic Segmentation | RGB image + "segment" prompt | Per-pixel class labels | CV researchers, autonomous driving engineers |
 | Instance Segmentation | RGB image + "instance segment" prompt | Per-instance masks | Robotics engineers, medical imaging researchers |
+| Referring/Reasoning Segmentation | RGB image + expression | Binary region mask | Vision-language researchers |
 | Depth Estimation | RGB image + "estimate depth" prompt | Dense depth map (meters) | 3D reconstruction, SLAM researchers |
 | Surface Normal Estimation | RGB image + "estimate normals" prompt | Per-pixel normal vectors | Scene understanding, graphics researchers |
 
@@ -32,37 +33,34 @@ Vision Banana demonstrates that image generators are generalist vision learners.
 
 ## Performance
 
-### Benchmark Results
+### Paper-Reported Reference Results
+
+The values below are reported by arXiv:2604.20329v3 for the closed Vision Banana system. They are reference targets, not measurements from the checkpoints in this repository. Project results must be published separately with checkpoint, config, dataset, and result hashes.
 
 #### Semantic Segmentation (Cityscapes val)
 
 | Method | mIoU (%) |
 |:-------|:---------|
 | SAM 3 | 65.2 |
-| **Vision Banana** | **69.9** |
+| **Vision Banana (paper)** | **69.9** |
 
 #### Depth Estimation (4-dataset average)
 
 | Method | δ1 ↑ |
 |:-------|:-----|
 | Depth Anything 3 | 0.918 |
-| **Vision Banana** | **0.929** |
+| **Vision Banana (paper)** | **0.929** |
 
-#### Surface Normal Estimation (4-dataset average)
+#### Surface Normal Estimation (paper-reported aggregate)
 
 | Method | Mean Angular Error (°) ↓ |
 |:-------|:-------------------------|
 | Lotus-2 | 19.642 |
-| **Vision Banana** | **18.928** |
+| **Vision Banana (paper)** | **18.928** |
 
-### Hardware Requirements
+### Project Evaluation Status
 
-| Configuration | VRAM | Inference Time (1024×1024) |
-|:-------------|:-----|:---------------------------|
-| A100 80GB | ~40GB | ~3s |
-| RTX 4090 | ~24GB | ~5s |
-| RTX 3090 | ~24GB | ~8s |
-| RTX 4080 (16GB) | ~16GB with `--cpu-offload --vae-slicing` | ~15–20s |
+No release checkpoint in this repository currently has a complete, three-seed, five-task benchmark plus generation-preservation report. Hardware memory and latency are also not frozen release claims. Use `scripts/benchmark_pipeline.py` on the target hardware and publish its machine-readable output with the model artifact.
 
 ### Checkpoint Registry
 
@@ -93,27 +91,27 @@ model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
 | Component | Details |
 |:----------|:--------|
 | Base model | FLUX.1 [schnell] (12B params, rectified flow) |
-| Fine-tuning method | rsLoRA (rank=64, alpha=128) |
-| Trainable params | 0.5%–1% of total |
-| Training data mix | 9:1 (original : vision task) |
+| Fine-tuning method | One shared LoRA/rsLoRA adapter; baseline rank=64, alpha=128 |
+| Trainable params | Computed per checkpoint; not assumed from rank alone |
+| Training data mix | Baseline 9:1 generation:vision; project choice, not paper-disclosed |
 | Depth mapping | Cube-edge traversal colormap + power transform (λ=-3, c=10/3) |
 | Normal mapping | Camera-space XYZ → RGB linear mapping |
 | Instance decoding | 5-stage: init → group → prune → boundary → merge |
 
 ### RGB Encoding Schemes
 
-**Depth → RGB**: Cube-edge traversal colormap (black→blue→cyan→green→yellow→white) with power transform λ=-3, c=10/3. Near-depth precision prioritized. Piecewise-linear interpolation along RGB cube edges. Round-trip error: 0.196%.
+**Depth → RGB**: Figure 5 cube-edge traversal (black→red→yellow→green→cyan→blue→magenta→white) with power transform λ=-3, c=10/3. Near-depth precision prioritized. The `legacy_cube_edge` option supports checkpoints trained with the previous mapping.
 
-**Normals → RGB**: Linear camera-space mapping: R=(1-x)/2, G=(1+y)/2, B=(1-z)/2. Exact invertibility.
+**Normals → RGB**: Linear camera-space mapping: R=(1-x)/2, G=(1+y)/2, B=(1+z)/2. Exact invertibility.
 
 **Segmentation → RGB**: Discrete color palette with 5-stage instance decoding algorithm.
 
 ## Limitations
 
 1. **Stochastic output**: Diffusion sampling introduces variability between runs. Multiple samples recommended for robust results.
-2. **Resolution constraint**: Optimal at 1024×1024; lower resolutions may degrade quality.
+2. **Resolution sensitivity**: The canonical project configs train at 512x512; higher-resolution quality and cost require benchmark evidence.
 3. **No temporal consistency**: Video frames processed independently.
-4. **English prompts only**: Instruction tuning performed on English task descriptions.
+4. **Prompt coverage**: Quality depends on the prompt styles and languages represented by each released training manifest.
 5. **Quantization sensitivity**: INT8/INT4 quantization may degrade RGB mapping precision.
 
 ## Ethical Considerations
@@ -125,9 +123,11 @@ model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
 ## Citation
 
 ```bibtex
-@article{visionbanana2025,
+@article{visionbanana2026,
   title={Image Generators are Generalist Vision Learners},
-  author={Google Research},
-  year={2025}
+  author={Gabeur, Valentin and others},
+  year={2026},
+  eprint={2604.20329},
+  archivePrefix={arXiv}
 }
 ```
