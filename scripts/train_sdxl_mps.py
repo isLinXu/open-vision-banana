@@ -40,6 +40,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from open_vision_banana.inference.generator import BaseGenerator  # noqa: E402
+from open_vision_banana.data import MixedVisionDataset  # noqa: E402
 from open_vision_banana.training.tuner import InstructionTuner, VisionTaskDataset  # noqa: E402
 from open_vision_banana.training.utils import enable_gradient_checkpointing  # noqa: E402
 
@@ -49,6 +50,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("train_sdxl")
+
+PAPER_LORA_RANK = 64
+PAPER_LORA_ALPHA = 128
+PAPER_VISION_RATIO = 0.1
 
 
 def get_device() -> torch.device:
@@ -68,6 +73,78 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def resolve_data_dirs(data_dir: str | None) -> list[Path]:
+    """Resolve an explicit dataset root or preserve the legacy merged sources."""
+    if data_dir is None:
+        return [
+            PROJECT_ROOT / "data" / "vb_zimage_train",
+            PROJECT_ROOT / "data" / "vb_snvc_train",
+        ]
+
+    resolved = Path(data_dir).expanduser().resolve()
+    if not resolved.is_dir():
+        raise NotADirectoryError(f"Training data directory not found: {resolved}")
+    return [resolved]
+
+
+def combine_training_datasets(
+    vision_datasets,
+    generation_datasets,
+    *,
+    balance_data: bool,
+    vision_ratio: float,
+    seed: int,
+):
+    """Build the paper-aligned outer generation/vision mixture.
+
+    Vision tasks are balanced within the 10% vision branch. Generation remains
+    a separate 90% branch instead of being treated as one more vision task by a
+    ``WeightedRandomSampler``.
+    """
+    from torch.utils.data import ConcatDataset, WeightedRandomSampler
+
+    if not vision_datasets and not generation_datasets:
+        raise ValueError("At least one training dataset is required")
+
+    if generation_datasets and vision_datasets:
+        generation_dataset = (
+            ConcatDataset(generation_datasets)
+            if len(generation_datasets) > 1
+            else generation_datasets[0]
+        )
+        vision_sources = vision_datasets
+        if not balance_data and len(vision_datasets) > 1:
+            vision_sources = [ConcatDataset(vision_datasets)]
+        combined = MixedVisionDataset(
+            vision_datasets=vision_sources,
+            generation_dataset=generation_dataset,
+            vision_ratio=vision_ratio,
+            seed=seed,
+        )
+        return combined, None
+
+    datasets = vision_datasets or generation_datasets
+    if len(datasets) == 1:
+        return datasets[0], None
+
+    combined = ConcatDataset(datasets)
+    if not balance_data or not vision_datasets:
+        return combined, None
+
+    dataset_sizes = [len(dataset) for dataset in datasets]
+    max_size = max(dataset_sizes)
+    weights = []
+    for size in dataset_sizes:
+        weights.extend([max_size / size] * size)
+    sampler = WeightedRandomSampler(
+        weights=weights,
+        num_samples=len(combined),
+        replacement=True,
+        generator=torch.Generator().manual_seed(seed),
+    )
+    return combined, sampler
+
+
 def main():
     parser = argparse.ArgumentParser(description="SDXL/SSD-1B LoRA training on MPS")
     parser.add_argument("--model", type=str, default="ssd-1b",
@@ -75,31 +152,54 @@ def main():
                         help="Base model (default: ssd-1b, use sdxl for full 2.6B)")
     parser.add_argument("--epochs", type=int, default=3, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate")
-    parser.add_argument("--max-steps", type=int, default=3000, help="Max steps")
-    parser.add_argument("--save-every", type=int, default=200, help="Save every N steps")
+    parser.add_argument("--max-steps", type=int, default=5000, help="Max steps")
+    parser.add_argument("--save-every", type=int, default=500, help="Save every N steps")
     parser.add_argument("--output-dir", type=str, default=None,
                         help="Checkpoint directory (default: output/<model>_checkpoints)")
     parser.add_argument("--log-every", type=int, default=10, help="Log every N steps")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size")
     parser.add_argument("--grad-accum", type=int, default=8, help="Gradient accumulation steps")
-    parser.add_argument("--rank", type=int, default=128, help="LoRA rank")
-    parser.add_argument("--alpha", type=int, default=256, help="LoRA alpha")
-    parser.add_argument("--resolution", type=int, default=256, help="Training resolution")
+    parser.add_argument("--rank", type=int, default=PAPER_LORA_RANK, help="LoRA rank")
+    parser.add_argument("--alpha", type=int, default=PAPER_LORA_ALPHA, help="LoRA alpha")
+    parser.add_argument("--resolution", type=int, default=512,
+                        help="Training resolution (must match inference resolution)")
     parser.add_argument("--max-per-task", type=int, default=300,
                         help="Max samples per vision task (balanced sampling)")
     parser.add_argument("--max-generation", type=int, default=3000,
-                        help="Max generation samples")
+                        help="Max generation samples loaded per source")
+    parser.add_argument(
+        "--vision-ratio",
+        type=float,
+        default=PAPER_VISION_RATIO,
+        help="Probability of sampling a vision task when generation data is available",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help=("Use only this dataset root. If omitted, preserve the legacy behavior "
+              "of merging data/vb_zimage_train and data/vb_snvc_train."),
+    )
     parser.add_argument("--balance-data", action="store_true", default=True,
                         help="Balance task sampling (oversample minority tasks)")
     parser.add_argument("--no-ema", action="store_true", help="Disable EMA")
     parser.add_argument("--resume", action="store_true", help="Auto-resume from latest checkpoint")
     parser.add_argument("--resume-from", type=str, default=None, help="Resume from specific checkpoint dir")
     parser.add_argument("--seed", type=int, default=42, help="Experiment seed")
+    parser.add_argument("--skip-generation", action="store_true",
+                        help="Skip text-to-image generation task (vision-only training)")
     parser.add_argument("--dry-run", action="store_true", help="Load model and exit")
     parser.add_argument("--task", type=str, default="all",
-                        choices=["all", "depth", "normal", "segmentation", "edge", "generation"],
-                        help="Which task to train on")
+                        choices=["all", "core", "depth", "normal", "segmentation", "edge", "generation",
+                        "depth_edge", "keypoint", "object_detection", "referring",
+                        "instance", "structure", "multiview", "specular_removal"],
+                        help="Which task to train on ('core' = depth+normal+segmentation+structure)")
+    parser.add_argument("--no-logit-normal", action="store_true",
+                        help="Disable logit-normal timestep sampling (use uniform)")
     args = parser.parse_args()
+
+    if not 0.0 < args.vision_ratio < 1.0:
+        parser.error("--vision-ratio must be between 0 and 1")
 
     set_seed(args.seed)
 
@@ -153,7 +253,7 @@ def main():
         use_ema=not args.no_ema,
         ema_decay=0.9999,
         use_min_snr=True,
-        use_logit_normal_timesteps=False,
+        use_logit_normal_timesteps=not args.no_logit_normal,
         use_img2img_flow=False,
         cfg_dropout_rate=0.1,
         warmup_ratio=0.05,
@@ -171,13 +271,52 @@ def main():
         enable_gradient_checkpointing(tuner.peft_model)
         logger.info("Gradient checkpointing enabled (generic fallback)")
 
-    # ─── Load training data from ALL available sources ───────────────────
+    # ─── Load training data ──────────────────────────────────────────────
     res = args.resolution
-    # Multiple data directories — merge all available data
-    data_dirs = [
-        PROJECT_ROOT / "data" / "vb_zimage_train",
-        PROJECT_ROOT / "data" / "vb_snvc_train",
-    ]
+    data_dirs = resolve_data_dirs(args.data_dir)
+    if args.data_dir is not None:
+        logger.info(f"Using explicit training data directory only: {data_dirs[0]}")
+    else:
+        logger.info("Using legacy merged training data directories: "
+                    + ", ".join(str(path) for path in data_dirs))
+
+    # ─── Load train/val split for proper validation ──────────────────────
+    split_data = None
+    split_file = data_dirs[0] / "train_val_split.json" if data_dirs else None
+    if split_file and split_file.exists():
+        import json as _json_split
+        with open(split_file) as f:
+            split_data = _json_split.load(f)
+        logger.info(f"Loaded train_val_split.json: "
+                    f"{sum(len(v) for v in split_data['train'].values())} train, "
+                    f"{sum(len(v) for v in split_data['val'].values())} val")
+
+    def _filter_by_split(samples, task_name, split_key="train"):
+        """Filter dataset samples by train_val_split.json filenames."""
+        if split_data is None:
+            return samples
+        split_files = set()
+        # Map vision_task names to split keys
+        split_task_map = {
+            "depth": "depth", "normal": "normal", "semantic": "segmentation",
+            "segmentation": "segmentation", "edge": "depth_edge",
+            "structure": "structure", "depth_edge": "depth_edge",
+            "keypoint": "keypoint", "object_detection": "object_detection",
+            "referring": "referring", "instance": "instance",
+            "specular_removal": "specular_removal", "multiview": "multiview",
+        }
+        split_task_key = split_task_map.get(task_name, task_name)
+        if split_task_key in split_data.get(split_key, {}):
+            split_files = set(split_data[split_key][split_task_key])
+        if not split_files:
+            return samples if split_key == "train" else []
+        # Filter: keep samples whose image filename is in the split
+        filtered = []
+        for s in samples:
+            img_name = Path(s["image_path"]).name
+            if img_name in split_files:
+                filtered.append(s)
+        return filtered
 
     # Generation dataset class (defined at function scope for reuse)
     import json as _json_mod
@@ -233,115 +372,156 @@ def main():
             }
 
     datasets = []
+    generation_datasets = []
 
-    def _load_task_dirs(task_name, subdir, vision_task, max_per_task=None):
-        """Load and merge a task from all data directories."""
+    def _load_task_dirs(task_name, subdir, vision_task, max_per_task=None, split_key="train"):
+        """Load and merge a task from all data directories, filtered by split."""
         merged = []
         for d in data_dirs:
             task_dir = d / subdir
             if (task_dir / "images").exists():
                 ds = VisionTaskDataset(data_path=str(task_dir), resolution=res, task=vision_task)
                 if ds.samples:
+                    # Apply split filtering
+                    ds.samples = _filter_by_split(ds.samples, vision_task, split_key)
                     if max_per_task is not None and len(ds.samples) > max_per_task:
-                        # Cap samples per task for balance
                         ds.samples = ds.samples[:max_per_task]
-                    merged.append(ds)
-                    logger.info(f"  {task_name} from {d.name}: {len(ds)} samples")
+                    if ds.samples:
+                        merged.append(ds)
+                        logger.info(f"  {task_name} ({split_key}) from {d.name}: {len(ds)} samples")
         return merged
 
-    def _load_generation_dirs():
-        """Load and merge generation data from all directories."""
+    def _load_generation_dirs(split_key="train"):
+        """Load and merge generation data from all directories, filtered by split."""
         merged = []
         for d in data_dirs:
             gen_dir = d / "generation"
             if (gen_dir / "images").exists():
                 ds = GenerationDataset(str(gen_dir), resolution=res, max_samples=args.max_generation)
                 if ds.samples:
-                    merged.append(ds)
-                    logger.info(f"  generation from {d.name}: {len(ds)} samples")
+                    # Apply split filtering
+                    ds.samples = _filter_by_split(ds.samples, "generation", split_key)
+                    if ds.samples:
+                        merged.append(ds)
+                        logger.info(f"  generation ({split_key}) from {d.name}: {len(ds)} samples")
         return merged
 
     # Depth task
-    if args.task in ("all", "depth"):
-        datasets.extend(_load_task_dirs("depth", "depth", "depth", max_per_task=args.max_per_task))
+    if args.task in ("all", "core", "depth"):
+        datasets.extend(_load_task_dirs("depth", "depth", "depth", max_per_task=args.max_per_task, split_key="train"))
 
     # Normal task
-    if args.task in ("all", "normal"):
-        datasets.extend(_load_task_dirs("normal", "normal", "normal", max_per_task=args.max_per_task))
+    if args.task in ("all", "core", "normal"):
+        datasets.extend(_load_task_dirs("normal", "normal", "normal", max_per_task=args.max_per_task, split_key="train"))
 
     # Segmentation task
-    # P0-3 fix: only load the Cityscapes-formatted split (vb_snvc_train), whose
-    # targets are regenerated in the official 19-color palette by
-    # scripts/regen_cityscapes_seg_color.py — the same convention the eval
-    # decoder (decode_semantic + CITYSCAPES_COLORS) uses.
-    # The vb_zimage_train ADE20K split is excluded: its 150-class space
-    # conflicts with Cityscapes' 19-class space, so the same prompt would
-    # receive two contradictory color semantics (supervision conflict).
-    if args.task in ("all", "segmentation"):
-        snvc_seg = PROJECT_ROOT / "data" / "vb_snvc_train" / "segmentation"
-        if (snvc_seg / "images").exists():
-            ds = VisionTaskDataset(data_path=str(snvc_seg), resolution=res, task="semantic")
-            if ds.samples:
-                if len(ds.samples) > args.max_per_task:
-                    ds.samples = ds.samples[:args.max_per_task]
-                datasets.append(ds)
-                logger.info(f"  segmentation(cityscapes-color) from vb_snvc_train: {len(ds)} samples")
-
-    # Edge task (edge from vb_zimage_train, structure from vb_snvc_train)
-    if args.task in ("all", "edge"):
-        datasets.extend(_load_task_dirs("edge", "edge", "edge", max_per_task=args.max_per_task))
-        # Also load 'structure' dir from vb_snvc_train as edge-like data
-        for d in data_dirs:
-            struct_dir = d / "structure"
-            if (struct_dir / "images").exists():
-                ds = VisionTaskDataset(data_path=str(struct_dir), resolution=res, task="edge")
+    if args.task in ("all", "core", "segmentation"):
+        segmentation_dirs = (
+            data_dirs
+            if args.data_dir is not None
+            else [PROJECT_ROOT / "data" / "vb_snvc_train"]
+        )
+        for data_dir in segmentation_dirs:
+            seg_dir = data_dir / "segmentation"
+            if (seg_dir / "images").exists():
+                ds = VisionTaskDataset(data_path=str(seg_dir), resolution=res, task="semantic")
                 if ds.samples:
-                    if len(ds.samples) > args.max_per_task:
+                    ds.samples = _filter_by_split(ds.samples, "semantic", "train")
+                    if args.max_per_task and len(ds.samples) > args.max_per_task:
                         ds.samples = ds.samples[:args.max_per_task]
-                    datasets.append(ds)
-                    logger.info(f"  structure(edge) from {d.name}: {len(ds)} samples")
+                    if ds.samples:
+                        datasets.append(ds)
+                        logger.info(f"  segmentation (train) from {data_dir.name}: {len(ds)} samples")
+
+    # Edge task (edge subdirectory only — structure is loaded separately below
+    # as its own task to avoid duplicate loading with conflicting prompts)
+    if args.task in ("all", "edge"):
+        datasets.extend(_load_task_dirs("edge", "edge", "edge", max_per_task=args.max_per_task, split_key="train"))
+
+    # Depth edge task
+    if args.task in ("all", "depth_edge"):
+        datasets.extend(_load_task_dirs("depth_edge", "depth_edge", "depth_edge", max_per_task=args.max_per_task, split_key="train"))
+
+    # Keypoint task
+    if args.task in ("all", "keypoint"):
+        datasets.extend(_load_task_dirs("keypoint", "keypoint", "keypoint", max_per_task=args.max_per_task, split_key="train"))
+
+    # Object detection task
+    if args.task in ("all", "object_detection"):
+        datasets.extend(_load_task_dirs("object_detection", "object_detection", "object_detection", max_per_task=args.max_per_task, split_key="train"))
+
+    # Referring task
+    if args.task in ("all", "referring"):
+        datasets.extend(_load_task_dirs("referring", "referring", "referring", max_per_task=args.max_per_task, split_key="train"))
+
+    # Instance segmentation task
+    if args.task in ("all", "instance"):
+        datasets.extend(_load_task_dirs("instance", "instance", "instance", max_per_task=args.max_per_task, split_key="train"))
+
+    # Structure task
+    if args.task in ("all", "core", "structure"):
+        datasets.extend(_load_task_dirs("structure", "structure", "structure", max_per_task=args.max_per_task, split_key="train"))
+
+    # Multiview task
+    if args.task in ("all", "multiview"):
+        datasets.extend(_load_task_dirs("multiview", "multiview", "multiview", max_per_task=args.max_per_task, split_key="train"))
+
+    # Specular removal task
+    if args.task in ("all", "specular_removal"):
+        datasets.extend(_load_task_dirs("specular_removal", "specular_removal", "specular_removal", max_per_task=args.max_per_task, split_key="train"))
 
     # Generation task
-    if args.task in ("all", "generation"):
-        datasets.extend(_load_generation_dirs())
+    if args.task in ("all", "generation") and not args.skip_generation:
+        generation_datasets.extend(_load_generation_dirs(split_key="train"))
 
-    if not datasets:
+    if not datasets and not generation_datasets:
         logger.error("No training data found! Run data preparation scripts first.")
         sys.exit(1)
 
-    # Combine all datasets with balanced sampling
-    from torch.utils.data import ConcatDataset
-    if len(datasets) > 1:
-        if args.balance_data:
-            # WeightedRandomSampler: oversample minority tasks to balance
-            from torch.utils.data import WeightedRandomSampler
-            dataset_sizes = [len(d) for d in datasets]
-            max_size = max(dataset_sizes)
-            weights = []
-            for _ds, sz in zip(datasets, dataset_sizes, strict=True):
-                w = max_size / sz  # minority tasks get higher weight
-                weights.extend([w] * sz)
-            combined = ConcatDataset(datasets)
-            sampler_generator = torch.Generator().manual_seed(args.seed)
-            sampler = WeightedRandomSampler(
-                weights=weights,
-                num_samples=len(combined),
-                replacement=True,
-                generator=sampler_generator,
-            )
-            logger.info("Data balanced: " + ", ".join(
-                f"ds{i}={max_size / sz:.1f}x" for i, sz in enumerate(dataset_sizes) if sz > 0
-            ))
-            total_samples = len(combined)
-        else:
-            combined = ConcatDataset(datasets)
-            sampler = None
-            total_samples = len(combined)
-    else:
-        combined = datasets[0]
-        sampler = None
-        total_samples = len(combined)
+    combined, sampler = combine_training_datasets(
+        datasets,
+        generation_datasets,
+        balance_data=args.balance_data,
+        vision_ratio=args.vision_ratio,
+        seed=args.seed,
+    )
+    total_samples = len(combined)
+    if datasets and generation_datasets:
+        logger.info(
+            "Paper-aligned sampling: %.0f%% vision / %.0f%% generation",
+            args.vision_ratio * 100,
+            (1.0 - args.vision_ratio) * 100,
+        )
     logger.info(f"Total training samples: {total_samples}")
+
+    # ─── Build validation dataset from split ─────────────────────────────
+    val_combined = None
+    if split_data is not None:
+        val_datasets = []
+        if args.task in ("all", "core", "depth"):
+            val_datasets.extend(_load_task_dirs("depth", "depth", "depth", split_key="val"))
+        if args.task in ("all", "core", "normal"):
+            val_datasets.extend(_load_task_dirs("normal", "normal", "normal", split_key="val"))
+        if args.task in ("all", "core", "segmentation"):
+            for data_dir in (data_dirs if args.data_dir is not None else [PROJECT_ROOT / "data" / "vb_snvc_train"]):
+                seg_dir = data_dir / "segmentation"
+                if (seg_dir / "images").exists():
+                    ds = VisionTaskDataset(data_path=str(seg_dir), resolution=res, task="semantic")
+                    ds.samples = _filter_by_split(ds.samples, "semantic", "val")
+                    if ds.samples:
+                        val_datasets.append(ds)
+                        logger.info(f"  segmentation (val) from {data_dir.name}: {len(ds)} samples")
+        if args.task in ("all", "edge"):
+            val_datasets.extend(_load_task_dirs("edge", "edge", "edge", split_key="val"))
+        if args.task in ("all", "core", "structure"):
+            val_datasets.extend(_load_task_dirs("structure", "structure", "structure", split_key="val"))
+        if args.task in ("all", "generation") and not args.skip_generation:
+            val_datasets.extend(_load_generation_dirs(split_key="val"))
+
+        if val_datasets:
+            from torch.utils.data import ConcatDataset as _CD
+            val_combined = _CD(val_datasets) if len(val_datasets) > 1 else val_datasets[0]
+            logger.info(f"Total validation samples: {len(val_combined)}")
 
     # ─── Training ────────────────────────────────────────────────────────
     output_dir = (
@@ -362,17 +542,10 @@ def main():
         total_steps = min(total_steps, args.max_steps)
     warmup_steps = min(200, max(1, total_steps // 10))
 
-    # Limit dataset to max_steps * grad_accum samples for early stopping (debug mode)
-    if args.max_steps is not None:
-        max_samples = args.max_steps * args.grad_accum
-        if total_samples > max_samples:
-            from torch.utils.data import Subset
-            subset_generator = torch.Generator().manual_seed(args.seed + 1)
-            indices = torch.randperm(total_samples, generator=subset_generator)[:max_samples].tolist()
-            combined = Subset(combined, indices)
-            total_samples = len(combined)
-            sampler = None
-            logger.info(f"Limited dataset to {total_samples} samples for {args.max_steps} steps")
+    # NOTE: Previous code used Subset to limit dataset to max_steps * grad_accum
+    # samples, which also set sampler=None — destroying the WeightedRandomSampler.
+    # Now we keep the full dataset + sampler and pass max_steps to tuner.train()
+    # for a clean early exit.
 
     logger.info(f"Starting training: {args.epochs} epochs, {total_samples} samples, "
                 f"batch_size={args.batch_size}, grad_accum={args.grad_accum}, "
@@ -408,7 +581,7 @@ def main():
 
     result = tuner.train(
         train_dataset=combined,
-        val_dataset=None,
+        val_dataset=val_combined,
         epochs=args.epochs,
         batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
@@ -417,7 +590,7 @@ def main():
         warmup_steps=warmup_steps,
         output_dir=str(output_dir),
         save_every=args.save_every,
-        eval_every=10000,
+        eval_every=max(1, total_steps // 4),  # Evaluate ~4 times during training
         use_amp=True,
         num_workers=0,  # MPS must be 0
         log_every=args.log_every,
@@ -426,6 +599,7 @@ def main():
         train_sampler=sampler,
         resume_checkpoint=resume_checkpoint,
         restore_rng_on_resume=False,  # Old checkpoints may lack rng_state.pt
+        max_steps=args.max_steps,  # P0 fix: actually limit training steps
     )
 
     logger.info(f"Training complete! Result: {result}")

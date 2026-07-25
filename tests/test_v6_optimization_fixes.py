@@ -177,15 +177,15 @@ class TestMultiColormapReencoding:
         depth = torch.rand(1, 1, 16, 16) * 5.0
 
         rgb_cube = mapper.depth_to_rgb(depth).clone()
-        mapper.set_colormap("rainbow")
-        rgb_rainbow = mapper.depth_to_rgb(depth).clone()
+        mapper.set_colormap("plasma")
+        rgb_plasma = mapper.depth_to_rgb(depth).clone()
         mapper.set_colormap("viridis")
         rgb_viridis = mapper.depth_to_rgb(depth).clone()
 
         # They should be different
-        assert not torch.allclose(rgb_cube, rgb_rainbow, atol=0.01)
+        assert not torch.allclose(rgb_cube, rgb_plasma, atol=0.01)
         assert not torch.allclose(rgb_cube, rgb_viridis, atol=0.01)
-        assert not torch.allclose(rgb_rainbow, rgb_viridis, atol=0.01)
+        assert not torch.allclose(rgb_plasma, rgb_viridis, atol=0.01)
 
 
 # ─── Test: CFG dropout per-sample ────────────────────────────────────────────

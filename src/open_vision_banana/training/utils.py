@@ -202,12 +202,14 @@ class VisionAugmentation:
         self,
         image: torch.Tensor,
         target_rgb: torch.Tensor,
+        task: str | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply augmentations consistently to image-target pair.
 
         Args:
             image: Input image [C, H, W] in [-1, 1].
             target_rgb: Target visualization [C, H, W] in [0, 1].
+            task: Per-sample task override for mixed-task batches.
 
         Returns:
             Augmented (image, target_rgb) tuple.
@@ -219,7 +221,7 @@ class VisionAugmentation:
             target_rgb = torch.flip(target_rgb, [-1])
             # Fix normal map consistency: horizontal flip negates the x-component
             # In NormalRGBMapper encoding: R = (1-x)/2, so flipped-x means R → 1-R
-            if self.task == "normal":
+            if (task or self.task) == "normal":
                 target_rgb = target_rgb.clone()
                 target_rgb[0] = 1.0 - target_rgb[0]
 
