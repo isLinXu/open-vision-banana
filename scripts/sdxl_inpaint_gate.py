@@ -44,13 +44,14 @@ DATA_DIR = os.environ.get(
     "VB_DATA",
     "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3/depth",
 )
-STEPS = int(os.environ.get("VB_STEPS", "200"))
+STEPS = int(os.environ.get("VB_STEPS", "500"))
 NSAMPLES = int(os.environ.get("VB_NSAMPLES", "8"))
 RES = int(os.environ.get("VB_RES", "256"))
 BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
+PIXEL_LOSS_WEIGHT = float(os.environ.get("VB_PIXEL_LOSS_WEIGHT", "0.5"))  # 直接监督 RGB 输出
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "sdxl_inpaint_gate")))
 OUT.mkdir(parents=True, exist_ok=True)
 
@@ -230,6 +231,20 @@ def main() -> None:
         ).sample
 
         loss = F.mse_loss(pred, noise)
+
+        # Pixel loss: 解码预测噪声 → RGB，直接与目标比较颜色分布
+        if PIXEL_LOSS_WEIGHT > 0:
+            with torch.no_grad():
+                # 从预测噪声反推 x0
+                alpha_t = pipe.scheduler.alphas_cumprod.to(device)[timesteps].to(DTYPE)
+                sqrt_one_minus_alpha = (1 - alpha_t).sqrt()
+                pred_x0 = (noisy_z0 - sqrt_one_minus_alpha * pred) / alpha_t.sqrt()
+                # VAE 解码
+                pred_rgb = vae.decode(pred_x0 / vae_scale).sample
+                pred_rgb = (pred_rgb / 2 + 0.5).clamp(0, 1)
+            pixel_loss = F.l1_loss(pred_rgb, target_rgb)
+            loss = loss + PIXEL_LOSS_WEIGHT * pixel_loss
+
         if not torch.isfinite(loss).all():
             print(f"[train] step {step:>4}: NON-FINITE loss — skip", flush=True)
             continue
@@ -278,8 +293,8 @@ def main() -> None:
             prompt=VISION_PROMPT,
             image=pil_in,
             mask_image=Image.new("L", pil_in.size, 255),  # 全遮罩
-            num_inference_steps=8,
-            strength=1.0,
+            num_inference_steps=20,  # 更多步数
+            strength=0.85,  # 保留部分输入结构
             guidance_scale=0.0,
             height=RES,
             width=RES,
