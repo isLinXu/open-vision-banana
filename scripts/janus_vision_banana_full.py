@@ -41,7 +41,7 @@ DATA_DIR = os.environ.get(
     "VB_DATA",
     "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3/depth",
 )
-STEPS = int(os.environ.get("VB_STEPS", "500"))
+STEPS = int(os.environ.get("VB_STEPS", "2000"))
 NSAMPLES = int(os.environ.get("VB_NSAMPLES", "8"))
 RES = int(os.environ.get("VB_RES", "384"))
 BATCH = int(os.environ.get("VB_BATCH", "1"))
@@ -223,6 +223,12 @@ def main() -> None:
             print(f"[train] step {step:>4}/{STEPS}  loss={loss.item():.4f}  "
                   f"avg30={recent:.4f}  lr={sched.get_last_lr()[0]:.2e}  "
                   f"({(time.time()-t_train)/step:.2f}s/step)", flush=True)
+        # 每 500 步存中间 checkpoint
+        if step % 500 == 0:
+            mid_ckpt = OUT / f"lora_step{step}"
+            mid_ckpt.mkdir(parents=True, exist_ok=True)
+            peft_model.save_pretrained(str(mid_ckpt))
+            print(f"[ckpt] mid-training save → {mid_ckpt}", flush=True)
 
     print(f"\n[train] completed {len(losses)} steps")
     print(f"[train] avg loss = {sum(losses)/len(losses):.4f}")
