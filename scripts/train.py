@@ -22,7 +22,13 @@ from pathlib import Path
 import torch
 
 from open_vision_banana import VisionBananaConfig
-from open_vision_banana.data import MixedVisionDataset, build_dataset, build_generation_dataset
+from open_vision_banana.data import (
+    MixedVisionDataset,
+    build_dataset,
+    build_generation_dataset,
+    build_v3_datasets,
+    load_v3_train_val_split,
+)
 from open_vision_banana.data.split import split_vision_datasets
 from open_vision_banana.training.logging import create_training_logger_from_config
 
@@ -34,11 +40,11 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Train Vision Banana (instruction-tuning FLUX.1)"
-    )
+    parser = argparse.ArgumentParser(description="Train Vision Banana (instruction-tuning FLUX.1)")
     parser.add_argument(
-        "--config", type=str, default="configs/training_config.yaml",
+        "--config",
+        type=str,
+        default="configs/training_config.yaml",
         help="Path to training config file",
     )
     # Override flags (take precedence over config file)
@@ -49,19 +55,34 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--data-path", type=str, default=None)
-    parser.add_argument("--generation-path", type=str, default=None,
-                        help="Path to generation preservation dataset (9:1 mix)")
-    parser.add_argument("--vision-ratio", type=float, default=None,
-                        help="Vision sampling ratio (default 0.1 = 10%% vision)")
+    parser.add_argument(
+        "--generation-path",
+        type=str,
+        default=None,
+        help="Path to generation preservation dataset (9:1 mix)",
+    )
+    parser.add_argument(
+        "--vision-ratio",
+        type=float,
+        default=None,
+        help="Vision sampling ratio (default 0.1 = 10%% vision)",
+    )
     parser.add_argument("--output-dir", type=str, default="output/checkpoints")
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--resume", type=str, default=None,
-                        help="Resume from checkpoint path")
-    parser.add_argument("--val-split", type=float, default=None,
-                        help="Validation split ratio on vision data (e.g. 0.1)")
-    parser.add_argument("--early-stopping-patience", type=int, default=None,
-                        help="Stop after N evals without val loss improvement")
+    parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint path")
+    parser.add_argument(
+        "--val-split",
+        type=float,
+        default=None,
+        help="Validation split ratio on vision data (e.g. 0.1)",
+    )
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=None,
+        help="Stop after N evals without val loss improvement",
+    )
     parser.add_argument("--early-stopping-min-delta", type=float, default=None)
     parser.add_argument("--log-every", type=int, default=None)
     parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
@@ -69,16 +90,27 @@ def parse_args():
     parser.add_argument("--wandb-run-name", type=str, default=None)
     parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard logging")
     parser.add_argument("--tensorboard-dir", type=str, default=None)
-    parser.add_argument("--wandb-log-checkpoints", action="store_true",
-                        help="Upload LoRA checkpoints to W&B as artifacts")
-    parser.add_argument("--fsdp", action="store_true",
-                        help="Enable FSDP multi-GPU training (use with torchrun)")
-    parser.add_argument("--ddp", action="store_true",
-                        help="Enable DDP multi-GPU training (use with torchrun)")
-    parser.add_argument("--gradient-checkpointing", action="store_true",
-                        help="Enable gradient checkpointing on transformer blocks")
-    parser.add_argument("--deepspeed", action="store_true",
-                        help="Enable DeepSpeed ZeRO-3 (use with deepspeed launcher)")
+    parser.add_argument(
+        "--wandb-log-checkpoints",
+        action="store_true",
+        help="Upload LoRA checkpoints to W&B as artifacts",
+    )
+    parser.add_argument(
+        "--fsdp", action="store_true", help="Enable FSDP multi-GPU training (use with torchrun)"
+    )
+    parser.add_argument(
+        "--ddp", action="store_true", help="Enable DDP multi-GPU training (use with torchrun)"
+    )
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action="store_true",
+        help="Enable gradient checkpointing on transformer blocks",
+    )
+    parser.add_argument(
+        "--deepspeed",
+        action="store_true",
+        help="Enable DeepSpeed ZeRO-3 (use with deepspeed launcher)",
+    )
     parser.add_argument(
         "--deepspeed-config",
         type=str,
@@ -87,31 +119,62 @@ def parse_args():
     )
     # v7 / paper-aligned training options (InstructionTuner)
     parser.add_argument(
-        "--colormaps", type=str, default=None,
+        "--colormaps",
+        type=str,
+        default=None,
         help="Comma-separated depth colormaps (e.g. cube_edge,viridis,plasma)",
     )
-    parser.add_argument("--flow-sigma", type=float, default=None,
-                        help="Optional flow-matching noise sigma (0 = pure flow)")
-    parser.add_argument("--no-min-snr", action="store_true",
-                        help="Disable Min-SNR loss weighting")
-    parser.add_argument("--no-logit-normal-timesteps", action="store_true",
-                        help="Use uniform timesteps instead of logit-normal")
-    parser.add_argument("--no-img2img-flow", action="store_true",
-                        help="Disable img2img-style flow matching (input→target)")
-    parser.add_argument("--cfg-dropout-rate", type=float, default=None,
-                        help="CFG dropout rate for text conditioning (default 0.1)")
-    parser.add_argument("--ema-decay", type=float, default=None,
-                        help="EMA decay override (default from config)")
-    parser.add_argument("--scheduler", type=str, default=None,
-                        help="LR scheduler: cosine, cosine_restarts, polynomial, constant, one_cycle")
-    parser.add_argument("--warmup-ratio", type=float, default=None,
-                        help="Warmup ratio for SchedulerFactory (overrides warmup_steps when set)")
+    parser.add_argument(
+        "--flow-sigma",
+        type=float,
+        default=None,
+        help="Optional flow-matching noise sigma (0 = pure flow)",
+    )
+    parser.add_argument("--no-min-snr", action="store_true", help="Disable Min-SNR loss weighting")
+    parser.add_argument(
+        "--no-logit-normal-timesteps",
+        action="store_true",
+        help="Use uniform timesteps instead of logit-normal",
+    )
+    parser.add_argument(
+        "--no-img2img-flow",
+        action="store_true",
+        help="Disable img2img-style flow matching (input→target)",
+    )
+    parser.add_argument(
+        "--cfg-dropout-rate",
+        type=float,
+        default=None,
+        help="CFG dropout rate for text conditioning (default 0.1)",
+    )
+    parser.add_argument(
+        "--ema-decay", type=float, default=None, help="EMA decay override (default from config)"
+    )
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default=None,
+        help="LR scheduler: cosine, cosine_restarts, polynomial, constant, one_cycle",
+    )
+    parser.add_argument(
+        "--warmup-ratio",
+        type=float,
+        default=None,
+        help="Warmup ratio for SchedulerFactory (overrides warmup_steps when set)",
+    )
+    parser.add_argument(
+        "--task-weights",
+        type=str,
+        default=None,
+        help="Task sampling weight mode for vision datasets: sqrt, uniform, or comma-separated weights. Default: uniform random.",
+    )
     return parser.parse_args()
 
 
 def get_dtype(dtype_str: str) -> torch.dtype:
-    return {"float32": torch.float32, "float16": torch.float16,
-            "bfloat16": torch.bfloat16}[dtype_str]
+    return {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}[
+        dtype_str
+    ]
 
 
 def _auto_device() -> str:
@@ -205,18 +268,12 @@ def main():
     num_workers = cfg.data.num_workers
     if device == "cpu":
         if use_amp:
-            logger.warning(
-                "AMP not supported on cpu — disabling use_amp automatically."
-            )
+            logger.warning("AMP not supported on cpu — disabling use_amp automatically.")
             use_amp = False
     elif device == "mps" and use_amp:
-        logger.info(
-            "MPS: enabling bfloat16 autocast (GradScaler disabled — CUDA only)."
-        )
+        logger.info("MPS: enabling bfloat16 autocast (GradScaler disabled — CUDA only).")
     if device in ("mps", "cpu") and num_workers > 0:
-        logger.warning(
-            f"num_workers={num_workers} may cause hangs on {device} — forcing 0."
-        )
+        logger.warning(f"num_workers={num_workers} may cause hangs on {device} — forcing 0.")
         num_workers = 0
 
     # Load base FLUX.1 model
@@ -236,6 +293,7 @@ def main():
 
     if args.fsdp:
         from open_vision_banana.training.fsdp_utils import FSDPWrapper
+
         fsdp_wrapper = FSDPWrapper()
         fsdp_wrapper.initialize()
         is_main_process = fsdp_wrapper.is_main()
@@ -246,6 +304,7 @@ def main():
         from torch.utils.data import DistributedSampler
 
         from open_vision_banana.training.utils import DDPWrapper
+
         ddp_wrapper = DDPWrapper()
         ddp_wrapper.initialize()
         is_main_process = ddp_wrapper.is_main()
@@ -282,7 +341,7 @@ def main():
         use_min_snr=not args.no_min_snr,
         use_logit_normal_timesteps=not args.no_logit_normal_timesteps,
         use_img2img_flow=not args.no_img2img_flow,
-        flow_sigma=args.flow_sigma if args.flow_sigma is not None else 0.0,
+        flow_sigma=args.flow_sigma if args.flow_sigma is not None else cfg.training.flow_sigma,
         cfg_dropout_rate=args.cfg_dropout_rate if args.cfg_dropout_rate is not None else 0.1,
         warmup_ratio=args.warmup_ratio,
     )
@@ -298,6 +357,7 @@ def main():
             max_grad_norm=cfg.optimizer.max_grad_norm,
         )
         from open_vision_banana.training.deepspeed_utils import deepspeed_is_main
+
         is_main_process = deepspeed_is_main(tuner.deepspeed_engine)
         if is_main_process:
             logger.info(
@@ -312,6 +372,7 @@ def main():
     if args.resume:
         logger.info(f"Resuming from {args.resume}")
         from open_vision_banana.training.checkpoint import CheckpointManager
+
         resume_path = Path(args.resume)
         if resume_path.is_dir() and resume_path.name.startswith("checkpoint-"):
             resume_checkpoint = resume_path
@@ -321,10 +382,15 @@ def main():
                 raise FileNotFoundError(f"No numbered checkpoint found in {resume_path}")
         else:
             resume_checkpoint = resume_path.parent
-        meta_path = resume_checkpoint / "metadata.json" if resume_checkpoint.is_dir() else resume_checkpoint.parent / "metadata.json"
+        meta_path = (
+            resume_checkpoint / "metadata.json"
+            if resume_checkpoint.is_dir()
+            else resume_checkpoint.parent / "metadata.json"
+        )
         if not meta_path.exists():
             raise FileNotFoundError(f"Checkpoint metadata not found: {meta_path}")
         import json
+
         meta = json.loads(meta_path.read_text())
         resume_step = meta.get("step", 0)
         resume_epoch = meta.get("epoch", 0)
@@ -336,40 +402,115 @@ def main():
 
     # Build datasets
     vision_datasets = []
+    val_dataset = None
+    train_vision_datasets = []
 
     if args.data_path:
-        # Try preencoded_depth first (generic images/ + targets/ layout)
-        for task in [
-            "preencoded_depth", "depth", "normal", "semantic", "instance", "referring",
-            "edge", "flow", "keypoint", "object_detection", "depth_edge",
-        ]:
-            try:
-                ds = build_dataset(task, args.data_path, resolution=cfg.data.resolution)
-                if len(ds) > 0:
-                    vision_datasets.append(ds)
-                    logger.info(f"  Loaded {task}: {len(ds)} samples")
-            except Exception as e:
-                logger.warning(f"  Failed to load {task} from {args.data_path}: {e}")
+        from pathlib import Path as _Path
+
+        data_root = _Path(args.data_path)
+
+        # Detect v3 format: has train_val_split.json and task subdirs with images/
+        v3_split = load_v3_train_val_split(data_root)
+        is_v3 = v3_split is not None or (data_root / "manifest.json").exists()
+
+        if is_v3:
+            logger.info(f"Detected v3-format dataset at {data_root}")
+            # Load train split
+            train_vision_datasets = build_v3_datasets(
+                data_root,
+                resolution=cfg.data.resolution,
+                split="train",
+                use_split_file=v3_split is not None,
+            )
+            for ds in train_vision_datasets:
+                logger.info(f"  [v3-train] {ds.dir_name}/{ds.task}: {len(ds)} samples")
+
+            # Load val split if val_split ratio is set
+            if cfg.data.val_split > 0 and v3_split is not None:
+                val_datasets = build_v3_datasets(
+                    data_root,
+                    resolution=cfg.data.resolution,
+                    split="val",
+                    use_split_file=True,
+                )
+                if val_datasets:
+                    from torch.utils.data import ConcatDataset
+
+                    val_dataset = ConcatDataset(val_datasets)
+                    logger.info(f"  [v3-val] Validation set: {len(val_dataset)} samples")
+
+            # If no val split in config, use all data as train
+            if not train_vision_datasets:
+                train_vision_datasets = build_v3_datasets(
+                    data_root,
+                    resolution=cfg.data.resolution,
+                    split="train",
+                    use_split_file=False,
+                )
+                for ds in train_vision_datasets:
+                    logger.info(f"  [v3-all] {ds.dir_name}/{ds.task}: {len(ds)} samples")
+
+            vision_datasets = train_vision_datasets
+        else:
+            # Fallback: legacy per-task loading (original dataset formats)
+            for task in [
+                "preencoded_depth",
+                "depth",
+                "normal",
+                "semantic",
+                "instance",
+                "referring",
+                "edge",
+                "flow",
+                "keypoint",
+                "object_detection",
+                "depth_edge",
+            ]:
+                try:
+                    ds = build_dataset(task, args.data_path, resolution=cfg.data.resolution)
+                    if len(ds) > 0:
+                        vision_datasets.append(ds)
+                        logger.info(f"  Loaded {task}: {len(ds)} samples")
+                except Exception as e:
+                    logger.warning(f"  Failed to load {task} from {args.data_path}: {e}")
+
+            train_vision_datasets = vision_datasets
+            if cfg.data.val_split > 0:
+                train_vision_datasets, val_dataset = split_vision_datasets(
+                    vision_datasets,
+                    cfg.data.val_split,
+                    seed=seed,
+                )
+                if val_dataset is not None:
+                    logger.info(f"  Validation set: {len(val_dataset)} samples")
 
     if not vision_datasets:
         logger.warning("No vision datasets loaded. Training requires data.")
         logger.info("Provide --data-path pointing to a dataset directory.")
         return
 
-    val_dataset = None
-    train_vision_datasets = vision_datasets
-    if cfg.data.val_split > 0:
-        train_vision_datasets, val_dataset = split_vision_datasets(
-            vision_datasets, cfg.data.val_split, seed=seed,
-        )
-        if val_dataset is not None:
-            logger.info(f"  Validation set: {len(val_dataset)} samples")
-
     generation_dataset = None
+    gen_split_filter = None
+    if is_v3 and v3_split is not None and not cfg.data.generation_path:
+        # Auto-detect generation/ directory inside v3 dataset root
+        auto_gen_dir = data_root / "generation"
+        if auto_gen_dir.is_dir():
+            cfg.data.generation_path = str(auto_gen_dir)
+            logger.info(f"Auto-detected generation dataset at {auto_gen_dir}")
+
     if cfg.data.generation_path:
+        # If v3 split exists, apply split filter to generation data too
+        if is_v3 and v3_split is not None:
+            split_map = v3_split.get("train", {})
+            gen_filenames = split_map.get("generation")
+            if gen_filenames is not None:
+                gen_split_filter = (set(gen_filenames), "train")
+
         generation_dataset = build_generation_dataset(
             cfg.data.generation_path,
             resolution=cfg.data.resolution,
+            split_filter=gen_split_filter,
         )
         if len(generation_dataset) == 0:
             logger.warning("Generation path provided but no samples loaded — skipping mix")
@@ -379,14 +520,22 @@ def main():
 
     vision_ratio = cfg.data.vision_ratio
     if generation_dataset is None and vision_ratio < 1.0:
-        logger.info(
-            "No generation dataset — forcing vision_ratio=1.0 (100%% vision sampling)"
-        )
+        logger.info("No generation dataset — forcing vision_ratio=1.0 (100%% vision sampling)")
         vision_ratio = 1.0
 
     colormaps = None
     if args.colormaps:
         colormaps = [c.strip() for c in args.colormaps.split(",") if c.strip()]
+
+    # Parse task weights for balanced sampling across imbalanced tasks
+    task_weights = args.task_weights
+    if task_weights and task_weights not in ("sqrt", "uniform"):
+        # Parse comma-separated float weights
+        try:
+            task_weights = [float(w.strip()) for w in task_weights.split(",") if w.strip()]
+        except ValueError:
+            logger.warning(f"Invalid --task-weights value: {args.task_weights}. Using uniform.")
+            task_weights = None
 
     mixed_ds = MixedVisionDataset(
         vision_datasets=train_vision_datasets,
@@ -394,6 +543,7 @@ def main():
         vision_ratio=vision_ratio,
         seed=seed,
         colormaps=colormaps,
+        task_weights=task_weights,
     )
     logger.info(f"  Mixed dataset: {mixed_ds}")
 
@@ -401,21 +551,25 @@ def main():
         train_sampler = fsdp_wrapper.get_train_sampler(mixed_ds)
     elif ddp_wrapper is not None and ddp_wrapper.world_size > 1:
         from torch.utils.data import DistributedSampler
+
         train_sampler = DistributedSampler(mixed_ds, shuffle=True)
     elif args.deepspeed:
         from open_vision_banana.training.deepspeed_utils import get_train_sampler
+
         train_sampler = get_train_sampler(mixed_ds, tuner.deepspeed_engine)
 
     training_logger = create_training_logger_from_config(cfg)
-    training_logger.log_hyperparams({
-        "model": cfg.model.name,
-        "lora_rank": cfg.lora.rank,
-        "lora_alpha": cfg.lora.alpha,
-        "lr": cfg.optimizer.lr,
-        "batch_size": cfg.data.batch_size,
-        "vision_ratio": vision_ratio,
-        "epochs": cfg.training.epochs,
-    })
+    training_logger.log_hyperparams(
+        {
+            "model": cfg.model.name,
+            "lora_rank": cfg.lora.rank,
+            "lora_alpha": cfg.lora.alpha,
+            "lr": cfg.optimizer.lr,
+            "batch_size": cfg.data.batch_size,
+            "vision_ratio": vision_ratio,
+            "epochs": cfg.training.epochs,
+        }
+    )
 
     scheduler_type = args.scheduler or cfg.optimizer.scheduler
 
