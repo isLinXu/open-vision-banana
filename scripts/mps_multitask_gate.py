@@ -63,14 +63,15 @@ DATA_ROOT = os.environ.get(
 TASKS = os.environ.get("VB_TASKS", "depth,normal,instance,referring,keypoint").split(",")
 VISION_PER_TASK = int(os.environ.get("VB_VISION_PER_TASK", "8"))  # 每任务训练样本数
 GEN_SAMPLES = int(os.environ.get("VB_GEN_SAMPLES", "32"))  # 生成样本数
-STEPS = int(os.environ.get("VB_STEPS", "600"))
+STEPS = int(os.environ.get("VB_STEPS", "2000"))
 RES = int(os.environ.get("VB_RES", "256"))
 BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
 # 论文: vision data 比例很低（未公布精确值）
-VISION_RATIO = float(os.environ.get("VB_VISION_RATIO", "0.15"))
+# 提高 ratio 让模型更多接触 vision 样本
+VISION_RATIO = float(os.environ.get("VB_VISION_RATIO", "0.30"))
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "mps_multitask_gate")))
 OUT.mkdir(parents=True, exist_ok=True)
 
@@ -270,6 +271,15 @@ def main() -> None:
                   f"avg30={recent:.4f}  lr={sched.get_last_lr()[0]:.2e}  "
                   f"task={task}  mode={'vis' if is_vision else 'gen'}  "
                   f"({(time.time()-t_train)/step:.2f}s/step)", flush=True)
+        # 每 500 步存中间 checkpoint
+        if step % 500 == 0:
+            mid_ckpt = OUT / f"lora_step{step}"
+            mid_ckpt.mkdir(parents=True, exist_ok=True)
+            tuner.peft_model.save_pretrained(str(mid_ckpt))
+            conv = tuner._source_conditioning_conv()
+            torch.save(conv.state_dict(), mid_ckpt / CONV_IN_STATE_NAME)
+            write_source_conditioning_config(mid_ckpt, tuner._source_conditioning_config())
+            print(f"[ckpt] mid-training save → {mid_ckpt}", flush=True)
 
     if not losses:
         raise RuntimeError("No finite training steps")
