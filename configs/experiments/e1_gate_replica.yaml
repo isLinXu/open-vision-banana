@@ -1,0 +1,52 @@
+# E1 — Gate 复刻实验（rank=64 / 512px / 8 样本过拟合）
+#
+# 目的：在可复用训练路径（scripts/mps_train_sdxl_depth.py，env-var 驱动）上
+# 1:1 复刻成功 standalone gate 的关键配置，验证「capacity ladder 负结果由
+# rank/分辨率不足导致」这一单变量假设。
+#
+# 背景证据（docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v120.md §1）：
+#   - capacity_8x200（rank 8, 128px）：train r = -0.087，过拟合失败
+#   - standalone gate（rank 64, 4-step 调度）：单样本 r = 0.8154
+#
+# 成功判据：
+#   - train split Pearson r >= 0.8（8 样本过拟合）
+#   - raw RGB MAE <= 0.14（对齐 gate 水平）
+#   - raw prediction curve MAE 从 0.16 降至 < 0.05
+#
+# 预计耗时：MPS 约 6-8 小时（512px, ~74 s/step × 300 步，建议过夜运行）
+
+experiment: e1_gate_replica
+date: 2026-07-27
+seed: 42
+
+script: scripts/mps_train_sdxl_depth.py
+
+env:
+  VB_MODEL: segmind/SSD-1B
+  VB_DATA: data/vb_snvc_train_v3/depth
+  VB_STEPS: 300
+  VB_NSAMPLES: 8          # 过拟合 gate：仅 8 个训练样本
+  VB_RES: 512             # 对齐成功 gate 分辨率（capacity 实验的 128px 是主嫌疑）
+  VB_BATCH: 1             # 512px fp32 on MPS 显存安全值
+  VB_LR: 1.0e-4
+  VB_RANK: 64             # 对齐成功 gate（capacity 实验的 rank 8 是主嫌疑）
+  VB_ALPHA: 128
+  VB_WARMUP: 20
+  VB_SAVE_EVERY: 100
+  VB_HOLDOUT: ""          # 过拟合 gate 不留 holdout
+  VB_OUT: output/e1_gate_replica_rank64_512_8x300
+
+# 一键命令（从项目根目录执行）：
+#   VB_STEPS=300 VB_NSAMPLES=8 VB_RES=512 VB_BATCH=1 VB_RANK=64 VB_ALPHA=128 \
+#   VB_WARMUP=20 VB_SAVE_EVERY=100 VB_HOLDOUT= \
+#   VB_OUT=output/e1_gate_replica_rank64_512_8x300 \
+#   PYTHONPATH=src python scripts/mps_train_sdxl_depth.py
+
+evaluation:
+  script: scripts/evaluate_v3_relative_depth.py
+  note: 训练完成后对 ckpt_final 在相同 8 个 train 样本上评估，对照成功判据
+
+followups:
+  - E2: rank 扫描 {16, 32, 64} @ 256px（若 E1 通过，定位最小可用 rank）
+  - E3: 分辨率扫描 {128, 256, 512} @ rank 64（量化分辨率边际收益）
+  - 泛化验证: E1 配置 × 2162 train 全量，135 官方 val split 评估

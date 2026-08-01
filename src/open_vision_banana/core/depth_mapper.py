@@ -28,22 +28,25 @@ logger = logging.getLogger(__name__)
 # to white, similarly to the first iteration of a 3D Hilbert curve.
 #
 # Path: Black(0,0,0) → Blue(0,0,1) → Cyan(0,1,1) → Green(0,1,0)
-#       → Yellow(1,1,0) → White(1,1,1)
+#       → Yellow(1,1,0) → Red(1,0,0) → White(1,1,1)
 # Each segment lies strictly on an edge of the RGB cube.
 
 # ──────────────────────────────────────────────────────────────
 # Multi-Colormap Keypoints for Depth Encoding (Paper Section 3.2)
 # ──────────────────────────────────────────────────────────────
 
-# Cube-edge colormap: Black → Blue → Cyan → Green → Yellow → White
+# Cube-edge colormap: Black → Blue → Cyan → Green → Yellow → Red → White
+# Standard RGB cube edge traversal (7 points, 6 segments) including the Red
+# edge for full color gamut coverage, matching the paper's specification.
 CUBE_EDGE_KEYPOINTS = torch.tensor(
     [
-        [0.00, 0.00, 0.00, 0.00],  # Black (near) — (0,0,0)
-        [0.20, 0.00, 0.00, 1.00],  # Blue         — (0,0,1)
-        [0.40, 0.00, 1.00, 1.00],  # Cyan         — (0,1,1)
-        [0.60, 0.00, 1.00, 0.00],  # Green        — (0,1,0)
-        [0.80, 1.00, 1.00, 0.00],  # Yellow       — (1,1,0)
-        [1.00, 1.00, 1.00, 1.00],  # White (far)  — (1,1,1)
+        [0.0000, 0.00, 0.00, 0.00],  # Black (near) — (0,0,0)
+        [0.1667, 0.00, 0.00, 1.00],  # Blue         — (0,0,1)
+        [0.3333, 0.00, 1.00, 1.00],  # Cyan         — (0,1,1)
+        [0.5000, 0.00, 1.00, 0.00],  # Green        — (0,1,0)
+        [0.6667, 1.00, 1.00, 0.00],  # Yellow       — (1,1,0)
+        [0.8333, 1.00, 0.00, 0.00],  # Red          — (1,0,0)
+        [1.0000, 1.00, 1.00, 1.00],  # White (far)  — (1,1,1)
     ],
     dtype=torch.float32,
 )

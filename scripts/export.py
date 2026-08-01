@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Model export script for Open-Vision-Banana.
+"""RGB mapper export script for Open-Vision-Banana.
 
-Exports the trained LoRA-augmented FLUX.1 transformer and RGB mapping
-decoders to ONNX format for deployment.
+Exports standalone RGB mapping components to ONNX. It does not package a
+diffusion backbone, VAE, text encoders, tokenizer, or scheduler.
 
 Usage:
     python scripts/export.py --config configs/training_config.yaml

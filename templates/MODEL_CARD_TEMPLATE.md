@@ -5,16 +5,16 @@
 
 ## Model Details
 
-- **Model Type:** Diffusion Transformer (DiT) with LoRA fine-tuning
-- **Base Model:** FLUX.1 [schnell] (12B parameters)
-- **LoRA Parameters:** ~60M (0.5% of base, rank=64, alpha=128)
+- **Model Type:** Diffusion model with LoRA fine-tuning
+- **Base Model:** Record the exact open-weight base model used by this checkpoint
+- **LoRA Parameters:** Record the trained parameter count, rank, and alpha
 - **Task:** {task} estimation via RGB parameterization
 - **License:** MIT
 
 ## Training Data
 
 - **Vision Data:** {dataset_name} ({dataset_size} samples)
-- **Generation Mix:** 9:1 ratio with FLUX.1 original training data
+- **Generation/Vision Mix:** Record the actual checkpoint configuration; the paper does not disclose an exact ratio
 - **Resolution:** 512×512
 - **Augmentation:** Random horizontal flip, color jitter, random crop
 
@@ -28,11 +28,11 @@
 from open_vision_banana import VisionBanana
 
 model = VisionBanana.from_pretrained(
-    "black-forest-labs/FLUX.1-schnell",
+    "{base_model}",
     lora_path="hf:{repo_id}",
 )
 
-result = model.predict("input.jpg", task="{task}")
+result = model.predict(input_tensor, task="{task}")
 ```
 
 ## Evaluation
@@ -41,19 +41,22 @@ Benchmarks on standard datasets:
 
 {evaluation_results}
 
+Only include metrics measured from this exact checkpoint. Do not copy the
+original Nano Banana Pro paper results into an open-backbone model card.
+
 ## Limitations
 
-- Requires base model download (~24GB for FLUX.1 schnell)
-- RGB parameterization introduces small roundtrip error
+- Requires the exact base model and adapter configuration recorded above
+- RGB parameterization introduces checkpoint-specific roundtrip error
 - Task-specific LoRA; multi-task requires sequential loading
 
 ## Citation
 
 ```bibtex
-@article{vision-banana-2024,
+@article{gabeur2026image,
   title={Image Generators are Generalist Vision Learners},
-  author={Vision Banana Team},
-  journal={arXiv preprint},
-  year={2024}
+  author={Gabeur, Valentin and Long, Shangbang and Peng, Songyou and others},
+  journal={arXiv preprint arXiv:2604.20329},
+  year={2026}
 }
 ```

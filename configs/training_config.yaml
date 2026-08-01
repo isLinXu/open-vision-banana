@@ -1,20 +1,34 @@
 # Vision Banana Training Configuration
 # ================================
-# Instruction-tuning FLUX.1 [schnell] for vision understanding
+# Minimal reproduction experiment — DEPTH ONLY (single task)
+# Instruction-tuning FLUX.1 [dev] via img2img flow matching.
+# NOTE: this config isolates depth_estimation to validate the paradigm
+#       before adding generation-preservation (generation_ratio: 0.0).
+# Run: python scripts/train.py --config configs/training_config_depth.yaml \
+#                              --data-path /path/to/prepared_hypersim
 
-# Base Model
+# Base Model  (FLUX.1-dev: full transformer, fine-tune-friendly.
+#              schnell is distilled -> poor LoRA target. Matches checkpoint_registry.)
 model:
-  name: "black-forest-labs/FLUX.1-schnell"
+  name: "black-forest-labs/FLUX.1-dev"
   dtype: "bfloat16"
 
 # LoRA Configuration (rsLoRA scaling)
+# Full target set (matches LoRAConfig default). The previous narrow
+# [to_k, to_v] under-trained LoRA and left most FF/attention proj unfrozen-target.
 lora:
   rank: 64          # 0.5%-1% of total params
   alpha: 128        # rsLoRA: alpha / sqrt(rank) scaling
   rs_lora: true
   target_modules:
+    - "to_q"
     - "to_k"
     - "to_v"
+    - "to_out.0"
+    - "proj_in"
+    - "proj_out"
+    - "ff.net.0.proj"
+    - "ff.net.2"
   dropout: 0.0
 
 # Optimizer Configuration
@@ -50,47 +64,34 @@ training:
   max_keep: 5
   seed: 42
   log_every: 10
+  # P1 fix (verification gate 2): train with sigma>0 so the latent mix carries
+  # noise, pulling the training distribution toward the noisy img2img start used
+  # at inference (FluxImg2ImgPipeline strength=0.85). Default in code was 0.0
+  # (clean-latent regression -> extrapolation at inference).
+  flow_sigma: 1.0
   early_stopping_patience: null   # e.g. 5 to enable
   early_stopping_min_delta: 0.0
 
-# Data extras (uncomment to enable 9:1 mix)
+# Data extras
+# Depth-only minimal run: 100% vision data, 0% generation preservation.
+# --data-path (CLI) must point at the prepared Hypersim root, e.g.
+#   python scripts/train.py --config configs/training_config.yaml \
+#                           --data-path data/prepared/hypersim
 data:
-  vision_ratio: 0.1
-  generation_ratio: 0.9
+  vision_ratio: 1.0
+  generation_ratio: 0.0
   resolution: 512
   batch_size: 8
   num_workers: 4
   augmentation: true
-  val_split: 0.0                    # e.g. 0.1 for 10% validation
-  generation_path: null             # e.g. "/path/to/generation_data"
+  val_split: 0.1                    # 10% held-out for early-stopping / smoke viz
+  generation_path: null             # unused when generation_ratio: 0.0
 
-  # Vision task datasets
-  tasks:
-    semantic_segmentation:
-      datasets:
-        - name: "Cityscapes"
-          split: "train"
-          classes: 19
-    instance_segmentation:
-      datasets:
-        - name: "SA-Co"
-          split: "train"
-    referring_segmentation:
-      datasets:
-        - name: "RefCOCOg"
-          split: "train"
-    depth_estimation:
-      datasets:
-        - name: "Hypersim"
-          split: "train"
-        - name: "Virtual_KITTI_2"
-          split: "train"
-    normal_estimation:
-      datasets:
-        - name: "Hypersim"
-          split: "train"
-        - name: "ScanNet"
-          split: "train"
+  # NOTE: `tasks:` is NOT read by train.py — task selection is driven by the
+  # contents of --data-path (auto-detected via build_dataset). To train DEPTH
+  # ONLY, point --data-path at a depth-only prepared dir (e.g. the output of
+  # scripts/prepare_hypersim.py), and train.py will load only the "depth" task
+  # and skip others. vision_ratio is forced to 1.0 when no generation_path is set.
 
 # Depth RGB Mapping Parameters (from paper)
 depth_mapping:

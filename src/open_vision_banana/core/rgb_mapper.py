@@ -26,8 +26,8 @@ from .segmentation import SegmentationDecoder
 class RGBMapper:
     """Unified RGB mapping dispatcher for all vision tasks."""
 
-    def __init__(self) -> None:
-        self.depth_mapper = DepthRGBMapper()
+    def __init__(self, depth_colormap: str = "cube_edge") -> None:
+        self.depth_mapper = DepthRGBMapper(colormap=depth_colormap)
         self.normal_mapper = NormalRGBMapper()
         self.seg_decoder = SegmentationDecoder()
         self.edge_mapper = EdgeRGBMapper()

@@ -43,6 +43,13 @@ logger = logging.getLogger(__name__)
 
 REGISTRY_PATH = Path(__file__).parent.parent / "configs" / "checkpoint_registry.yaml"
 
+PAPER_CITATION = """@article{gabeur2026image,
+  title={Image Generators are Generalist Vision Learners},
+  author={Gabeur, Valentin and Long, Shangbang and Peng, Songyou and Voigtlaender, Paul and Sun, Shuyang and Bao, Yanan and Truong, Karen and Wang, Zhicheng and Zhou, Wenlei and Barron, Jonathan T. and Genova, Kyle and Kannen, Nithish and Ben, Sherry and Li, Yandong and Guo, Mandy and Yogin, Suhas and Gu, Yiming and Chen, Huizhong and Wang, Oliver and Xie, Saining and Zhou, Howard and He, Kaiming and Funkhouser, Thomas and Alayrac, Jean-Baptiste and Soricut, Radu},
+  journal={arXiv preprint arXiv:2604.20329},
+  year={2026}
+}"""
+
 
 def _build_model_card(
     task: str,
@@ -62,15 +69,19 @@ def _build_model_card(
 
 {description}
 
-This is a LoRA (Low-Rank Adaptation) checkpoint for the Vision Banana project,
-instruction-tuned on top of FLUX.1 [schnell] for {task} estimation via
+This is a LoRA (Low-Rank Adaptation) checkpoint for the Open Vision Banana
+project, instruction-tuned on top of `{base_model}` for {task} estimation via
 RGB parameterization.
+
+This open-backbone checkpoint is independent from the original paper's closed
+Nano Banana Pro model. Paper metrics do not apply to this checkpoint unless
+they are reproduced and reported in the checkpoint-specific Metrics section.
 
 ## Base Model
 
 - **Base**: [{base_model}](https://huggingface.co/{base_model})
-- **Architecture**: Diffusion Transformer (DiT) with MMDiT-XXL
-- **Parameters**: 12B base + ~60M LoRA (0.5% trainable)
+- **Architecture**: Base-model architecture with LoRA adapters
+- **Parameters**: See the checkpoint training metadata below
 
 ## Training
 
@@ -102,30 +113,27 @@ model = VisionBanana.from_pretrained(
     lora_path="hf:{repo_id}",
 )
 
-# Depth estimation
-result = model.predict("input.jpg", task="{task}")
+# The API expects a normalized torch.Tensor, not a file path.
+result = model.predict(input_tensor, task="{task}")
 ```
 
 ## Limitations
 
-- Requires FLUX.1 [schnell] base model weights (~24GB download)
+- Requires the exact `{base_model}` base model and matching adapter configuration
 - LoRA weights are task-specific; multi-task requires loading multiple LoRAs
-- RGB parameterization introduces roundtrip error (see paper for analysis)
+- RGB parameterization and quantization introduce checkpoint-specific roundtrip error
+- Results from the original Nano Banana Pro paper must not be attributed to this checkpoint
 
 ## Citation
 
 ```bibtex
-@article{{vision-banana-2024,
-  title={{Image Generators are Generalist Vision Learners}},
-  author={{Vision Banana Team}},
-  journal={{arXiv preprint}},
-  year={{2024}}
-}}
+{PAPER_CITATION}
 ```
 
 ## License
 
-MIT License — see LICENSE file in the repository.
+The project code is MIT licensed. Checkpoint distribution and use also remain
+subject to the selected base model and training-dataset licenses.
 """
     return card
 

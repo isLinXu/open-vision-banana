@@ -29,6 +29,7 @@ dependencies = [
     "torchvision>=0.15",
     "pyyaml>=6.0",
     "pillow>=9.0",
+    "safetensors>=0.4",
 ]
 
 [project.optional-dependencies]

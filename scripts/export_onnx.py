@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""ONNX export script for Open-Vision-Banana.
+"""ONNX mapper export script for Open-Vision-Banana.
 
-Exports trained RGB mappers and/or the full pipeline to ONNX format.
+Exports standalone RGB mapping components. FLUX transformer component export
+is available through ``export_flux_transformer_onnx`` in the Python API; this
+CLI does not export a complete generation pipeline.
 
 Usage:
     python scripts/export_onnx.py --mapper depth_to_rgb --output models/depth_to_rgb.onnx
