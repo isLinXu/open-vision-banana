@@ -1,6 +1,6 @@
 # v3 Source Image Availability Report
 
-**Generated**: 2026-08-01 11:17:53
+**Generated**: 2026-08-01 13:10:49
 **Datasets root**: `/Users/gatilin/MyWork/datasets`
 
 ## Summary
@@ -10,10 +10,10 @@
 | depth | 5912 | 9000 | 65.7% | 3 |
 | normal | 5000 | 5500 | 90.9% | 2 |
 | segmentation | 10494 | 23831 | 44.0% | 31 |
-| keypoint | 6500 | 13500 | 48.1% | 16 |
+| keypoint | 7500 | 13500 | 55.6% | 16 |
 | multiview | 499 | 1000 | 49.9% | 2 |
 | other | 5000 | 5500 | 90.9% | 2 |
-| **TOTAL** | **33405** | **58331** | **57.3%** | |
+| **TOTAL** | **34405** | **58331** | **59.0%** | |
 
 ## Per-Dataset Details
 
@@ -77,7 +77,6 @@
 | humanparts_point_sampled | 0 | 1000 | 0.0% | 1000 |
 | imagenetpart_point_sampled | 0 | 1000 | 0.0% | 1000 |
 | nuimages_point_sampled | 0 | 1000 | 0.0% | 1000 |
-| v3detovd_point_sampled | 0 | 1000 | 0.0% | 1000 |
 | aptv2_point_sampled | 0 | 500 | 0.0% | 500 |
 | fair1m_point_sampled | 1 | 500 | 0.2% | 499 |
 | fsc147_visual_sampled | 999 | 1000 | 99.9% | 1 |
@@ -88,6 +87,7 @@
 | grocery_bbox_sampled | 500 | 500 | 100.0% | 0 |
 | grocery_visual_sampled | 500 | 500 | 100.0% | 0 |
 | paco_point_sampled | 500 | 500 | 100.0% | 0 |
+| v3detovd_point_sampled | 1000 | 1000 | 100.0% | 0 |
 
 ### MULTIVIEW
 

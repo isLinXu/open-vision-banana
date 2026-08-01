@@ -1,15 +1,15 @@
 {
-  "timestamp": "2026-08-01T11:17:53.453681",
+  "timestamp": "2026-08-01T13:10:49.832901",
   "total_samples": 58331,
-  "total_available": 33405,
-  "overall_rate": "57.3%",
+  "total_available": 34405,
+  "overall_rate": "59.0%",
   "task_summary": {
     "segmentation": {
       "available": 10494,
       "total": 23831
     },
     "keypoint": {
-      "available": 6500,
+      "available": 7500,
       "total": 13500
     },
     "depth": {
@@ -673,16 +673,16 @@
       "missing": 450,
       "availability_rate": "10.0%",
       "missing_samples": [
-        "streethazards/train/images/training/t1-3/4108.png",
-        "streethazards/train/images/training/t1-3/1712.png",
-        "streethazards/train/images/training/t1-3/1321.png",
-        "streethazards/train/images/training/t1-3/2773.png",
-        "streethazards/train/images/training/t1-3/2711.png"
+        "StreetHazards/train/images/training/t1-3/4108.png",
+        "StreetHazards/train/images/training/t1-3/1712.png",
+        "StreetHazards/train/images/training/t1-3/1321.png",
+        "StreetHazards/train/images/training/t1-3/2773.png",
+        "StreetHazards/train/images/training/t1-3/2711.png"
       ],
       "found_samples": [
-        "streethazards/train/images/training/t1-3/4852.png",
-        "streethazards/train/images/training/t1-3/1693.png",
-        "streethazards/train/images/training/t1-3/3839.png"
+        "StreetHazards/train/images/training/t1-3/4852.png",
+        "StreetHazards/train/images/training/t1-3/1693.png",
+        "StreetHazards/train/images/training/t1-3/3839.png"
       ]
     },
     {
@@ -692,16 +692,16 @@
       "missing": 440,
       "availability_rate": "12.0%",
       "missing_samples": [
-        "streethazards/train/images/training/t1-3/182.png",
-        "streethazards/train/images/training/t1-3/1182.png",
-        "streethazards/train/images/validation/t4/925.png",
-        "streethazards/train/images/training/t1-3/3026.png",
-        "streethazards/train/images/training/t1-3/2804.png"
+        "StreetHazards/train/images/training/t1-3/182.png",
+        "StreetHazards/train/images/training/t1-3/1182.png",
+        "StreetHazards/train/images/validation/t4/925.png",
+        "StreetHazards/train/images/training/t1-3/3026.png",
+        "StreetHazards/train/images/training/t1-3/2804.png"
       ],
       "found_samples": [
-        "streethazards/train/images/validation/t4/172.png",
-        "streethazards/train/images/validation/t4/447.png",
-        "streethazards/train/images/training/t1-3/5019.png"
+        "StreetHazards/train/images/validation/t4/172.png",
+        "StreetHazards/train/images/validation/t4/447.png",
+        "StreetHazards/train/images/training/t1-3/5019.png"
       ]
     },
     {
@@ -829,17 +829,15 @@
     {
       "name": "v3detovd_point_sampled",
       "total": 1000,
-      "available": 0,
-      "missing": 1000,
-      "availability_rate": "0.0%",
-      "missing_samples": [
-        "v3det/images/Q800202/31_718_24018120777_1fe477a630_c.jpg",
-        "v3det/images/n02430559/28_326_11477124405_ff234a93a2_c.jpg",
-        "v3det/images/a00014373/21_236_6564793301_c054c36b08_c.jpg",
-        "v3det/images/a00012950/20_947_18866198785_a499efd606_c.jpg",
-        "v3det/images/n02106550/7_1372_10581353204_e706c5e7c7_c.jpg"
-      ],
-      "found_samples": []
+      "available": 1000,
+      "missing": 0,
+      "availability_rate": "100.0%",
+      "missing_samples": [],
+      "found_samples": [
+        "V3Det/extracted/images/Q800202/31_718_24018120777_1fe477a630_c.jpg",
+        "V3Det/extracted/images/n02430559/28_326_11477124405_ff234a93a2_c.jpg",
+        "V3Det/extracted/images/a00014373/21_236_6564793301_c054c36b08_c.jpg"
+      ]
     },
     {
       "name": "vipseg_gcg_sampled",

@@ -139,7 +139,7 @@ def load_models(device: str = "mps"):
         UNet2DConditionModel,
         EulerDiscreteScheduler,
     )
-    from transformers import CLIPTextModel, CLIPTokenizer
+    from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 
     dtype = torch.float32 if device == "cpu" else torch.float16
 
@@ -155,7 +155,9 @@ def load_models(device: str = "mps"):
     text_encoder_one = CLIPTextModel.from_pretrained(
         MODEL_ID, subfolder="text_encoder", torch_dtype=dtype
     )
-    text_encoder_two = CLIPTextModel.from_pretrained(
+    # SDXL/SSD-1B's second encoder must be CLIPTextModelWithProjection so the
+    # projected pooled output (.text_embeds) is available for added_cond_kwargs.
+    text_encoder_two = CLIPTextModelWithProjection.from_pretrained(
         MODEL_ID, subfolder="text_encoder_2", torch_dtype=dtype
     )
 
@@ -278,7 +280,9 @@ def encode_text(models, prompt: str, device: str):
     with torch.no_grad():
         e1 = models["text_encoder_one"](tok1)[0]  # last_hidden_state [1, 77, 768]
         enc2_out = models["text_encoder_two"](tok2)  # call only once
-        e2 = enc2_out[0]  # last_hidden_state [1, 77, 1280]
+        # CLIPTextModelWithProjection output tuple is (text_embeds, last_hidden_state, ...),
+        # so index [0] would return the 2D pooled tensor. Use explicit attributes.
+        e2 = enc2_out.last_hidden_state  # [1, 77, 1280]
         # CLIPTextModelWithProjection exposes .text_embeds (projected pooler output)
         pooled = enc2_out.text_embeds  # [1, 1280]
     return torch.cat([e1, e2], dim=-1), pooled

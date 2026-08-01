@@ -136,10 +136,14 @@ PATH_FIXES = {
     "tas500_genseg": lambda p: f"TAS500/{p}" if not p.startswith("TAS500/") else p,
     "zerowaste_genseg": lambda p: f"zerowaste/{p}" if not p.startswith("zerowaste/") else p,
     "streethazards_gcg": lambda p: (
-        f"streethazards/train/images/{p}" if not p.startswith("streethazards/") else p
+        f"StreetHazards/train/images/{p}"
+        if not p.startswith("StreetHazards/")
+        else (f"streethazards/train/images/{p}" if not p.startswith("streethazards/") else p)
     ),
     "streethazards_genseg": lambda p: (
-        f"streethazards/train/images/{p}" if not p.startswith("streethazards/") else p
+        f"StreetHazards/train/images/{p}"
+        if not p.startswith("StreetHazards/")
+        else (f"streethazards/train/images/{p}" if not p.startswith("streethazards/") else p)
     ),
     "egoobjects_point": lambda p: f"EgoObjects/{p}" if not p.startswith("EgoObjects/") else p,
     "aptv2_point": lambda p: p if p.startswith("APTv2/") else p,
@@ -158,7 +162,15 @@ PATH_FIXES = {
     "hypersim_gcg": lambda p: f"hypersim/scenes/{p}" if not p.startswith("hypersim/") else p,
     "hypersim_genseg": lambda p: f"hypersim/scenes/{p}" if not p.startswith("hypersim/") else p,
     "fair1m_point": lambda p: f"Fair1M/{p}" if not p.startswith("Fair1M/") else p,
-    "v3detovd_point": lambda p: f"v3det/{p}" if not p.startswith("v3det/") else p,
+    "v3detovd_point": lambda p: (
+        f"V3Det/extracted/{p}"
+        if not p.startswith("V3Det/")
+        else (
+            f"V3Det/extracted/{p[len('V3Det/') :].replace('extracted/', '', 1)}"
+            if "extracted" not in p
+            else p
+        )
+    ),
     "pidray_genseg": lambda p: f"pidray/{p}" if not p.startswith("pidray/") else p,
     "nuimages_point": lambda p: f"nuimages/{p}" if not p.startswith("nuimages/") else p,
     "imagenetpart_point": lambda p: f"imagenet/{p}" if not p.startswith("imagenet/") else p,
