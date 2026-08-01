@@ -76,14 +76,16 @@ def main() -> None:
     model = model.to(device)
     print(f"[model] loaded")
 
-    # 加载 LoRA
-    from peft.utils.save_and_load import load_peft_weights, set_peft_model_state_dict
-    ckpt = Path(CKPT_DIR)
-    adapter_dir = ckpt / "adapter"
-    if adapter_dir.exists():
-        adapter_state = load_peft_weights(str(adapter_dir), device=device)
-        set_peft_model_state_dict(model.language_model, adapter_state)
-        print(f"[ckpt] loaded adapter from {adapter_dir}")
+    # 加载 RGB head
+    rgb_head_path = Path(CKPT_DIR) / "rgb_head.pt"
+    if rgb_head_path.exists():
+        from janus_continuous_rgb import RGBHead
+        rgb_head = RGBHead(model.config.language_config.hidden_size, IMAGE_TOKEN_NUM, RES).to(device, DTYPE)
+        rgb_head.load_state_dict(torch.load(rgb_head_path, map_location=device))
+        print(f"[ckpt] loaded RGB head from {rgb_head_path}")
+    else:
+        rgb_head = None
+        print(f"[ckpt] no RGB head found, using VQ decode")
 
     # 2) 标准 depth benchmark ──────────────────────────────────────────
     print("\n[bench] standard depth benchmark...")
@@ -128,16 +130,19 @@ def main() -> None:
         )
         hidden_states = outputs.last_hidden_state
         gen_hidden = hidden_states[:, prompt_len:, :]
-        gen_logits = model.gen_head(gen_hidden)
-        pred_tokens = torch.argmax(gen_logits, dim=-1)
 
-        # 解码
-        pred_tokens_flat = pred_tokens.squeeze(0)
-        dec = model.gen_vision_model.decode_code(
-            pred_tokens_flat,
-            shape=[1, 8, 24, 24],
-        )
-        pred_rgb = dec.squeeze(0).clamp(0, 1).cpu()
+        # 生成 RGB
+        if rgb_head is not None:
+            pred_rgb = rgb_head(gen_hidden).squeeze(0).clamp(0, 1).cpu()
+        else:
+            gen_logits = model.gen_head(gen_hidden)
+            pred_tokens = torch.argmax(gen_logits, dim=-1)
+            pred_tokens_flat = pred_tokens.squeeze(0)
+            dec = model.gen_vision_model.decode_code(
+                pred_tokens_flat,
+                shape=[1, 8, 24, 24],
+            )
+            pred_rgb = dec.squeeze(0).clamp(0, 1).cpu()
         pred_d = mapper.rgb_to_depth(pred_rgb.unsqueeze(0)).squeeze().clamp(0, 15).float()
         gt_d = mapper.rgb_to_depth(tgt_rgb.unsqueeze(0)).squeeze().clamp(0, 15).float()
 
