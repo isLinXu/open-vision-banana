@@ -251,6 +251,7 @@ class InstructionTuner:
         warmup_ratio: float | None = None,
         trainer_backend: TrainerInterface | None = None,
         use_source_conditioning: bool = False,
+        allow_sdedit: bool = False,
         prediction_type: str = "epsilon",
         x0_loss_weight: float = 0.0,
         pixel_loss_weight: float = 0.0,
@@ -343,6 +344,7 @@ class InstructionTuner:
         ):
             raise ValueError("Source output calibration requires target channel statistics")
         self.use_source_conditioning = use_source_conditioning
+        self.allow_sdedit = allow_sdedit
         self.prediction_type = prediction_type
         self.x0_loss_weight = x0_loss_weight
         self.pixel_loss_weight = pixel_loss_weight
@@ -2001,12 +2003,17 @@ class InstructionTuner:
                 noise,
                 timesteps,
             )
-        elif z_cond is not None:
+        elif z_cond is not None and not self.allow_sdedit:
             raise RuntimeError(
                 "Paired SDXL source→target training requires "
                 "use_source_conditioning=True; the legacy 4-channel path "
                 "cannot observe the clean source image"
             )
+        elif z_cond is not None:
+            # SDEdit-style: noise the source image, predict noise,
+            # guided by the text prompt.  The target z0 is not used here;
+            # the prompt provides the domain direction.
+            noisy = scheduler.add_noise(z_cond, noise, timesteps)
         else:
             noisy = scheduler.add_noise(z0, noise, timesteps)
 
