@@ -1,0 +1,115 @@
+# Tiny Vision Banana — Gate & Full Training Configs
+#
+# These YAML files document the recommended training configurations.
+# The actual training script is CLI-driven; these serve as reference.
+
+# ── E1: Depth Overfit Gate (8 samples) ──────────────────────────
+# Purpose: Verify the tiny model can memorize 8 depth samples.
+# Success: rgb_mae <= 0.05, pearson >= 0.95
+# Expected time: ~2 minutes on MPS (256px, ~14M params)
+
+gate_depth:
+  script: scripts/train_tiny_vision_banana.py
+  date: 2026-07-28
+  command: >
+    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
+    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    --tasks depth
+    --num-samples 8
+    --steps 500
+    --batch-size 4
+    --grad-accum 1
+    --lr 5e-4
+    --warmup-steps 20
+    --resolution 256
+    --base-width 32
+    --num-stages 4
+    --eval-every 50
+    --save-every 100
+    --gate
+    --output-dir output/tiny_vb_gate_depth_256
+    --device auto
+
+# ── E2: Multi-Task Gate (8 samples per task) ───────────────────
+# Purpose: Verify all 5 tasks can be memorized simultaneously.
+
+gate_multitask:
+  script: scripts/train_tiny_vision_banana.py
+  command: >
+    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
+    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    --tasks depth normal edge semantic generation
+    --num-samples 8
+    --steps 1000
+    --batch-size 4
+    --grad-accum 2
+    --lr 5e-4
+    --warmup-steps 50
+    --resolution 256
+    --eval-every 100
+    --save-every 200
+    --gate
+    --output-dir output/tiny_vb_gate_multitask_256
+
+# ── E3: Full Depth Training ────────────────────────────────────
+# Purpose: Train on full depth dataset, compare to frozen probe.
+# Target: rgb_mae < 0.20, pearson > 0.60 (vs probe 0.13/0.77)
+
+full_depth:
+  script: scripts/train_tiny_vision_banana.py
+  command: >
+    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
+    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    --tasks depth
+    --steps 3000
+    --batch-size 4
+    --grad-accum 4
+    --lr 1e-3
+    --warmup-steps 100
+    --resolution 256
+    --eval-every 250
+    --save-every 500
+    --max-val-samples 115
+    --output-dir output/tiny_vb_depth_full_256
+
+# ── E4: Full Multi-Task Training ───────────────────────────────
+# Purpose: Train all 5 tasks jointly, evaluate per-task metrics.
+
+full_multitask:
+  script: scripts/train_tiny_vision_banana.py
+  command: >
+    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
+    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    --tasks depth normal edge semantic generation
+    --steps 5000
+    --batch-size 4
+    --grad-accum 4
+    --lr 1e-3
+    --warmup-steps 200
+    --resolution 256
+    --eval-every 250
+    --save-every 500
+    --max-val-samples 64
+    --output-dir output/tiny_vb_multitask_full_256
+
+# ── E5: Ultra-Tiny (20M target) ────────────────────────────────
+# Purpose: Test if base_width=16 is sufficient.
+
+ultra_tiny:
+  script: scripts/train_tiny_vision_banana.py
+  command: >
+    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
+    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    --tasks depth
+    --steps 3000
+    --batch-size 4
+    --grad-accum 4
+    --lr 1e-3
+    --warmup-steps 100
+    --resolution 256
+    --base-width 16
+    --num-stages 4
+    --block-depth 2
+    --eval-every 250
+    --save-every 500
+    --output-dir output/tiny_vb_ultra_depth_256
