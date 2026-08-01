@@ -44,6 +44,9 @@ from .datasets import (
     VirtualKITTINormalDataset,
     nuScenesDataset,
     build_dataset,
+    V3FlatDataset,
+    build_v3_datasets,
+    load_v3_train_val_split,
 )
 from .generation import GenerationDataset, build_generation_dataset
 from .generation_builder import (
@@ -83,6 +86,9 @@ __all__ = [
     "MixedVisionDataset",
     "GenerationDataset",
     "build_dataset",
+    "V3FlatDataset",
+    "build_v3_datasets",
+    "load_v3_train_val_split",
     "build_generation_dataset",
     "build_synthetic_generation_dataset",
     "build_flux_generation_dataset",

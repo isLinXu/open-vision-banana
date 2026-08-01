@@ -6,10 +6,13 @@ ratio specified in the paper (9:1 generation-to-vision).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import torch
 from torch.utils.data import Dataset
+
+logger = logging.getLogger(__name__)
 
 
 class MixedVisionDataset(Dataset):
@@ -55,7 +58,8 @@ class MixedVisionDataset(Dataset):
         generation_dataset: Dataset | None = None,
         vision_ratio: float = 0.1,
         seed: int = 42,
-        colormaps: list[str] | None = None,  # 新增
+        colormaps: list[str] | None = None,
+        task_weights: list[float] | None = None,
     ):
         if not 0.0 < vision_ratio <= 1.0:
             raise ValueError(f"vision_ratio must be in (0, 1]; got {vision_ratio}")
@@ -70,6 +74,43 @@ class MixedVisionDataset(Dataset):
 
         # Multi-colormap training augmentation (paper Section 3.2)
         self.colormaps = colormaps or ["cube_edge"]
+
+        # Task-balanced sampling: when task_weights is provided, use weighted
+        # sampling instead of uniform random to pick a vision dataset.
+        # This mitigates the 16.7x sample imbalance across tasks (e.g.
+        # object_detection has 9433 samples vs specular_removal 564).
+        #
+        # Modes:
+        #   None          -> uniform sampling (default, backward-compatible)
+        #   "sqrt"        -> weight = 1 / sqrt(dataset_size), normalized
+        #   "uniform"     -> weight = 1 / num_datasets (each task equally likely)
+        #   list[float]   -> custom weights, must match len(vision_datasets)
+        self._task_weights: torch.Tensor | None = None
+        if task_weights is not None:
+            if isinstance(task_weights, str):
+                if task_weights == "sqrt":
+                    import math
+
+                    raw = [1.0 / math.sqrt(max(1, l)) for l in self._vision_lengths]
+                elif task_weights == "uniform":
+                    raw = [1.0 / len(vision_datasets)] * len(vision_datasets)
+                else:
+                    raise ValueError(f"Unknown task_weights mode: {task_weights}")
+                total = sum(raw)
+                raw = [w / total for w in raw]
+            else:
+                if len(task_weights) != len(vision_datasets):
+                    raise ValueError(
+                        f"task_weights length {len(task_weights)} != "
+                        f"num vision datasets {len(vision_datasets)}"
+                    )
+                total = sum(task_weights)
+                raw = [w / total for w in task_weights]
+            self._task_weights = torch.tensor(raw, dtype=torch.float32)
+            logger.info(
+                "MixedVisionDataset: task_weights=%s",
+                [f"{w:.4f}" for w in raw],
+            )
 
         # Backward-compatible aliases
         self.vision_weight = vision_ratio
@@ -99,8 +140,15 @@ class MixedVisionDataset(Dataset):
         )
 
         if use_vision:
-            # Pick a vision dataset uniformly at random, then a random sample.
-            ds_idx = int(torch.randint(len(self.vision_datasets), (1,), generator=self.rng).item())
+            # Pick a vision dataset, then a random sample within it.
+            if self._task_weights is not None:
+                # Weighted sampling: sample dataset index from categorical dist
+                ds_idx = int(
+                    torch.multinomial(self._task_weights, 1, generator=self.rng).item()
+                )
+            else:
+                # Uniform sampling (original behaviour)
+                ds_idx = int(torch.randint(len(self.vision_datasets), (1,), generator=self.rng).item())
             ds = self.vision_datasets[ds_idx]
             sample_idx = int(torch.randint(len(ds), (1,), generator=self.rng).item())
             sample = ds[sample_idx]
@@ -112,6 +160,7 @@ class MixedVisionDataset(Dataset):
                 # 当色图非 cube_edge 时，动态重编码 target_rgb (roundtrip 误差 < 0.5%)
                 if colormap != "cube_edge" and "target_rgb" in sample:
                     from ..core.depth_mapper import DepthRGBMapper
+
                     mapper = DepthRGBMapper()
                     target_rgb = sample["target_rgb"]
                     if isinstance(target_rgb, torch.Tensor):
@@ -122,7 +171,9 @@ class MixedVisionDataset(Dataset):
             return sample
         else:
             assert self.generation_dataset is not None
-            sample_idx = int(torch.randint(len(self.generation_dataset), (1,), generator=self.rng).item())
+            sample_idx = int(
+                torch.randint(len(self.generation_dataset), (1,), generator=self.rng).item()
+            )
             return self.generation_dataset[sample_idx]
 
     def __repr__(self) -> str:

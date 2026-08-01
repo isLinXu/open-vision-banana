@@ -15,6 +15,7 @@ from .checkpoint import (
     resolve_lora_path,
 )
 from .decoder import VisualizationDecoder
+from .depth_probe import FrozenDepthEstimator
 from .diagnostics import InferenceDiagnosticsWriter
 from .generator import BaseGenerator
 from .optimization import InferenceOptions, apply_pipeline_optimizations
@@ -25,6 +26,7 @@ __all__ = [
     "BaseGenerator",
     "PromptBuilder",
     "VisualizationDecoder",
+    "FrozenDepthEstimator",
     "InferenceDiagnosticsWriter",
     "VisionBanana",
     "InferenceOptions",

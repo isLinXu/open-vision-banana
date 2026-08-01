@@ -9,9 +9,13 @@ The paper uses various prompting styles:
 
 from __future__ import annotations
 
+from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT
+
 
 class PromptBuilder:
     """Build instruction prompts for Vision Banana."""
+
+    SEMANTIC_PROMPT = SEMANTIC_SEGMENTATION_PROMPT
 
     SEMANTIC_TEMPLATES = [
         'Generate a semantic segmentation visualization image, '
@@ -50,9 +54,16 @@ class PromptBuilder:
     def build_semantic_prompt(
         cls,
         class_color_map: dict[str, tuple[int, int, int]],
-        template_idx: int = 0,
+        template_idx: int | None = None,
     ) -> str:
-        """Build prompt for semantic segmentation."""
+        """Build a CLIP-safe semantic prompt.
+
+        The default deliberately omits the per-class colour legend so training
+        and inference stay below CLIP's 77-token limit.  Explicit template
+        indices remain available for dataset inspection and legacy tooling.
+        """
+        if template_idx is None:
+            return cls.SEMANTIC_PROMPT
         if template_idx == 0:
             color_parts = []
             for cls_name, (r, g, b) in class_color_map.items():

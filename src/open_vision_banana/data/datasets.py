@@ -20,6 +20,7 @@ from torch.utils.data import Dataset
 from ..core.depth_mapper import DepthRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
 from ..inference.prompt import PromptBuilder
+from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT, normalize_task_prompt
 from .benchmark_io import (
     find_matching_file,
     load_normal,
@@ -186,7 +187,9 @@ class ScanNetNormalDataset(BaseVisionDataset):
 
         normal_img = Image.open(sample["target"]).convert("RGB")
         if normal_img.size != (self.resolution, self.resolution):
-            normal_img = normal_img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
+            normal_img = normal_img.resize(
+                (self.resolution, self.resolution), Image.Resampling.LANCZOS
+            )
         target_rgb = _pil_to_tensor(normal_img).float() / 255.0
         gt_normal = self.normal_mapper.rgb_to_normal(target_rgb.unsqueeze(0)).squeeze(0)
 
@@ -230,9 +233,25 @@ class CityscapesSegDataset(BaseVisionDataset):
     # Official Cityscapes labelIds -> trainIds mapping. Labels not listed are
     # ignored during evaluation, including license plate and void regions.
     CITYSCAPES_LABEL_TO_TRAIN = {
-        7: 0, 8: 1, 11: 2, 12: 3, 13: 4, 17: 5, 19: 6, 20: 7,
-        21: 8, 22: 9, 23: 10, 24: 11, 25: 12, 26: 13, 27: 14,
-        28: 15, 31: 16, 32: 17, 33: 18,
+        7: 0,
+        8: 1,
+        11: 2,
+        12: 3,
+        13: 4,
+        17: 5,
+        19: 6,
+        20: 7,
+        21: 8,
+        22: 9,
+        23: 10,
+        24: 11,
+        25: 12,
+        26: 13,
+        27: 14,
+        28: 15,
+        31: 16,
+        32: 17,
+        33: 18,
     }
 
     def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
@@ -567,6 +586,7 @@ class NYUDepthDataset(BaseVisionDataset):
         depth_path = sample["target"]
         if depth_path.suffix == ".npy":
             import numpy as np
+
             depth = np.load(depth_path)
             depth = torch.from_numpy(depth).float().unsqueeze(0)
         else:
@@ -631,13 +651,20 @@ class DIODEDataset(BaseVisionDataset):
             depth_path = Path(str(rgb_path).replace("_rgb.png", "_depth.npy"))
             if depth_path.exists():
                 mask_path = Path(str(rgb_path).replace("_rgb.png", "_depth_mask.npy"))
-                self.samples.append({"image": rgb_path, "target": depth_path, "mask": mask_path if mask_path.exists() else None})
+                self.samples.append(
+                    {
+                        "image": rgb_path,
+                        "target": depth_path,
+                        "mask": mask_path if mask_path.exists() else None,
+                    }
+                )
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
 
         import numpy as np
+
         depth = np.load(sample["target"])
         depth = torch.from_numpy(depth).float().unsqueeze(0)
 
@@ -651,11 +678,15 @@ class DIODEDataset(BaseVisionDataset):
         valid_mask = (depth >= 0) & torch.isfinite(depth)
         if sample.get("mask") is not None:
             mask = torch.from_numpy(np.load(sample["mask"])).bool().unsqueeze(0)
-            mask = torch.nn.functional.interpolate(
-                mask.unsqueeze(0).float(),
-                size=(self.resolution, self.resolution),
-                mode="nearest",
-            ).squeeze(0).bool()
+            mask = (
+                torch.nn.functional.interpolate(
+                    mask.unsqueeze(0).float(),
+                    size=(self.resolution, self.resolution),
+                    mode="nearest",
+                )
+                .squeeze(0)
+                .bool()
+            )
             valid_mask &= mask
         depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
 
@@ -698,7 +729,9 @@ class IBimsDepthDataset(NYUDepthDataset):
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
         depth = resize_scalar(
-            load_scalar(sample["target"], scale=0.001 if sample["target"].suffix == ".png" else 1.0),
+            load_scalar(
+                sample["target"], scale=0.001 if sample["target"].suffix == ".png" else 1.0
+            ),
             self.resolution,
         )
         valid_mask = torch.isfinite(depth) & (depth > 0) & (depth < 100)
@@ -1020,6 +1053,7 @@ class KITTIDataset(BaseVisionDataset):
         depth_path = sample["target"]
         if depth_path.suffix == ".npy":
             import numpy as np
+
             depth = np.load(depth_path)
             depth = torch.from_numpy(depth).float().unsqueeze(0)
         else:
@@ -1083,6 +1117,7 @@ class ADE20KDataset(BaseVisionDataset):
     def _build_palette(self):
         """Build deterministic 150-class color palette."""
         import random
+
         rng = random.Random(42)  # Deterministic seed
         colors = []
         for _ in range(150):
@@ -1094,7 +1129,9 @@ class ADE20KDataset(BaseVisionDataset):
 
     def _scan(self) -> None:
         img_dir = self.root_dir / "images" / ("training" if self.split == "train" else "validation")
-        ann_dir = self.root_dir / "annotations" / ("training" if self.split == "train" else "validation")
+        ann_dir = (
+            self.root_dir / "annotations" / ("training" if self.split == "train" else "validation")
+        )
         if not img_dir.exists():
             logger.warning(f"ADE20K images directory not found: {img_dir}")
             return
@@ -1122,7 +1159,12 @@ class ADE20KDataset(BaseVisionDataset):
 
         target_rgb = self._label_to_rgb(label)
         prompt = PromptBuilder.build_semantic_prompt(self._color_map)
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb, "class_color_map": self._color_map}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "class_color_map": self._color_map,
+        }
 
     def _label_to_rgb(self, label: torch.Tensor) -> torch.Tensor:
         """Vectorized label → RGB using palette gather."""
@@ -1179,6 +1221,7 @@ class SintelFlowDataset(BaseVisionDataset):
         - Data: float32 (u, v) pairs, width * height * 2 values
         """
         import numpy as np
+
         with open(path, "rb") as f:
             tag = np.fromfile(f, np.float32, count=1)[0]
             # Check tag = 202021.25 (PIEH in float32)
@@ -1199,6 +1242,7 @@ class SintelFlowDataset(BaseVisionDataset):
         flow_path = sample["target"]
         if flow_path.suffix == ".npy":
             import numpy as np
+
             flow = np.load(flow_path)
             flow = torch.from_numpy(flow).float().permute(2, 0, 1)
         else:
@@ -1215,7 +1259,7 @@ class SintelFlowDataset(BaseVisionDataset):
         # Encode flow as RGB visualization (HSV-style)
         # For training target: encode flow as HSV and convert to RGB
         u, v = flow[0], flow[1]
-        magnitude = torch.sqrt(u ** 2 + v ** 2 + 1e-10)
+        magnitude = torch.sqrt(u**2 + v**2 + 1e-10)
         direction = torch.atan2(v, u)  # [-π, π]
 
         # Normalize for visualization
@@ -1277,6 +1321,7 @@ class ETH3DDataset(BaseVisionDataset):
         depth_path = sample["target"]
         if depth_path.suffix == ".npy":
             import numpy as np
+
             depth = np.load(depth_path)
             depth = torch.from_numpy(depth).float().unsqueeze(0)
         else:
@@ -1356,9 +1401,7 @@ class TartanAirDepthDataset(BaseVisionDataset):
                 if depth_path.exists():
                     self.samples.append({"image": img_path, "target": depth_path})
 
-        logger.info(
-            "TartanAir: found %d samples under %s", len(self.samples), self.root_dir
-        )
+        logger.info("TartanAir: found %d samples under %s", len(self.samples), self.root_dir)
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -1366,6 +1409,7 @@ class TartanAirDepthDataset(BaseVisionDataset):
 
         # Load metric depth from .npy (float32, meters)
         import numpy as np
+
         depth_arr = np.load(sample["target"]).astype(np.float32)
         if depth_arr.ndim > 2:
             depth_arr = depth_arr.squeeze()
@@ -1428,6 +1472,7 @@ class OASISNormalDataset(BaseVisionDataset):
         normal_path = sample["target"]
         if normal_path.suffix == ".npy":
             import numpy as np
+
             normal = np.load(normal_path)
             normal = torch.from_numpy(normal).float().permute(2, 0, 1)
         else:
@@ -1477,19 +1522,86 @@ class COCODetectionDataset(BaseVisionDataset):
 
     TASK_TYPE = "object_detection"
     COCO_CLASSES = [
-        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-        "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-        "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep",
-        "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
-        "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard",
-        "sports ball", "kite", "baseball bat", "baseball glove", "skateboard",
-        "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork",
-        "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-        "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair",
-        "couch", "potted plant", "bed", "dining table", "toilet", "tv",
-        "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave",
-        "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
-        "scissors", "teddy bear", "hair drier", "toothbrush",
+        "person",
+        "bicycle",
+        "car",
+        "motorcycle",
+        "airplane",
+        "bus",
+        "train",
+        "truck",
+        "boat",
+        "traffic light",
+        "fire hydrant",
+        "stop sign",
+        "parking meter",
+        "bench",
+        "bird",
+        "cat",
+        "dog",
+        "horse",
+        "sheep",
+        "cow",
+        "elephant",
+        "bear",
+        "zebra",
+        "giraffe",
+        "backpack",
+        "umbrella",
+        "handbag",
+        "tie",
+        "suitcase",
+        "frisbee",
+        "skis",
+        "snowboard",
+        "sports ball",
+        "kite",
+        "baseball bat",
+        "baseball glove",
+        "skateboard",
+        "surfboard",
+        "tennis racket",
+        "bottle",
+        "wine glass",
+        "cup",
+        "fork",
+        "knife",
+        "spoon",
+        "bowl",
+        "banana",
+        "apple",
+        "sandwich",
+        "orange",
+        "broccoli",
+        "carrot",
+        "hot dog",
+        "pizza",
+        "donut",
+        "cake",
+        "chair",
+        "couch",
+        "potted plant",
+        "bed",
+        "dining table",
+        "toilet",
+        "tv",
+        "laptop",
+        "mouse",
+        "remote",
+        "keyboard",
+        "cell phone",
+        "microwave",
+        "oven",
+        "toaster",
+        "sink",
+        "refrigerator",
+        "book",
+        "clock",
+        "vase",
+        "scissors",
+        "teddy bear",
+        "hair drier",
+        "toothbrush",
     ]
 
     def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
@@ -1498,6 +1610,7 @@ class COCODetectionDataset(BaseVisionDataset):
 
     def _build_palette(self):
         import random
+
         rng = random.Random(2023)
         colors = []
         for _ in range(80):
@@ -1506,6 +1619,7 @@ class COCODetectionDataset(BaseVisionDataset):
 
     def _scan(self) -> None:
         import json as json_mod
+
         ann_file = self.root_dir / "annotations" / f"instances_{self.split}2017.json"
         img_dir = self.root_dir / "images" / f"{self.split}2017"
         if not ann_file.exists():
@@ -1532,12 +1646,14 @@ class COCODetectionDataset(BaseVisionDataset):
                 continue
             img_path = img_dir / img_info[img_id]["file_name"]
             if img_path.exists():
-                self.samples.append({
-                    "image": img_path,
-                    "annotations": anns,
-                    "width": img_info[img_id]["width"],
-                    "height": img_info[img_id]["height"],
-                })
+                self.samples.append(
+                    {
+                        "image": img_path,
+                        "annotations": anns,
+                        "width": img_info[img_id]["width"],
+                        "height": img_info[img_id]["height"],
+                    }
+                )
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -1549,6 +1665,7 @@ class COCODetectionDataset(BaseVisionDataset):
             if "segmentation" in ann and ann.get("iscrowd", 0) == 0:
                 try:
                     from pycocotools import mask as mask_utils
+
                     if isinstance(ann["segmentation"], dict):
                         m = mask_utils.decode(ann["segmentation"])
                     else:
@@ -1561,9 +1678,14 @@ class COCODetectionDataset(BaseVisionDataset):
                     break
 
         label_map = label_map.unsqueeze(0).unsqueeze(0).float()
-        label_map = torch.nn.functional.interpolate(
-            label_map, size=(self.resolution, self.resolution), mode="nearest"
-        ).long().squeeze(0).squeeze(0)
+        label_map = (
+            torch.nn.functional.interpolate(
+                label_map, size=(self.resolution, self.resolution), mode="nearest"
+            )
+            .long()
+            .squeeze(0)
+            .squeeze(0)
+        )
 
         unique_labels = label_map.unique()
         palette = self._color_palette.to(label_map.device)
@@ -1613,6 +1735,7 @@ class COCOStuffDataset(BaseVisionDataset):
 
     def _build_palette(self):
         import random
+
         rng = random.Random(171)
         colors = []
         for _ in range(171):
@@ -1621,6 +1744,7 @@ class COCOStuffDataset(BaseVisionDataset):
 
     def _scan(self) -> None:
         import json as json_mod
+
         ann_file = self.root_dir / "annotations" / f"stuff_{self.split}2017.json"
         img_dir = self.root_dir / "images" / f"{self.split}2017"
         if not ann_file.exists():
@@ -1647,12 +1771,14 @@ class COCOStuffDataset(BaseVisionDataset):
                 continue
             img_path = img_dir / img_info[img_id]["file_name"]
             if img_path.exists():
-                self.samples.append({
-                    "image": img_path,
-                    "annotations": anns,
-                    "width": img_info[img_id]["width"],
-                    "height": img_info[img_id]["height"],
-                })
+                self.samples.append(
+                    {
+                        "image": img_path,
+                        "annotations": anns,
+                        "width": img_info[img_id]["width"],
+                        "height": img_info[img_id]["height"],
+                    }
+                )
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -1663,6 +1789,7 @@ class COCOStuffDataset(BaseVisionDataset):
         for ann in sample["annotations"]:
             try:
                 from pycocotools import mask as mask_utils
+
                 if isinstance(ann["segmentation"], dict):
                     m = mask_utils.decode(ann["segmentation"])
                 else:
@@ -1675,9 +1802,14 @@ class COCOStuffDataset(BaseVisionDataset):
                 break
 
         label_map = label_map.unsqueeze(0).unsqueeze(0).float()
-        label_map = torch.nn.functional.interpolate(
-            label_map, size=(self.resolution, self.resolution), mode="nearest"
-        ).long().squeeze(0).squeeze(0)
+        label_map = (
+            torch.nn.functional.interpolate(
+                label_map, size=(self.resolution, self.resolution), mode="nearest"
+            )
+            .long()
+            .squeeze(0)
+            .squeeze(0)
+        )
 
         unique_labels = label_map.unique()
         palette = self._color_palette.to(label_map.device)
@@ -1721,12 +1853,15 @@ class RefCOCODataset(BaseVisionDataset):
 
     TASK_TYPE = "referring"
 
-    def __init__(self, root_dir, split="train", variant="refcoco", resolution=512, **kwargs) -> None:
+    def __init__(
+        self, root_dir, split="train", variant="refcoco", resolution=512, **kwargs
+    ) -> None:
         self.variant = variant
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
         import json as json_mod
+
         ann_file = self.root_dir / f"{self.variant}_{self.split}.json"
         if not ann_file.exists():
             ann_file = self.root_dir / "annotations.json"
@@ -1743,12 +1878,14 @@ class RefCOCODataset(BaseVisionDataset):
             if not img_path.exists() and "image_id" in item:
                 img_path = img_dir / f"{item['image_id']:012d}.jpg"
             if img_path.exists():
-                self.samples.append({
-                    "image": img_path,
-                    "expression": item.get("sentence", item.get("ref", "the object")),
-                    "mask": item.get("mask", None),
-                    "bbox": item.get("bbox", None),
-                })
+                self.samples.append(
+                    {
+                        "image": img_path,
+                        "expression": item.get("sentence", item.get("ref", "the object")),
+                        "mask": item.get("mask", None),
+                        "bbox": item.get("bbox", None),
+                    }
+                )
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -1762,12 +1899,14 @@ class RefCOCODataset(BaseVisionDataset):
             if isinstance(m_data, dict):
                 try:
                     from pycocotools import mask as mask_utils
+
                     m = mask_utils.decode(m_data)
                     mask = torch.from_numpy(m).float()
                 except ImportError:
                     pass
             elif isinstance(m_data, list):
                 from PIL import ImageDraw
+
                 m_img = Image.new("L", (W, H), 0)
                 draw = ImageDraw.Draw(m_img)
                 for poly in m_data:
@@ -1775,9 +1914,13 @@ class RefCOCODataset(BaseVisionDataset):
                 mask = _pil_to_tensor(m_img).float().squeeze(0) / 255.0
 
         mask = mask.unsqueeze(0).unsqueeze(0)
-        mask = torch.nn.functional.interpolate(
-            mask, size=(self.resolution, self.resolution), mode="nearest"
-        ).squeeze(0).squeeze(0)
+        mask = (
+            torch.nn.functional.interpolate(
+                mask, size=(self.resolution, self.resolution), mode="nearest"
+            )
+            .squeeze(0)
+            .squeeze(0)
+        )
 
         target_rgb = mask.unsqueeze(0).repeat(3, 1, 1)
         prompt = PromptBuilder.build_referring_prompt(sample["expression"])
@@ -1903,7 +2046,12 @@ class TUMRGBDDataset(BaseVisionDataset):
 
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb, "valid_mask": valid_mask.squeeze(0)}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "valid_mask": valid_mask.squeeze(0),
+        }
 
 
 class FlyingThings3DDataset(BaseVisionDataset):
@@ -1943,6 +2091,7 @@ class FlyingThings3DDataset(BaseVisionDataset):
 
     def _load_flo(self, path: Path) -> torch.Tensor:
         import numpy as np
+
         with open(path, "rb") as f:
             tag = np.fromfile(f, np.float32, count=1)[0]
             if abs(tag - 202021.25) > 1e-6:
@@ -1967,7 +2116,7 @@ class FlyingThings3DDataset(BaseVisionDataset):
         ).squeeze(0)
 
         u, v = flow[0], flow[1]
-        magnitude = torch.sqrt(u ** 2 + v ** 2 + 1e-10)
+        magnitude = torch.sqrt(u**2 + v**2 + 1e-10)
         direction = torch.atan2(v, u)
         max_mag = magnitude.max() + 1e-10
         hue = (direction + math.pi) / (2 * math.pi)
@@ -2003,6 +2152,7 @@ class MapillaryVistasDataset(BaseVisionDataset):
 
     def _build_palette(self):
         import random
+
         rng = random.Random(65)
         colors = []
         for _ in range(65):
@@ -2028,9 +2178,14 @@ class MapillaryVistasDataset(BaseVisionDataset):
         label_img = Image.open(sample["target"])
         label = _pil_to_tensor(label_img).long().squeeze(0)
         label = label.unsqueeze(0).unsqueeze(0).float()
-        label = torch.nn.functional.interpolate(
-            label, size=(self.resolution, self.resolution), mode="nearest"
-        ).long().squeeze(0).squeeze(0)
+        label = (
+            torch.nn.functional.interpolate(
+                label, size=(self.resolution, self.resolution), mode="nearest"
+            )
+            .long()
+            .squeeze(0)
+            .squeeze(0)
+        )
 
         label = torch.where(label == 255, torch.zeros_like(label), label)
         label = label.clamp(0, 64)
@@ -2039,9 +2194,16 @@ class MapillaryVistasDataset(BaseVisionDataset):
         rgb = palette[label.long()]
         target_rgb = rgb.permute(2, 0, 1)
 
-        class_color_map = {f"class_{i}": tuple(int(c * 255) for c in palette[i].tolist()) for i in range(65)}
+        class_color_map = {
+            f"class_{i}": tuple(int(c * 255) for c in palette[i].tolist()) for i in range(65)
+        }
         prompt = PromptBuilder.build_semantic_prompt(class_color_map)
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb, "class_color_map": class_color_map}
+        return {
+            "prompt": prompt,
+            "image": image,
+            "target_rgb": target_rgb,
+            "class_color_map": class_color_map,
+        }
 
 
 class nuScenesDataset(BaseVisionDataset):
@@ -2072,6 +2234,7 @@ class nuScenesDataset(BaseVisionDataset):
 
     def _build_palette(self):
         import random
+
         rng = random.Random(23)
         colors = []
         for _ in range(23):
@@ -2096,7 +2259,9 @@ class nuScenesDataset(BaseVisionDataset):
             for img_path in sorted(img_dir.rglob("*.jpg")):
                 label_path = label_dir / (img_path.stem + ".png")
                 if label_path.exists():
-                    self.samples.append({"image": img_path, "target": label_path, "task": self.task})
+                    self.samples.append(
+                        {"image": img_path, "target": label_path, "task": self.task}
+                    )
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -2105,6 +2270,7 @@ class nuScenesDataset(BaseVisionDataset):
 
         if task == "depth":
             import numpy as np
+
             depth = np.load(sample["target"])
             depth = torch.from_numpy(depth).float().unsqueeze(0)
             depth = torch.nn.functional.interpolate(
@@ -2117,14 +2283,21 @@ class nuScenesDataset(BaseVisionDataset):
             label_img = Image.open(sample["target"])
             label = _pil_to_tensor(label_img).long().squeeze(0)
             label = label.unsqueeze(0).unsqueeze(0).float()
-            label = torch.nn.functional.interpolate(
-                label, size=(self.resolution, self.resolution), mode="nearest"
-            ).long().squeeze(0).squeeze(0)
+            label = (
+                torch.nn.functional.interpolate(
+                    label, size=(self.resolution, self.resolution), mode="nearest"
+                )
+                .long()
+                .squeeze(0)
+                .squeeze(0)
+            )
             label = label.clamp(0, 22)
             palette = self._color_palette.to(label.device)
             rgb = palette[label.long()]
             target_rgb = rgb.permute(2, 0, 1)
-            class_color_map = {f"class_{i}": tuple(int(c * 255) for c in palette[i].tolist()) for i in range(23)}
+            class_color_map = {
+                f"class_{i}": tuple(int(c * 255) for c in palette[i].tolist()) for i in range(23)
+            }
             prompt = PromptBuilder.build_semantic_prompt(class_color_map)
 
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
@@ -2227,6 +2400,283 @@ def build_dataset(
     return registry[task](root_dir=root_dir, split=split, resolution=resolution, **kwargs)
 
 
+class V3FlatDataset(Dataset):
+    """Generic loader for v3-format flat datasets (images/targets/prompts).
+
+    Each task directory follows the same layout::
+
+        <root>/<task_dir>/
+            images/    *.jpg / *.png
+            targets/   matching filenames (RGB PNG)
+            prompts/   <stem>.txt  (optional per-sample prompt)
+
+    This class replaces the original-data-specific Dataset subclasses
+    (CityscapesSegDataset, HypersimDepthDataset, etc.) when loading
+    pre-packaged v3 data, avoiding the directory-structure mismatch.
+
+    Supports train_val_split.json filtering: when a split file is provided,
+    only samples whose image filenames appear in the selected split
+    (train or val) are included. This preserves the cross-task MD5 grouping
+    that prevents data leakage.
+    """
+
+    # Directory name -> task label used by downstream training code.
+    # Keys are v3 directory names; values are the labels attached to each
+    # sample's "task" field. When they differ, the mapping ensures
+    # MixedVisionDataset and InstructionTuner see the expected task name.
+    DIR_TO_TASK: dict[str, str] = {
+        "depth": "depth",
+        "normal": "normal",
+        "segmentation": "semantic",  # dir "segmentation" -> label "semantic"
+        "instance": "instance",
+        "referring": "referring",
+        "keypoint": "keypoint",
+        "object_detection": "object_detection",
+        "depth_edge": "depth_edge",
+        "multiview": "multiview",
+        "structure": "structure",
+        "specular_removal": "specular_removal",
+    }
+
+    # Default prompts for tasks that don't have per-sample prompt files.
+    TASK_PROMPTS: dict[str, str] = {
+        "depth": "Generate a metric depth visualization of this image.",
+        "normal": "Generate a surface normal estimation visualization of this image.",
+        "semantic": SEMANTIC_SEGMENTATION_PROMPT,
+        "instance": "Generate an instance segmentation visualization of this image.",
+        "referring": "Generate a referring expression segmentation visualization of this image.",
+        "keypoint": "Generate a keypoint detection visualization of this image.",
+        "object_detection": "Generate an object detection visualization of this image.",
+        "depth_edge": "Generate a depth edge detection visualization of this image.",
+        "multiview": "Generate a multi-view visualization of this image.",
+        "structure": "Generate a structure-from-motion visualization of this image.",
+        "specular_removal": "Remove specular highlights from this image.",
+    }
+
+    DEFAULT_PROMPT = "Generate a visual understanding output for this image."
+
+    IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+    def __init__(
+        self,
+        task_dir: str | Path,
+        task_label: str | None = None,
+        resolution: int = 512,
+        split_filter: tuple[set[str], str] | None = None,
+    ) -> None:
+        """Args:
+        task_dir: Path to the task directory (e.g. ``.../vb_snvc_train_v3/depth``).
+        task_label: Override the task label. If ``None``, derived from the
+            directory name via ``DIR_TO_TASK``.
+        resolution: Target resolution for image resizing.
+        split_filter: Optional ``(filenames_set, split_name)`` tuple.
+            When provided, only samples whose image filename appears in
+            ``filenames_set`` are loaded. ``split_name`` is used for logging.
+        """
+        self.task_dir = Path(task_dir)
+        self.dir_name = self.task_dir.name
+        self.task = task_label or self.DIR_TO_TASK.get(self.dir_name, self.dir_name)
+        self.resolution = resolution
+        self.samples: list[dict] = []
+        self._load(split_filter)
+
+    def _load(self, split_filter: tuple[set[str], str] | None) -> None:
+        import os
+
+        root = self.task_dir
+        img_dir = root / "images"
+        tgt_dir = root / "targets"
+        prompt_dir = root / "prompts"
+
+        if not img_dir.exists():
+            logger.warning("V3FlatDataset: images/ not found at %s", img_dir)
+            return
+
+        # Build target index keyed by stem for O(1) lookup
+        target_index: dict[str, Path] = {}
+        if tgt_dir.exists():
+            with os.scandir(str(tgt_dir)) as entries:
+                for entry in entries:
+                    if entry.is_file():
+                        p = Path(entry.path)
+                        if p.suffix.lower() in self.IMG_EXTS:
+                            target_index[p.stem] = p
+
+        # Load split filter
+        allowed_filenames: set[str] | None = None
+        split_name = "all"
+        if split_filter is not None:
+            allowed_filenames, split_name = split_filter
+
+        default_prompt = self.TASK_PROMPTS.get(self.task, self.DEFAULT_PROMPT)
+
+        image_paths: list[Path] = []
+        with os.scandir(str(img_dir)) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    p = Path(entry.path)
+                    if p.suffix.lower() in self.IMG_EXTS:
+                        image_paths.append(p)
+        image_paths.sort()
+
+        skipped = 0
+        for img_path in image_paths:
+            tgt_path = target_index.get(img_path.stem)
+            if tgt_path is None:
+                continue
+
+            # Apply split filter
+            if allowed_filenames is not None:
+                if img_path.name not in allowed_filenames:
+                    skipped += 1
+                    continue
+
+            prompt = default_prompt
+            prompt_path = prompt_dir / f"{img_path.stem}.txt"
+            if prompt_path.is_file():
+                text = prompt_path.read_text(encoding="utf-8").strip()
+                if text:
+                    prompt = text
+            prompt = normalize_task_prompt(self.task, prompt)
+
+            self.samples.append(
+                {
+                    "image_path": str(img_path),
+                    "target_path": str(tgt_path),
+                    "prompt": prompt,
+                }
+            )
+
+        logger.info(
+            "V3FlatDataset[%s/%s]: loaded %d samples%s",
+            self.dir_name,
+            self.task,
+            len(self.samples),
+            f" (split={split_name}, skipped {skipped})" if skipped else "",
+        )
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        import numpy as np
+        from PIL import Image
+
+        def _load(p: str, normalise_range: tuple) -> torch.Tensor:
+            img = Image.open(p).convert("RGB")
+            if hasattr(self, "resolution"):
+                img = img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
+            arr = torch.from_numpy(np.array(img, dtype=np.float32) / 255.0).permute(2, 0, 1)
+            lo, hi = normalise_range
+            return arr * (hi - lo) + lo
+
+        image = _load(sample["image_path"], (-1.0, 1.0))
+        target_rgb = _load(sample["target_path"], (0.0, 1.0))
+
+        return {
+            "prompt": sample["prompt"],
+            "image": image,
+            "image_range": "-1_1",
+            "target_rgb": target_rgb,
+            "target_rgb_range": "0_1",
+            "task": self.task,
+        }
+
+
+def load_v3_train_val_split(
+    dataset_root: str | Path,
+) -> dict[str, dict[str, list[str]]] | None:
+    """Load train_val_split.json from a v3 dataset root.
+
+    Returns a dict with keys ``"train"`` and ``"val"``, each mapping
+    task_name -> list of image filenames. Returns ``None`` if the file
+    does not exist or is malformed.
+    """
+    import json
+
+    split_path = Path(dataset_root) / "train_val_split.json"
+    if not split_path.exists():
+        return None
+    try:
+        data = json.loads(split_path.read_text(encoding="utf-8"))
+        if "train" in data and "val" in data:
+            return data
+        logger.warning("train_val_split.json exists but missing train/val keys")
+        return None
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to load train_val_split.json: %s", e)
+        return None
+
+
+def build_v3_datasets(
+    dataset_root: str | Path,
+    resolution: int = 512,
+    split: str = "train",
+    use_split_file: bool = True,
+) -> list[V3FlatDataset]:
+    """Build V3FlatDataset instances for all v3 task directories.
+
+    Scans ``dataset_root`` for subdirectories matching known v3 task names,
+    creates a :class:`V3FlatDataset` for each, and optionally applies
+    train/val split filtering from ``train_val_split.json``.
+
+    Args:
+        dataset_root: Path to the v3 dataset root (e.g.
+            ``.../vb_snvc_train_v3``).
+        resolution: Target image resolution.
+        split: ``"train"`` or ``"val"`` — which split to load.
+        use_split_file: If ``True`` and ``train_val_split.json`` exists,
+            filter samples by the split. If ``False``, load all samples.
+
+    Returns:
+        List of :class:`V3FlatDataset` with ``len > 0``. Empty datasets
+        are silently skipped.
+    """
+    root = Path(dataset_root)
+    if not root.is_dir():
+        logger.error("V3 dataset root not found: %s", root)
+        return []
+
+    # Load split file if requested
+    split_data: dict[str, dict[str, list[str]]] | None = None
+    if use_split_file:
+        split_data = load_v3_train_val_split(root)
+        if split_data is None:
+            logger.info("No train_val_split.json found — loading all samples (no split filter)")
+
+    datasets: list[V3FlatDataset] = []
+    for dir_name, task_label in V3FlatDataset.DIR_TO_TASK.items():
+        task_dir = root / dir_name
+        if not task_dir.is_dir():
+            continue
+
+        split_filter: tuple[set[str], str] | None = None
+        if split_data is not None:
+            split_map = split_data.get(split, {})
+            # train_val_split.json keys are directory names (e.g. "segmentation")
+            filenames = split_map.get(dir_name)
+            if filenames is not None:
+                split_filter = (set(filenames), split)
+            else:
+                logger.debug(
+                    "V3: task %s not in split file %s — loading all",
+                    dir_name,
+                    split,
+                )
+
+        ds = V3FlatDataset(
+            task_dir=task_dir,
+            task_label=task_label,
+            resolution=resolution,
+            split_filter=split_filter,
+        )
+        if len(ds) > 0:
+            datasets.append(ds)
+
+    return datasets
+
+
 __all__ = [
     "BaseVisionDataset",
     "HypersimDepthDataset",
@@ -2256,5 +2706,8 @@ __all__ = [
     "MapillaryVistasDataset",
     "nuScenesDataset",
     "PreEncodedDepthDataset",
+    "V3FlatDataset",
+    "load_v3_train_val_split",
     "build_dataset",
+    "build_v3_datasets",
 ]

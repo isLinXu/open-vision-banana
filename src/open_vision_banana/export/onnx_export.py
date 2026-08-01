@@ -1,12 +1,11 @@
-"""ONNX export utilities for Vision Banana models.
-
-Exports the trained LoRA-augmented FLUX.1 transformer and
-the RGB mapping decoders to ONNX format for deployment.
-"""
+"""ONNX export utilities for Vision Banana model components."""
 
 from __future__ import annotations
 
+import inspect
+import json
 import logging
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -165,7 +164,6 @@ def export_mapper_onnx(
             "Choose from: depth_to_rgb, normal_to_rgb, rgb_to_depth, rgb_to_normal"
         )
 
-    import warnings
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=".*legacy.*", category=DeprecationWarning)
         torch.onnx.export(
@@ -184,65 +182,241 @@ def export_mapper_onnx(
     logger.info(f"Exported {mapper_type} to {output_path}")
 
 
+class _FluxTransformerONNXWrapper(nn.Module):
+    """Normalize diffusers' FLUX output to a single tensor."""
+
+    def __init__(self, transformer: nn.Module, guidance_embeds: bool):
+        super().__init__()
+        self.transformer = transformer
+        self.guidance_embeds = guidance_embeds
+
+    @staticmethod
+    def _sample(output: Any) -> torch.Tensor:
+        if isinstance(output, torch.Tensor):
+            return output
+        if isinstance(output, tuple):
+            return output[0]
+        sample = getattr(output, "sample", None)
+        if isinstance(sample, torch.Tensor):
+            return sample
+        raise TypeError(
+            "FLUX transformer must return a Tensor, tuple, or object with a Tensor .sample"
+        )
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        pooled_projections: torch.Tensor,
+        timestep: torch.Tensor,
+        img_ids: torch.Tensor,
+        txt_ids: torch.Tensor,
+        guidance: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        kwargs = {
+            "hidden_states": hidden_states,
+            "encoder_hidden_states": encoder_hidden_states,
+            "pooled_projections": pooled_projections,
+            "timestep": timestep,
+            "img_ids": img_ids,
+            "txt_ids": txt_ids,
+            "return_dict": False,
+        }
+        if self.guidance_embeds:
+            kwargs["guidance"] = guidance
+        return self._sample(self.transformer(**kwargs))
+
+
+def _resolve_flux_transformer(model: Any) -> nn.Module:
+    """Resolve a FLUX transformer without relying on pipeline truthiness."""
+    transformer = getattr(model, "transformer", None)
+    pipe = None
+
+    if transformer is None:
+        generator = getattr(model, "generator", None)
+        if generator is not None:
+            pipe = getattr(generator, "pipe", None)
+            if pipe is None:
+                pipe = getattr(generator, "_t2i_pipe", None)
+            if pipe is not None:
+                transformer = getattr(pipe, "transformer", None)
+
+    if transformer is None:
+        if pipe is not None and getattr(pipe, "unet", None) is not None:
+            raise TypeError(
+                "ONNX component export currently supports FLUX transformers only; "
+                "the resolved pipeline uses a UNet (for example SDXL/SSD-1B)."
+            )
+        raise AttributeError(
+            "Could not resolve a FLUX transformer. Checked model.transformer, "
+            "model.generator.pipe.transformer, and the legacy "
+            "model.generator._t2i_pipe.transformer path."
+        )
+    if not isinstance(transformer, nn.Module):
+        raise TypeError(f"Resolved transformer is not a torch.nn.Module: {type(transformer)!r}")
+
+    signature = inspect.signature(transformer.forward)
+    parameters = signature.parameters
+    accepts_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    required = {
+        "hidden_states",
+        "encoder_hidden_states",
+        "pooled_projections",
+        "timestep",
+        "img_ids",
+        "txt_ids",
+    }
+    missing = required.difference(parameters)
+    if missing and not accepts_kwargs:
+        raise TypeError(
+            "Resolved transformer does not expose the FLUX forward contract; "
+            f"missing parameters: {', '.join(sorted(missing))}."
+        )
+    return transformer
+
+
+def _config_value(config: Any, name: str, default: Any) -> Any:
+    if config is None:
+        return default
+    if isinstance(config, dict):
+        return config.get(name, default)
+    return getattr(config, name, default)
+
+
+def export_flux_transformer_onnx(
+    model: Any,
+    output_dir: str | Path,
+    opset_version: int = 18,
+    image_sequence_length: int = 1024,
+    text_sequence_length: int = 512,
+) -> Path:
+    """Export the loaded FLUX transformer component to ONNX.
+
+    This does not export a runnable text-to-image pipeline. Tokenizers, text
+    encoders, the scheduler, VAE, and RGB mappers remain separate components.
+
+    Args:
+        model: A FLUX transformer or VisionBanana-style object containing one.
+        output_dir: Directory for ``transformer.onnx`` and its export manifest.
+        opset_version: ONNX opset version.
+        image_sequence_length: Packed latent token count (1024 for 512px FLUX).
+        text_sequence_length: Text conditioning token count.
+
+    Returns:
+        Path to the exported ``transformer.onnx`` file.
+    """
+    if image_sequence_length <= 0 or text_sequence_length <= 0:
+        raise ValueError("ONNX sequence lengths must be positive")
+
+    transformer = _resolve_flux_transformer(model)
+    config = getattr(transformer, "config", None)
+    in_channels = int(_config_value(config, "in_channels", 64))
+    joint_attention_dim = int(_config_value(config, "joint_attention_dim", 4096))
+    pooled_projection_dim = int(_config_value(config, "pooled_projection_dim", 768))
+    guidance_embeds = bool(_config_value(config, "guidance_embeds", False))
+
+    first_parameter = next(transformer.parameters(), None)
+    device = first_parameter.device if first_parameter is not None else torch.device("cpu")
+    dtype = (
+        first_parameter.dtype
+        if first_parameter is not None and first_parameter.is_floating_point()
+        else torch.float32
+    )
+    if device.type == "meta":
+        raise ValueError("Cannot export a transformer with parameters on the meta device")
+
+    wrapper = _FluxTransformerONNXWrapper(transformer, guidance_embeds).eval()
+    dummy_inputs: list[torch.Tensor] = [
+        torch.randn(1, image_sequence_length, in_channels, device=device, dtype=dtype),
+        torch.randn(1, text_sequence_length, joint_attention_dim, device=device, dtype=dtype),
+        torch.randn(1, pooled_projection_dim, device=device, dtype=dtype),
+        torch.tensor([0.5], device=device, dtype=dtype),
+        torch.zeros(image_sequence_length, 3, device=device, dtype=dtype),
+        torch.zeros(text_sequence_length, 3, device=device, dtype=dtype),
+    ]
+    input_names = [
+        "hidden_states",
+        "encoder_hidden_states",
+        "pooled_projections",
+        "timestep",
+        "img_ids",
+        "txt_ids",
+    ]
+    dynamic_axes = {
+        "hidden_states": {0: "batch", 1: "image_seq_len"},
+        "encoder_hidden_states": {0: "batch", 1: "text_seq_len"},
+        "pooled_projections": {0: "batch"},
+        "timestep": {0: "batch"},
+        "img_ids": {0: "image_seq_len"},
+        "txt_ids": {0: "text_seq_len"},
+        "output": {0: "batch", 1: "image_seq_len"},
+    }
+    if guidance_embeds:
+        dummy_inputs.append(torch.zeros(1, device=device, dtype=dtype))
+        input_names.append("guidance")
+        dynamic_axes["guidance"] = {0: "batch"}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "transformer.onnx"
+
+    torch.onnx.export(
+        wrapper,
+        tuple(dummy_inputs),
+        str(output_path),
+        opset_version=opset_version,
+        input_names=input_names,
+        output_names=["output"],
+        dynamic_axes=dynamic_axes,
+        dynamo=False,
+    )
+
+    manifest = {
+        "schema_version": 1,
+        "format": "onnx",
+        "component": "flux_transformer",
+        "file": output_path.name,
+        "opset_version": opset_version,
+        "guidance_input": guidance_embeds,
+        "image_sequence_length": image_sequence_length,
+        "text_sequence_length": text_sequence_length,
+        "included": ["transformer"],
+        "not_included": ["tokenizers", "text_encoders", "scheduler", "vae", "rgb_mappers"],
+    }
+    (output_dir / "export_manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    logger.info("Exported FLUX transformer component to %s", output_path)
+    return output_path
+
+
 def export_full_pipeline_onnx(
     model: Any,
     output_dir: str | Path,
     opset_version: int = 18,
-) -> None:
-    """Export the full trained pipeline (transformer + VAE) to ONNX.
+) -> Path:
+    """Deprecated alias for :func:`export_flux_transformer_onnx`.
 
-    Args:
-        model: A VisionBanana instance whose ``.transformer`` attribute is
-            a FLUX transformer (nn.Module).
-        output_dir: Directory to write ``transformer.onnx`` into.
-        opset_version: ONNX opset version (default 17).
+    The historical name was inaccurate: the function never exported the VAE,
+    scheduler, text encoders, or tokenizers required by a full pipeline.
     """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Resolve the transformer module flexibly: tests pass a bare .transformer,
-    # while the full VisionBanana pipeline nests it under .generator._t2i_pipe.
-    transformer = getattr(model, "transformer", None)
-    if transformer is None:
-        gen = getattr(model, "generator", None)
-        if gen is not None:
-            pipe = getattr(gen, "_t2i_pipe", None) or getattr(gen, "pipe", None)
-            if pipe is not None:
-                transformer = getattr(pipe, "transformer", None)
-    if transformer is None:
-        raise AttributeError(
-            "Could not resolve 'transformer' from model. "
-            "Expected model.transformer or model.generator._t2i_pipe.transformer."
-        )
-
-    # Dummy tensors matching FLUX transformer's expected input shapes:
-    #   hidden_states      [B, 16, H/8, W/8]  — VAE latent (16-channel)
-    #   timestep           [B]                  — continuous timestep in [0, 1]
-    #   encoder_hidden_states [B, seq, 4096]   — T5 text embeddings
-    dummy_hidden = torch.randn(1, 16, 64, 64)
-    dummy_timestep = torch.tensor([0.5])
-    dummy_text_emb = torch.randn(1, 77, 4096)
-
-    torch.onnx.export(
-        transformer,
-        (dummy_hidden, dummy_timestep, dummy_text_emb),
-        str(output_dir / "transformer.onnx"),
-        opset_version=opset_version,
-        input_names=["hidden_states", "timestep", "encoder_hidden_states"],
-        output_names=["output"],
-        dynamic_axes={
-            "hidden_states":          {0: "batch", 2: "latent_h", 3: "latent_w"},
-            "timestep":               {0: "batch"},
-            "encoder_hidden_states":  {0: "batch", 1: "seq_len"},
-            "output":                 {0: "batch"},
-        },
+    warnings.warn(
+        "export_full_pipeline_onnx() exports only the FLUX transformer component; "
+        "use export_flux_transformer_onnx() instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    logger.info(f"Exported transformer to {output_dir / 'transformer.onnx'}")
+    return export_flux_transformer_onnx(model, output_dir, opset_version)
 
 
 __all__ = [
     "DepthRGBMapperONNX",
     "NormalRGBMapperONNX",
     "export_mapper_onnx",
+    "export_flux_transformer_onnx",
     "export_full_pipeline_onnx",
 ]

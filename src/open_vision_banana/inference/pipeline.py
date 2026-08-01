@@ -66,7 +66,11 @@ class VisionBanana:
         cache_size: int = 64,
     ) -> None:
         self.generator = base_generator
-        self.rgb_mapper = rgb_mapper or RGBMapper()
+        conditioning = getattr(base_generator, "source_conditioning_config", None)
+        depth_colormap = "cube_edge"
+        if conditioning is not None and conditioning.target_colormap != "unknown":
+            depth_colormap = conditioning.target_colormap
+        self.rgb_mapper = rgb_mapper or RGBMapper(depth_colormap=depth_colormap)
         self.decoder = decoder or VisualizationDecoder(self.rgb_mapper)
         self.prompt_builder = PromptBuilder()
         self.enable_cache = enable_cache
@@ -157,12 +161,24 @@ class VisionBanana:
         self._validate_inference_options(strength, num_inference_steps, height, width)
 
         if prompt is None:
-            prompt = self._build_prompt(
-                task=task,
-                class_color_map=class_color_map,
-                object_name=object_name,
-                expression=expression,
+            conditioning = getattr(
+                self.generator,
+                "source_conditioning_config",
+                None,
             )
+            if (
+                task == "depth"
+                and conditioning is not None
+                and conditioning.recommended_prompt
+            ):
+                prompt = conditioning.recommended_prompt
+            else:
+                prompt = self._build_prompt(
+                    task=task,
+                    class_color_map=class_color_map,
+                    object_name=object_name,
+                    expression=expression,
+                )
 
         logger.info(f"Running {task} prediction with prompt: {prompt[:100]}...")
 

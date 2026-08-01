@@ -1721,6 +1721,7 @@ def backbone_forward(
     original_size: tuple | None = None,
     target_size: tuple | None = None,
     crop_coords: tuple | None = None,
+    down_intrablock_additional_residuals: list[torch.Tensor] | None = None,
 ) -> torch.Tensor:
     """Unified backbone forward that handles architecture differences.
 
@@ -1748,6 +1749,10 @@ def backbone_forward(
             unet_kwargs["added_cond_kwargs"] = added_cond_kwargs
         if config.needs_attention_mask and attention_mask is not None:
             unet_kwargs["encoder_attention_mask"] = attention_mask
+        if down_intrablock_additional_residuals is not None:
+            unet_kwargs["down_intrablock_additional_residuals"] = (
+                down_intrablock_additional_residuals
+            )
         return backbone(latents, timesteps, encoder_hidden_states, **unet_kwargs).sample
 
     # ── Transformer-based models ──

@@ -22,11 +22,28 @@ from typing import Any
 import torch
 from PIL import Image
 
+from ..conditioning import (
+    CONV_IN_STATE_NAME,
+    SINGLE_STEP_X0,
+    SourceConditioningConfig,
+    calibrate_source_conditioned_output,
+    expand_unet_conv_in,
+    read_source_conditioning_config,
+    set_scheduler_prediction_type,
+    sigma_for_timesteps,
+    validate_scheduler_prediction_type,
+)
 from ..model_registry import ModelConfig, resolve_model_config
+from ..spatial_adapter import (
+    SPATIAL_ADAPTER_STATE_NAME,
+    create_source_spatial_adapter,
+)
 from .checkpoint import resolve_lora_path
 from .optimization import InferenceOptions, apply_pipeline_optimizations
 
 logger = logging.getLogger(__name__)
+
+DIFFUSERS_LORA_WEIGHT_NAME = "pytorch_lora_weights.safetensors"
 
 
 def _prompt_cache_key(prompt: str | list[str]) -> str:
@@ -142,6 +159,8 @@ class BaseGenerator:
         self._prompt_cache: _PromptEmbedCache = _PromptEmbedCache(maxsize=64)
 
         self._resolved_lora_path: str | None = None
+        self.source_conditioning_config: SourceConditioningConfig | None = None
+        self.source_spatial_adapter: torch.nn.Module | None = None
         self._load_model()
 
     # ------------------------------------------------------------------
@@ -196,6 +215,11 @@ class BaseGenerator:
             torch_dtype=self.dtype,
             low_cpu_mem_usage=False,
         )
+        if family == "sdxl" and hasattr(pipe, "scheduler"):
+            # SSD-1B/SDXL LoRA training uses epsilon prediction. Keep the base
+            # pipeline on that contract before any checkpoint-specific setup.
+            set_scheduler_prediction_type(pipe.scheduler, "epsilon")
+            validate_scheduler_prediction_type(pipe.scheduler, "epsilon")
 
         if self.lora_path is not None:
             self._resolved_lora_path = resolve_lora_path(
@@ -203,8 +227,26 @@ class BaseGenerator:
                 revision=self.lora_revision,
             )
             logger.info(f"Loading LoRA weights from {self._resolved_lora_path!r} …")
+            checkpoint_dir = Path(self._resolved_lora_path)
+            lora_dir = checkpoint_dir
+            nested_lora_dir = checkpoint_dir / "adapter"
+            if (
+                not (lora_dir / "adapter_model.safetensors").is_file()
+                and (nested_lora_dir / "adapter_model.safetensors").is_file()
+            ):
+                lora_dir = nested_lora_dir
+                logger.info("Using nested PEFT adapter directory %s", lora_dir)
             try:
-                pipe.load_lora_weights(self._resolved_lora_path)
+                load_kwargs = {}
+                diffusers_weights = (
+                    lora_dir / DIFFUSERS_LORA_WEIGHT_NAME
+                )
+                if diffusers_weights.is_file():
+                    # The directory also contains PEFT's adapter_model file for
+                    # resume. Select the pipeline-format companion explicitly
+                    # so Diffusers does not have to guess between two files.
+                    load_kwargs["weight_name"] = DIFFUSERS_LORA_WEIGHT_NAME
+                pipe.load_lora_weights(str(lora_dir), **load_kwargs)
                 # Verify LoRA actually attached (diffusers can silently load 0 layers)
                 backbone = getattr(pipe, "transformer", None) or getattr(pipe, "unet", None)
                 lora_count = sum(
@@ -212,8 +254,8 @@ class BaseGenerator:
                 ) if backbone is not None else 0
                 if lora_count == 0:
                     raise RuntimeError(
-                        f"pipe.load_lora_weights returned 0 LoRA layers "
-                        f"(key prefix mismatch)"
+                        "pipe.load_lora_weights returned 0 LoRA layers "
+                        "(key prefix mismatch)"
                     )
                 logger.info("LoRA weights loaded via pipe.load_lora_weights (%d layers)", lora_count)
             except Exception as e:
@@ -221,7 +263,16 @@ class BaseGenerator:
                     "pipe.load_lora_weights failed (%s); "
                     "falling back to manual LoRA weight merge.", e
                 )
-                self._load_and_merge_lora(pipe, self._resolved_lora_path)
+                merged_count = self._load_and_merge_lora(
+                    pipe,
+                    str(lora_dir),
+                )
+                if merged_count == 0:
+                    raise RuntimeError(
+                        "LoRA fallback did not merge any layers; refusing unadapted inference"
+                    ) from e
+
+            self._load_source_conditioning(pipe, str(checkpoint_dir))
 
         applied = apply_pipeline_optimizations(pipe, self.inference_options)
         if applied:
@@ -229,20 +280,63 @@ class BaseGenerator:
         if not self.inference_options.enable_sequential_cpu_offload:
             pipe = pipe.to(self.device)
 
-        # Multi-task LoRA: ALL tasks (img2img + t2i) trained with sample (x0)
-        # prediction. The scheduler must use prediction_type="sample" for all
-        # calls so EulerDiscreteScheduler.step() extracts x0 directly.
-        if self.lora_path is not None and hasattr(pipe, "scheduler"):
-            old_pt = pipe.scheduler.config.get("prediction_type", "epsilon")
-            if old_pt != "sample":
-                pipe.scheduler.config["prediction_type"] = "sample"
-                logger.info(
-                    "Switched scheduler prediction_type: %s → sample "
-                    "(unified sample-prediction LoRA for all tasks)", old_pt
-                )
-
         self._t2i_pipe = pipe
         logger.info(f"{pipe_class_name} loaded successfully (family={family})")
+
+    def _load_source_conditioning(self, pipe, checkpoint_dir: str) -> None:
+        """Expand and restore UNet input conditioning declared by a checkpoint."""
+        config = read_source_conditioning_config(checkpoint_dir)
+        if config is None:
+            return
+        if self.model_config.family != "sdxl":
+            raise ValueError(
+                "Source-conditioned checkpoints currently require an SDXL/SSD base model"
+            )
+        unet = getattr(pipe, "unet", None)
+        if unet is None:
+            raise AttributeError("Source-conditioned checkpoint requires pipeline.unet")
+        conv = expand_unet_conv_in(
+            unet,
+            condition_channels=config.condition_channels,
+        )
+        if conv.in_channels != config.in_channels:
+            raise ValueError(
+                f"Expanded UNet has {conv.in_channels} channels, checkpoint expects "
+                f"{config.in_channels}"
+            )
+        state_path = Path(checkpoint_dir) / CONV_IN_STATE_NAME
+        if not state_path.is_file():
+            raise FileNotFoundError(
+                f"Source-conditioned checkpoint is missing {CONV_IN_STATE_NAME}: "
+                f"{checkpoint_dir}"
+            )
+        state = torch.load(state_path, map_location="cpu", weights_only=True)
+        conv.load_state_dict(state, strict=True)
+        if config.spatial_adapter_type != "none":
+            adapter_path = Path(checkpoint_dir) / SPATIAL_ADAPTER_STATE_NAME
+            if not adapter_path.is_file():
+                raise FileNotFoundError(
+                    "Source-conditioned checkpoint declares a spatial adapter "
+                    f"but is missing {SPATIAL_ADAPTER_STATE_NAME}: {checkpoint_dir}"
+                )
+            adapter = create_source_spatial_adapter(
+                unet,
+                downscale_factor=config.spatial_adapter_downscale_factor,
+            )
+            adapter.load_state_dict(
+                torch.load(adapter_path, map_location="cpu", weights_only=True),
+                strict=True,
+            )
+            adapter.eval()
+            self.source_spatial_adapter = adapter
+        set_scheduler_prediction_type(pipe.scheduler, config.prediction_type)
+        validate_scheduler_prediction_type(pipe.scheduler, config.prediction_type)
+        self.source_conditioning_config = config
+        logger.info(
+            "Loaded source-conditioned UNet input (%d channels) from %s",
+            config.in_channels,
+            checkpoint_dir,
+        )
 
     def _get_i2i_pipe(self):
         """Lazily build the img2img pipeline by sharing weights with t2i.
@@ -494,6 +588,28 @@ class BaseGenerator:
         Returns:
             Generated image tensor [B, 3, H, W] in [0, 1] range.
         """
+        if self.source_conditioning_config is not None:
+            source_steps = num_inference_steps
+            if source_steps == 1:
+                # ``1`` is the historical schnell default used by the public
+                # pipeline. Source-conditioned SSD checkpoints declare their
+                # own distilled schedule (4 steps by default).
+                source_steps = (
+                    self.source_conditioning_config.default_num_inference_steps
+                )
+            return self._generate_source_conditioned(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=source_steps,
+                guidance_scale=guidance_scale,
+                strength=strength,
+                height=height,
+                width=width,
+                seed=seed,
+                prompt_embeds=kwargs.pop("prompt_embeds", None),
+                pooled_prompt_embeds=kwargs.pop("pooled_prompt_embeds", None),
+            )
+
         generator = None
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
@@ -517,9 +633,7 @@ class BaseGenerator:
         if image is not None:
             pil_images = self._to_pil_list(image)
             pipe = self._get_i2i_pipe()
-            # All tasks use sample prediction (unified with training)
-            if hasattr(pipe, "scheduler") and self.lora_path is not None:
-                pipe.scheduler.config["prediction_type"] = "sample"
+            # Use native prediction_type (epsilon for SDXL) — unified with training
             output = pipe(
                 prompt=prompt if encode_prompt else None,
                 image=pil_images,
@@ -532,9 +646,7 @@ class BaseGenerator:
                 **kwargs,
             )
         else:
-            # t2i: also uses sample prediction (unified with training)
-            if hasattr(self._t2i_pipe, "scheduler") and self.lora_path is not None:
-                self._t2i_pipe.scheduler.config["prediction_type"] = "sample"
+            # t2i: use native prediction_type (epsilon for SDXL) — unified with training
             output = self._t2i_pipe(
                 prompt=prompt if encode_prompt else None,
                 num_inference_steps=num_inference_steps,
@@ -559,6 +671,265 @@ class BaseGenerator:
                     mode="nearest",
                 )
         return output_tensor.clamp(0, 1)
+
+    @torch.no_grad()
+    def _generate_source_conditioned(
+        self,
+        *,
+        prompt: str | list[str] | None,
+        image: torch.Tensor | Image.Image | None,
+        num_inference_steps: int,
+        guidance_scale: float,
+        strength: float,
+        height: int,
+        width: int,
+        seed: int | None,
+        prompt_embeds: torch.Tensor | None,
+        pooled_prompt_embeds: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Denoise with a clean source latent or zero source channels for t2i."""
+        from ..model_registry import build_added_cond_kwargs, vae_decode, vae_encode
+
+        config = self.source_conditioning_config
+        if config is None:
+            raise RuntimeError("Source-conditioning config is not loaded")
+        if num_inference_steps <= 0:
+            raise ValueError("num_inference_steps must be positive")
+        if guidance_scale != 0.0:
+            logger.warning(
+                "Source-conditioned checkpoints were trained without CFG; "
+                "guidance_scale=%s is ignored",
+                guidance_scale,
+            )
+        if strength != 0.85:
+            logger.debug(
+                "Source-conditioned inference starts from pure noise; strength=%s is ignored",
+                strength,
+            )
+
+        pipe = self._t2i_pipe
+        unet = pipe.unet
+        vae = pipe.vae
+        spatial_multiple = (
+            config.spatial_adapter_downscale_factor
+            if self.source_spatial_adapter is not None
+            else 8
+        )
+        unet_device = next(unet.parameters()).device
+        unet_dtype = next(unet.parameters()).dtype
+        vae_device = next(vae.parameters()).device
+        vae_dtype = next(vae.parameters()).dtype
+
+        adapter_pixels = None
+        if image is not None:
+            pil_images = self._to_pil_list(image)
+            original_sizes = [pil.size for pil in pil_images]
+            if len(set(original_sizes)) != 1:
+                raise ValueError("Source-conditioned batches require equal image sizes")
+            original_width, original_height = original_sizes[0]
+            batch_size = len(pil_images)
+        else:
+            if self.source_spatial_adapter is not None:
+                raise ValueError("Spatial-adapter checkpoints require a source image")
+            original_width, original_height = width, height
+            if prompt_embeds is not None:
+                batch_size = int(prompt_embeds.shape[0])
+            elif isinstance(prompt, list):
+                batch_size = len(prompt)
+            elif isinstance(prompt, str):
+                batch_size = 1
+            else:
+                raise ValueError("prompt or prompt_embeds is required")
+
+        model_width = max(
+            spatial_multiple,
+            (original_width // spatial_multiple) * spatial_multiple,
+        )
+        model_height = max(
+            spatial_multiple,
+            (original_height // spatial_multiple) * spatial_multiple,
+        )
+        if image is not None:
+            if (model_width, model_height) != (original_width, original_height):
+                pil_images = [
+                    pil.resize((model_width, model_height), Image.Resampling.LANCZOS)
+                    for pil in pil_images
+                ]
+            source_pixels = torch.cat(
+                [_pil_to_tensor(pil, str(vae_device), vae_dtype) for pil in pil_images],
+                dim=0,
+            )
+            adapter_pixels = source_pixels
+            source_pixels = source_pixels * 2.0 - 1.0
+            source_latents = vae_encode(vae, source_pixels, self.model_config)
+            source_latents = source_latents.to(device=unet_device, dtype=unet_dtype)
+        else:
+            source_latents = torch.zeros(
+                batch_size,
+                config.condition_channels,
+                model_height // self.model_config.vae_downsample_factor,
+                model_width // self.model_config.vae_downsample_factor,
+                device=unet_device,
+                dtype=unet_dtype,
+            )
+        if source_latents.shape[1] != config.condition_channels:
+            raise RuntimeError(
+                f"VAE produced {source_latents.shape[1]} source channels; checkpoint "
+                f"expects {config.condition_channels}"
+            )
+
+        batch_size = source_latents.shape[0]
+        if prompt_embeds is None:
+            if prompt is None:
+                raise ValueError("prompt or prompt_embeds is required")
+            prompts = [prompt] if isinstance(prompt, str) else list(prompt)
+            if len(prompts) == 1 and batch_size > 1:
+                prompts *= batch_size
+            if len(prompts) != batch_size:
+                raise ValueError("Number of prompts must match source-image batch size")
+            text = self.encode_prompts(prompts)
+            prompt_embeds = text["prompt_embeds"]
+            pooled_prompt_embeds = text["pooled_prompt_embeds"]
+        if pooled_prompt_embeds is None:
+            raise ValueError("SDXL source-conditioned inference requires pooled prompt embeds")
+        if prompt_embeds.shape[0] != batch_size:
+            raise ValueError("Prompt embedding batch does not match source-image batch")
+        prompt_embeds = prompt_embeds.to(device=unet_device, dtype=unet_dtype)
+        pooled_prompt_embeds = pooled_prompt_embeds.to(
+            device=unet_device,
+            dtype=unet_dtype,
+        )
+
+        scheduler = type(pipe.scheduler).from_config(pipe.scheduler.config)
+        set_scheduler_prediction_type(scheduler, config.prediction_type)
+        validate_scheduler_prediction_type(scheduler, config.prediction_type)
+        single_step = config.inference_protocol == SINGLE_STEP_X0
+        if single_step:
+            # The single-step protocol is only valid at the deployed training
+            # schedule; the requested step count is ignored by contract.
+            if num_inference_steps != config.training_num_inference_steps:
+                logger.debug(
+                    "single_step_x0 checkpoints use the trained schedule of %d "
+                    "steps; num_inference_steps=%d is ignored",
+                    config.training_num_inference_steps,
+                    num_inference_steps,
+                )
+            scheduler.set_timesteps(
+                config.training_num_inference_steps, device=unet_device
+            )
+        else:
+            scheduler.set_timesteps(num_inference_steps, device=unet_device)
+        random_generator = None
+        if seed is not None:
+            random_generator = torch.Generator(device=unet_device).manual_seed(seed)
+        latents = torch.randn(
+            source_latents.shape,
+            generator=random_generator,
+            device=unet_device,
+            dtype=unet_dtype,
+        ) * scheduler.init_noise_sigma
+        added_cond_kwargs = build_added_cond_kwargs(
+            config=self.model_config,
+            pooled_embeds=pooled_prompt_embeds,
+            resolution=(model_height, model_width),
+            device=unet_device,
+            dtype=unet_dtype,
+            batch_size=batch_size,
+        )
+        spatial_residuals = None
+        if self.source_spatial_adapter is not None:
+            if adapter_pixels is None:
+                raise RuntimeError("Spatial adapter is missing source pixels")
+            self.source_spatial_adapter.to(device=unet_device, dtype=unet_dtype)
+            spatial_residuals = [
+                residual * config.spatial_adapter_conditioning_scale
+                for residual in self.source_spatial_adapter(
+                    adapter_pixels.to(device=unet_device, dtype=unet_dtype)
+                )
+            ]
+
+        if not single_step:
+            for timestep in scheduler.timesteps:
+                scaled_target = scheduler.scale_model_input(latents, timestep)
+                model_input = torch.cat((scaled_target, source_latents), dim=1)
+                if model_input.shape[1] != config.in_channels:
+                    raise RuntimeError(
+                        f"Source-conditioned UNet expects {config.in_channels} input "
+                        f"channels, received {model_input.shape[1]}"
+                    )
+                predicted_noise = unet(
+                    model_input,
+                    timestep,
+                    encoder_hidden_states=prompt_embeds,
+                    added_cond_kwargs=added_cond_kwargs,
+                    down_intrablock_additional_residuals=(
+                        list(spatial_residuals) if spatial_residuals is not None else None
+                    ),
+                    return_dict=False,
+                )[0]
+                latents = scheduler.step(
+                    predicted_noise,
+                    timestep,
+                    latents,
+                    return_dict=False,
+                )[0]
+
+        if single_step:
+            # One UNet forward at the contracted deployed timestep; the
+            # (implied) x0 is decoded directly without scheduler iteration.
+            assert config.single_step_timestep_index is not None
+            timestep = scheduler.timesteps[config.single_step_timestep_index]
+            timestep_batch = timestep.reshape(1).to(unet_device)
+            base_latents = (
+                source_latents
+                if config.prediction_type == "sample"
+                else torch.zeros_like(source_latents)
+            )
+            noise = torch.randn(
+                source_latents.shape,
+                generator=random_generator,
+                device=unet_device,
+                dtype=unet_dtype,
+            )
+            noisy = scheduler.add_noise(base_latents, noise, timestep_batch)
+            sigma = sigma_for_timesteps(scheduler, timestep_batch, noisy)
+            scaled = noisy / torch.sqrt(sigma.square() + 1.0)
+            model_input = torch.cat((scaled, source_latents), dim=1)
+            if model_input.shape[1] != config.in_channels:
+                raise RuntimeError(
+                    f"Source-conditioned UNet expects {config.in_channels} input "
+                    f"channels, received {model_input.shape[1]}"
+                )
+            prediction = unet(
+                model_input,
+                timestep,
+                encoder_hidden_states=prompt_embeds,
+                added_cond_kwargs=added_cond_kwargs,
+                down_intrablock_additional_residuals=(
+                    list(spatial_residuals) if spatial_residuals is not None else None
+                ),
+                return_dict=False,
+            )[0]
+            latents = (
+                prediction
+                if config.prediction_type == "sample"
+                else noisy - sigma * prediction
+            )
+
+        decoded = vae_decode(
+            vae,
+            latents.to(device=vae_device, dtype=vae_dtype),
+            self.model_config,
+        )
+        output = (decoded.float().cpu() / 2.0 + 0.5).clamp(0, 1)
+        output = calibrate_source_conditioned_output(output, config)
+        if output.shape[-2:] != (original_height, original_width):
+            output = torch.nn.functional.interpolate(
+                output,
+                size=(original_height, original_width),
+                mode="nearest",
+            )
+        return output
 
     # ------------------------------------------------------------------
     # Helpers
@@ -733,8 +1104,22 @@ class BaseGenerator:
             A = pair["lora_A"].to(device=module.weight.device, dtype=module.weight.dtype)
             B = pair["lora_B"].to(device=module.weight.device, dtype=module.weight.dtype)
 
-            # W += scale * B @ A
-            delta = scale * (B @ A)
+            # W += scale * B @ A. PEFT uses 2-D factors for Linear
+            # modules and 4-D factors for Conv2d modules. Most convolutional
+            # LoRA B factors are 1x1, so composing B with A is an einsum over
+            # rank while preserving A's spatial kernel.
+            if A.ndim == 2 and B.ndim == 2:
+                delta = scale * (B @ A)
+            elif A.ndim == 4 and B.ndim == 4 and B.shape[2:] == (1, 1):
+                delta = scale * torch.einsum("or,rihw->oihw", B[:, :, 0, 0], A)
+            else:
+                logger.warning(
+                    "Unsupported LoRA factor shapes for '%s': A=%s B=%s, skipping",
+                    module_name,
+                    tuple(A.shape),
+                    tuple(B.shape),
+                )
+                continue
             if module.weight.shape == delta.shape:
                 module.weight.data += delta
                 merged_count += 1
