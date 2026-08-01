@@ -828,10 +828,13 @@ def main() -> None:
     logger.info("Using audited depth prompt: %s", depth_prompt)
 
     started = time.time()
+    # MPS 上 bf16 不稳定；SSD-1B 足够小，fp32 可行
+    _dtype = torch.float32 if device.type == "mps" else torch.bfloat16
+    logger.info("Using dtype=%s on device=%s", _dtype, device)
     generator = BaseGenerator(
         model_name="segmind/SSD-1B",
         device=str(device),
-        dtype=torch.bfloat16,
+        dtype=_dtype,
     )
     unet = generator._t2i_pipe.unet
     original_channels = unet.conv_in.in_channels
