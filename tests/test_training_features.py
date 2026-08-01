@@ -148,6 +148,43 @@ class TestInstructionTunerEarlyStopping:
         assert "stopped_early" in summary
         tb_logger.finish()
 
+    def test_validation_does_not_overwrite_last_training_metrics(self, tmp_path: Path):
+        img_dir = tmp_path / "images"
+        tgt_dir = tmp_path / "targets"
+        img_dir.mkdir()
+        tgt_dir.mkdir()
+        Image.new("RGB", (8, 8), (50, 50, 50)).save(img_dir / "x.png")
+        Image.new("RGB", (8, 8), (200, 100, 50)).save(tgt_dir / "x.png")
+        dataset = VisionTaskDataset(str(tmp_path), resolution=8)
+        tuner = self._make_tuner()
+        training_step = tuner._training_step
+
+        def training_step_with_metrics(batch):
+            loss = training_step(batch)
+            tuner._last_step_metrics = {"train/raw_prediction_mse": 1.25}
+            return loss
+
+        def evaluate_with_different_metrics(_dataset):
+            tuner._last_step_metrics = {"train/raw_prediction_mse": 9.0}
+            return 0.5
+
+        tuner._training_step = training_step_with_metrics
+        tuner._evaluate = evaluate_with_different_metrics
+
+        summary = tuner.train(
+            train_dataset=dataset,
+            val_datasets={"depth": dataset},
+            epochs=1,
+            batch_size=1,
+            eval_every=1,
+            output_dir=None,
+            log_every=1,
+        )
+
+        assert summary["last_training_metrics"] == {
+            "train/raw_prediction_mse": 1.25
+        }
+
     def test_vision_sample_contains_input_and_target(self, tmp_path: Path):
         img_dir = tmp_path / "images"
         tgt_dir = tmp_path / "targets"

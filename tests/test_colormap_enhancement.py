@@ -26,7 +26,7 @@ def test_cube_edge_colormap_default() -> None:
     """Test that cube_edge is the default and roundtrip is accurate."""
     mapper = DepthRGBMapper()
     assert mapper.colormap == "cube_edge"
-    assert mapper.colormap_keypoints.shape[0] == 6  # 6 keypoints
+    assert mapper.colormap_keypoints.shape[0] == 7  # 7 keypoints (6 segments)
 
     depth = torch.rand(1, 1, 64, 64) * 50.0 + 1.0
     rgb = mapper.depth_to_rgb(depth)

@@ -1,5 +1,8 @@
 """Tests for export/onnx_export.py — ONNX export utilities."""
 
+import json
+from types import SimpleNamespace
+
 import pytest
 import torch
 import torch.nn as nn
@@ -7,6 +10,7 @@ import torch.nn as nn
 from open_vision_banana.export.onnx_export import (
     DepthRGBMapperONNX,
     NormalRGBMapperONNX,
+    export_flux_transformer_onnx,
     export_full_pipeline_onnx,
     export_mapper_onnx,
 )
@@ -18,16 +22,7 @@ try:
 except ImportError:
     onnx_available = False
 
-onnxscript_available = True
-try:
-    import onnxscript  # noqa: F401
-except ImportError:
-    onnxscript_available = False
-
 skip_no_onnx = pytest.mark.skipif(not onnx_available, reason="onnx not installed")
-skip_no_onnxscript = pytest.mark.skipif(
-    not onnxscript_available, reason="onnxscript not installed"
-)
 
 # ──────────────────────────────────────────────────────────────────
 # DepthRGBMapperONNX tests
@@ -213,72 +208,123 @@ class TestExportMapperOnnx:
 
 
 # ──────────────────────────────────────────────────────────────────
-# export_full_pipeline_onnx tests
+# FLUX transformer component export tests
 # ──────────────────────────────────────────────────────────────────
 
 
-@skip_no_onnxscript
-class TestExportFullPipelineOnnx:
-    """Test the export_full_pipeline_onnx function."""
+@skip_no_onnx
+class TestExportFluxTransformerOnnx:
+    """Test FLUX transformer component export and compatibility behavior."""
+
+    class MockTransformer(nn.Module):
+        config = SimpleNamespace(
+            in_channels=8,
+            joint_attention_dim=16,
+            pooled_projection_dim=4,
+            guidance_embeds=False,
+        )
+
+        def forward(
+            self,
+            hidden_states,
+            encoder_hidden_states,
+            pooled_projections,
+            timestep,
+            img_ids,
+            txt_ids,
+            return_dict=True,
+        ):
+            del encoder_hidden_states, pooled_projections, timestep, img_ids, txt_ids
+            output = hidden_states * 1.0
+            return SimpleNamespace(sample=output) if return_dict else (output,)
 
     def test_export_with_mock_transformer(self, tmp_path):
-        """Should export a mock transformer model to ONNX."""
-
-        class MockTransformer(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = nn.Linear(16, 16)
-
-            def forward(self, hidden, timestep, text_emb):
-                # Simple forward that returns something with the right shape
-                hidden.shape[0]
-                return hidden
-
+        """Should export a FLUX-shaped transformer and component manifest."""
         class MockModel:
             def __init__(self):
-                self.transformer = MockTransformer()
+                self.transformer = TestExportFluxTransformerOnnx.MockTransformer()
 
         model = MockModel()
-        export_full_pipeline_onnx(model, str(tmp_path / "pipeline"))
-        assert (tmp_path / "pipeline" / "transformer.onnx").exists()
+        output_dir = tmp_path / "pipeline"
+        result = export_flux_transformer_onnx(
+            model,
+            output_dir,
+            image_sequence_length=4,
+            text_sequence_length=3,
+        )
+
+        assert result == output_dir / "transformer.onnx"
+        assert result.exists()
+        manifest = json.loads((output_dir / "export_manifest.json").read_text())
+        assert manifest["component"] == "flux_transformer"
+        assert manifest["included"] == ["transformer"]
+        assert "vae" in manifest["not_included"]
 
     def test_export_creates_output_dir(self, tmp_path):
         """Should create output directory."""
-
-        class MockTransformer(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = nn.Linear(16, 16)
-
-            def forward(self, hidden, timestep, text_emb):
-                return hidden
-
         class MockModel:
             def __init__(self):
-                self.transformer = MockTransformer()
+                self.transformer = TestExportFluxTransformerOnnx.MockTransformer()
 
         model = MockModel()
         output_dir = tmp_path / "nested" / "pipeline"
-        export_full_pipeline_onnx(model, str(output_dir))
+        export_flux_transformer_onnx(
+            model,
+            output_dir,
+            image_sequence_length=4,
+            text_sequence_length=3,
+        )
         assert output_dir.exists()
         assert (output_dir / "transformer.onnx").exists()
 
     def test_export_resolves_nested_pipeline_transformer(self, tmp_path):
         """VisionBanana-style nesting should resolve the transformer module."""
-
-        class MockTransformer(nn.Module):
-            def forward(self, hidden, timestep, text_emb):
-                return hidden
-
         class MockPipe:
-            transformer = MockTransformer()
+            transformer = TestExportFluxTransformerOnnx.MockTransformer()
 
         class MockGenerator:
-            _t2i_pipe = MockPipe()
+            pipe = MockPipe()
 
         class MockModel:
             generator = MockGenerator()
 
         output_dir = tmp_path / "nested-pipeline"
-        export_full_pipeline_onnx(MockModel(), output_dir)
+        export_flux_transformer_onnx(
+            MockModel(),
+            output_dir,
+            image_sequence_length=4,
+            text_sequence_length=3,
+        )
         assert (output_dir / "transformer.onnx").exists()
+
+    def test_rejects_non_flux_forward_signature(self, tmp_path):
+        """A generic three-input module must not masquerade as a FLUX export."""
+        class NonFluxTransformer(nn.Module):
+            def forward(self, hidden, timestep, text_emb):
+                return hidden
+
+        with pytest.raises(TypeError, match="FLUX forward contract"):
+            export_flux_transformer_onnx(
+                SimpleNamespace(transformer=NonFluxTransformer()),
+                tmp_path,
+                image_sequence_length=4,
+                text_sequence_length=3,
+            )
+
+    def test_rejects_unet_pipeline_with_actionable_error(self, tmp_path):
+        """SDXL/SSD-1B pipelines should report the unsupported architecture."""
+        model = SimpleNamespace(
+            generator=SimpleNamespace(
+                _t2i_pipe=SimpleNamespace(unet=nn.Identity())
+            )
+        )
+
+        with pytest.raises(TypeError, match="supports FLUX transformers only"):
+            export_flux_transformer_onnx(model, tmp_path)
+
+    def test_legacy_alias_warns_and_exports_component(self, tmp_path):
+        """The inaccurate historical API remains compatible but explicit."""
+        model = SimpleNamespace(transformer=self.MockTransformer())
+        with pytest.warns(DeprecationWarning, match="only the FLUX transformer"):
+            result = export_full_pipeline_onnx(model, tmp_path)
+        assert result == tmp_path / "transformer.onnx"
