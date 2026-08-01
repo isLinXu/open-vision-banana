@@ -306,3 +306,6 @@ models/
 
 # IDE / tool artifacts
 .qoder/
+
+# Local tooling state (not source)
+.dumate/

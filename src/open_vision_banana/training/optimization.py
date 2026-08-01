@@ -36,11 +36,15 @@ def sample_timesteps_logit_normal(
 
 
 def compute_min_snr_weight(timesteps: torch.Tensor, gamma: float = 5.0) -> torch.Tensor:
-    """Min-SNR weighting for flow-matching timesteps."""
+    """Min-SNR weighting for flow-matching (v-prediction) timesteps.
+
+    Flow-matching uses velocity prediction (equivalent to v-prediction),
+    so the correct weight is min(SNR, γ) / (SNR + 1) per Hang et al. 2023.
+    """
     t = timesteps.clamp(1e-4, 1.0 - 1e-4)
     snr = (t ** 2) / ((1.0 - t) ** 2 + 1e-10)
     min_snr = torch.clamp(snr, max=gamma)
-    return min_snr / (snr + 1e-10)
+    return min_snr / (snr + 1.0)
 
 
 # ──────────────────────────────────────────────────────────────

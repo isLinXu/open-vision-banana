@@ -227,6 +227,7 @@ class TrainingConfig:
         early_stopping_patience: int | None = None,
         early_stopping_min_delta: float = 0.0,
         log_every: int = 10,
+        flow_sigma: float = 0.0,
     ):
         self.epochs = epochs
         self.gradient_accumulation_steps = gradient_accumulation_steps
@@ -241,6 +242,7 @@ class TrainingConfig:
         self.early_stopping_patience = early_stopping_patience
         self.early_stopping_min_delta = early_stopping_min_delta
         self.log_every = log_every
+        self.flow_sigma = flow_sigma
 
     def to_dict(self) -> dict:
         d = {
@@ -256,6 +258,7 @@ class TrainingConfig:
             "seed": self.seed,
             "early_stopping_min_delta": self.early_stopping_min_delta,
             "log_every": self.log_every,
+            "flow_sigma": self.flow_sigma,
         }
         if self.early_stopping_patience is not None:
             d["early_stopping_patience"] = self.early_stopping_patience

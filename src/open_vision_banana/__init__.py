@@ -39,10 +39,14 @@ def __getattr__(name):
         "SegmentationDecoder": ".core.segmentation",
         "RGBMapper": ".core.rgb_mapper",
         "CUBE_EDGE_KEYPOINTS": ".core.depth_mapper",
+        # Tiny standalone model
+        "TinyVisionBanana": ".tiny_model",
+        "TinyVisionBananaConfig": ".tiny_model",
         # Inference
         "BaseGenerator": ".inference.generator",
         "PromptBuilder": ".inference.prompt",
         "VisualizationDecoder": ".inference.decoder",
+        "FrozenDepthEstimator": ".inference.depth_probe",
         "VisionBanana": ".inference.pipeline",
         "InferenceDiagnosticsWriter": ".inference.diagnostics",
         # Training
@@ -62,6 +66,7 @@ def __getattr__(name):
         "DepthRGBMapperONNX": ".export.onnx_export",
         "NormalRGBMapperONNX": ".export.onnx_export",
         "export_mapper_onnx": ".export.onnx_export",
+        "export_flux_transformer_onnx": ".export.onnx_export",
         "export_full_pipeline_onnx": ".export.onnx_export",
         # Serving imports FastAPI lazily inside create_app().
         "create_app": ".serving.fastapi_app",

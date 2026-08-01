@@ -17,7 +17,17 @@ from pathlib import Path
 
 import torch
 
+from ..conditioning import (
+    CONV_IN_STATE_NAME,
+    SourceConditioningConfig,
+    read_source_conditioning_config,
+    write_source_conditioning_config,
+)
+from ..spatial_adapter import SPATIAL_ADAPTER_STATE_NAME
+
 logger = logging.getLogger(__name__)
+
+DIFFUSERS_LORA_WEIGHT_NAME = "pytorch_lora_weights.safetensors"
 
 
 class CheckpointManager:
@@ -45,6 +55,11 @@ class CheckpointManager:
         lr: float,
         ema=None,
         scheduler=None,
+        conditioning_module=None,
+        conditioning_config: SourceConditioningConfig | None = None,
+        spatial_adapter=None,
+        diffusers_component: str | None = None,
+        extra_metadata: dict | None = None,
     ) -> Path:
         """Save a training checkpoint."""
         ckpt_dir = self.output_dir / f"checkpoint-{step}"
@@ -52,6 +67,12 @@ class CheckpointManager:
 
         # Save LoRA weights
         peft_model.save_pretrained(ckpt_dir)
+        if diffusers_component is not None:
+            self._save_diffusers_lora_weights(
+                peft_model,
+                ckpt_dir,
+                component=diffusers_component,
+            )
 
         # Save EMA weights
         if ema is not None:
@@ -67,6 +88,13 @@ class CheckpointManager:
             sched_path = ckpt_dir / "scheduler.pt"
             torch.save(scheduler.state_dict(), sched_path)
 
+        self._save_conditioning(
+            ckpt_dir,
+            conditioning_module=conditioning_module,
+            conditioning_config=conditioning_config,
+            spatial_adapter=spatial_adapter,
+        )
+
         # Save metadata
         metadata = {
             "step": step,
@@ -74,6 +102,8 @@ class CheckpointManager:
             "loss": loss,
             "lr": lr,
         }
+        if extra_metadata:
+            metadata.update(extra_metadata)
         with open(ckpt_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
 
@@ -98,12 +128,23 @@ class CheckpointManager:
         lr: float,
         ema=None,
         scheduler=None,
+        conditioning_module=None,
+        conditioning_config: SourceConditioningConfig | None = None,
+        spatial_adapter=None,
+        diffusers_component: str | None = None,
+        extra_metadata: dict | None = None,
     ) -> Path:
         """Save the best validation checkpoint to ``checkpoint-best/``."""
         ckpt_dir = self.output_dir / "checkpoint-best"
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         peft_model.save_pretrained(ckpt_dir)
+        if diffusers_component is not None:
+            self._save_diffusers_lora_weights(
+                peft_model,
+                ckpt_dir,
+                component=diffusers_component,
+            )
 
         if ema is not None:
             torch.save(ema.shadow_params, ckpt_dir / "ema_weights.pt")
@@ -113,6 +154,13 @@ class CheckpointManager:
         if scheduler is not None:
             torch.save(scheduler.state_dict(), ckpt_dir / "scheduler.pt")
 
+        self._save_conditioning(
+            ckpt_dir,
+            conditioning_module=conditioning_module,
+            conditioning_config=conditioning_config,
+            spatial_adapter=spatial_adapter,
+        )
+
         metadata = {
             "step": step,
             "epoch": epoch,
@@ -121,6 +169,8 @@ class CheckpointManager:
             "lr": lr,
             "best": True,
         }
+        if extra_metadata:
+            metadata.update(extra_metadata)
         with open(ckpt_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
 
@@ -138,6 +188,9 @@ class CheckpointManager:
         step: int | None = None,
         restore_rng: bool = False,
         allow_partial_resume: bool = False,
+        conditioning_module=None,
+        conditioning_config: SourceConditioningConfig | None = None,
+        spatial_adapter=None,
     ) -> dict:
         """Load a training checkpoint.
 
@@ -149,6 +202,8 @@ class CheckpointManager:
             step: Specific step to load. If None, loads latest.
             restore_rng: Restore Python, NumPy and PyTorch RNG state.
             allow_partial_resume: Continue when adapter/EMA state is incomplete.
+            conditioning_module: Expanded ``conv_in`` module to restore.
+            conditioning_config: Expected source-conditioning contract.
 
         Returns:
             Metadata dict with step, epoch, loss, lr.
@@ -215,6 +270,14 @@ class CheckpointManager:
                 raise RuntimeError(f"PEFT load failed: {e}") from e
             logger.warning(f"PEFT load failed (partial resume allowed): {e}")
 
+        self._load_conditioning(
+            ckpt_dir,
+            conditioning_module=conditioning_module,
+            expected_config=conditioning_config,
+            spatial_adapter=spatial_adapter,
+            allow_partial_resume=allow_partial_resume,
+        )
+
         # Load EMA shadow params with key/shape validation (P1-16)
         if ema is not None:
             ema_path = ckpt_dir / "ema_weights.pt"
@@ -271,6 +334,175 @@ class CheckpointManager:
 
         logger.info(f"Checkpoint loaded from {ckpt_dir}")
         return metadata
+
+    @staticmethod
+    def _save_diffusers_lora_weights(
+        peft_model,
+        ckpt_dir: Path,
+        *,
+        component: str,
+    ) -> Path:
+        """Write a Diffusers-loadable companion to the PEFT resume adapter.
+
+        PEFT wraps keys in ``base_model.model`` while pipeline loaders expect
+        component-prefixed keys such as ``unet.down_blocks...lora_A.weight``.
+        The PEFT adapter remains the source of truth for resume; this companion
+        enables ``pipe.load_lora_weights`` and dynamic adapter scaling.
+        """
+        if component not in {"unet", "transformer"}:
+            raise ValueError(f"Unsupported Diffusers LoRA component: {component!r}")
+
+        from peft import get_peft_model_state_dict
+        from safetensors.torch import save_file
+
+        model = getattr(peft_model, "module", peft_model)
+        state_dict = get_peft_model_state_dict(model)
+        packed: dict[str, torch.Tensor] = {}
+        for key, value in state_dict.items():
+            normalized = key
+            for prefix in ("module.", "base_model.model."):
+                if normalized.startswith(prefix):
+                    normalized = normalized.removeprefix(prefix)
+            if ".lora_A." not in normalized and ".lora_B." not in normalized:
+                continue
+            packed[f"{component}.{normalized}"] = (
+                value.detach().to(device="cpu").contiguous()
+            )
+        if not packed:
+            raise RuntimeError("PEFT model contains no LoRA A/B weights to export")
+
+        configs = getattr(model, "peft_config", {})
+        adapter_config = next(iter(configs.values()), None)
+        metadata_payload = {}
+        if adapter_config is not None:
+            metadata_payload = {
+                f"{component}.{key}": (
+                    sorted(value) if isinstance(value, set) else value
+                )
+                for key, value in adapter_config.to_dict().items()
+            }
+        metadata = {"format": "pt"}
+        if metadata_payload:
+            metadata["lora_adapter_metadata"] = json.dumps(
+                metadata_payload,
+                indent=2,
+                sort_keys=True,
+            )
+
+        path = ckpt_dir / DIFFUSERS_LORA_WEIGHT_NAME
+        save_file(packed, path, metadata=metadata)
+        logger.info(
+            "Diffusers LoRA companion saved to %s (%d tensors)",
+            path,
+            len(packed),
+        )
+        return path
+
+    @staticmethod
+    def _save_conditioning(
+        ckpt_dir: Path,
+        *,
+        conditioning_module,
+        conditioning_config: SourceConditioningConfig | None,
+        spatial_adapter,
+    ) -> None:
+        """Persist the expanded input convolution and its inference contract."""
+        if conditioning_module is None and conditioning_config is None:
+            return
+        if conditioning_module is None or conditioning_config is None:
+            raise ValueError(
+                "conditioning_module and conditioning_config must be provided together"
+            )
+        conditioning_config.validate()
+        if getattr(conditioning_module, "in_channels", None) != conditioning_config.in_channels:
+            raise ValueError("conditioning module channels do not match conditioning config")
+        expects_adapter = conditioning_config.spatial_adapter_type != "none"
+        if expects_adapter != (spatial_adapter is not None):
+            raise ValueError(
+                "spatial adapter module does not match conditioning config"
+            )
+        torch.save(conditioning_module.state_dict(), ckpt_dir / CONV_IN_STATE_NAME)
+        if spatial_adapter is not None:
+            torch.save(
+                spatial_adapter.state_dict(),
+                ckpt_dir / SPATIAL_ADAPTER_STATE_NAME,
+            )
+        write_source_conditioning_config(ckpt_dir, conditioning_config)
+
+    @staticmethod
+    def _load_conditioning(
+        ckpt_dir: Path,
+        *,
+        conditioning_module,
+        expected_config: SourceConditioningConfig | None,
+        spatial_adapter,
+        allow_partial_resume: bool,
+    ) -> SourceConditioningConfig | None:
+        """Restore and validate an optional source-conditioned input convolution."""
+        loaded_config = read_source_conditioning_config(ckpt_dir)
+        if loaded_config is None:
+            if expected_config is not None and not allow_partial_resume:
+                raise FileNotFoundError(
+                    f"conditioning_config.json not found in source-conditioned checkpoint {ckpt_dir}"
+                )
+            return None
+        if expected_config is not None and loaded_config != expected_config:
+            if not loaded_config.is_architecture_compatible(expected_config):
+                raise ValueError(
+                    "Checkpoint conditioning architecture does not match the live model: "
+                    f"checkpoint={loaded_config.to_dict()}, "
+                    f"live={expected_config.to_dict()}"
+                )
+            logger.warning(
+                "Resuming source-conditioned architecture with updated training options: "
+                "checkpoint=%s, live=%s",
+                loaded_config.to_dict(),
+                expected_config.to_dict(),
+            )
+        if conditioning_module is None:
+            if allow_partial_resume:
+                logger.warning(
+                    "Checkpoint %s is source-conditioned but no conditioning module was supplied",
+                    ckpt_dir,
+                )
+                return loaded_config
+            raise ValueError(
+                "Checkpoint is source-conditioned; supply the expanded conditioning module"
+            )
+        state_path = ckpt_dir / CONV_IN_STATE_NAME
+        if not state_path.is_file():
+            if allow_partial_resume:
+                logger.warning("%s not found; source conv was not restored", state_path)
+                return loaded_config
+            raise FileNotFoundError(f"{CONV_IN_STATE_NAME} not found in {ckpt_dir}")
+        state = torch.load(state_path, map_location="cpu", weights_only=True)
+        conditioning_module.load_state_dict(state, strict=True)
+        logger.info("Source-conditioned conv_in loaded from %s", state_path)
+        if loaded_config.spatial_adapter_type != "none":
+            if spatial_adapter is None:
+                if allow_partial_resume:
+                    logger.warning(
+                        "Checkpoint %s declares a spatial adapter but none was supplied",
+                        ckpt_dir,
+                    )
+                    return loaded_config
+                raise ValueError(
+                    "Checkpoint declares a spatial adapter; supply the live adapter module"
+                )
+            adapter_path = ckpt_dir / SPATIAL_ADAPTER_STATE_NAME
+            if not adapter_path.is_file():
+                if allow_partial_resume:
+                    logger.warning("%s not found; spatial adapter was not restored", adapter_path)
+                    return loaded_config
+                raise FileNotFoundError(
+                    f"{SPATIAL_ADAPTER_STATE_NAME} not found in {ckpt_dir}"
+                )
+            adapter_state = torch.load(adapter_path, map_location="cpu", weights_only=True)
+            spatial_adapter.load_state_dict(adapter_state, strict=True)
+            logger.info("Source spatial adapter loaded from %s", adapter_path)
+        elif spatial_adapter is not None:
+            raise ValueError("Live spatial adapter supplied for a checkpoint without one")
+        return loaded_config
 
     @staticmethod
     def _apply_ema_shadow(ema, loaded: dict, ckpt_dir: Path) -> None:
@@ -421,4 +653,4 @@ class CheckpointManager:
             logger.info(f"Pruned old checkpoint: {oldest}")
 
 
-__all__ = ["CheckpointManager"]
+__all__ = ["CheckpointManager", "DIFFUSERS_LORA_WEIGHT_NAME"]
