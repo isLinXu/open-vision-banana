@@ -943,6 +943,10 @@ def validate(
     num_batches = 0
     max_val_batches = 20  # Limit val batches for speed
 
+    # Match training autocast settings to avoid fp16 overflow on MPS
+    amp_dtype = torch.bfloat16 if device.type == "mps" else model_dtype
+    use_autocast = device.type == "mps" or (device.type == "cuda" and model_dtype != torch.float32)
+
     for i, batch in enumerate(val_loader):
         if i >= max_val_batches:
             break
@@ -974,7 +978,12 @@ def validate(
         t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
 
         if not args.no_img2img_flow and input_latents is not None:
-            noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents
+            # Match training: add flow_sigma noise term if configured
+            if args.flow_sigma > 0:
+                noise_term = args.flow_sigma * (t_b * (1.0 - t_b)).sqrt() * noise
+            else:
+                noise_term = torch.zeros_like(input_latents)
+            noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
             velocity_target = target_latents - input_latents
         else:
             noisy_latents = (1.0 - t_b) * target_latents + t_b * noise
@@ -984,15 +993,26 @@ def validate(
             components, prompts, device, model_dtype, max_length
         )
 
-        predicted_velocity = peft_model(
-            noisy_latents,
-            encoder_hidden_states=prompt_embeds,
-            encoder_attention_mask=attention_mask,
-            timestep=timesteps,
-            return_dict=False,
-        )[0]
+        with torch.amp.autocast(
+            device_type=device.type,
+            dtype=amp_dtype,
+            enabled=use_autocast,
+        ):
+            predicted_velocity = peft_model(
+                noisy_latents,
+                encoder_hidden_states=prompt_embeds,
+                encoder_attention_mask=attention_mask,
+                timestep=timesteps,
+                return_dict=False,
+            )[0]
 
         loss = F.mse_loss(predicted_velocity.float(), velocity_target.float())
+
+        # Skip NaN/Inf batches to avoid poisoning the average
+        if torch.isnan(loss) or torch.isinf(loss):
+            logger.warning(f"  [val] batch {i} loss is NaN/Inf, skipping")
+            continue
+
         total_loss += loss.item()
         num_batches += 1
 
