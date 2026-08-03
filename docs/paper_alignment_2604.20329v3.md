@@ -73,9 +73,11 @@ f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)    [λ=-3, c=10/3]
 
 论文描述：归一化后的 f(d) 沿 RGB 颜色立方体的边缘插值，遍历路径类似 3D Hilbert curve 第一阶：
 ```
-black → blue → cyan → green → yellow → red → white
-（沿立方体边缘：黑→蓝→青→绿→黄→红→白）
+black → red → yellow → green → cyan → blue → magenta → white
+（沿立方体边缘：黑→红→黄→绿→青→蓝→品红→白）
 ```
+
+注：早期审计根据文字转录漏掉了品红顶点并反转了前半路径。上面的八顶点顺序来自论文 Figure 5；七段均严格位于 RGB 立方体边缘。
 
 这是本文**最核心且独特的编码方案**，不同于常见的 Turbo/Viridis 色图。
 
@@ -257,7 +259,7 @@ A(S_a ∪ S_b) ≤ γ × (A(S_a) + A(S_b))     γ = 5.0
 **指标**（SA-Co 定义的三种）：
 - `pmF1`: Positive Micro-F1 — 10 个 IoU thresholds [0.5:0.05:0.95]
 - `IL_MCC`: Image-Level Matthews Correlation Coefficient — 二分类准确率
-- `cgF1 = 100 × √(pmF1 × IL_MCC)` — 统一指标
+- `cgF1 = 100 × pmF1 × IL_MCC` — 统一指标（论文 Eq. 7）
 
 #### 评估结果
 
@@ -280,7 +282,7 @@ A(S_a ∪ S_b) ≤ γ × (A(S_a) + A(S_b))     γ = 5.0
 | 3x3 erosion | `segmentation/postprocess.py` | ✅ 已实现 |
 | θ_erosion=0.1 | `segmentation/postprocess.py` | ✅ 已实现 |
 | γ=5.0 (合并系数) | `segmentation/postprocess.py` | ✅ 已实现 |
-| Gemini-based NP filter | **NOT in our code** | ⚠️ 论文用 Gemini 3.1 Flash-Lite 过滤负样本，我们未实现 |
+| Gemini-based NP filter | `evaluation/gemini.py`, `scripts/run_paper_judges.py` | ✅ 可选 REST 集成；需运行时 API key |
 
 ### 2.5 Referring Expression Segmentation（指代表达分割）
 
@@ -317,8 +319,8 @@ A(S_a ∪ S_b) ≤ γ × (A(S_a) + A(S_b))     γ = 5.0
 | 论文细节 | 代码实现 | 对齐状态 |
 |---------|---------|---------|
 | Referring segmentation prompt | `prompt.py:build_referring_prompt()` | ✅ 已实现 |
-| RefCOCOg eval | `evaluation/referring.py` | ✅ 已实现 |
-| Gemini-based reasoning pipeline | **NOT implemented** | ⚠️ 论文用 Gemini 2.5 Pro 做 reasoning→description 转换 |
+| RefCOCOg eval | `evaluation/referring.py` | ✅ 数据集级 cIoU/gIoU |
+| Gemini-based reasoning pipeline | `evaluation/gemini.py`, `scripts/run_paper_judges.py` | ✅ 可选 REST 集成；需运行时 API key |
 
 ### 2.6 Image Generation Preservation（生成能力保留）
 
@@ -390,7 +392,7 @@ A(S_a ∪ S_b) ≤ γ × (A(S_a) + A(S_b))     γ = 5.0
 |------|--------|------|
 | **NBP→FLUX 替换的影响** | 🔴 P0 | 论文核心是 NBP 预训练的内隐视觉理解能力。FLUX.1 虽然也是 SOTA 生成模型，但不一定有相同的内部表征质量。这是复现的最大不确定因素 |
 | **训练数据不匹配** | 🔴 P0 | 论文用 Google 内部标注和渲染数据，我们用公开数据集 + 合成数据 |
-| **Gemini filtering pipeline 缺失** | 🟡 P1 | 实例分割的 IL_MCC 依赖 Gemini 过滤；指代分割的 reasoning 依赖 Gemini 2.5 Pro 做 query→description 转换 |
+| **Gemini 结果尚未执行** | 🟡 P1 | 已提供 SA-Co 过滤与 ReasonSeg query→description 工具；仍需 API key、官方数据和实际运行结果 |
 | **深度基准评估对齐** | 🟡 P1 | 论文 δ1=0.929 (4 datasets average)。需要用我们的 FLUX LoRA checkpoint 在相同数据集上跑一次完整评估，验证能否接近这个数字 |
 | **色图训练增强** | 🟢 P2 | 论文提到训练时混入 plasma/inferno/viridis/grayscale，我们的 depth_mapper 支持但需确认训练 pipeline 是否实际启用 |
 | **图片分辨率** | 🟢 P2 | 需确定最佳推理分辨率 |

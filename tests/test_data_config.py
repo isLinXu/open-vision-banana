@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import torch
 
 from open_vision_banana.config import (
     DataConfig,
@@ -81,6 +82,39 @@ class TestMixedVisionDataset:
         assert mixed.vision_weight == 0.1
         assert mixed.gen_weight == 0.9
 
+    def test_adds_task_tag_from_dataset_metadata(self):
+        class TaskDataset(torch.utils.data.Dataset):
+            TASK_TYPE = "normal"
+
+            def __len__(self):
+                return 2
+
+            def __getitem__(self, index):
+                return {"sample_index": index}
+
+        mixed = MixedVisionDataset([TaskDataset()], vision_ratio=1.0)
+        assert mixed[0]["task"] == "normal"
+
+    def test_sampling_is_reproducible_by_seed_epoch_and_index(self):
+        class IndexDataset(torch.utils.data.Dataset):
+            TASK_TYPE = "depth"
+
+            def __len__(self):
+                return 100
+
+            def __getitem__(self, index):
+                return {"sample_index": index}
+
+        first = MixedVisionDataset([IndexDataset()], vision_ratio=1.0, seed=123)
+        second = MixedVisionDataset([IndexDataset()], vision_ratio=1.0, seed=123)
+        assert [first[i]["sample_index"] for i in range(20)] == [
+            second[i]["sample_index"] for i in range(20)
+        ]
+        first.set_epoch(1)
+        assert [first[i]["sample_index"] for i in range(20)] != [
+            second[i]["sample_index"] for i in range(20)
+        ]
+
 
 class TestConfigSystem:
     """Comprehensive tests for the configuration system."""
@@ -92,10 +126,7 @@ class TestConfigSystem:
         assert cfg.lora.rank == 64
         assert cfg.lora.alpha == 128
         assert cfg.lora.rs_lora is True
-        assert cfg.lora.target_modules == [
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out", "ff.net.0.proj", "ff.net.2",
-        ]
+        assert cfg.lora.target_modules is None
         assert cfg.lora.dropout == 0.0
         assert cfg.optimizer.lr == 5e-5
         assert cfg.optimizer.weight_decay == 0.01
@@ -158,6 +189,18 @@ class TestConfigSystem:
         assert cfg.model.name == "test"
         assert cfg.data.vision_ratio == 0.2
 
+    def test_strict_config_rejects_unknown_keys(self):
+        with pytest.raises(ValueError, match="model.extra_key"):
+            VisionBananaConfig.from_dict(
+                {"model": {"name": "test", "extra_key": "ignored"}}, strict=True
+            )
+
+    def test_invalid_data_mix_is_rejected(self):
+        with pytest.raises(ValueError, match="must equal 1"):
+            VisionBananaConfig.from_dict(
+                {"data": {"vision_ratio": 0.2, "generation_ratio": 0.9}}
+            )
+
     def test_subconfig_independence(self):
         """Modifying one sub-config shouldn't affect defaults."""
         cfg1 = VisionBananaConfig()
@@ -197,11 +240,15 @@ class TestConfigSystem:
         assert loaded.rs_lora is False
 
     def test_optimizer_config_roundtrip(self):
-        cfg = OptimizerConfig(lr=1e-4, scheduler="linear")
+        cfg = OptimizerConfig(
+            lr=1e-4, scheduler="linear", betas=(0.8, 0.95), eps=1e-7
+        )
         d = cfg.to_dict()
         loaded = OptimizerConfig.from_dict(d)
         assert loaded.lr == 1e-4
         assert loaded.scheduler == "linear"
+        assert loaded.betas == (0.8, 0.95)
+        assert loaded.eps == 1e-7
 
     def test_data_config_roundtrip(self):
         cfg = DataConfig(vision_ratio=0.2, resolution=1024)

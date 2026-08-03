@@ -1,18 +1,11 @@
-"""Mixed dataset implementing the 9:1 visual-to-language data ratio.
-
-Combines vision task datasets with a generation dataset at the
-ratio specified in the paper (9:1 generation-to-vision).
-"""
+"""Configurable vision-task and generation-preservation sampling."""
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import torch
 from torch.utils.data import Dataset
-
-logger = logging.getLogger(__name__)
 
 
 class MixedVisionDataset(Dataset):
@@ -27,9 +20,8 @@ class MixedVisionDataset(Dataset):
     - With probability ``1 - vision_ratio``: a sample is drawn from the
       generation dataset (if provided), otherwise falls back to vision data.
 
-    This preserves the paper's 9:1 generation-to-vision mixture without
-    introducing index-based sampling bias (the old ``idx % len`` approach
-    was highly correlated with the DataLoader's sequential index ordering).
+    The ratio is a project configuration and must be recorded in experiment
+    manifests; it is not treated as a paper-disclosed constant.
 
     ``__len__`` (P1-6 fix):
         The original implementation returned ``total_vision`` — the raw sum of
@@ -59,58 +51,35 @@ class MixedVisionDataset(Dataset):
         vision_ratio: float = 0.1,
         seed: int = 42,
         colormaps: list[str] | None = None,
-        task_weights: list[float] | None = None,
+        task_sampling: str = "uniform",
+        task_weights: dict[str, float] | None = None,
+        depth_lam: float = -3.0,
+        depth_c: float = 10.0 / 3.0,
     ):
         if not 0.0 < vision_ratio <= 1.0:
             raise ValueError(f"vision_ratio must be in (0, 1]; got {vision_ratio}")
+        if task_sampling not in {"uniform", "dataset_uniform", "proportional"}:
+            raise ValueError(f"Unsupported task_sampling: {task_sampling}")
 
-        self.vision_datasets = vision_datasets
+        self.vision_datasets = [dataset for dataset in vision_datasets if len(dataset) > 0]
         self.generation_dataset = generation_dataset
         self.vision_ratio = vision_ratio
-        self.rng = torch.Generator().manual_seed(seed)
+        self.seed = seed
+        self.epoch = 0
+        self.task_sampling = task_sampling
+        self.task_weights = task_weights or {}
+        self.depth_lam = depth_lam
+        self.depth_c = depth_c
 
-        self.total_vision: int = sum(len(ds) for ds in vision_datasets)  # type: ignore[misc]
-        self._vision_lengths = [len(ds) for ds in vision_datasets]
+        self.total_vision: int = sum(len(ds) for ds in self.vision_datasets)  # type: ignore[misc]
+        self._vision_lengths = [len(ds) for ds in self.vision_datasets]
+        self._task_to_datasets: dict[str, list[Dataset]] = {}
+        for dataset in self.vision_datasets:
+            task = _dataset_task(dataset)
+            self._task_to_datasets.setdefault(task, []).append(dataset)
 
         # Multi-colormap training augmentation (paper Section 3.2)
         self.colormaps = colormaps or ["cube_edge"]
-
-        # Task-balanced sampling: when task_weights is provided, use weighted
-        # sampling instead of uniform random to pick a vision dataset.
-        # This mitigates the 16.7x sample imbalance across tasks (e.g.
-        # object_detection has 9433 samples vs specular_removal 564).
-        #
-        # Modes:
-        #   None          -> uniform sampling (default, backward-compatible)
-        #   "sqrt"        -> weight = 1 / sqrt(dataset_size), normalized
-        #   "uniform"     -> weight = 1 / num_datasets (each task equally likely)
-        #   list[float]   -> custom weights, must match len(vision_datasets)
-        self._task_weights: torch.Tensor | None = None
-        if task_weights is not None:
-            if isinstance(task_weights, str):
-                if task_weights == "sqrt":
-                    import math
-
-                    raw = [1.0 / math.sqrt(max(1, l)) for l in self._vision_lengths]
-                elif task_weights == "uniform":
-                    raw = [1.0 / len(vision_datasets)] * len(vision_datasets)
-                else:
-                    raise ValueError(f"Unknown task_weights mode: {task_weights}")
-                total = sum(raw)
-                raw = [w / total for w in raw]
-            else:
-                if len(task_weights) != len(vision_datasets):
-                    raise ValueError(
-                        f"task_weights length {len(task_weights)} != "
-                        f"num vision datasets {len(vision_datasets)}"
-                    )
-                total = sum(task_weights)
-                raw = [w / total for w in task_weights]
-            self._task_weights = torch.tensor(raw, dtype=torch.float32)
-            logger.info(
-                "MixedVisionDataset: task_weights=%s",
-                [f"{w:.4f}" for w in raw],
-            )
 
         # Backward-compatible aliases
         self.vision_weight = vision_ratio
@@ -134,47 +103,75 @@ class MixedVisionDataset(Dataset):
         return min(effective_from_ratio, self.total_vision + gen_len)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
+        rng = self._generator_for_index(idx)
         use_vision = (
             self.generation_dataset is None
-            or torch.rand(1, generator=self.rng).item() < self.vision_ratio
+            or torch.rand(1, generator=rng).item() < self.vision_ratio
         )
 
         if use_vision:
-            # Pick a vision dataset, then a random sample within it.
-            if self._task_weights is not None:
-                # Weighted sampling: sample dataset index from categorical dist
-                ds_idx = int(
-                    torch.multinomial(self._task_weights, 1, generator=self.rng).item()
-                )
-            else:
-                # Uniform sampling (original behaviour)
-                ds_idx = int(torch.randint(len(self.vision_datasets), (1,), generator=self.rng).item())
-            ds = self.vision_datasets[ds_idx]
-            sample_idx = int(torch.randint(len(ds), (1,), generator=self.rng).item())
+            if not self.vision_datasets:
+                raise IndexError("MixedVisionDataset has no non-empty vision datasets")
+            ds = self._sample_vision_dataset(rng)
+            sample_idx = int(torch.randint(len(ds), (1,), generator=rng).item())
             sample = ds[sample_idx]
+            if isinstance(sample, dict):
+                sample = dict(sample)
+                sample.setdefault("task", _dataset_task(ds, sample_idx))
             # Multi-colormap training augmentation: attach random colormap for depth tasks
             if isinstance(sample, dict) and sample.get("task") == "depth":
-                cmap_idx = int(torch.randint(len(self.colormaps), (1,), generator=self.rng).item())
+                cmap_idx = int(torch.randint(len(self.colormaps), (1,), generator=rng).item())
                 colormap = self.colormaps[cmap_idx]
                 sample["colormap"] = colormap
-                # 当色图非 cube_edge 时，动态重编码 target_rgb (roundtrip 误差 < 0.5%)
                 if colormap != "cube_edge" and "target_rgb" in sample:
                     from ..core.depth_mapper import DepthRGBMapper
-
-                    mapper = DepthRGBMapper()
-                    target_rgb = sample["target_rgb"]
-                    if isinstance(target_rgb, torch.Tensor):
-                        # DepthRGBMapper expects [B, C, H, W]; add batch dim
-                        depth = mapper.rgb_to_depth(target_rgb.unsqueeze(0)).squeeze(0)
+                    mapper = DepthRGBMapper(lam=self.depth_lam, c=self.depth_c)
+                    depth = sample.get("gt_depth")
+                    if not isinstance(depth, torch.Tensor):
+                        target_rgb = sample["target_rgb"]
+                        if isinstance(target_rgb, torch.Tensor):
+                            depth = mapper.rgb_to_depth(target_rgb.unsqueeze(0)).squeeze(0)
+                    if isinstance(depth, torch.Tensor):
+                        if depth.dim() == 2:
+                            depth = depth.unsqueeze(0)
                         mapper.set_colormap(colormap)
                         sample["target_rgb"] = mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
             return sample
         else:
             assert self.generation_dataset is not None
-            sample_idx = int(
-                torch.randint(len(self.generation_dataset), (1,), generator=self.rng).item()
-            )
+            sample_idx = int(torch.randint(len(self.generation_dataset), (1,), generator=rng).item())
             return self.generation_dataset[sample_idx]
+
+    def set_epoch(self, epoch: int) -> None:
+        """Change deterministic sampling streams between training epochs."""
+        self.epoch = int(epoch)
+
+    def _generator_for_index(self, index: int) -> torch.Generator:
+        # DistributedSampler assigns disjoint indices to ranks. Deriving all
+        # randomness from the index prevents cloned worker/rank RNG streams.
+        sample_seed = self.seed + self.epoch * 1_000_003 + int(index)
+        return torch.Generator().manual_seed(sample_seed)
+
+    def _sample_vision_dataset(self, rng: torch.Generator) -> Dataset:
+        if self.task_sampling == "dataset_uniform":
+            index = int(
+                torch.randint(len(self.vision_datasets), (1,), generator=rng).item()
+            )
+            return self.vision_datasets[index]
+
+        if self.task_sampling == "proportional":
+            weights = torch.tensor(self._vision_lengths, dtype=torch.float64)
+            index = int(torch.multinomial(weights, 1, generator=rng).item())
+            return self.vision_datasets[index]
+
+        tasks = sorted(self._task_to_datasets)
+        task_weights = torch.tensor(
+            [self.task_weights.get(task, 1.0) for task in tasks], dtype=torch.float64
+        )
+        task_index = int(torch.multinomial(task_weights, 1, generator=rng).item())
+        datasets = self._task_to_datasets[tasks[task_index]]
+        dataset_index = int(torch.randint(len(datasets), (1,), generator=rng).item())
+        return datasets[dataset_index]
 
     def __repr__(self) -> str:
         return (
@@ -183,8 +180,30 @@ class MixedVisionDataset(Dataset):
             f"total_vision={self.total_vision}, "
             f"has_generation={self.generation_dataset is not None}, "
             f"vision_ratio={self.vision_ratio}, "
+            f"task_sampling={self.task_sampling}, "
             f"effective_len={len(self)})"
         )
+
+
+def _dataset_task(dataset: Dataset, index: int | None = None) -> str:
+    """Resolve a task label through Subset/ConcatDataset wrappers."""
+    from torch.utils.data import ConcatDataset, Subset
+
+    if isinstance(dataset, Subset):
+        inner_index = None if index is None else int(dataset.indices[index])
+        return _dataset_task(dataset.dataset, inner_index)
+    if isinstance(dataset, ConcatDataset):
+        if index is not None:
+            import bisect
+
+            dataset_index = bisect.bisect_right(dataset.cumulative_sizes, index)
+            previous_size = 0 if dataset_index == 0 else dataset.cumulative_sizes[dataset_index - 1]
+            sample_index = index - previous_size
+            return _dataset_task(dataset.datasets[dataset_index], sample_index)
+        tasks = {_dataset_task(child) for child in dataset.datasets}
+        return next(iter(tasks)) if len(tasks) == 1 else "mixed"
+    task = getattr(dataset, "TASK_TYPE", None) or getattr(dataset, "task", None)
+    return str(task or "unknown")
 
 
 __all__ = ["MixedVisionDataset"]

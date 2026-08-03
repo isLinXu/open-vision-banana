@@ -43,13 +43,6 @@ logger = logging.getLogger(__name__)
 
 REGISTRY_PATH = Path(__file__).parent.parent / "configs" / "checkpoint_registry.yaml"
 
-PAPER_CITATION = """@article{gabeur2026image,
-  title={Image Generators are Generalist Vision Learners},
-  author={Gabeur, Valentin and Long, Shangbang and Peng, Songyou and Voigtlaender, Paul and Sun, Shuyang and Bao, Yanan and Truong, Karen and Wang, Zhicheng and Zhou, Wenlei and Barron, Jonathan T. and Genova, Kyle and Kannen, Nithish and Ben, Sherry and Li, Yandong and Guo, Mandy and Yogin, Suhas and Gu, Yiming and Chen, Huizhong and Wang, Oliver and Xie, Saining and Zhou, Howard and He, Kaiming and Funkhouser, Thomas and Alayrac, Jean-Baptiste and Soricut, Radu},
-  journal={arXiv preprint arXiv:2604.20329},
-  year={2026}
-}"""
-
 
 def _build_model_card(
     task: str,
@@ -63,25 +56,32 @@ def _build_model_card(
     metrics = metrics or {}
     training_config = training_config or {}
 
-    card = f"""# Vision Banana LoRA — {task.title()} Estimation
+    task_title = "Shared Multi-Task" if task == "multitask" else task.title()
+    task_description = (
+        "semantic, instance, referring/reasoning, metric depth, and surface normal tasks"
+        if task == "multitask"
+        else f"{task} estimation"
+    )
+    usage_task = "depth" if task == "multitask" else task
+    card = f"""# Open-Vision-Banana LoRA - {task_title}
 
 ## Model Description
 
 {description}
 
-This is a LoRA (Low-Rank Adaptation) checkpoint for the Open Vision Banana
-project, instruction-tuned on top of `{base_model}` for {task} estimation via
+This is a LoRA checkpoint for the Open-Vision-Banana project,
+instruction-tuned on top of FLUX.1-schnell for {task_description} via
 RGB parameterization.
 
-This open-backbone checkpoint is independent from the original paper's closed
-Nano Banana Pro model. Paper metrics do not apply to this checkpoint unless
-they are reproduced and reported in the checkpoint-specific Metrics section.
+This project is a method-aligned open implementation. The paper uses the closed
+Nano Banana Pro base, so results from this checkpoint are not numerical
+reproduction of the closed model unless an attached evaluation explicitly says so.
 
 ## Base Model
 
 - **Base**: [{base_model}](https://huggingface.co/{base_model})
-- **Architecture**: Base-model architecture with LoRA adapters
-- **Parameters**: See the checkpoint training metadata below
+- **Architecture**: Rectified-flow transformer with a LoRA/rsLoRA adapter
+- **Adapter size**: See `adapter_config.json` and the artifact file sizes
 
 ## Training
 
@@ -113,27 +113,28 @@ model = VisionBanana.from_pretrained(
     lora_path="hf:{repo_id}",
 )
 
-# The API expects a normalized torch.Tensor, not a file path.
-result = model.predict(input_tensor, task="{task}")
+result = model.predict("input.jpg", task="{usage_task}")
 ```
 
 ## Limitations
 
-- Requires the exact `{base_model}` base model and matching adapter configuration
-- LoRA weights are task-specific; multi-task requires loading multiple LoRAs
-- RGB parameterization and quantization introduce checkpoint-specific roundtrip error
-- Results from the original Nano Banana Pro paper must not be attributed to this checkpoint
+- Requires FLUX.1 [schnell] base model weights (~24GB download)
+- Supported tasks are limited to those listed by this artifact's training manifest
+- RGB parameterization introduces roundtrip error (see paper for analysis)
 
 ## Citation
 
 ```bibtex
-{PAPER_CITATION}
+@article{{vision-banana-2026,
+  title={{Image Generators are Generalist Vision Learners}},
+  journal={{arXiv:2604.20329}},
+  year={{2026}}
+}}
 ```
 
 ## License
 
-The project code is MIT licensed. Checkpoint distribution and use also remain
-subject to the selected base model and training-dataset licenses.
+MIT License — see LICENSE file in the repository.
 """
     return card
 
@@ -183,11 +184,15 @@ def publish_checkpoint(
         logger.error("Checkpoint not found: %s", checkpoint_path)
         return 1
 
-    try:
-        from huggingface_hub import HfApi, create_repo
-    except ImportError:
-        logger.error("huggingface_hub not installed. Run: pip install huggingface_hub")
-        return 1
+    run_root = checkpoint_path.parent
+    supplemental_files = [
+        path
+        for path in (
+            run_root / "training_config.yaml",
+            run_root / "experiment_manifest.json",
+        )
+        if path.is_file()
+    ]
 
     # Build model card
     model_card = _build_model_card(
@@ -206,11 +211,18 @@ def publish_checkpoint(
         print(f"  Repo:     {repo_id}")
         print(f"  File:     {checkpoint_path}")
         print(f"  Task:     {task}")
+        print(f"  Metadata: {[path.name for path in supplemental_files]}")
         print(f"  Card:     {len(model_card)} chars")
         print("=" * 60)
         print(model_card[:2000])
         print("... [truncated]" if len(model_card) > 2000 else "")
         return 0
+
+    try:
+        from huggingface_hub import HfApi, create_repo
+    except ImportError:
+        logger.error("huggingface_hub not installed. Run: pip install huggingface_hub")
+        return 1
 
     # Create repo (if not exists)
     api = HfApi()
@@ -221,17 +233,33 @@ def publish_checkpoint(
         logger.error("Failed to create repo: %s", exc)
         return 1
 
-    # Upload checkpoint
+    # Upload checkpoint or complete PEFT adapter directory.
     try:
-        api.upload_file(
-            path_or_fileobj=str(checkpoint_path),
-            path_in_repo="model.safetensors",
-            repo_id=repo_id,
-        )
-        logger.info("Uploaded checkpoint to %s/model.safetensors", repo_id)
+        if checkpoint_path.is_dir():
+            api.upload_folder(folder_path=str(checkpoint_path), repo_id=repo_id)
+            logger.info("Uploaded adapter directory to %s", repo_id)
+        else:
+            api.upload_file(
+                path_or_fileobj=str(checkpoint_path),
+                path_in_repo=checkpoint_path.name,
+                repo_id=repo_id,
+            )
+            logger.info("Uploaded checkpoint to %s/%s", repo_id, checkpoint_path.name)
     except Exception as exc:
         logger.error("Upload failed: %s", exc)
         return 1
+
+
+    for supplemental_path in supplemental_files:
+        try:
+            api.upload_file(
+                path_or_fileobj=str(supplemental_path),
+                path_in_repo=supplemental_path.name,
+                repo_id=repo_id,
+            )
+        except Exception as exc:
+            logger.error("Failed to upload %s: %s", supplemental_path.name, exc)
+            return 1
 
     # Upload model card
     try:
@@ -258,7 +286,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Publish Vision Banana LoRA to Hugging Face Hub")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to trained checkpoint")
     parser.add_argument("--repo-id", type=str, required=True, help="HF Hub repo ID (org/model)")
-    parser.add_argument("--task", type=str, required=True, choices=["depth", "normal", "semantic", "instance", "referring"])
+    parser.add_argument(
+        "--task",
+        type=str,
+        required=True,
+        choices=["multitask", "depth", "normal", "semantic", "instance", "referring"],
+    )
     parser.add_argument("--description", type=str, default="", help="Model description")
     parser.add_argument("--base-model", type=str, default="black-forest-labs/FLUX.1-schnell")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be published")

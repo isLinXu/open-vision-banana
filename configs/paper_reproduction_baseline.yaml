@@ -1,0 +1,91 @@
+# Method-reproduction baseline for the five paper tasks.
+# Paper-disclosed method: one prompt-controlled image generator, shared adapter,
+# RGB task outputs. Rank, mix ratio, optimizer, and schedule are project choices.
+schema_version: 1
+
+model:
+  name: "black-forest-labs/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules: null  # Resolve the FLUX-specific targets from model_registry.py.
+  dropout: 0.0
+
+optimizer:
+  name: "adamw"
+  lr: 5.0e-5
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  scheduler: "cosine"
+  warmup_steps: 500
+  max_grad_norm: 1.0
+
+data:
+  root: "data/paper_reproduction"
+  tasks: [depth, normal, semantic, instance, referring]
+  task_dirs:
+    depth: "depth"
+    normal: "normal"
+    semantic: "semantic"
+    instance: "instance"
+    referring: "referring"
+  task_sampling: "uniform"
+  task_weights: {}
+  vision_ratio: 0.1
+  generation_ratio: 0.9
+  generation_path: "generation"
+  colormaps: [cube_edge]
+  resolution: 512
+  batch_size: 1
+  num_workers: 8
+  augmentation: false
+  val_split: 0.05
+
+training:
+  epochs: 10
+  gradient_accumulation_steps: 16
+  use_amp: true
+  gradient_checkpointing: true
+  use_ema: false
+  ema_decay: 0.9999
+  ema_warmup_steps: 2000
+  use_logit_normal_timesteps: true
+  use_min_snr: false
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+  use_img2img_flow: true
+  flow_sigma: 0.0
+  warmup_ratio: null
+  save_every: 1000
+  eval_every: 500
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+logging:
+  wandb_enabled: false
+  wandb_project: "open-vision-banana-reproduction"
+  wandb_log_checkpoints: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs"
+  run_name: "paper-reproduction-baseline"
+
+depth_mapping:
+  lam: -3.0
+  c: 3.3333333333333335
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0
+
+output_dir: "output/paper-reproduction-baseline"

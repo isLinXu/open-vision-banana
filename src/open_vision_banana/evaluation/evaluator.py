@@ -37,14 +37,26 @@ from .depth import evaluate_depth
 from .edge import evaluate_edge
 from .flow import evaluate_flow
 from .generation_preservation import evaluate_generation_preservation
-from .instance import evaluate_instance
+from .instance import SACoAccumulator, evaluate_instance
 from .keypoint import evaluate_keypoints
 from .normal import evaluate_normals
 from .object_detection import evaluate_object_detection
-from .referring import evaluate_referring
+from .referring import ReferringAccumulator, evaluate_referring
 from .semantic import evaluate_semantic
 
 logger = logging.getLogger(__name__)
+
+
+def _batch_bool(value: Any, index: int, default: bool) -> bool:
+    """Read a scalar or batched presence label without constraining collate type."""
+    if value is None:
+        return default
+    if isinstance(value, torch.Tensor):
+        flat = value.reshape(-1)
+        return bool(flat[min(index, flat.numel() - 1)].item())
+    if isinstance(value, (list, tuple)):
+        return bool(value[min(index, len(value) - 1)])
+    return bool(value)
 
 
 class VisionEvaluator:
@@ -197,6 +209,8 @@ class VisionEvaluator:
             if task == "semantic"
             else None
         )
+        instance_accumulator = SACoAccumulator() if task == "instance" else None
+        referring_accumulator = ReferringAccumulator() if task == "referring" else None
 
         # Pre-instantiate shared decoders once (not per batch)
         depth_mapper = DepthRGBMapper() if task in ("depth", "depth_edge") else None
@@ -267,13 +281,41 @@ class VisionEvaluator:
                 metrics = evaluate_semantic(pred_labels, gt_labels, num_classes if num_classes is not None else len(cmap))
 
             elif task == "instance":
-                pred_inst = seg_decoder.decode_instance(pred_rgb)[0]
-                gt_inst = seg_decoder.decode_instance(target_rgb)[0]
-                metrics = evaluate_instance(pred_inst, gt_inst)
+                pred_batch = seg_decoder.decode_instance(pred_rgb)
+                gt_batch = seg_decoder.decode_instance(target_rgb)
+                if len(pred_batch) != len(gt_batch):
+                    raise RuntimeError("Predicted and target instance batches have different sizes")
+
+                per_query_metrics = []
+                for query_idx, (pred_inst, gt_inst) in enumerate(
+                    zip(pred_batch, gt_batch, strict=True)
+                ):
+                    pred_present = _batch_bool(
+                        batch.get("pred_present"), query_idx, bool(pred_inst)
+                    )
+                    gt_present = _batch_bool(
+                        batch.get("gt_present"), query_idx, bool(gt_inst)
+                    )
+                    gated_pred = pred_inst if pred_present else []
+                    if instance_accumulator is not None:
+                        instance_accumulator.update(
+                            gated_pred,
+                            gt_inst,
+                            pred_present=pred_present,
+                            gt_present=gt_present,
+                        )
+                    per_query_metrics.append(evaluate_instance(gated_pred, gt_inst))
+
+                metrics = {
+                    key: sum(item[key] for item in per_query_metrics) / len(per_query_metrics)
+                    for key in per_query_metrics[0]
+                } if per_query_metrics else {}
 
             elif task == "referring":
                 pred_mask = pred_rgb.mean(dim=1) > 0.5
                 gt_mask = target_rgb.mean(dim=1) > 0.5
+                if referring_accumulator is not None:
+                    referring_accumulator.update(pred_mask, gt_mask)
                 metrics = evaluate_referring(pred_mask, gt_mask)
 
             elif task == "edge":
@@ -392,6 +434,8 @@ class VisionEvaluator:
             return normal_accumulator.compute()
         if task == "semantic" and semantic_accumulator is not None:
             return semantic_accumulator.compute()
+        if task == "referring" and referring_accumulator is not None:
+            return referring_accumulator.compute()
 
         for k in all_metrics:
             metric_value = all_metrics[k]
@@ -414,6 +458,9 @@ class VisionEvaluator:
                         metric_value[sub_k] /= n_batches
             else:
                 all_metrics[k] /= n_batches
+
+        if task == "instance" and instance_accumulator is not None:
+            all_metrics.update(instance_accumulator.compute())
 
         return all_metrics
 

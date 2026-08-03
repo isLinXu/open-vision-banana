@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Training script for Open-Vision-Banana.
 
-Implements the instruction-tuning pipeline from the paper:
-- Mix vision task data at 9:1 ratio with base model's training data
-- Use rsLoRA (rank=64, alpha=128) for parameter-efficient fine-tuning
-- Train only 0.5%-1% of total parameters
-- Preserve 90%+ generation capability
+Implements the paper's generator instruction-tuning pattern with explicit,
+project-controlled data mixing and LoRA hyperparameters.
 
 Usage:
     python scripts/train.py --config configs/training_config.yaml
@@ -16,19 +13,15 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 from pathlib import Path
 
 import torch
 
 from open_vision_banana import VisionBananaConfig
-from open_vision_banana.data import (
-    MixedVisionDataset,
-    build_dataset,
-    build_generation_dataset,
-    build_v3_datasets,
-    load_v3_train_val_split,
-)
+from open_vision_banana.data import MixedVisionDataset, build_dataset, build_generation_dataset
+from open_vision_banana.training.tuner import VisionTaskDataset
 from open_vision_banana.data.split import split_vision_datasets
 from open_vision_banana.training.logging import create_training_logger_from_config
 
@@ -38,13 +31,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DEFAULT_TASKS = [
+    "preencoded_depth", "depth", "normal", "semantic", "segmentation",
+    "instance", "referring", "edge", "flow", "keypoint", "object_detection",
+    "depth_edge", "structure", "multiview", "specular_removal",
+]
+TASK_ALIASES = {
+    "depth_estimation": "depth",
+    "normal_estimation": "normal",
+    "semantic_segmentation": "semantic",
+    "instance_segmentation": "instance",
+    "referring_segmentation": "referring",
+    "edge_detection": "edge",
+    "keypoint_detection": "keypoint",
+}
+
+
+def _configured_tasks(value) -> list[str]:
+    if value is None:
+        return list(DEFAULT_TASKS)
+    names = list(value) if isinstance(value, (list, dict)) else []
+    if not names:
+        raise ValueError("data.tasks must be a non-empty list or mapping")
+    tasks = []
+    for name in names:
+        task = TASK_ALIASES.get(str(name), str(name))
+        if task not in DEFAULT_TASKS:
+            raise ValueError(f"Unsupported task in data.tasks: {name}")
+        if task not in tasks:
+            tasks.append(task)
+    return tasks
+
+
+def _resolve_task_root(data_root: Path, task: str, task_dirs: dict[str, str]) -> Path:
+    configured = task_dirs.get(task)
+    if configured is None:
+        for alias, canonical in TASK_ALIASES.items():
+            if canonical == task and alias in task_dirs:
+                configured = task_dirs[alias]
+                break
+    if configured is not None:
+        path = Path(configured)
+        return path if path.is_absolute() else data_root / path
+    candidate = data_root / task
+    return candidate if candidate.exists() else data_root
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train Vision Banana (instruction-tuning FLUX.1)")
+    parser = argparse.ArgumentParser(
+        description="Train Vision Banana (instruction-tuning FLUX.1)"
+    )
     parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/training_config.yaml",
+        "--config", type=str, default="configs/training_config.yaml",
         help="Path to training config file",
     )
     # Override flags (take precedence over config file)
@@ -55,34 +93,19 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--data-path", type=str, default=None)
-    parser.add_argument(
-        "--generation-path",
-        type=str,
-        default=None,
-        help="Path to generation preservation dataset (9:1 mix)",
-    )
-    parser.add_argument(
-        "--vision-ratio",
-        type=float,
-        default=None,
-        help="Vision sampling ratio (default 0.1 = 10%% vision)",
-    )
-    parser.add_argument("--output-dir", type=str, default="output/checkpoints")
+    parser.add_argument("--generation-path", type=str, default=None,
+                        help="Path to generation preservation dataset (9:1 mix)")
+    parser.add_argument("--vision-ratio", type=float, default=None,
+                        help="Vision sampling ratio (default 0.1 = 10%% vision)")
+    parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint path")
-    parser.add_argument(
-        "--val-split",
-        type=float,
-        default=None,
-        help="Validation split ratio on vision data (e.g. 0.1)",
-    )
-    parser.add_argument(
-        "--early-stopping-patience",
-        type=int,
-        default=None,
-        help="Stop after N evals without val loss improvement",
-    )
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint path")
+    parser.add_argument("--val-split", type=float, default=None,
+                        help="Validation split ratio on vision data (e.g. 0.1)")
+    parser.add_argument("--early-stopping-patience", type=int, default=None,
+                        help="Stop after N evals without val loss improvement")
     parser.add_argument("--early-stopping-min-delta", type=float, default=None)
     parser.add_argument("--log-every", type=int, default=None)
     parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
@@ -90,27 +113,16 @@ def parse_args():
     parser.add_argument("--wandb-run-name", type=str, default=None)
     parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard logging")
     parser.add_argument("--tensorboard-dir", type=str, default=None)
-    parser.add_argument(
-        "--wandb-log-checkpoints",
-        action="store_true",
-        help="Upload LoRA checkpoints to W&B as artifacts",
-    )
-    parser.add_argument(
-        "--fsdp", action="store_true", help="Enable FSDP multi-GPU training (use with torchrun)"
-    )
-    parser.add_argument(
-        "--ddp", action="store_true", help="Enable DDP multi-GPU training (use with torchrun)"
-    )
-    parser.add_argument(
-        "--gradient-checkpointing",
-        action="store_true",
-        help="Enable gradient checkpointing on transformer blocks",
-    )
-    parser.add_argument(
-        "--deepspeed",
-        action="store_true",
-        help="Enable DeepSpeed ZeRO-3 (use with deepspeed launcher)",
-    )
+    parser.add_argument("--wandb-log-checkpoints", action="store_true",
+                        help="Upload LoRA checkpoints to W&B as artifacts")
+    parser.add_argument("--fsdp", action="store_true",
+                        help="Enable FSDP multi-GPU training (use with torchrun)")
+    parser.add_argument("--ddp", action="store_true",
+                        help="Enable DDP multi-GPU training (use with torchrun)")
+    parser.add_argument("--gradient-checkpointing", action="store_true",
+                        help="Enable gradient checkpointing on transformer blocks")
+    parser.add_argument("--deepspeed", action="store_true",
+                        help="Enable DeepSpeed ZeRO-3 (use with deepspeed launcher)")
     parser.add_argument(
         "--deepspeed-config",
         type=str,
@@ -119,62 +131,31 @@ def parse_args():
     )
     # v7 / paper-aligned training options (InstructionTuner)
     parser.add_argument(
-        "--colormaps",
-        type=str,
-        default=None,
+        "--colormaps", type=str, default=None,
         help="Comma-separated depth colormaps (e.g. cube_edge,viridis,plasma)",
     )
-    parser.add_argument(
-        "--flow-sigma",
-        type=float,
-        default=None,
-        help="Optional flow-matching noise sigma (0 = pure flow)",
-    )
-    parser.add_argument("--no-min-snr", action="store_true", help="Disable Min-SNR loss weighting")
-    parser.add_argument(
-        "--no-logit-normal-timesteps",
-        action="store_true",
-        help="Use uniform timesteps instead of logit-normal",
-    )
-    parser.add_argument(
-        "--no-img2img-flow",
-        action="store_true",
-        help="Disable img2img-style flow matching (input→target)",
-    )
-    parser.add_argument(
-        "--cfg-dropout-rate",
-        type=float,
-        default=None,
-        help="CFG dropout rate for text conditioning (default 0.1)",
-    )
-    parser.add_argument(
-        "--ema-decay", type=float, default=None, help="EMA decay override (default from config)"
-    )
-    parser.add_argument(
-        "--scheduler",
-        type=str,
-        default=None,
-        help="LR scheduler: cosine, cosine_restarts, polynomial, constant, one_cycle",
-    )
-    parser.add_argument(
-        "--warmup-ratio",
-        type=float,
-        default=None,
-        help="Warmup ratio for SchedulerFactory (overrides warmup_steps when set)",
-    )
-    parser.add_argument(
-        "--task-weights",
-        type=str,
-        default=None,
-        help="Task sampling weight mode for vision datasets: sqrt, uniform, or comma-separated weights. Default: uniform random.",
-    )
+    parser.add_argument("--flow-sigma", type=float, default=None,
+                        help="Optional flow-matching noise sigma (0 = pure flow)")
+    parser.add_argument("--no-min-snr", action="store_true",
+                        help="Disable Min-SNR loss weighting")
+    parser.add_argument("--no-logit-normal-timesteps", action="store_true",
+                        help="Use uniform timesteps instead of logit-normal")
+    parser.add_argument("--no-img2img-flow", action="store_true",
+                        help="Disable img2img-style flow matching (input→target)")
+    parser.add_argument("--cfg-dropout-rate", type=float, default=None,
+                        help="CFG dropout rate for text conditioning (default 0.1)")
+    parser.add_argument("--ema-decay", type=float, default=None,
+                        help="EMA decay override (default from config)")
+    parser.add_argument("--scheduler", type=str, default=None,
+                        help="LR scheduler: cosine, cosine_restarts, polynomial, constant, one_cycle")
+    parser.add_argument("--warmup-ratio", type=float, default=None,
+                        help="Warmup ratio for SchedulerFactory (overrides warmup_steps when set)")
     return parser.parse_args()
 
 
 def get_dtype(dtype_str: str) -> torch.dtype:
-    return {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}[
-        dtype_str
-    ]
+    return {"float32": torch.float32, "float16": torch.float16,
+            "bfloat16": torch.bfloat16}[dtype_str]
 
 
 def _auto_device() -> str:
@@ -192,7 +173,7 @@ def main():
     # Load config
     config_path = Path(args.config)
     if config_path.exists():
-        cfg = VisionBananaConfig.from_yaml(config_path)
+        cfg = VisionBananaConfig.from_yaml(config_path, strict=True)
     else:
         logger.warning(f"Config file not found: {config_path}, using defaults")
         cfg = VisionBananaConfig()
@@ -200,6 +181,7 @@ def main():
     # Apply CLI overrides
     if args.model_name:
         cfg.model.name = args.model_name
+        cfg.model.local_path = None
     if args.lora_rank:
         cfg.lora.rank = args.lora_rank
     if args.lora_alpha:
@@ -214,6 +196,7 @@ def main():
         cfg.data.generation_path = args.generation_path
     if args.vision_ratio is not None:
         cfg.data.vision_ratio = args.vision_ratio
+        cfg.data.generation_ratio = 1.0 - args.vision_ratio
     if args.val_split is not None:
         cfg.data.val_split = args.val_split
     if args.early_stopping_patience is not None:
@@ -236,8 +219,44 @@ def main():
         cfg.logging.wandb_log_checkpoints = True
         cfg.logging.wandb_enabled = True
 
-    output_dir = args.output_dir if args.output_dir != "output/checkpoints" else cfg.output_dir
-    seed = args.seed
+    if args.ema_decay is not None:
+        cfg.training.ema_decay = args.ema_decay
+    if args.no_min_snr:
+        cfg.training.use_min_snr = False
+    if args.no_logit_normal_timesteps:
+        cfg.training.use_logit_normal_timesteps = False
+    if args.no_img2img_flow:
+        cfg.training.use_img2img_flow = False
+    if args.flow_sigma is not None:
+        cfg.training.flow_sigma = args.flow_sigma
+    if args.cfg_dropout_rate is not None:
+        cfg.training.cfg_dropout_rate = args.cfg_dropout_rate
+    if args.warmup_ratio is not None:
+        cfg.training.warmup_ratio = args.warmup_ratio
+    if args.gradient_checkpointing:
+        cfg.training.gradient_checkpointing = True
+    if args.scheduler:
+        cfg.optimizer.scheduler = args.scheduler
+    if args.colormaps:
+        cfg.data.colormaps = [
+            name.strip() for name in args.colormaps.split(",") if name.strip()
+        ]
+
+    output_dir = args.output_dir or cfg.output_dir
+    seed = args.seed if args.seed is not None else cfg.training.seed
+    cfg.output_dir = output_dir
+    cfg.training.seed = seed
+    configured_data_path = args.data_path or cfg.data.root
+    if configured_data_path is None:
+        raise ValueError("Training requires --data-path or data.root in the config")
+    data_path = Path(configured_data_path).expanduser()
+    if not data_path.exists():
+        raise FileNotFoundError(f"Training data root does not exist: {data_path}")
+    cfg.data.root = str(data_path.resolve())
+    if cfg.data.tasks is None:
+        cfg.data.tasks = list(DEFAULT_TASKS)
+    cfg.validate()
+
     device = args.device or _auto_device()
 
     # Set seed
@@ -249,7 +268,8 @@ def main():
     logger.info("=" * 60)
     logger.info("Vision Banana Training")
     logger.info("=" * 60)
-    logger.info(f"Base model: {cfg.model.name}")
+    effective_model_name = cfg.model.local_path or cfg.model.name
+    logger.info(f"Base model: {effective_model_name}")
     logger.info(f"LoRA rank: {cfg.lora.rank}, alpha: {cfg.lora.alpha} (rsLoRA)")
     logger.info(f"Learning rate: {cfg.optimizer.lr}")
     logger.info(f"Epochs: {cfg.training.epochs}, Batch size: {cfg.data.batch_size}")
@@ -268,13 +288,21 @@ def main():
     num_workers = cfg.data.num_workers
     if device == "cpu":
         if use_amp:
-            logger.warning("AMP not supported on cpu — disabling use_amp automatically.")
+            logger.warning(
+                "AMP not supported on cpu — disabling use_amp automatically."
+            )
             use_amp = False
     elif device == "mps" and use_amp:
-        logger.info("MPS: enabling bfloat16 autocast (GradScaler disabled — CUDA only).")
+        logger.info(
+            "MPS: enabling bfloat16 autocast (GradScaler disabled — CUDA only)."
+        )
     if device in ("mps", "cpu") and num_workers > 0:
-        logger.warning(f"num_workers={num_workers} may cause hangs on {device} — forcing 0.")
+        logger.warning(
+            f"num_workers={num_workers} may cause hangs on {device} — forcing 0."
+        )
         num_workers = 0
+    cfg.training.use_amp = use_amp
+    cfg.data.num_workers = num_workers
 
     # Load base FLUX.1 model
     logger.info("Loading base FLUX.1 model…")
@@ -293,7 +321,6 @@ def main():
 
     if args.fsdp:
         from open_vision_banana.training.fsdp_utils import FSDPWrapper
-
         fsdp_wrapper = FSDPWrapper()
         fsdp_wrapper.initialize()
         is_main_process = fsdp_wrapper.is_main()
@@ -304,7 +331,6 @@ def main():
         from torch.utils.data import DistributedSampler
 
         from open_vision_banana.training.utils import DDPWrapper
-
         ddp_wrapper = DDPWrapper()
         ddp_wrapper.initialize()
         is_main_process = ddp_wrapper.is_main()
@@ -312,8 +338,38 @@ def main():
         if is_main_process:
             logger.info("DDP enabled (world_size=%d)", ddp_wrapper.world_size)
 
+    if isinstance(cfg.data.tasks, dict):
+        logger.warning(
+            "Legacy mapping-style data.tasks detected: mapping keys select tasks, but nested "
+            "dataset metadata is recorded only. Use data.task_dirs for loader paths."
+        )
+    if is_main_process:
+        run_dir = Path(output_dir)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        cfg.to_yaml(run_dir / "training_config.yaml")
+        from open_vision_banana.reproducibility import build_experiment_manifest
+
+        manifest = build_experiment_manifest(
+            cfg,
+            repo_root=Path(__file__).resolve().parents[1],
+            fingerprint_mode="metadata",
+            require_data=True,
+        )
+        manifest["launch"] = {
+            "device": device,
+            "ddp": args.ddp,
+            "fsdp": args.fsdp,
+            "deepspeed": args.deepspeed,
+            "deepspeed_config": args.deepspeed_config if args.deepspeed else None,
+        }
+        (run_dir / "experiment_manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
     generator = BaseGenerator(
-        model_name=cfg.model.name,
+        model_name=effective_model_name,
+        lora_path=cfg.model.lora_path,
+        lora_revision=cfg.model.lora_revision,
         device=device,
         dtype=get_dtype(cfg.model.dtype),
     )
@@ -333,20 +389,29 @@ def main():
         model=generator,
         lora_rank=cfg.lora.rank,
         lora_alpha=cfg.lora.alpha,
+        lora_dropout=cfg.lora.dropout,
+        target_modules=cfg.lora.target_modules,
         use_rslora=cfg.lora.rs_lora,
         lr=cfg.optimizer.lr,
+        weight_decay=cfg.optimizer.weight_decay,
+        optimizer_name=cfg.optimizer.name,
+        adam_betas=cfg.optimizer.betas,
+        adam_eps=cfg.optimizer.eps,
         augmentation=augmentation,
         use_ema=cfg.training.use_ema,
-        ema_decay=args.ema_decay if args.ema_decay is not None else cfg.training.ema_decay,
-        use_min_snr=not args.no_min_snr,
-        use_logit_normal_timesteps=not args.no_logit_normal_timesteps,
-        use_img2img_flow=not args.no_img2img_flow,
-        flow_sigma=args.flow_sigma if args.flow_sigma is not None else cfg.training.flow_sigma,
-        cfg_dropout_rate=args.cfg_dropout_rate if args.cfg_dropout_rate is not None else 0.1,
-        warmup_ratio=args.warmup_ratio,
+        ema_decay=cfg.training.ema_decay,
+        ema_warmup_steps=cfg.training.ema_warmup_steps,
+        use_gradient_checkpointing=cfg.training.gradient_checkpointing,
+        use_min_snr=cfg.training.use_min_snr,
+        min_snr_gamma=cfg.training.min_snr_gamma,
+        use_logit_normal_timesteps=cfg.training.use_logit_normal_timesteps,
+        use_img2img_flow=cfg.training.use_img2img_flow,
+        flow_sigma=cfg.training.flow_sigma,
+        cfg_dropout_rate=cfg.training.cfg_dropout_rate,
+        warmup_ratio=cfg.training.warmup_ratio,
     )
 
-    if args.gradient_checkpointing or args.fsdp or args.deepspeed:
+    if args.fsdp or args.deepspeed:
         enable_gradient_checkpointing(tuner.peft_model)
 
     if args.deepspeed:
@@ -357,7 +422,6 @@ def main():
             max_grad_norm=cfg.optimizer.max_grad_norm,
         )
         from open_vision_banana.training.deepspeed_utils import deepspeed_is_main
-
         is_main_process = deepspeed_is_main(tuner.deepspeed_engine)
         if is_main_process:
             logger.info(
@@ -372,7 +436,6 @@ def main():
     if args.resume:
         logger.info(f"Resuming from {args.resume}")
         from open_vision_banana.training.checkpoint import CheckpointManager
-
         resume_path = Path(args.resume)
         if resume_path.is_dir() and resume_path.name.startswith("checkpoint-"):
             resume_checkpoint = resume_path
@@ -382,15 +445,9 @@ def main():
                 raise FileNotFoundError(f"No numbered checkpoint found in {resume_path}")
         else:
             resume_checkpoint = resume_path.parent
-        meta_path = (
-            resume_checkpoint / "metadata.json"
-            if resume_checkpoint.is_dir()
-            else resume_checkpoint.parent / "metadata.json"
-        )
+        meta_path = resume_checkpoint / "metadata.json" if resume_checkpoint.is_dir() else resume_checkpoint.parent / "metadata.json"
         if not meta_path.exists():
             raise FileNotFoundError(f"Checkpoint metadata not found: {meta_path}")
-        import json
-
         meta = json.loads(meta_path.read_text())
         resume_step = meta.get("step", 0)
         resume_epoch = meta.get("epoch", 0)
@@ -402,115 +459,74 @@ def main():
 
     # Build datasets
     vision_datasets = []
-    val_dataset = None
-    train_vision_datasets = []
 
-    if args.data_path:
-        from pathlib import Path as _Path
+    if data_path is not None:
+        for task in _configured_tasks(cfg.data.tasks):
+            task_root = _resolve_task_root(data_path, task, cfg.data.task_dirs)
+            loaded = False
+            # Try specialized build_dataset first
+            try:
+                ds = build_dataset(task, str(task_root), resolution=cfg.data.resolution)
+                if len(ds) > 0:
+                    if hasattr(ds, "depth_mapper"):
+                        from open_vision_banana.core.depth_mapper import DepthRGBMapper
 
-        data_root = _Path(args.data_path)
+                        ds.depth_mapper = DepthRGBMapper(
+                            lam=cfg.depth_mapping.lam, c=cfg.depth_mapping.c
+                        )
+                    vision_datasets.append(ds)
+                    logger.info(f"  Loaded {task} (specialized): {len(ds)} samples")
+                    loaded = True
+            except Exception as exc:
+                logger.debug("Specialized loader failed for %s: %s", task, exc)
 
-        # Detect v3 format: has train_val_split.json and task subdirs with images/
-        v3_split = load_v3_train_val_split(data_root)
-        is_v3 = v3_split is not None or (data_root / "manifest.json").exists()
+            if loaded:
+                continue
 
-        if is_v3:
-            logger.info(f"Detected v3-format dataset at {data_root}")
-            # Load train split
-            train_vision_datasets = build_v3_datasets(
-                data_root,
-                resolution=cfg.data.resolution,
-                split="train",
-                use_split_file=v3_split is not None,
-            )
-            for ds in train_vision_datasets:
-                logger.info(f"  [v3-train] {ds.dir_name}/{ds.task}: {len(ds)} samples")
-
-            # Load val split if val_split ratio is set
-            if cfg.data.val_split > 0 and v3_split is not None:
-                val_datasets = build_v3_datasets(
-                    data_root,
-                    resolution=cfg.data.resolution,
-                    split="val",
-                    use_split_file=True,
-                )
-                if val_datasets:
-                    from torch.utils.data import ConcatDataset
-
-                    val_dataset = ConcatDataset(val_datasets)
-                    logger.info(f"  [v3-val] Validation set: {len(val_dataset)} samples")
-
-            # If no val split in config, use all data as train
-            if not train_vision_datasets:
-                train_vision_datasets = build_v3_datasets(
-                    data_root,
-                    resolution=cfg.data.resolution,
-                    split="train",
-                    use_split_file=False,
-                )
-                for ds in train_vision_datasets:
-                    logger.info(f"  [v3-all] {ds.dir_name}/{ds.task}: {len(ds)} samples")
-
-            vision_datasets = train_vision_datasets
-        else:
-            # Fallback: legacy per-task loading (original dataset formats)
-            for task in [
-                "preencoded_depth",
-                "depth",
-                "normal",
-                "semantic",
-                "instance",
-                "referring",
-                "edge",
-                "flow",
-                "keypoint",
-                "object_detection",
-                "depth_edge",
-            ]:
+            # Fallback: generic images/targets layout via VisionTaskDataset
+            task_dir = task_root
+            if (task_dir / "images").exists():
                 try:
-                    ds = build_dataset(task, args.data_path, resolution=cfg.data.resolution)
-                    if len(ds) > 0:
+                    ds = VisionTaskDataset(
+                        data_path=str(task_dir),
+                        resolution=cfg.data.resolution,
+                        task=task,
+                    )
+                    if ds.samples:
                         vision_datasets.append(ds)
-                        logger.info(f"  Loaded {task}: {len(ds)} samples")
+                        logger.info(f"  Loaded {task} (generic): {len(ds)} samples")
                 except Exception as e:
-                    logger.warning(f"  Failed to load {task} from {args.data_path}: {e}")
-
-            train_vision_datasets = vision_datasets
-            if cfg.data.val_split > 0:
-                train_vision_datasets, val_dataset = split_vision_datasets(
-                    vision_datasets,
-                    cfg.data.val_split,
-                    seed=seed,
-                )
-                if val_dataset is not None:
-                    logger.info(f"  Validation set: {len(val_dataset)} samples")
+                    logger.warning(f"  Failed to load {task} from {task_root}: {e}")
 
     if not vision_datasets:
         logger.warning("No vision datasets loaded. Training requires data.")
         logger.info("Provide --data-path pointing to a dataset directory.")
         return
 
+    val_dataset = None
+    train_vision_datasets = vision_datasets
+    if cfg.data.val_split > 0:
+        train_vision_datasets, val_dataset = split_vision_datasets(
+            vision_datasets, cfg.data.val_split, seed=seed, source_level=True,
+        )
+        if val_dataset is not None:
+            logger.info(f"  Validation set: {len(val_dataset)} samples")
+
     generation_dataset = None
-    gen_split_filter = None
-    if is_v3 and v3_split is not None and not cfg.data.generation_path:
-        # Auto-detect generation/ directory inside v3 dataset root
-        auto_gen_dir = data_root / "generation"
-        if auto_gen_dir.is_dir():
-            cfg.data.generation_path = str(auto_gen_dir)
-            logger.info(f"Auto-detected generation dataset at {auto_gen_dir}")
-
-    if cfg.data.generation_path:
-        # If v3 split exists, apply split filter to generation data too
-        if is_v3 and v3_split is not None:
-            split_map = v3_split.get("train", {})
-            gen_filenames = split_map.get("generation")
-            if gen_filenames is not None:
-                gen_split_filter = (set(gen_filenames), "train")
-
+    generation_path = cfg.data.generation_path
+    if generation_path is not None and data_path is not None:
+        configured_generation_path = Path(generation_path)
+        if not configured_generation_path.is_absolute() and not configured_generation_path.exists():
+            generation_path = str(data_path / configured_generation_path)
+    if generation_path is None and data_path is not None:
+        implicit_generation_path = data_path / "generation"
+        if (implicit_generation_path / "images").exists():
+            generation_path = str(implicit_generation_path)
+            logger.info("Using generation data discovered at %s", implicit_generation_path)
+    if generation_path:
         generation_dataset = build_generation_dataset(
-            cfg.data.generation_path,
+            generation_path,
             resolution=cfg.data.resolution,
-            split_filter=gen_split_filter,
         )
         if len(generation_dataset) == 0:
             logger.warning("Generation path provided but no samples loaded — skipping mix")
@@ -520,30 +536,24 @@ def main():
 
     vision_ratio = cfg.data.vision_ratio
     if generation_dataset is None and vision_ratio < 1.0:
-        logger.info("No generation dataset — forcing vision_ratio=1.0 (100%% vision sampling)")
+        logger.info(
+            "No generation dataset — forcing vision_ratio=1.0 (100%% vision sampling)"
+        )
         vision_ratio = 1.0
-
-    colormaps = None
-    if args.colormaps:
-        colormaps = [c.strip() for c in args.colormaps.split(",") if c.strip()]
-
-    # Parse task weights for balanced sampling across imbalanced tasks
-    task_weights = args.task_weights
-    if task_weights and task_weights not in ("sqrt", "uniform"):
-        # Parse comma-separated float weights
-        try:
-            task_weights = [float(w.strip()) for w in task_weights.split(",") if w.strip()]
-        except ValueError:
-            logger.warning(f"Invalid --task-weights value: {args.task_weights}. Using uniform.")
-            task_weights = None
 
     mixed_ds = MixedVisionDataset(
         vision_datasets=train_vision_datasets,
         generation_dataset=generation_dataset,
         vision_ratio=vision_ratio,
         seed=seed,
-        colormaps=colormaps,
-        task_weights=task_weights,
+        colormaps=cfg.data.colormaps,
+        task_sampling=cfg.data.task_sampling,
+        task_weights={
+            TASK_ALIASES.get(task, task): weight
+            for task, weight in cfg.data.task_weights.items()
+        },
+        depth_lam=cfg.depth_mapping.lam,
+        depth_c=cfg.depth_mapping.c,
     )
     logger.info(f"  Mixed dataset: {mixed_ds}")
 
@@ -551,25 +561,24 @@ def main():
         train_sampler = fsdp_wrapper.get_train_sampler(mixed_ds)
     elif ddp_wrapper is not None and ddp_wrapper.world_size > 1:
         from torch.utils.data import DistributedSampler
-
         train_sampler = DistributedSampler(mixed_ds, shuffle=True)
     elif args.deepspeed:
         from open_vision_banana.training.deepspeed_utils import get_train_sampler
-
         train_sampler = get_train_sampler(mixed_ds, tuner.deepspeed_engine)
 
     training_logger = create_training_logger_from_config(cfg)
-    training_logger.log_hyperparams(
-        {
-            "model": cfg.model.name,
-            "lora_rank": cfg.lora.rank,
-            "lora_alpha": cfg.lora.alpha,
-            "lr": cfg.optimizer.lr,
-            "batch_size": cfg.data.batch_size,
-            "vision_ratio": vision_ratio,
-            "epochs": cfg.training.epochs,
-        }
-    )
+    training_logger.log_hyperparams({
+        "model": effective_model_name,
+        "lora_rank": cfg.lora.rank,
+        "lora_alpha": cfg.lora.alpha,
+        "lora_dropout": cfg.lora.dropout,
+        "lr": cfg.optimizer.lr,
+        "weight_decay": cfg.optimizer.weight_decay,
+        "batch_size": cfg.data.batch_size,
+        "vision_ratio": vision_ratio,
+        "task_sampling": cfg.data.task_sampling,
+        "epochs": cfg.training.epochs,
+    })
 
     scheduler_type = args.scheduler or cfg.optimizer.scheduler
 
@@ -586,6 +595,7 @@ def main():
         output_dir=output_dir,
         save_every=cfg.training.save_every,
         eval_every=cfg.training.eval_every,
+        max_keep=cfg.training.max_keep,
         use_amp=use_amp,
         num_workers=num_workers,
         training_logger=training_logger,

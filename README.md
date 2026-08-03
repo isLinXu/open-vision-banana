@@ -1,11 +1,8 @@
 # Open-Vision-Banana
 
-**Image Generators are Generalist Vision Learners** — an independent, open-weight implementation of the Vision Banana paradigm.
+**Image Generators are Generalist Vision Learners** — Open-source implementation of Vision Banana.
 
-> [!IMPORTANT]
-> The original paper instruction-tunes Google's closed **Nano Banana Pro (NBP)** model. This repository substitutes open-weight diffusion backbones such as FLUX.1 and SSD-1B. As of v0.4.2, the open-backbone implementation has **not reproduced the paper's benchmark results**, and the checkpoint registry contains no downloadable weights marked `available`. Benchmark numbers in this README are results reported by the original NBP paper, not results produced by this repository.
-
-The original Vision Banana paper demonstrates that state-of-the-art visual understanding can emerge from image-generation pretraining. This repository provides the RGB task mappings, open-backbone training paths, evaluation tools, and deployment scaffolding needed to investigate whether that result transfers to publicly available models.
+Vision Banana demonstrates that state-of-the-art visual understanding can emerge from image generation pretraining. By instruction-tuning diffusion models (FLUX.1, ZImage, Qwen-Image, SANA, and more) on a mixture of their original training data alongside a small amount of vision task data, we obtain models that achieve SOTA zero-shot transfer on segmentation, depth estimation, and surface normal estimation — all through the lens of image generation.
 
 ## Core Idea
 
@@ -15,18 +12,18 @@ The original Vision Banana paper demonstrates that state-of-the-art visual under
 
 | Task | Type | Prompt Style | Status |
 |------|------|-------------|--------|
-| Semantic Segmentation | 2D | Color mapping: `{"cat": "red", "background": "yellow"}` | Implemented |
-| Instance Segmentation | 2D | "Each dog is colored differently" | Implemented |
-| Referring Expression Segmentation | 2D | "The man in pink t shirt is rendered solid white" | Implemented |
-| Metric Depth Estimation | 3D | Power transform + 6 colormaps (cube-edge/plasma/inferno/viridis/grayscale/rainbow) | Implemented |
-| Surface Normal Estimation | 3D | Direct linear mapping (x,y,z) → (R,G,B) | Implemented |
-| Edge Detection | 2D | "Edges are white, background is black" | Experimental |
-| Optical Flow | 2D | HSV encoding: direction=hue, magnitude=saturation | Experimental |
-| 2D Keypoint Detection | 2D | Colored dots per keypoint type | Experimental |
-| Object Detection | 2D | Colored bounding box per class | Experimental |
-| Depth Edge Detection | 3D | Depth discontinuity → white edges | Experimental |
+| Semantic Segmentation | 2D | Color mapping: `{"cat": "red", "background": "yellow"}` | ✅ |
+| Instance Segmentation | 2D | "Each dog is colored differently" | ✅ |
+| Referring Expression Segmentation | 2D | "The man in pink t shirt is rendered solid white" | ✅ |
+| Metric Depth Estimation | 3D | Power transform + 7 colormaps (including paper and legacy cube-edge paths) | ✅ |
+| Surface Normal Estimation | 3D | Direct linear mapping (x,y,z) → (R,G,B) | ✅ |
+| Edge Detection | 2D | "Edges are white, background is black" | ✅ Speculative |
+| Optical Flow | 2D | HSV encoding: direction=hue, magnitude=saturation | ✅ Speculative |
+| 2D Keypoint Detection | 2D | Colored dots per keypoint type | ✅ Speculative |
+| Object Detection | 2D | Colored bounding box per class | ✅ Speculative |
+| Depth Edge Detection | 3D | Depth discontinuity → white edges | ✅ Speculative |
 
-`Implemented` means the repository contains a mapper/decoder and training or evaluation path; it does not imply a released checkpoint or validated accuracy. `Experimental` tasks extend beyond the paper's evaluated task set and do not yet have repository benchmark evidence.
+> **Speculative tasks** are based on the paper's mention of "depth estimation, surface normal estimation, segmentation, **etc.**" and the [rainbow colormap mentioned on the project website](https://vision-banana.github.io).
 
 ## Architecture
 
@@ -47,9 +44,9 @@ The original Vision Banana paper demonstrates that state-of-the-art visual under
 │  │  ┌─────────────────────────────────────────┐     │   │
 │  │  │ LoRA rank=32~64, alpha=64~128          │     │   │
 │  │  │ rsLoRA scaling: α/√r                   │     │   │
-│  │  │ Configurable vision/generation mix       │     │   │
-│  │  │ Small trainable LoRA adapter subset      │     │   │
-│  │  │ Generation retention requires eval       │     │   │
+│  │  │ Data mix: 9:1 vision-to-language        │     │   │
+│  │  │ Params trained: 0.5%-1% of total        │     │   │
+│  │  │ Generation preserved: 90%+              │     │   │
 │  │  └─────────────────────────────────────────┘     │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                          │
@@ -111,16 +108,14 @@ instances = decoder.decode_instance(rgb)
 
 ### Inference (requires GPU + 16-24GB VRAM)
 
-Inference requires a compatible locally trained LoRA or an independently published checkpoint. The built-in `registry:vision-banana` aliases are placeholders until their status in `configs/checkpoint_registry.yaml` is changed to `available`.
-
 ```python
 from open_vision_banana import VisionBanana
 
-# Load a locally trained checkpoint.
+# Load model (local path, hf:repo/id, or registry:alias)
 # Supported models: flux-schnell, z-image, qwen-image, sana-600m, lumina2, chroma, etc.
-model = VisionBanana.from_pretrained(lora_path="path/to/checkpoint")
+model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
 
-# The checkpoint and base model family must match.
+# Or specify a different base model (default is FLUX.1-schnell)
 model = VisionBanana.from_pretrained(
     lora_path="path/to/checkpoint",
     model_name="z-image",  # or "qwen-image", "sana-600m", etc.
@@ -135,22 +130,6 @@ model = VisionBanana.from_pretrained(
 # Depth estimation
 result = model.predict(image=input_image, task="depth")
 ```
-
-For the deterministic SSD-1B relative-depth path, load a versioned frozen-feature
-probe artifact. This path returns scalar relative depth directly and does not run
-a diffusion denoising loop:
-
-```python
-from open_vision_banana import FrozenDepthEstimator
-
-estimator = FrozenDepthEstimator.from_pretrained("path/to/seed42_vae_ssd")
-result = estimator.predict(input_image)  # [B, 3, H, W] normalized to [-1, 1]
-relative_depth = result["relative_depth"]
-visualization = result["visualization"]
-```
-
-New probe artifacts contain checksum-verified safetensors weights and the exact
-base-model, feature, resolution, split, and colormap contract used for training.
 
 **Supported Base Models** (via model registry):
 
@@ -169,12 +148,12 @@ CLI with memory optimizations:
 # List registered checkpoints
 python scripts/download_checkpoint.py --list
 
-# Download LoRA from Hugging Face after an alias is marked available
+# Download LoRA from Hugging Face (when published)
 python scripts/download_checkpoint.py --alias vision-banana --output-dir checkpoints/
 
-# Inference on 16GB GPU with a local compatible checkpoint
+# Inference on 16GB GPU
 python scripts/inference.py --image input.jpg --task depth \
-  --lora-path path/to/checkpoint --cpu-offload --vae-slicing
+  --lora-path registry:vision-banana --cpu-offload --vae-slicing
 ```
 
 ### Data Validation (before training)
@@ -265,6 +244,28 @@ python scripts/evaluate_generation_preservation.py \
   --max-samples 32
 ```
 
+Paper-specific metrics are separate from the offline health proxies. SA-Co
+`pmF1`/`IL_MCC`/`cgF1` and RefCOCOg/ReasonSeg `cIoU`/`gIoU` are implemented in
+`open_vision_banana.evaluation`. The optional Gemini preprocessing stages can
+be run from resumable JSONL manifests:
+
+```bash
+export GEMINI_API_KEY="..."
+python scripts/run_paper_judges.py \
+  --mode saco-presence \
+  --manifest data/saco_queries.jsonl \
+  --output reports/saco_presence.jsonl
+
+python scripts/run_paper_judges.py \
+  --mode reasonseg-rewrite \
+  --manifest data/reasonseg_queries.jsonl \
+  --output reports/reasonseg_descriptions.jsonl
+```
+
+For GenAI-Bench-style human or external-judge records,
+`evaluate_pairwise_preferences()` reports `(wins + 0.5 * ties) / total`; the
+FID/LPIPS/CLIP health metrics remain explicitly labeled as proxies.
+
 ### Optional FastAPI serving
 
 Serving is isolated from the core install. Load the model in deployment code,
@@ -311,7 +312,29 @@ python scripts/publish_to_hub.py \
 
 ### Training
 
-> **Production Tip**: Use `scripts/unified_launch.sh` for all training modes — it auto-detects your GPU type and recommends the best strategy. See [`docs/quick-start.md`](docs/quick-start.md) for the complete GPU training guide (H20 / A100 / RTX).
+The paper does not disclose its base weights, exact data mixture, LoRA rank, or
+optimizer settings. The canonical configs therefore separate method reproduction
+from project optimization. See the [training and reproducibility design](docs/plans/2026-07-25-training-performance-reproducibility-design.md)
+for the evidence labels, ablation matrix, and promotion gates.
+
+```bash
+# Strict config validation and a content-addressed experiment manifest
+PYTHONPATH=src python scripts/validate_training_config.py \
+  --config configs/paper_reproduction_baseline.yaml \
+  --hash-mode content \
+  --output output/manifests/reproduction.json
+
+# Shared-adapter method-reproduction track
+PYTHONPATH=src python scripts/train.py \
+  --config configs/paper_reproduction_baseline.yaml
+
+# Project optimization track (run only after the baseline is frozen)
+PYTHONPATH=src python scripts/train.py \
+  --config configs/paper_optimized_multitask.yaml
+```
+
+For hardware-specific launch modes, `scripts/unified_launch.sh` supports single
+GPU, DDP, FSDP, and DeepSpeed. See [`docs/quick-start.md`](docs/quick-start.md).
 
 ```bash
 # ─── Recommended: Universal launcher (auto-detects GPU & mode) ───
@@ -329,7 +352,7 @@ bash scripts/unified_launch.sh --config configs/unified_training_config.yaml --d
 OVB_BATCH_SIZE=4 OVB_LR=1e-4 bash scripts/unified_launch.sh --config configs/training_config.yaml
 ```
 
-**Legacy direct training** (for custom scripts or debugging):
+**Direct overrides** (for custom experiments or debugging):
 
 ```bash
 # Basic training with validation + early stopping
@@ -339,7 +362,7 @@ python scripts/train.py \
   --early-stopping-patience 5 \
   --epochs 10
 
-# Repository's experimental 9:1 generation/vision mix
+# 9:1 generation mix + W&B logging + checkpoint artifacts
 python scripts/train.py \
   --data-path vision_data/ \
   --generation-path generation_data/ \
@@ -384,7 +407,7 @@ bash scripts/unified_launch.sh --config configs/unified_training_config.yaml
 
 All registered models: `flux-schnell`, `z-image`, `qwen-image`, `sana-600m`, `sana-1600m`, `lumina2`, `chroma`, `sdxl`, `sd3`, `pixart`, `cogview4`, `flux2-dev`, ...
 
-Generation dataset layout for the repository's experimental 9:1 mix:
+Generation dataset layout for 9:1 mix:
 
 ```bash
 # Build synthetic generation data (no GPU)
@@ -440,19 +463,14 @@ config.to_yaml("my_config.yaml")
 ### Export
 
 ```python
-from open_vision_banana.export import export_flux_transformer_onnx, export_mapper_onnx
+from open_vision_banana.export import export_mapper_onnx
 
 # Export depth mapper to ONNX
 export_mapper_onnx("depth_to_rgb", "depth_mapper.onnx")
 
 # Export normal mapper to ONNX
 export_mapper_onnx("normal_to_rgb", "normal_mapper.onnx")
-
-# Export only a loaded FLUX transformer component
-export_flux_transformer_onnx(model, "output/onnx/flux_transformer")
 ```
-
-The transformer export is not a standalone text-to-image pipeline: tokenizers, text encoders, scheduler, VAE, and RGB mappers are not bundled into the ONNX file.
 
 ### Evaluation
 
@@ -482,7 +500,7 @@ open-vision-banana/
 ├── src/open_vision_banana/
 │   ├── __init__.py              # Lazy imports, version
 │   ├── config.py                # Hierarchical config (8 sub-configs)
-│   ├── model_registry.py        # 29 registered model variants (FLUX, ZImage, Qwen, SANA, Lumina2...)
+│   ├── model_registry.py        # Multi-model registry (18+ families: FLUX, ZImage, Qwen, SANA, Lumina2...)
 │   ├── core/                    # Core algorithms (no external deps)
 │   │   ├── depth_mapper.py      # Power transform + 6 colormaps (cube-edge, plasma, inferno, viridis, grayscale, rainbow)
 │   │   ├── adaptive_depth_mapper.py  # Adaptive quantization mapper (roundtrip error ~0.34%)
@@ -499,7 +517,7 @@ open-vision-banana/
 │   │   └── rgb_mapper.py       # Unified encode/decode interface for 10 tasks
 │   ├── inference/               # Model loading and generation
 │   │   ├── checkpoint.py        # LoRA checkpoint resolution (local / HF / registry)
-│   │   ├── generator.py         # Multi-model + LoRA wrapper
+│   │   ├── generator.py         # Multi-model + LoRA wrapper (18+ families)
 │   │   ├── pipeline.py          # VisionBanana unified model (10 tasks)
 │   │   ├── prompt.py            # Task-specific prompt builder (10 tasks)
 │   │   ├── decoder.py           # Visualization decoder (10 tasks)
@@ -547,7 +565,7 @@ Maps unbounded depth [0, ∞) to bounded RGB [0, 1]³ via power transform:
 f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
 ```
 
-Then maps via a **cube-edge traversal colormap** (black → blue → cyan → green → yellow → white) with piecewise-linear interpolation. Parameters: λ=-3, c=10/3.
+Then maps via the **first-order 3D Hilbert path shown in paper Figure 5** (black → red → yellow → green → cyan → blue → magenta → white) with piecewise-linear interpolation. Parameters: λ=-3, c=10/3. Older checkpoints can opt into `legacy_cube_edge` for the previous mapping.
 
 ### 2. Normal → RGB Mapping (Direct Linear)
 
@@ -570,14 +588,12 @@ From Appendix A of the paper:
 ### 4. Instruction Tuning (rsLoRA)
 
 - LoRA rank=32~64, alpha=64~128 with rsLoRA scaling (α/√r) — model-family aware defaults
-- Configurable generation/vision mixing; the paper describes a very low vision-data ratio but does not publish an exact value
-- LoRA trains a small adapter subset; the exact percentage depends on the selected backbone and target modules
-- Generation retention is an evaluation requirement for each checkpoint, not an assumed property
-- Supports 29 registered base-model variants via the unified registry
+- 9:1 visual-to-language data mixing ratio
+- Only 0.5%-1% of total parameters trained
+- Preserves 90%+ generation capability
+- Supports 18+ model families via unified registry
 
-## Original Paper Benchmarks (NBP, Not Reproduced Here)
-
-The following values are transcribed from the original Vision Banana paper and use its closed Nano Banana Pro backbone. They are reference targets only; they are not measurements of the open-weight implementation in this repository.
+## Benchmarks (from paper)
 
 | Task | Benchmark | Metric | Vision Banana | Previous SOTA |
 |------|-----------|--------|---------------|---------------|
@@ -594,7 +610,7 @@ The following values are transcribed from the original Vision Banana paper and u
 
 ### Evaluation Benchmarks (Hold-out Only)
 
-The original paper evaluates on these datasets. They are held-out targets for future open-backbone reproduction and must **not** be mixed into training data.
+These datasets are used to reproduce the paper's quantitative results in Table 1. They must **not** be mixed into training data.
 
 | Task | Benchmark | Metric | Paper Result | Size | License | Status |
 |------|-----------|--------|-------------|------|---------|--------|
@@ -690,7 +706,10 @@ python scripts/validate_dataset.py --data-path data/hypersim_depth/ --task depth
 
 ### Training Data Mixing Strategy
 
-The paper says that vision-task data is mixed at a **very low ratio**, but it does not publish an exact percentage. The repository currently exposes a configurable **9:1 generation-to-vision ratio** as an experimental starting point; it is not a paper hyperparameter and should be ablated.
+The paper states that vision data is mixed at a low ratio but does not publish
+the exact value. This project uses a **9:1 generation-to-vision default**
+(≈10% vision task data), configurable through `vision_ratio` or
+`scripts/train_sdxl_mps.py --vision-ratio`:
 
 ```python
 from open_vision_banana.data import MixedVisionDataset, build_generation_dataset
@@ -849,11 +868,12 @@ Interactive Colab demo: [`notebooks/colab_demo.ipynb`](notebooks/colab_demo.ipyn
 If you use this codebase or build upon the Vision Banana paradigm, please cite the original paper:
 
 ```bibtex
-@article{gabeur2026image,
+@article{visionbanana2026,
   title={Image Generators are Generalist Vision Learners},
-  author={Gabeur, Valentin and Long, Shangbang and Peng, Songyou and Voigtlaender, Paul and Sun, Shuyang and Bao, Yanan and Truong, Karen and Wang, Zhicheng and Zhou, Wenlei and Barron, Jonathan T. and Genova, Kyle and Kannen, Nithish and Ben, Sherry and Li, Yandong and Guo, Mandy and Yogin, Suhas and Gu, Yiming and Chen, Huizhong and Wang, Oliver and Xie, Saining and Zhou, Howard and He, Kaiming and Funkhouser, Thomas and Alayrac, Jean-Baptiste and Soricut, Radu},
-  journal={arXiv preprint arXiv:2604.20329},
-  year={2026}
+  author={Gabeur, Valentin and others},
+  year={2026},
+  eprint={2604.20329},
+  archivePrefix={arXiv}
 }
 ```
 

@@ -91,6 +91,22 @@ class TestVisionAugmentation:
         assert torch.allclose(aug_img, image)
         assert torch.allclose(aug_tgt, target)
 
+    def test_per_sample_normal_task_corrects_horizontal_flip(self):
+        aug = VisionAugmentation(
+            resolution=2, hflip_prob=1.0, crop_scale=(1.0, 1.0), task="depth"
+        )
+        image = torch.zeros(3, 2, 2)
+        target = torch.tensor(
+            [
+                [[0.2, 0.8], [0.3, 0.7]],
+                [[0.1, 0.2], [0.3, 0.4]],
+                [[0.5, 0.6], [0.7, 0.8]],
+            ]
+        )
+        _, augmented = aug(image, target, task="normal")
+        assert torch.allclose(augmented[0], 1.0 - torch.flip(target[0], [-1]))
+        assert torch.allclose(augmented[1:], torch.flip(target[1:], [-1]))
+
 
 # ──────────────────────────────────────────────────────────────
 # Referring Evaluation Tests
