@@ -1,0 +1,90 @@
+# Open-Vision-Banana — Sana_600M_512px Training Config
+#
+# This config is used by scripts/train_sana_512.py
+# Usage:
+#   python scripts/train_sana_512.py --config configs/sana_512_train.yaml
+#   (or override any field via CLI args)
+
+# ── Model ────────────────────────────────────────────────────────────
+model:
+  name: sana-600m-512px
+  model_id: Efficient-Large-Model/Sana_600M_512px_diffusers
+  family: sana
+  dtype: float16         # transformer dtype (text_encoder & VAE auto→bf16)
+  resolution: 512        # native model resolution
+
+# ── LoRA ─────────────────────────────────────────────────────────────
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+  target_modules:
+    - linear
+    - proj_out
+    - conv_inverted
+    - conv_point
+
+# ── Data ─────────────────────────────────────────────────────────────
+data:
+  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+  resolution: 512
+  vision_ratio: 1.0      # 1.0 = all vision data, 0.9 = 9:1 mix with generation
+  num_workers: 4
+  tasks:
+    - depth
+    - normal
+    - segmentation
+    - structure
+    - generation
+    - instance
+    - keypoint
+    - object_detection
+    - depth_edge
+    - referring
+    - multiview
+    - specular_removal
+  task_weights: sqrt     # sqrt | uniform | comma-separated floats
+
+# ── Training ─────────────────────────────────────────────────────────
+training:
+  steps: 10000
+  batch_size: 4
+  gradient_accumulation: 4   # effective batch = 4 * 4 = 16
+  lr: 5.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+# ── Scheduler ────────────────────────────────────────────────────────
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05       # 5% warmup
+  warmup_steps: null       # overrides warmup_ratio if set
+
+# ── Flow Matching ────────────────────────────────────────────────────
+flow:
+  img2img_flow: true       # input→target flow matching
+  sigma: 0.0               # pure flow (no extra noise)
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+# ── EMA ──────────────────────────────────────────────────────────────
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+# ── Checkpointing ────────────────────────────────────────────────────
+checkpoint:
+  output_dir: output/sana_512_vb
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+# ── Device ───────────────────────────────────────────────────────────
+device: auto               # auto | cuda | mps | cpu
+
+# ── Resume ───────────────────────────────────────────────────────────
+resume: null               # path to checkpoint

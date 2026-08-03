@@ -132,18 +132,22 @@ PATH_FIXES = {
     "grandf_gcg": lambda p: f"grandf/{p}" if not p.startswith("grandf/") else p,
     "ttpla_genseg": lambda p: f"TTPLA/{p}" if not p.startswith("TTPLA/") else p,
     "trashcan_genseg": lambda p: f"TrashCan/{p}" if not p.startswith("TrashCan/") else p,
-    "tas500_gcg": lambda p: f"TAS500/{p}" if not p.startswith("TAS500/") else p,
-    "tas500_genseg": lambda p: f"TAS500/{p}" if not p.startswith("TAS500/") else p,
+    "tas500_gcg": lambda p: (
+        f"TAS500/extracted/tas500v1.1/{p}" if not p.startswith("TAS500/") else p
+    ),
+    "tas500_genseg": lambda p: (
+        f"TAS500/extracted/tas500v1.1/{p}" if not p.startswith("TAS500/") else p
+    ),
     "zerowaste_genseg": lambda p: f"zerowaste/{p}" if not p.startswith("zerowaste/") else p,
     "streethazards_gcg": lambda p: (
-        f"StreetHazards/train/images/{p}"
-        if not p.startswith("StreetHazards/")
-        else (f"streethazards/train/images/{p}" if not p.startswith("streethazards/") else p)
+        f"streethazards_hf_v2/extracted_v2/train/images/{p}"
+        if p.startswith("training/") or p.startswith("validation/")
+        else (f"streethazards_hf_v2/extracted_v2/test/images/{p}" if p.startswith("test/") else p)
     ),
     "streethazards_genseg": lambda p: (
-        f"StreetHazards/train/images/{p}"
-        if not p.startswith("StreetHazards/")
-        else (f"streethazards/train/images/{p}" if not p.startswith("streethazards/") else p)
+        f"streethazards_hf_v2/extracted_v2/train/images/{p}"
+        if p.startswith("training/") or p.startswith("validation/")
+        else (f"streethazards_hf_v2/extracted_v2/test/images/{p}" if p.startswith("test/") else p)
     ),
     "egoobjects_point": lambda p: f"EgoObjects/{p}" if not p.startswith("EgoObjects/") else p,
     "aptv2_point": lambda p: p if p.startswith("APTv2/") else p,
@@ -154,13 +158,13 @@ PATH_FIXES = {
         f"IDD/{p}" if not p.startswith("IDD/") else p
     ),
     "KITTI_total_unified_genseg_edit_regenerated": lambda p: (
-        f"kitti_depth_eval/{p}" if not p.startswith("kitti_depth_eval/") else p
+        f"KITTI/tracking_extract/{p}" if not p.startswith("KITTI/") else p
     ),
-    "kitti_gcg": lambda p: f"kitti_depth_eval/{p}" if not p.startswith("kitti_depth_eval/") else p,
+    "kitti_gcg": lambda p: f"KITTI/tracking_extract/{p}" if not p.startswith("KITTI/") else p,
     "entityv2_gcg": lambda p: f"entityv2/{p}" if not p.startswith("entityv2/") else p,
     "pixmo_bbox": lambda p: f"pixmo/{p}" if not p.startswith("pixmo/") else p,
-    "hypersim_gcg": lambda p: f"hypersim/scenes/{p}" if not p.startswith("hypersim/") else p,
-    "hypersim_genseg": lambda p: f"hypersim/scenes/{p}" if not p.startswith("hypersim/") else p,
+    "hypersim_gcg": lambda p: f"hypersim/scenes_v2/{p}" if not p.startswith("hypersim/") else p,
+    "hypersim_genseg": lambda p: f"hypersim/scenes_v2/{p}" if not p.startswith("hypersim/") else p,
     "fair1m_point": lambda p: f"Fair1M/{p}" if not p.startswith("Fair1M/") else p,
     "v3detovd_point": lambda p: (
         f"V3Det/extracted/{p}"
@@ -173,7 +177,7 @@ PATH_FIXES = {
     ),
     "pidray_genseg": lambda p: f"pidray/{p}" if not p.startswith("pidray/") else p,
     "nuimages_point": lambda p: f"nuimages/{p}" if not p.startswith("nuimages/") else p,
-    "imagenetpart_point": lambda p: f"imagenet/{p}" if not p.startswith("imagenet/") else p,
+    "imagenetpart_point": lambda p: f"ImageNet/{p}" if not p.startswith("ImageNet/") else p,
     "humanparts_point": lambda p: f"HumanParts/{p}" if not p.startswith("HumanParts/") else p,
 }
 
@@ -239,6 +243,24 @@ def check_jsonl_availability(jsonl_path: Path) -> dict:
                 if len(found_paths_sample) < 3:
                     found_paths_sample.append(img_path)
             else:
+                # For hypersim, check both scenes/ and scenes_v2/ directories
+                if fix_key.startswith("hypersim"):
+                    # Try scenes/ if current is scenes_v2/
+                    alt_hypersim = img_path.replace("hypersim/scenes_v2/", "hypersim/scenes/", 1)
+                    alt_path_hs = DATASETS_ROOT / alt_hypersim
+                    if alt_path_hs.exists():
+                        available += 1
+                        if len(found_paths_sample) < 3:
+                            found_paths_sample.append(alt_hypersim)
+                        continue
+                    # Try scenes_v2/ if current is scenes/
+                    alt_hypersim2 = img_path.replace("hypersim/scenes/", "hypersim/scenes_v2/", 1)
+                    alt_path_hs2 = DATASETS_ROOT / alt_hypersim2
+                    if alt_path_hs2.exists():
+                        available += 1
+                        if len(found_paths_sample) < 3:
+                            found_paths_sample.append(alt_hypersim2)
+                        continue
                 # Try alternate extensions (.png -> .jpg, .jpg -> .png)
                 alt_path = None
                 if img_path.endswith(".png"):

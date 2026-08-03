@@ -309,3 +309,8 @@ models/
 
 # Local tooling state (not source)
 .dumate/
+vendor/
+
+# Dataset staging dirs (large, not source)
+tmp_downloads/
+PIDray/

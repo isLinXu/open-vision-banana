@@ -1,0 +1,66 @@
+# ================================
+# Phase 2: Depth Gate 过拟合实验
+# 仅用 depth 数据 (2181 samples) 训练
+# 目标: 验证 FLUX.1+LoRA 能学会 image→depth RGB 映射
+# ================================
+
+model:
+  name: "/Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+optimizer:
+  lr: 1.0e-4           # 稍高 LR 加速过拟合
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 50
+  max_grad_norm: 1.0
+
+output_dir: "output/flux_depth_gate"
+
+logging:
+  wandb_enabled: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs"
+  run_name: "depth_gate"
+
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1    # 不做梯度累积，加速实验
+  use_amp: true
+  use_ema: false                    # 过拟合实验不需要 EMA
+  save_every: 100
+  eval_every: 9999
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+data:
+  vision_ratio: 1.0                 # 100% 视觉数据
+  resolution: 512
+  batch_size: 1
+  num_workers: 0
+  augmentation: true
+  val_split: 0.05                   # 5% 验证
+
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

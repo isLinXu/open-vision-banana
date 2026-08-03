@@ -1,0 +1,65 @@
+# Phase 3: 多任务训练 — 全部 12 任务 56K+ 样本
+# 从 FLUX.1-schnell 初始化，rsLoRA rank=64
+# 目标: 学会跨任务视觉指令跟随
+# ================================
+
+model:
+  name: "/Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell"
+  dtype: "bfloat16"
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules:
+    - "to_k"
+    - "to_v"
+  dropout: 0.0
+
+optimizer:
+  lr: 1.0e-4
+  weight_decay: 0.01
+  scheduler: "cosine"
+  warmup_steps: 100
+  max_grad_norm: 1.0
+
+output_dir: "output/flux_multitask"
+
+logging:
+  wandb_enabled: false
+  tensorboard_enabled: true
+  tensorboard_dir: "output/runs"
+  run_name: "multitask"
+
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1
+  use_amp: true
+  use_ema: false
+  save_every: 200
+  eval_every: 9999
+  max_keep: 5
+  seed: 42
+  log_every: 10
+  early_stopping_patience: null
+  early_stopping_min_delta: 0.0
+
+data:
+  vision_ratio: 1.0                 # 100% 视觉数据
+  resolution: 512
+  batch_size: 1
+  num_workers: 0
+  augmentation: true
+  val_split: 0.05                   # 5% 验证
+
+depth_mapping:
+  lam: -3.0
+  c: 3.333
+
+normal_mapping: {}
+
+segmentation:
+  color_tolerance: 14.0
+  min_area_fraction: 2.0e-4
+  erosion_threshold: 0.1
+  bbox_expansion_factor: 5.0

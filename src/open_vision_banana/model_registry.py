@@ -45,9 +45,11 @@ logger = logging.getLogger("vb_model_registry")
 
 # ─── Model family configs ──────────────────────────────────────────────────
 
+
 @dataclass
 class ModelConfig:
     """Configuration for a base diffusion model family."""
+
     name: str
     model_id: str
     family: str  # "sd15" | "sd2" | "sdxl" | "flux" | "qwen-image" | "z-image" | "sana" | "lumina2" | "chroma" | "flux2" | "cogview4" | "aura-flow" | "sd3" | "pixart" | "kolors" | "hunyuandit" | "kandinsky3" | "sana-sprint"
@@ -70,11 +72,18 @@ class ModelConfig:
     vae_latent_channels: int = 4  # SD=4, FLUX/Z-Image=16
 
     # LoRA
-    lora_target_modules: list = field(default_factory=lambda: [
-        "to_q", "to_k", "to_v", "to_out.0",
-        "proj_in", "proj_out",
-        "ff.net.0.proj", "ff.net.2",
-    ])
+    lora_target_modules: list = field(
+        default_factory=lambda: [
+            "to_q",
+            "to_k",
+            "to_v",
+            "to_out.0",
+            "proj_in",
+            "proj_out",
+            "ff.net.0.proj",
+            "ff.net.2",
+        ]
+    )
     default_lora_rank: int = 16
     default_lora_alpha: int = 32
 
@@ -93,14 +102,20 @@ class ModelConfig:
     default_guidance_scale: float = 2.0
 
     # Transformer-specific flags (ignored for UNet models)
-    needs_guidance_in_forward: bool = False  # Qwen-Image, FLUX.2, SanaSprint pass guidance to transformer
-    needs_attention_mask: bool = False  # SANA, Lumina2, PixArt, Kandinsky3 need encoder_attention_mask
+    needs_guidance_in_forward: bool = (
+        False  # Qwen-Image, FLUX.2, SanaSprint pass guidance to transformer
+    )
+    needs_attention_mask: bool = (
+        False  # SANA, Lumina2, PixArt, Kandinsky3 need encoder_attention_mask
+    )
     needs_position_ids: bool = False  # Chroma, FLUX.2 need txt_ids/img_ids
     needs_size_kwargs: bool = False  # CogView4 needs original_size/target_size/crop_coords
     needs_pooled_projections: bool = False  # SD3, Kandinsky5 use pooled_projections
     needs_image_meta_size: bool = False  # HunyuanDiT needs image_meta_size + style
     needs_t5_and_clip: bool = False  # HunyuanDiT, HiDream use both T5 and CLIP encoders
-    needs_added_cond_kwargs_dit: bool = False  # PixArt uses added_cond_kwargs in transformer forward
+    needs_added_cond_kwargs_dit: bool = (
+        False  # PixArt uses added_cond_kwargs in transformer forward
+    )
 
     # Whether VAE encode returns latent_dist (False for some custom VAEs)
     vae_has_latent_dist: bool = True
@@ -131,767 +146,1031 @@ def _build_registry() -> None:
     if _REGISTRY_FACTORIES:
         return
 
-    _register_model("sd15", lambda: ModelConfig(
-        name="sd15",
-        model_id="runwayml/stable-diffusion-v1-5",
-        family="sd15",
-        backbone_type="unet",
-        num_text_encoders=1,
-        cross_attention_dim=768,
-        vae_scaling_factor=0.18215,
-        memory_budget_gb=4.0,
-        pipeline_class="StableDiffusionPipeline",
-        default_resolution=256,
-        default_guidance_scale=7.5,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "ff.net.0.proj", "ff.net.2",
-        ],
-        description="Stable Diffusion 1.5 (860M UNet) — lightweight, widely compatible",
-    ))
+    _register_model(
+        "sd15",
+        lambda: ModelConfig(
+            name="sd15",
+            model_id="runwayml/stable-diffusion-v1-5",
+            family="sd15",
+            backbone_type="unet",
+            num_text_encoders=1,
+            cross_attention_dim=768,
+            vae_scaling_factor=0.18215,
+            memory_budget_gb=4.0,
+            pipeline_class="StableDiffusionPipeline",
+            default_resolution=256,
+            default_guidance_scale=7.5,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
+            ],
+            description="Stable Diffusion 1.5 (860M UNet) — lightweight, widely compatible",
+        ),
+    )
 
-    _register_model("sd2", lambda: ModelConfig(
-        name="sd2",
-        model_id="stabilityai/stable-diffusion-2-1",
-        family="sd2",
-        backbone_type="unet",
-        num_text_encoders=1,
-        cross_attention_dim=1024,
-        vae_scaling_factor=0.18215,
-        memory_budget_gb=5.0,
-        pipeline_class="StableDiffusionPipeline",
-        default_resolution=256,
-        default_guidance_scale=7.5,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "ff.net.0.proj", "ff.net.2",
-        ],
-        description="Stable Diffusion 2.1 (866M UNet) — improved text understanding",
-    ))
+    _register_model(
+        "sd2",
+        lambda: ModelConfig(
+            name="sd2",
+            model_id="stabilityai/stable-diffusion-2-1",
+            family="sd2",
+            backbone_type="unet",
+            num_text_encoders=1,
+            cross_attention_dim=1024,
+            vae_scaling_factor=0.18215,
+            memory_budget_gb=5.0,
+            pipeline_class="StableDiffusionPipeline",
+            default_resolution=256,
+            default_guidance_scale=7.5,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
+            ],
+            description="Stable Diffusion 2.1 (866M UNet) — improved text understanding",
+        ),
+    )
 
-    _register_model("ssd-1b", lambda: ModelConfig(
-        name="ssd-1b",
-        model_id="segmind/SSD-1B",
-        family="sdxl",
-        backbone_type="unet",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=True,
-        cross_attention_dim=2048,
-        vae_scaling_factor=0.18215,
-        memory_budget_gb=5.5,
-        pipeline_class="StableDiffusionXLPipeline",
-        default_resolution=256,
-        default_guidance_scale=2.0,
-        description="SSD-1B (1.3B UNet) — distilled SDXL, best quality/memory tradeoff",
-    ))
+    _register_model(
+        "ssd-1b",
+        lambda: ModelConfig(
+            name="ssd-1b",
+            model_id="segmind/SSD-1B",
+            family="sdxl",
+            backbone_type="unet",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=True,
+            cross_attention_dim=2048,
+            vae_scaling_factor=0.18215,
+            memory_budget_gb=5.5,
+            pipeline_class="StableDiffusionXLPipeline",
+            default_resolution=256,
+            default_guidance_scale=2.0,
+            description="SSD-1B (1.3B UNet) — distilled SDXL, best quality/memory tradeoff",
+        ),
+    )
 
-    _register_model("sdxl", lambda: ModelConfig(
-        name="sdxl",
-        model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        family="sdxl",
-        backbone_type="unet",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=True,
-        cross_attention_dim=2048,
-        vae_scaling_factor=0.18215,
-        memory_budget_gb=7.0,
-        pipeline_class="StableDiffusionXLPipeline",
-        default_resolution=256,
-        default_guidance_scale=2.0,
-        description="SDXL (2.6B UNet) — full capacity, needs ≥16GB VRAM",
-    ))
+    _register_model(
+        "sdxl",
+        lambda: ModelConfig(
+            name="sdxl",
+            model_id="stabilityai/stable-diffusion-xl-base-1.0",
+            family="sdxl",
+            backbone_type="unet",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=True,
+            cross_attention_dim=2048,
+            vae_scaling_factor=0.18215,
+            memory_budget_gb=7.0,
+            pipeline_class="StableDiffusionXLPipeline",
+            default_resolution=256,
+            default_guidance_scale=2.0,
+            description="SDXL (2.6B UNet) — full capacity, needs ≥16GB VRAM",
+        ),
+    )
 
-    _register_model("sdxl-turbo", lambda: ModelConfig(
-        name="sdxl-turbo",
-        model_id="stabilityai/sdxl-turbo",
-        family="sdxl",
-        backbone_type="unet",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=True,
-        cross_attention_dim=2048,
-        vae_scaling_factor=0.18215,
-        memory_budget_gb=7.0,
-        pipeline_class="StableDiffusionXLPipeline",
-        default_resolution=256,
-        default_guidance_scale=0.0,
-        default_num_inference_steps=4,
-        description="SDXL Turbo (2.6B UNet) — 1-4 step generation, no CFG",
-    ))
+    _register_model(
+        "sdxl-turbo",
+        lambda: ModelConfig(
+            name="sdxl-turbo",
+            model_id="stabilityai/sdxl-turbo",
+            family="sdxl",
+            backbone_type="unet",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=True,
+            cross_attention_dim=2048,
+            vae_scaling_factor=0.18215,
+            memory_budget_gb=7.0,
+            pipeline_class="StableDiffusionXLPipeline",
+            default_resolution=256,
+            default_guidance_scale=0.0,
+            default_num_inference_steps=4,
+            description="SDXL Turbo (2.6B UNet) — 1-4 step generation, no CFG",
+        ),
+    )
 
-    _register_model("flux-dev", lambda: ModelConfig(
-        name="flux-dev",
-        model_id="black-forest-labs/FLUX.1-dev",
-        family="flux",
-        backbone_type="transformer",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=3072,
-        vae_scaling_factor=0.3611,
-        vae_downsample_factor=16,
-        memory_budget_gb=24.0,
-        pipeline_class="FluxPipeline",
-        default_resolution=512,
-        default_guidance_scale=3.5,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "ff.net.0.proj", "ff.net.2",
-            "to_q_context", "to_k_context", "to_v_context", "to_out.0_context",
-        ],
-        description="FLUX.1-dev (12B transformer) — state-of-the-art, needs ≥24GB VRAM",
-    ))
+    _register_model(
+        "flux-dev",
+        lambda: ModelConfig(
+            name="flux-dev",
+            model_id="black-forest-labs/FLUX.1-dev",
+            family="flux",
+            backbone_type="transformer",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=3072,
+            vae_scaling_factor=0.3611,
+            vae_downsample_factor=16,
+            memory_budget_gb=24.0,
+            pipeline_class="FluxPipeline",
+            default_resolution=512,
+            default_guidance_scale=3.5,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
+                "to_q_context",
+                "to_k_context",
+                "to_v_context",
+                "to_out.0_context",
+            ],
+            description="FLUX.1-dev (12B transformer) — state-of-the-art, needs ≥24GB VRAM",
+        ),
+    )
 
-    _register_model("flux-schnell", lambda: ModelConfig(
-        name="flux-schnell",
-        model_id="black-forest-labs/FLUX.1-schnell",
-        family="flux",
-        backbone_type="transformer",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=3072,
-        vae_scaling_factor=0.3611,
-        vae_downsample_factor=16,
-        memory_budget_gb=24.0,
-        pipeline_class="FluxPipeline",
-        default_resolution=512,
-        default_guidance_scale=0.0,
-        default_num_inference_steps=4,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "ff.net.0.proj", "ff.net.2",
-            "to_q_context", "to_k_context", "to_v_context", "to_out.0_context",
-        ],
-        description="FLUX.1-schnell (12B) — 4-step generation, Apache-2.0",
-    ))
+    _register_model(
+        "flux-schnell",
+        lambda: ModelConfig(
+            name="flux-schnell",
+            model_id="black-forest-labs/FLUX.1-schnell",
+            family="flux",
+            backbone_type="transformer",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=3072,
+            vae_scaling_factor=0.3611,
+            vae_downsample_factor=16,
+            memory_budget_gb=24.0,
+            pipeline_class="FluxPipeline",
+            default_resolution=512,
+            default_guidance_scale=0.0,
+            default_num_inference_steps=4,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
+                "to_q_context",
+                "to_k_context",
+                "to_v_context",
+                "to_out.0_context",
+            ],
+            description="FLUX.1-schnell (12B) — 4-step generation, Apache-2.0",
+        ),
+    )
 
-    _register_model("qwen-image", lambda: ModelConfig(
-        name="qwen-image",
-        model_id="Qwen/Qwen-Image",
-        family="qwen-image",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=20.0,
-        pipeline_class="QwenImagePipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v",
-            "q_proj", "k_proj", "v_proj",
-            "proj_out",
-            "img_in", "txt_in",
-        ],
-        needs_guidance_in_forward=True,
-        needs_attention_mask=True,
-        vae_has_latent_dist=False,
-        description="Qwen-Image — text rendering, CFG, Apache-2.0",
-    ))
+    _register_model(
+        "qwen-image",
+        lambda: ModelConfig(
+            name="qwen-image",
+            model_id="Qwen/Qwen-Image",
+            family="qwen-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=20.0,
+            pipeline_class="QwenImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "proj_out",
+                "img_in",
+                "txt_in",
+            ],
+            needs_guidance_in_forward=True,
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description="Qwen-Image — text rendering, CFG, Apache-2.0",
+        ),
+    )
 
-    _register_model("z-image", lambda: ModelConfig(
-        name="z-image",
-        model_id="Tongyi-MAI/Z-Image",
-        family="z-image",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2560,
-        vae_scaling_factor=0.3611,
-        vae_shift_factor=0.1159,
-        vae_downsample_factor=8,
-        vae_latent_channels=16,
-        memory_budget_gb=24.0,
-        pipeline_class="ZImagePipeline",
-        default_resolution=1024,
-        default_guidance_scale=5.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "w1", "w2", "w3",
-        ],
-        vae_has_latent_dist=False,
-        description="Z-Image (6B base) — Alibaba Tongyi-MAI, single-stream DiT with Qwen3 text encoder, Apache-2.0",
-    ))
+    _register_model(
+        "z-image",
+        lambda: ModelConfig(
+            name="z-image",
+            model_id="Tongyi-MAI/Z-Image",
+            family="z-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2560,
+            vae_scaling_factor=0.3611,
+            vae_shift_factor=0.1159,
+            vae_downsample_factor=8,
+            vae_latent_channels=16,
+            memory_budget_gb=24.0,
+            pipeline_class="ZImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=5.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "w1",
+                "w2",
+                "w3",
+            ],
+            vae_has_latent_dist=False,
+            description="Z-Image (6B base) — Alibaba Tongyi-MAI, single-stream DiT with Qwen3 text encoder, Apache-2.0",
+        ),
+    )
 
-    _register_model("sana-600m", lambda: ModelConfig(
-        name="sana-600m",
-        model_id="Efficient-Large-Model/SANA_600M_1024px_diffusers",
-        family="sana",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=6.0,
-        pipeline_class="SanaPipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.5,
-        default_num_inference_steps=20,
-        default_lora_rank=16,
-        default_lora_alpha=32,
-        lora_target_modules=[
-            "linear", "proj_out",
-            "conv_inverted", "conv_point",
-        ],
-        needs_attention_mask=True,
-        vae_has_latent_dist=False,
-        description="SANA-600M — NVIDIA, linear DiT, efficient 1024px",
-    ))
+    _register_model(
+        "sana-600m",
+        lambda: ModelConfig(
+            name="sana-600m",
+            model_id="Efficient-Large-Model/SANA_600M_1024px_diffusers",
+            family="sana",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=6.0,
+            pipeline_class="SanaPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.5,
+            default_num_inference_steps=20,
+            default_lora_rank=16,
+            default_lora_alpha=32,
+            lora_target_modules=[
+                "linear",
+                "proj_out",
+                "conv_inverted",
+                "conv_point",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description="SANA-600M — NVIDIA, linear DiT, efficient 1024px",
+        ),
+    )
 
-    _register_model("sana-1600m", lambda: ModelConfig(
-        name="sana-1600m",
-        model_id="Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers",
-        family="sana",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=10.0,
-        pipeline_class="SanaPipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.5,
-        default_num_inference_steps=20,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "linear", "proj_out",
-            "conv_inverted", "conv_point",
-        ],
-        needs_attention_mask=True,
-        vae_has_latent_dist=False,
-        description="SANA-1600M — NVIDIA, linear DiT, higher quality 1024px",
-    ))
+    _register_model(
+        "sana-600m-512px",
+        lambda: ModelConfig(
+            name="sana-600m-512px",
+            model_id="Efficient-Large-Model/Sana_600M_512px_diffusers",
+            family="sana",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=32,
+            memory_budget_gb=5.0,
+            pipeline_class="SanaPipeline",
+            text_encoder_max_length=300,
+            default_resolution=512,
+            default_guidance_scale=4.5,
+            default_num_inference_steps=20,
+            default_lora_rank=16,
+            default_lora_alpha=32,
+            lora_target_modules=[
+                "linear",
+                "proj_out",
+                "conv_inverted",
+                "conv_point",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description="SANA-600M 512px — NVIDIA, linear DiT, DC-AE f32c32 VAE, Gemma-2-2B text encoder",
+        ),
+    )
 
-    _register_model("lumina2", lambda: ModelConfig(
-        name="lumina2",
-        model_id="Alpha-VLLM/Lumina-Image-2.0",
-        family="lumina2",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=16,
-        memory_budget_gb=12.0,
-        pipeline_class="Lumina2Pipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.0,
-        default_num_inference_steps=30,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "x_embedder", "proj_out",
-            "to_q", "to_k", "to_v", "to_out.0",
-            "q_proj", "k_proj", "v_proj", "o_proj",
-        ],
-        needs_attention_mask=True,
-        vae_has_latent_dist=False,
-        description="Lumina-Image-2.0 (2B) — Alpha-VLLM, flow DiT",
-    ))
+    _register_model(
+        "sana-1600m",
+        lambda: ModelConfig(
+            name="sana-1600m",
+            model_id="Efficient-Large-Model/Sana_1600M_1024px_BF16_diffusers",
+            family="sana",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=10.0,
+            pipeline_class="SanaPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.5,
+            default_num_inference_steps=20,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "linear",
+                "proj_out",
+                "conv_inverted",
+                "conv_point",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description="SANA-1600M — NVIDIA, linear DiT, higher quality 1024px",
+        ),
+    )
 
-    _register_model("chroma", lambda: ModelConfig(
-        name="chroma",
-        model_id="lodestones/Chroma1-HD",
-        family="chroma",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=3072,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=20.0,
-        pipeline_class="ChromaPipeline",
-        default_resolution=1024,
-        default_guidance_scale=5.0,
-        default_num_inference_steps=35,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "in_proj", "out_proj", "proj_mlp", "proj_out",
-            "context_embedder", "x_embedder",
-            "ff_context.net.0.proj", "ff_context.net.2",
-        ],
-        needs_position_ids=True,
-        vae_has_latent_dist=True,
-        description="Chroma1-HD (8.9B) — FLUX.1-schnell base, Apache-2.0",
-    ))
+    _register_model(
+        "lumina2",
+        lambda: ModelConfig(
+            name="lumina2",
+            model_id="Alpha-VLLM/Lumina-Image-2.0",
+            family="lumina2",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=12.0,
+            pipeline_class="Lumina2Pipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=30,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "x_embedder",
+                "proj_out",
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description="Lumina-Image-2.0 (2B) — Alpha-VLLM, flow DiT",
+        ),
+    )
 
-    _register_model("flux2-dev", lambda: ModelConfig(
-        name="flux2-dev",
-        model_id="black-forest-labs/FLUX.2-dev",
-        family="flux2",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=3072,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=30.0,
-        pipeline_class="Flux2Pipeline",
-        default_resolution=1024,
-        default_guidance_scale=3.5,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out", "to_add_out",
-            "to_qkv_mlp_proj",
-            "x_embedder", "context_embedder", "proj_out",
-            "linear", "linear_in", "linear_out",
-        ],
-        needs_guidance_in_forward=True,
-        needs_position_ids=True,
-        vae_has_latent_dist=True,
-        description="FLUX.2-dev — Black Forest Labs, next-gen DiT",
-    ))
+    _register_model(
+        "chroma",
+        lambda: ModelConfig(
+            name="chroma",
+            model_id="lodestones/Chroma1-HD",
+            family="chroma",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=3072,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=20.0,
+            pipeline_class="ChromaPipeline",
+            default_resolution=1024,
+            default_guidance_scale=5.0,
+            default_num_inference_steps=35,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "in_proj",
+                "out_proj",
+                "proj_mlp",
+                "proj_out",
+                "context_embedder",
+                "x_embedder",
+                "ff_context.net.0.proj",
+                "ff_context.net.2",
+            ],
+            needs_position_ids=True,
+            vae_has_latent_dist=True,
+            description="Chroma1-HD (8.9B) — FLUX.1-schnell base, Apache-2.0",
+        ),
+    )
 
-    _register_model("cogview4", lambda: ModelConfig(
-        name="cogview4",
-        model_id="THUDM/CogView4-6B",
-        family="cogview4",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=24.0,
-        pipeline_class="CogView4Pipeline",
-        default_resolution=1024,
-        default_guidance_scale=5.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "proj", "text_proj", "linear", "proj_out",
-            "to_q", "to_k", "to_v", "to_out.0",
-        ],
-        needs_size_kwargs=True,
-        vae_has_latent_dist=False,
-        description="CogView4-6B — THUDM/Tsinghua, Apache-2.0",
-    ))
+    _register_model(
+        "flux2-dev",
+        lambda: ModelConfig(
+            name="flux2-dev",
+            model_id="black-forest-labs/FLUX.2-dev",
+            family="flux2",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=3072,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=30.0,
+            pipeline_class="Flux2Pipeline",
+            default_resolution=1024,
+            default_guidance_scale=3.5,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out",
+                "to_add_out",
+                "to_qkv_mlp_proj",
+                "x_embedder",
+                "context_embedder",
+                "proj_out",
+                "linear",
+                "linear_in",
+                "linear_out",
+            ],
+            needs_guidance_in_forward=True,
+            needs_position_ids=True,
+            vae_has_latent_dist=True,
+            description="FLUX.2-dev — Black Forest Labs, next-gen DiT",
+        ),
+    )
 
-    _register_model("aura-flow", lambda: ModelConfig(
-        name="aura-flow",
-        model_id="fal/AuraFlow",
-        family="aura-flow",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=15.0,
-        pipeline_class="AuraFlowPipeline",
-        default_resolution=1024,
-        default_guidance_scale=3.5,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        lora_target_modules=[
-            "linear_1", "linear_2", "out_projection", "linear",
-            "context_embedder", "proj_out",
-            "to_q", "to_k", "to_v", "to_out.0",
-            "ff_context.net.0.proj", "ff_context.net.2",
-        ],
-        vae_has_latent_dist=False,
-        description="AuraFlow — fal.ai, MMDiT, Apache-2.0",
-    ))
+    _register_model(
+        "cogview4",
+        lambda: ModelConfig(
+            name="cogview4",
+            model_id="THUDM/CogView4-6B",
+            family="cogview4",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=24.0,
+            pipeline_class="CogView4Pipeline",
+            default_resolution=1024,
+            default_guidance_scale=5.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "proj",
+                "text_proj",
+                "linear",
+                "proj_out",
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+            ],
+            needs_size_kwargs=True,
+            vae_has_latent_dist=False,
+            description="CogView4-6B — THUDM/Tsinghua, Apache-2.0",
+        ),
+    )
 
-    _register_model("sd3", lambda: ModelConfig(
-        name="sd3",
-        model_id="stabilityai/stable-diffusion-3-medium",
-        family="sd3",
-        backbone_type="transformer",
-        num_text_encoders=3,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=0.3611,
-        vae_shift_factor=0.1159,
-        vae_latent_channels=16,
-        vae_downsample_factor=8,
-        memory_budget_gb=20.0,
-        pipeline_class="StableDiffusion3Pipeline",
-        default_resolution=1024,
-        default_guidance_scale=7.0,
-        default_num_inference_steps=28,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=256,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "to_q_context", "to_k_context", "to_v_context", "to_out_context",
-            "context_embedder", "proj_out",
-            "linear_1", "linear_2",
-        ],
-        needs_pooled_projections=True,
-        needs_attention_mask=True,
-        description="Stable Diffusion 3 (2B MMDiT) — triple encoder (CLIP×2 + T5), flow matching",
-    ))
+    _register_model(
+        "aura-flow",
+        lambda: ModelConfig(
+            name="aura-flow",
+            model_id="fal/AuraFlow",
+            family="aura-flow",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=15.0,
+            pipeline_class="AuraFlowPipeline",
+            default_resolution=1024,
+            default_guidance_scale=3.5,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                "linear_1",
+                "linear_2",
+                "out_projection",
+                "linear",
+                "context_embedder",
+                "proj_out",
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "ff_context.net.0.proj",
+                "ff_context.net.2",
+            ],
+            vae_has_latent_dist=False,
+            description="AuraFlow — fal.ai, MMDiT, Apache-2.0",
+        ),
+    )
 
-    _register_model("pixart-alpha", lambda: ModelConfig(
-        name="pixart-alpha",
-        model_id="PixArt-alpha/PixArt-XL-2-1024-MS",
-        family="pixart",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=0.13025,
-        vae_downsample_factor=8,
-        memory_budget_gb=10.0,
-        pipeline_class="PixArtAlphaPipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.5,
-        default_num_inference_steps=20,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=120,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "scale_shift_table",
-        ],
-        needs_attention_mask=True,
-        needs_added_cond_kwargs_dit=True,
-        description="PixArt-Alpha (600M DiT) — T5 encoder, 1024px, efficient training",
-    ))
+    _register_model(
+        "sd3",
+        lambda: ModelConfig(
+            name="sd3",
+            model_id="stabilityai/stable-diffusion-3-medium",
+            family="sd3",
+            backbone_type="transformer",
+            num_text_encoders=3,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=0.3611,
+            vae_shift_factor=0.1159,
+            vae_latent_channels=16,
+            vae_downsample_factor=8,
+            memory_budget_gb=20.0,
+            pipeline_class="StableDiffusion3Pipeline",
+            default_resolution=1024,
+            default_guidance_scale=7.0,
+            default_num_inference_steps=28,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=256,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "to_q_context",
+                "to_k_context",
+                "to_v_context",
+                "to_out_context",
+                "context_embedder",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+            ],
+            needs_pooled_projections=True,
+            needs_attention_mask=True,
+            description="Stable Diffusion 3 (2B MMDiT) — triple encoder (CLIP×2 + T5), flow matching",
+        ),
+    )
 
-    _register_model("pixart-sigma", lambda: ModelConfig(
-        name="pixart-sigma",
-        model_id="PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
-        family="pixart",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=0.13025,
-        vae_downsample_factor=8,
-        memory_budget_gb=10.0,
-        pipeline_class="PixArtSigmaPipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.5,
-        default_num_inference_steps=20,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=300,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "scale_shift_table",
-        ],
-        needs_attention_mask=True,
-        needs_added_cond_kwargs_dit=True,
-        description="PixArt-Sigma (600M DiT) — stronger text rendering, 4K-capable",
-    ))
+    _register_model(
+        "pixart-alpha",
+        lambda: ModelConfig(
+            name="pixart-alpha",
+            model_id="PixArt-alpha/PixArt-XL-2-1024-MS",
+            family="pixart",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=0.13025,
+            vae_downsample_factor=8,
+            memory_budget_gb=10.0,
+            pipeline_class="PixArtAlphaPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.5,
+            default_num_inference_steps=20,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=120,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "scale_shift_table",
+            ],
+            needs_attention_mask=True,
+            needs_added_cond_kwargs_dit=True,
+            description="PixArt-Alpha (600M DiT) — T5 encoder, 1024px, efficient training",
+        ),
+    )
 
-    _register_model("kolors", lambda: ModelConfig(
-        name="kolors",
-        model_id="Kwai-Kolors/Kolors",
-        family="kolors",
-        backbone_type="unet",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=True,
-        cross_attention_dim=4096,
-        vae_scaling_factor=0.18215,
-        vae_downsample_factor=8,
-        memory_budget_gb=18.0,
-        pipeline_class="KolorsPipeline",
-        default_resolution=1024,
-        default_guidance_scale=5.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=256,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "ff.net.0.proj", "ff.net.2",
-        ],
-        description="Kolors (2.6B UNet) — Kuaishou, ChatGLM-6B text encoder, Chinese-friendly",
-    ))
+    _register_model(
+        "pixart-sigma",
+        lambda: ModelConfig(
+            name="pixart-sigma",
+            model_id="PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
+            family="pixart",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=0.13025,
+            vae_downsample_factor=8,
+            memory_budget_gb=10.0,
+            pipeline_class="PixArtSigmaPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.5,
+            default_num_inference_steps=20,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=300,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "scale_shift_table",
+            ],
+            needs_attention_mask=True,
+            needs_added_cond_kwargs_dit=True,
+            description="PixArt-Sigma (600M DiT) — stronger text rendering, 4K-capable",
+        ),
+    )
 
-    _register_model("hunyuandit", lambda: ModelConfig(
-        name="hunyuandit",
-        model_id="Tencent-Hunyuan/HunyuanDiT",
-        family="hunyuandit",
-        backbone_type="transformer",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=1024,
-        vae_scaling_factor=0.13025,
-        vae_downsample_factor=8,
-        memory_budget_gb=15.0,
-        pipeline_class="HunyuanDiTPipeline",
-        default_resolution=1024,
-        default_guidance_scale=6.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=77,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "txt_in", "img_in",
-        ],
-        needs_attention_mask=True,
-        needs_t5_and_clip=True,
-        needs_image_meta_size=True,
-        vae_has_latent_dist=False,
-        description="HunyuanDiT (1.5B) — Tencent, bilingual CLIP+mT5, Chinese+English",
-    ))
+    _register_model(
+        "kolors",
+        lambda: ModelConfig(
+            name="kolors",
+            model_id="Kwai-Kolors/Kolors",
+            family="kolors",
+            backbone_type="unet",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=True,
+            cross_attention_dim=4096,
+            vae_scaling_factor=0.18215,
+            vae_downsample_factor=8,
+            memory_budget_gb=18.0,
+            pipeline_class="KolorsPipeline",
+            default_resolution=1024,
+            default_guidance_scale=5.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=256,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
+            ],
+            description="Kolors (2.6B UNet) — Kuaishou, ChatGLM-6B text encoder, Chinese-friendly",
+        ),
+    )
 
-    _register_model("kandinsky3", lambda: ModelConfig(
-        name="kandinsky3",
-        model_id="ai-forever/Kandinsky3.1",
-        family="kandinsky3",
-        backbone_type="unet",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=12.0,
-        pipeline_class="Kandinsky3Pipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=256,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "ff.net.0.proj", "ff.net.2",
-        ],
-        needs_attention_mask=True,
-        description="Kandinsky3 (3B UNet) — Sber, FLAN-UL2 encoder, Apache-2.0",
-    ))
+    _register_model(
+        "hunyuandit",
+        lambda: ModelConfig(
+            name="hunyuandit",
+            model_id="Tencent-Hunyuan/HunyuanDiT",
+            family="hunyuandit",
+            backbone_type="transformer",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=1024,
+            vae_scaling_factor=0.13025,
+            vae_downsample_factor=8,
+            memory_budget_gb=15.0,
+            pipeline_class="HunyuanDiTPipeline",
+            default_resolution=1024,
+            default_guidance_scale=6.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=77,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "txt_in",
+                "img_in",
+            ],
+            needs_attention_mask=True,
+            needs_t5_and_clip=True,
+            needs_image_meta_size=True,
+            vae_has_latent_dist=False,
+            description="HunyuanDiT (1.5B) — Tencent, bilingual CLIP+mT5, Chinese+English",
+        ),
+    )
 
-    _register_model("hunyuan-image", lambda: ModelConfig(
-        name="hunyuan-image",
-        model_id="tencent/HunyuanImage",
-        family="hunyuan-image",
-        backbone_type="transformer",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=20.0,
-        pipeline_class="HunyuanImagePipeline",
-        default_resolution=1024,
-        default_guidance_scale=5.5,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=256,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "txt_in", "img_in",
-        ],
-        needs_attention_mask=True,
-        needs_t5_and_clip=True,
-        vae_has_latent_dist=False,
-        description="HunyuanImage — Tencent, dual-encoder DiT, bilingual, Apache-2.0",
-    ))
+    _register_model(
+        "kandinsky3",
+        lambda: ModelConfig(
+            name="kandinsky3",
+            model_id="ai-forever/Kandinsky3.1",
+            family="kandinsky3",
+            backbone_type="unet",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=12.0,
+            pipeline_class="Kandinsky3Pipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=256,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
+            ],
+            needs_attention_mask=True,
+            description="Kandinsky3 (3B UNet) — Sber, FLAN-UL2 encoder, Apache-2.0",
+        ),
+    )
 
-    _register_model("sana-sprint", lambda: ModelConfig(
-        name="sana-sprint",
-        model_id="Efficient-Large-Model/SanaSprint",
-        family="sana-sprint",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=8,
-        memory_budget_gb=8.0,
-        pipeline_class="SanaSprintPipeline",
-        default_resolution=1024,
-        default_guidance_scale=0.0,
-        default_num_inference_steps=2,
-        default_lora_rank=16,
-        default_lora_alpha=32,
-        lora_target_modules=[
-            "linear", "proj_out",
-            "conv_inverted", "conv_point",
-        ],
-        needs_attention_mask=True,
-        needs_guidance_in_forward=True,
-        vae_has_latent_dist=False,
-        description="SanaSprint — NVIDIA, 2-4 step generation, ultra fast",
-    ))
+    _register_model(
+        "hunyuan-image",
+        lambda: ModelConfig(
+            name="hunyuan-image",
+            model_id="tencent/HunyuanImage",
+            family="hunyuan-image",
+            backbone_type="transformer",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=20.0,
+            pipeline_class="HunyuanImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=5.5,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=256,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "txt_in",
+                "img_in",
+            ],
+            needs_attention_mask=True,
+            needs_t5_and_clip=True,
+            vae_has_latent_dist=False,
+            description="HunyuanImage — Tencent, dual-encoder DiT, bilingual, Apache-2.0",
+        ),
+    )
 
-    _register_model("longcat-image", lambda: ModelConfig(
-        name="longcat-image",
-        model_id="meituan-longcat/LongCat-Image",
-        family="longcat-image",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=16,
-        memory_budget_gb=16.0,
-        pipeline_class="LongCatImagePipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=512,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "txt_in", "img_in",
-        ],
-        needs_attention_mask=False,
-        needs_guidance_in_forward=True,
-        needs_position_ids=True,
-        vae_has_latent_dist=True,
-        description="LongCat-Image — Meituan, Qwen2.5-VL encoder, Apache-2.0",
-    ))
+    _register_model(
+        "sana-sprint",
+        lambda: ModelConfig(
+            name="sana-sprint",
+            model_id="Efficient-Large-Model/SanaSprint",
+            family="sana-sprint",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=8.0,
+            pipeline_class="SanaSprintPipeline",
+            default_resolution=1024,
+            default_guidance_scale=0.0,
+            default_num_inference_steps=2,
+            default_lora_rank=16,
+            default_lora_alpha=32,
+            lora_target_modules=[
+                "linear",
+                "proj_out",
+                "conv_inverted",
+                "conv_point",
+            ],
+            needs_attention_mask=True,
+            needs_guidance_in_forward=True,
+            vae_has_latent_dist=False,
+            description="SanaSprint — NVIDIA, 2-4 step generation, ultra fast",
+        ),
+    )
 
-    _register_model("lumina", lambda: ModelConfig(
-        name="lumina",
-        model_id="Alpha-VLLM/Lumina-Next-SFT-diffusers",
-        family="lumina",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=0.18215,
-        vae_downsample_factor=8,
-        memory_budget_gb=12.0,
-        pipeline_class="LuminaPipeline",
-        default_resolution=1024,
-        default_guidance_scale=6.0,
-        default_num_inference_steps=30,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=256,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "adaLN_modulation",
-        ],
-        needs_attention_mask=True,
-        vae_has_latent_dist=True,
-        description="Lumina-Next — Alpha-VLLM, Gemma encoder, Apache-2.0",
-    ))
+    _register_model(
+        "longcat-image",
+        lambda: ModelConfig(
+            name="longcat-image",
+            model_id="meituan-longcat/LongCat-Image",
+            family="longcat-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=16.0,
+            pipeline_class="LongCatImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=512,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "txt_in",
+                "img_in",
+            ],
+            needs_attention_mask=False,
+            needs_guidance_in_forward=True,
+            needs_position_ids=True,
+            vae_has_latent_dist=True,
+            description="LongCat-Image — Meituan, Qwen2.5-VL encoder, Apache-2.0",
+        ),
+    )
 
-    _register_model("nucleusmoe-image", lambda: ModelConfig(
-        name="nucleusmoe-image",
-        model_id="NucleusAI/NucleusMoE-Image",
-        family="nucleusmoe-image",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=16,
-        memory_budget_gb=16.0,
-        pipeline_class="NucleusMoEImagePipeline",
-        default_resolution=1024,
-        default_guidance_scale=4.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=256,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "gate_up_proj", "down_proj",
-        ],
-        needs_attention_mask=True,
-        vae_has_latent_dist=False,
-        description="NucleusMoE-Image — NucleusAI, Qwen3-VL encoder, MoE DiT",
-    ))
+    _register_model(
+        "lumina",
+        lambda: ModelConfig(
+            name="lumina",
+            model_id="Alpha-VLLM/Lumina-Next-SFT-diffusers",
+            family="lumina",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=0.18215,
+            vae_downsample_factor=8,
+            memory_budget_gb=12.0,
+            pipeline_class="LuminaPipeline",
+            default_resolution=1024,
+            default_guidance_scale=6.0,
+            default_num_inference_steps=30,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=256,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "adaLN_modulation",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=True,
+            description="Lumina-Next — Alpha-VLLM, Gemma encoder, Apache-2.0",
+        ),
+    )
 
-    _register_model("ernie-image", lambda: ModelConfig(
-        name="ernie-image",
-        model_id="baidu/Ernie-Image",
-        family="ernie-image",
-        backbone_type="transformer",
-        num_text_encoders=1,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=2048,
-        vae_scaling_factor=None,
-        vae_downsample_factor=16,
-        memory_budget_gb=16.0,
-        pipeline_class="ErnieImagePipeline",
-        default_resolution=1024,
-        default_guidance_scale=3.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=256,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "txt_in", "img_in",
-        ],
-        needs_attention_mask=True,
-        vae_has_latent_dist=False,
-        description="Ernie-Image — Baidu, Qwen encoder, Flux2 VAE, flow-matching",
-    ))
+    _register_model(
+        "nucleusmoe-image",
+        lambda: ModelConfig(
+            name="nucleusmoe-image",
+            model_id="NucleusAI/NucleusMoE-Image",
+            family="nucleusmoe-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=16.0,
+            pipeline_class="NucleusMoEImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=256,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "gate_up_proj",
+                "down_proj",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description="NucleusMoE-Image — NucleusAI, Qwen3-VL encoder, MoE DiT",
+        ),
+    )
 
-    _register_model("hidream-image", lambda: ModelConfig(
-        name="hidream-image",
-        model_id="HiDream-ai/HiDream-I1-Full",
-        family="hidream-image",
-        backbone_type="transformer",
-        num_text_encoders=2,
-        needs_added_cond_kwargs=False,
-        cross_attention_dim=4096,
-        vae_scaling_factor=None,
-        vae_downsample_factor=16,
-        memory_budget_gb=30.0,
-        pipeline_class="HiDreamImagePipeline",
-        default_resolution=1024,
-        default_guidance_scale=5.0,
-        default_num_inference_steps=50,
-        default_lora_rank=32,
-        default_lora_alpha=64,
-        text_encoder_max_length=128,
-        lora_target_modules=[
-            "to_q", "to_k", "to_v", "to_out.0",
-            "proj_in", "proj_out",
-            "linear_1", "linear_2",
-            "txt_in", "img_in",
-        ],
-        needs_attention_mask=False,
-        needs_t5_and_clip=True,
-        vae_has_latent_dist=False,
-        description="HiDream-I1 — HiDream-ai, 4-encoder (CLIP×2+T5+Llama3), MoE DiT",
-    ))
+    _register_model(
+        "ernie-image",
+        lambda: ModelConfig(
+            name="ernie-image",
+            model_id="baidu/Ernie-Image",
+            family="ernie-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=16.0,
+            pipeline_class="ErnieImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=3.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=256,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "txt_in",
+                "img_in",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description="Ernie-Image — Baidu, Qwen encoder, Flux2 VAE, flow-matching",
+        ),
+    )
+
+    _register_model(
+        "hidream-image",
+        lambda: ModelConfig(
+            name="hidream-image",
+            model_id="HiDream-ai/HiDream-I1-Full",
+            family="hidream-image",
+            backbone_type="transformer",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=30.0,
+            pipeline_class="HiDreamImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=5.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=128,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "txt_in",
+                "img_in",
+            ],
+            needs_attention_mask=False,
+            needs_t5_and_clip=True,
+            vae_has_latent_dist=False,
+            description="HiDream-I1 — HiDream-ai, 4-encoder (CLIP×2+T5+Llama3), MoE DiT",
+        ),
+    )
 
 
 # Build factory registry at module import time (lightweight — just lambdas, no ModelConfig instances)
@@ -901,6 +1180,7 @@ _build_registry()
 # Public API: backward-compatible REGISTRY dict
 # Accessing REGISTRY keys triggers lazy instantiation
 _registry_lock = threading.Lock()
+
 
 class _LazyRegistry(dict):
     """Dict that lazily instantiates ModelConfig on first value access."""
@@ -944,9 +1224,7 @@ def get_model_config(name: str) -> ModelConfig:
     """Look up a model config by name. Raises KeyError if not found."""
     if name not in REGISTRY:
         available = ", ".join(sorted(list_models()))
-        raise KeyError(
-            f"Unknown model '{name}'. Available: {available}"
-        )
+        raise KeyError(f"Unknown model '{name}'. Available: {available}")
     return REGISTRY[name]
 
 
@@ -983,7 +1261,9 @@ def resolve_model_config(model_name_or_path: str) -> ModelConfig:
 
     # 3. Local path basename match (exact + partial + name/family)
     import os
+
     basename = os.path.basename(os.path.normpath(model_name_or_path.rstrip("/")))
+
     # Normalize for comparison: lowercase and strip hyphens/underscores
     def _norm(s: str) -> str:
         return s.lower().replace("-", "").replace("_", "")
@@ -1004,8 +1284,12 @@ def resolve_model_config(model_name_or_path: str) -> ModelConfig:
             cand_lower = candidate.lower()
             cand_norm = _norm(candidate)
             # Prefix match on original or normalized form
-            if (cand_lower.startswith(basename_lower) or basename_lower.startswith(cand_lower)
-                    or cand_norm.startswith(basename_norm) or basename_norm.startswith(cand_norm)):
+            if (
+                cand_lower.startswith(basename_lower)
+                or basename_lower.startswith(cand_lower)
+                or cand_norm.startswith(basename_norm)
+                or basename_norm.startswith(cand_norm)
+            ):
                 return _clone_config_with_path(cfg, model_name_or_path)
 
     # 4. Auto-detect from model_index.json
@@ -1027,6 +1311,7 @@ def _clone_config_with_path(cfg: ModelConfig, model_id: str) -> ModelConfig:
     """Clone a ModelConfig with a new model_id (for local paths)."""
     import copy
     import os
+
     new_cfg = copy.copy(cfg)
     new_cfg.model_id = model_id
     new_cfg.name = os.path.basename(os.path.normpath(model_id.rstrip("/"))).lower()
@@ -1103,12 +1388,13 @@ def auto_select_model(memory_gb: float) -> str:
     return "sd15"  # fallback to smallest
 
 
-
 # ─── Pipeline loading ──────────────────────────────────────────────────────
+
 
 @dataclass
 class PipelineComponents:
     """Container for loaded pipeline components."""
+
     unet: torch.nn.Module  # UNet or Transformer (aliased as 'unet' for backward compat)
     vae: torch.nn.Module
     text_encoder: torch.nn.Module | None
@@ -1148,6 +1434,7 @@ def load_pipeline(
     Returns PipelineComponents with backbone (as 'unet'), vae, text_encoder(s), tokenizer.
     """
     import os
+
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
     logger.info(f"Loading {config.model_id} ({config.family}) @ {dtype} ...")
@@ -1183,6 +1470,7 @@ def load_pipeline(
     cls_name = config.pipeline_class
     if cls_name in _pipeline_imports:
         import importlib
+
         mod = importlib.import_module(_pipeline_imports[cls_name])
         PipeClass = getattr(mod, cls_name)
     else:
@@ -1284,6 +1572,7 @@ def load_pipeline(
 
 # ─── Text encoding helpers ─────────────────────────────────────────────────
 
+
 def encode_text(
     components: PipelineComponents,
     prompts: list[str],
@@ -1356,8 +1645,11 @@ def encode_text(
             if te is None:
                 continue
             tokenized = tok(
-                prompts, padding="max_length", max_length=max_length,
-                truncation=True, return_tensors="pt"
+                prompts,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
             )
             input_ids = tokenized.input_ids.to(device)
             # SD3 uses penultimate hidden state, not last_hidden_state
@@ -1378,8 +1670,11 @@ def encode_text(
         if text_encoder_3 is not None:
             tok3 = components.tokenizer_3
             tokenized_3 = tok3(
-                prompts, padding="max_length", max_length=max_length,
-                truncation=True, return_tensors="pt"
+                prompts,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
             )
             input_ids_3 = tokenized_3.input_ids.to(device)
             t5_output = text_encoder_3(input_ids_3)
@@ -1392,14 +1687,19 @@ def encode_text(
                 t5_hidden = t5_hidden[:, :max_length]
             encoder_hidden_states = torch.cat([encoder_hidden_states, t5_hidden], dim=-2)
 
-        return encoder_hidden_states.to(dtype), pooled_prompt_embeds.to(dtype) if pooled_prompt_embeds is not None else None
+        return encoder_hidden_states.to(dtype), pooled_prompt_embeds.to(
+            dtype
+        ) if pooled_prompt_embeds is not None else None
 
     # ── HunyuanDiT: bilingual CLIP + mT5 ──
     if config.family == "hunyuandit":
         # CLIP (text_encoder) — bilingual CLIP
         tokenized = tokenizer(
-            prompts, padding="max_length", max_length=max_length,
-            truncation=True, return_tensors="pt"
+            prompts,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
         )
         input_ids = tokenized.input_ids.to(device)
         clip_hidden = text_encoder(input_ids)[0]
@@ -1408,8 +1708,11 @@ def encode_text(
         if text_encoder_2 is not None:
             tok2 = components.tokenizer_2
             tokenized_2 = tok2(
-                prompts, padding="max_length", max_length=max_length,
-                truncation=True, return_tensors="pt"
+                prompts,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
             )
             input_ids_2 = tokenized_2.input_ids.to(device)
             t5_hidden = text_encoder_2(input_ids_2)[0]
@@ -1424,8 +1727,11 @@ def encode_text(
     # ── Kolors: ChatGLM text encoder ──
     if config.family == "kolors":
         tokenized = tokenizer(
-            prompts, padding="max_length", max_length=max_length,
-            truncation=True, return_tensors="pt"
+            prompts,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
         )
         input_ids = tokenized.input_ids.to(device)
         # ChatGLM returns (hidden_states, attention_mask)
@@ -1437,8 +1743,11 @@ def encode_text(
     if config.family == "hunyuan-image":
         # CLIP (text_encoder) — primary encoder
         tokenized = tokenizer(
-            prompts, padding="max_length", max_length=max_length,
-            truncation=True, return_tensors="pt"
+            prompts,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
         )
         input_ids = tokenized.input_ids.to(device)
         clip_hidden = text_encoder(input_ids)[0]
@@ -1448,8 +1757,11 @@ def encode_text(
         if text_encoder_2 is not None:
             tok2 = components.tokenizer_2
             tokenized_2 = tok2(
-                prompts, padding="max_length", max_length=max_length,
-                truncation=True, return_tensors="pt"
+                prompts,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
             )
             input_ids_2 = tokenized_2.input_ids.to(device)
             t5_hidden = text_encoder_2(input_ids_2)[0]
@@ -1470,15 +1782,20 @@ def encode_text(
         pooled_embeds = None
 
         # CLIP encoders (tokenizer + tokenizer_2) → pooled embeds
-        for i, (te, tok) in enumerate([
-            (text_encoder, tokenizer),
-            (text_encoder_2, components.tokenizer_2),
-        ]):
+        for i, (te, tok) in enumerate(
+            [
+                (text_encoder, tokenizer),
+                (text_encoder_2, components.tokenizer_2),
+            ]
+        ):
             if te is None:
                 continue
             tokenized = tok(
-                prompts, padding="max_length", max_length=max_length,
-                truncation=True, return_tensors="pt"
+                prompts,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
             )
             input_ids = tokenized.input_ids.to(device)
             output = te(input_ids, output_hidden_states=False)
@@ -1489,8 +1806,11 @@ def encode_text(
         tok3 = components.tokenizer_3
         if tok3 is not None:
             tokenized_3 = tok3(
-                prompts, padding="max_length", max_length=max_length,
-                truncation=True, return_tensors="pt"
+                prompts,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
             )
             input_ids_3 = tokenized_3.input_ids.to(device)
             t5_hidden = text_encoder_3(input_ids_3)[0] if text_encoder_3 is not None else None
@@ -1505,10 +1825,14 @@ def encode_text(
         llama_mask = t5_mask
 
         return (
-            t5_hidden.to(dtype) if t5_hidden is not None else torch.zeros(len(prompts), 1, 4096, device=device, dtype=dtype),
-            (pooled_embeds.to(dtype) if pooled_embeds is not None else None,
-             llama_hidden.to(dtype) if llama_hidden is not None else None,
-             llama_mask),
+            t5_hidden.to(dtype)
+            if t5_hidden is not None
+            else torch.zeros(len(prompts), 1, 4096, device=device, dtype=dtype),
+            (
+                pooled_embeds.to(dtype) if pooled_embeds is not None else None,
+                llama_hidden.to(dtype) if llama_hidden is not None else None,
+                llama_mask,
+            ),
         )
 
     # ── LongCat-Image: Qwen2.5-VL encoder with prompt template ──
@@ -1516,12 +1840,17 @@ def encode_text(
         # LongCat uses prompt template wrapping + Qwen2.5-VL text generation
         # For training, we use the tokenizer directly for simplicity
         tokenized = tokenizer(
-            prompts, padding="max_length", max_length=max_length,
-            truncation=True, return_tensors="pt"
+            prompts,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
         )
         input_ids = tokenized.input_ids.to(device)
         # Qwen2.5-VL: get hidden states from output
-        outputs = text_encoder(input_ids, attention_mask=tokenized.attention_mask.to(device), output_hidden_states=True)
+        outputs = text_encoder(
+            input_ids, attention_mask=tokenized.attention_mask.to(device), output_hidden_states=True
+        )
         encoder_hidden_states = outputs.hidden_states[-1]
         attention_mask = tokenized.attention_mask.to(device)
         return encoder_hidden_states.to(dtype), attention_mask
@@ -1529,8 +1858,11 @@ def encode_text(
     # ── Lumina: Gemma encoder ──
     if config.family == "lumina":
         tokenized = tokenizer(
-            prompts, padding="max_length", max_length=max_length,
-            truncation=True, return_tensors="pt"
+            prompts,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
         )
         input_ids = tokenized.input_ids.to(device)
         outputs = text_encoder(input_ids, attention_mask=tokenized.attention_mask.to(device))
@@ -1549,8 +1881,11 @@ def encode_text(
             attention_mask = inputs.attention_mask.to(device)
         else:
             tokenized = tokenizer(
-                prompts, padding="max_length", max_length=max_length,
-                truncation=True, return_tensors="pt"
+                prompts,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
             )
             input_ids = tokenized.input_ids.to(device)
             attention_mask = tokenized.attention_mask.to(device)
@@ -1563,13 +1898,18 @@ def encode_text(
     # ── Ernie-Image: Qwen encoder ──
     if config.family == "ernie-image":
         tokenized = tokenizer(
-            prompts, padding="max_length", max_length=max_length,
-            truncation=True, return_tensors="pt"
+            prompts,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
         )
         input_ids = tokenized.input_ids.to(device)
         attention_mask = tokenized.attention_mask.to(device)
         outputs = text_encoder(input_ids, attention_mask=attention_mask)
-        encoder_hidden_states = outputs.last_hidden_state if hasattr(outputs, "last_hidden_state") else outputs[0]
+        encoder_hidden_states = (
+            outputs.last_hidden_state if hasattr(outputs, "last_hidden_state") else outputs[0]
+        )
         # Ernie needs text_lens (sequence lengths per sample)
         text_lens = attention_mask.sum(dim=1).to(dtype=torch.long)
         return encoder_hidden_states.to(dtype), (attention_mask, text_lens)
@@ -1613,8 +1953,7 @@ def encode_text(
 
     # ── Standard tokenization for all other models ──
     tokenized = tokenizer(
-        prompts, padding="max_length", max_length=max_length,
-        truncation=True, return_tensors="pt"
+        prompts, padding="max_length", max_length=max_length, truncation=True, return_tensors="pt"
     )
     input_ids = tokenized.input_ids.to(device)
 
@@ -1665,10 +2004,15 @@ def build_added_cond_kwargs(
         return None
 
     h, w = resolution
-    add_time_ids = torch.tensor(
-        [h, w, 0, 0, h, w],
-        device=device, dtype=dtype,
-    ).unsqueeze(0).expand(batch_size, -1)
+    add_time_ids = (
+        torch.tensor(
+            [h, w, 0, 0, h, w],
+            device=device,
+            dtype=dtype,
+        )
+        .unsqueeze(0)
+        .expand(batch_size, -1)
+    )
 
     return {
         "text_embeds": pooled_embeds,
@@ -1677,6 +2021,7 @@ def build_added_cond_kwargs(
 
 
 # ─── LoRA setup ────────────────────────────────────────────────────────────
+
 
 def apply_lora(
     unet: torch.nn.Module,
@@ -1705,6 +2050,7 @@ def apply_lora(
 
 
 # ─── Backbone forward helper ───────────────────────────────────────────────
+
 
 def backbone_forward(
     backbone: torch.nn.Module,
@@ -1786,7 +2132,9 @@ def backbone_forward(
         latent_list = list(latents_5d.unbind(dim=0))
         # cap_feats: passed as single tensor [B, seq, dim] (matching pipeline behavior)
         output = backbone(
-            latent_list, timesteps, encoder_hidden_states,
+            latent_list,
+            timesteps,
+            encoder_hidden_states,
             return_dict=False,
         )[0]
         # Z-Image returns list[Tensor] — stack into batch
@@ -1908,10 +2256,15 @@ def backbone_forward(
         # image_meta_size: [B, 6] (orig_h, orig_w, crop_h, crop_w, target_h, target_w)
         batch_size = latents.shape[0]
         res = latents.shape[-1] * config.vae_downsample_factor
-        image_meta_size = torch.tensor(
-            [res, res, res, res, res, res],
-            device=latents.device, dtype=encoder_hidden_states.dtype
-        ).unsqueeze(0).expand(batch_size, -1)
+        image_meta_size = (
+            torch.tensor(
+                [res, res, res, res, res, res],
+                device=latents.device,
+                dtype=encoder_hidden_states.dtype,
+            )
+            .unsqueeze(0)
+            .expand(batch_size, -1)
+        )
 
         style = torch.zeros(batch_size, device=latents.device, dtype=encoder_hidden_states.dtype)
 
@@ -1969,13 +2322,23 @@ def backbone_forward(
             "hidden_states": latents,
             "timestep": timesteps / 1000,
             "encoder_hidden_states": encoder_hidden_states,
-            "txt_ids": txt_ids if txt_ids is not None else torch.zeros(
-                latents.shape[0], encoder_hidden_states.shape[1], 3,
-                device=latents.device, dtype=encoder_hidden_states.dtype,
+            "txt_ids": txt_ids
+            if txt_ids is not None
+            else torch.zeros(
+                latents.shape[0],
+                encoder_hidden_states.shape[1],
+                3,
+                device=latents.device,
+                dtype=encoder_hidden_states.dtype,
             ),
-            "img_ids": img_ids if img_ids is not None else torch.zeros(
-                latents.shape[0], latents.shape[1], 3,
-                device=latents.device, dtype=encoder_hidden_states.dtype,
+            "img_ids": img_ids
+            if img_ids is not None
+            else torch.zeros(
+                latents.shape[0],
+                latents.shape[1],
+                3,
+                device=latents.device,
+                dtype=encoder_hidden_states.dtype,
             ),
             "return_dict": False,
         }
@@ -2011,10 +2374,12 @@ def backbone_forward(
         else:
             # [B, seq_len, C] format — assume square
             seq_len = latents.shape[1]
-            seq_side = int(seq_len ** 0.5)
+            seq_side = int(seq_len**0.5)
             img_h = seq_side * patch_size * vae_sf
             img_w = img_h
-        img_shapes = [(1, img_h // (vae_sf * patch_size), img_w // (vae_sf * patch_size))] * batch_size
+        img_shapes = [
+            (1, img_h // (vae_sf * patch_size), img_w // (vae_sf * patch_size))
+        ] * batch_size
 
         mask = attention_mask
         if isinstance(attention_mask, tuple):
@@ -2062,12 +2427,20 @@ def backbone_forward(
         patch_size = 2  # HiDream packs 2x2
         if latents.dim() == 4:
             latent_h, latent_w = latents.shape[2], latents.shape[3]
-            img_ids = torch.zeros(batch_size, latent_h * latent_w, 3, device=latents.device, dtype=encoder_hidden_states.dtype)
+            img_ids = torch.zeros(
+                batch_size,
+                latent_h * latent_w,
+                3,
+                device=latents.device,
+                dtype=encoder_hidden_states.dtype,
+            )
             img_sizes = [(latent_h, latent_w)] * batch_size
         else:
             seq_len = latents.shape[1]
-            side = int(seq_len ** 0.5)
-            img_ids = torch.zeros(batch_size, seq_len, 3, device=latents.device, dtype=encoder_hidden_states.dtype)
+            side = int(seq_len**0.5)
+            img_ids = torch.zeros(
+                batch_size, seq_len, 3, device=latents.device, dtype=encoder_hidden_states.dtype
+            )
             img_sizes = [(side, side)] * batch_size
 
         kwargs = {
@@ -2092,6 +2465,7 @@ def backbone_forward(
 
 
 # ─── Backward-compat alias ─────────────────────────────────────────────────
+
 
 def unet_forward(
     unet: torch.nn.Module,
@@ -2136,17 +2510,17 @@ def vae_encode(
     else:
         # Some custom VAEs (e.g. SANA's AutoencoderDC) may return sample directly
         enc_out = vae.encode(images)
-        latents = enc_out.latent_dist.mode() if hasattr(enc_out, 'latent_dist') else enc_out.sample
+        latents = enc_out.latent_dist.mode() if hasattr(enc_out, "latent_dist") else enc_out.sample
 
     # Apply scaling (and shift for FLUX/Z-Image style VAEs)
     scaling = config.vae_scaling_factor
     if scaling is None:
-        cfg_scaling = getattr(vae.config, 'scaling_factor', None)
+        cfg_scaling = getattr(vae.config, "scaling_factor", None)
         scaling = cfg_scaling if cfg_scaling is not None else 1.0
 
     shift = config.vae_shift_factor
     if shift is None:
-        shift = getattr(vae.config, 'shift_factor', None) or 0.0
+        shift = getattr(vae.config, "shift_factor", None) or 0.0
 
     # Z-Image/FLUX VAE: latents = (encoded - shift) * scaling
     latents = (latents - shift) * scaling if shift != 0.0 else latents * scaling
@@ -2170,10 +2544,10 @@ def vae_decode(
     shift = 0.0
 
     if scaling is None:
-        scaling = getattr(vae.config, 'scaling_factor', 1.0)
+        scaling = getattr(vae.config, "scaling_factor", 1.0)
     if scaling is None:
         scaling = 1.0
-    shift = getattr(vae.config, 'shift_factor', None)
+    shift = getattr(vae.config, "shift_factor", None)
     if shift is None:
         shift = 0.0
 
@@ -2215,10 +2589,14 @@ def prepare_position_ids(
     if config.family in ("flux", "flux2"):
         # FLUX uses packed latents: seq_len = (H/16) * (W/16) * 4
         # But for training, we use the actual latent sequence length
-        img_seq_len = latents.shape[1] if latents.dim() == 3 else latents.shape[2] * latents.shape[3]
+        img_seq_len = (
+            latents.shape[1] if latents.dim() == 3 else latents.shape[2] * latents.shape[3]
+        )
         img_ids = torch.zeros(batch_size, img_seq_len, id_dim, device=device, dtype=dtype)
     elif config.family == "chroma":
-        img_seq_len = latents.shape[1] if latents.dim() == 3 else latents.shape[2] * latents.shape[3]
+        img_seq_len = (
+            latents.shape[1] if latents.dim() == 3 else latents.shape[2] * latents.shape[3]
+        )
         img_ids = torch.zeros(batch_size, img_seq_len, id_dim, device=device, dtype=dtype)
     else:
         img_ids = None
