@@ -49,6 +49,13 @@ OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "mar_vb_depth_
 TASK_ID = int(os.environ.get("VB_TASK_ID", "0"))  # depth=0
 N_PER_TASK = int(os.environ.get("VB_N_PER_TASK", "2246"))  # train samples cap per task
 IMG_SIZE = int(os.environ.get("VB_IMG_SIZE", "256"))  # 512: pos embeds interpolated from 256 pretrained
+# Curriculum: "step0:tasks,step1:tasks,..." e.g. "0:depth,1500:depth,normal,3000:depth,normal,segmentation"
+_CURRIC = os.environ.get("VB_CURRICULUM", "")
+CURRICULUM = []
+if _CURRIC:
+    for stage in _CURRIC.split(","):
+        thr, names = stage.split(":", 1)
+        CURRICULUM.append((int(thr), [t.strip() for t in names.split("+")]))
 N_TRAIN = int(os.environ.get("VB_N_TRAIN", "2246"))
 N_VAL = int(os.environ.get("VB_VAL", "50"))
 STEPS = int(os.environ.get("VB_STEPS", "2000"))
@@ -220,7 +227,7 @@ class TaskPairDataset(DepthPairDataset):
 
 def build_data():
     from torch.utils.data import ConcatDataset
-    train_sets, val_sets, val_by_task = [], [], {}
+    train_sets, val_sets, val_by_task, train_by_task = [], [], {}, {}
     for tid, task in enumerate(TASKS):
         root = Path(DATA_ROOT) / task
         imgs = {p.stem for p in (root / "images").glob("*.jpg")}
@@ -233,10 +240,13 @@ def build_data():
         val_sets.append(TaskPairDataset(str(root), val, tid))
         val_by_task[task] = DataLoader(TaskPairDataset(str(root), val, tid),
                                        batch_size=BATCH, shuffle=False)
+        train_by_task[task] = DataLoader(TaskPairDataset(str(root), train, tid),
+                                         batch_size=BATCH, shuffle=True,
+                                         num_workers=2, drop_last=True)
         log(f"data[{task}] id={tid} train={len(train)} val={len(val)}")
     mk = lambda ds: DataLoader(ds, batch_size=BATCH, shuffle=True,
                                num_workers=2, drop_last=True)
-    return mk(ConcatDataset(train_sets)), mk(ConcatDataset(val_sets)), val_by_task
+    return mk(ConcatDataset(train_sets)), mk(ConcatDataset(val_sets)), val_by_task, train_by_task
 
 
 # ── Train ─────────────────────────────────────────────────────────────────
@@ -283,8 +293,19 @@ def main():
         p.requires_grad_(False)
     log(f"params: {sum(p.numel() for p in model.parameters() if p.requires_grad)/1e6:.1f}M trainable")
 
-    train_dl, val_dl, val_by_task = build_data()
-    log(f"data: train={len(train_dl.dataset)} val={len(val_dl.dataset)} tasks={TASKS}")
+    train_dl, val_dl, val_by_task, train_by_task = build_data()
+    log(f"data: train={len(train_dl.dataset)} val={len(val_dl.dataset)} tasks={TASKS}"
+        + (f" curriculum={CURRICULUM}" if CURRICULUM else ""))
+
+    # Curriculum: active task set as function of step
+    def active_tasks_at(step):
+        if not CURRICULUM:
+            return TASKS
+        active = TASKS
+        for thr, names in CURRICULUM:
+            if step >= thr:
+                active = names
+        return active
 
     opt = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY,
                             betas=(0.9, 0.95))
@@ -300,15 +321,18 @@ def main():
     @torch.no_grad()
     def val_loss():
         model.eval()
-        losses = []
-        for i, (im, tg, tid) in enumerate(val_dl):
-            if i >= 6:
-                break
-            im, tg, tid = im.to(DEVICE), tg.to(DEVICE), tid.to(DEVICE)
-            loss = model(encode_latent(vae, im), encode_latent(vae, tg), tid)
-            losses.append(loss.item())
+        per_task, overall = {}, []
+        for task, vdl in val_by_task.items():
+            losses = []
+            for i, (im, tg, tid) in enumerate(vdl):
+                if i >= 3:
+                    break
+                im, tg, tid = im.to(DEVICE), tg.to(DEVICE), tid.to(DEVICE)
+                losses.append(model(encode_latent(vae, im), encode_latent(vae, tg), tid).item())
+            per_task[task] = float(np.mean(losses))
+            overall.extend(losses)
         model.train()
-        return float(np.mean(losses))
+        return float(np.mean(overall)), per_task
 
     @torch.no_grad()
     def sample_panel(step):
@@ -346,15 +370,26 @@ def main():
         start_step = sd["step"]
         best_val = sd.get("val_loss", best_val)
         log(f"[resume] {RESUME} step={start_step} val_loss={best_val:.4f}")
-    it = iter(train_dl)
+    # Curriculum-aware batch sourcing: cycle through active tasks' loaders
+    task_iters = {t: iter(train_by_task[t]) for t in TASKS}
+    rr_idx = 0  # round-robin pointer within active set
+    last_active = None
     t0 = time.time()
     loss_hist = []
     for step in range(start_step + 1, STEPS + 1):
+        active = active_tasks_at(step)
+        if active != last_active:
+            log(f"[curriculum] step {step}: active tasks = {active}")
+            last_active = active
+            rr_idx = 0
+        # pick next active task round-robin
+        task = active[rr_idx % len(active)]
+        rr_idx += 1
         try:
-            im, tg, tid = next(it)
+            im, tg, tid = next(task_iters[task])
         except StopIteration:
-            it = iter(train_dl)
-            im, tg, tid = next(it)
+            task_iters[task] = iter(train_by_task[task])
+            im, tg, tid = next(task_iters[task])
         im, tg, labels = im.to(DEVICE), tg.to(DEVICE), tid.to(DEVICE)
 
         for g in opt.param_groups:
@@ -373,7 +408,7 @@ def main():
             torch.save({"model": model.state_dict(), "opt": opt.state_dict(),
                         "step": step, "val_loss": best_val}, OUT / "ckpt_latest.pt")
         if step % VAL_EVERY == 0:
-            vl = val_loss()
+            vl, per_task = val_loss()
             tag = ""
             if vl < best_val:
                 best_val = vl
@@ -381,7 +416,8 @@ def main():
                             "step": step, "val_loss": vl},
                            OUT / "ckpt_best.pt")
                 tag = " *BEST*"
-            log(f"[val] step {step} val_loss={vl:.4f} best={best_val:.4f}{tag}")
+            pt = " ".join(f"{t}={v:.3f}" for t, v in per_task.items())
+            log(f"[val] step {step} val_loss={vl:.4f} best={best_val:.4f}{tag} | {pt}")
         if step % SAMPLE_EVERY == 0 or step == STEPS:
             mae = sample_panel(step)
             log(f"[sample] step {step} rgb_mae={mae:.4f} -> panel_step{step}.png")
@@ -390,7 +426,7 @@ def main():
                 "step": STEPS, "val_loss": best_val},
                OUT / "ckpt_final.pt")
     json.dump({"best_val_loss": best_val, "steps": STEPS, "batch": BATCH, "lr": LR,
-               "task": "depth", "n_train": N_TRAIN},
+               "tasks": TASKS, "curriculum": CURRICULUM, "n_per_task": N_PER_TASK},
               open(OUT / "train_config.json", "w"), indent=2)
     log(f"[done] {(time.time()-t0)/60:.1f} min, best_val={best_val:.4f}")
 
