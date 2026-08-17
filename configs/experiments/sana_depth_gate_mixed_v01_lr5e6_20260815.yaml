@@ -1,0 +1,69 @@
+# Vision-Banana style generation-preservation control after the validated
+# depth specialist.  This intentionally changes only the data mixture and
+# lowers the continuation rate; task, model, LoRA capacity, and evaluator stay
+# aligned with the successful full-data depth run.
+experiment: sana_depth_gate_mixed_v01_lr5e6_20260815
+resume_checkpoint: output/sana_depth_gate_full_refine_lr1e5_20260814/checkpoint-3000_best/lora.pt
+baseline_validation_128:
+  relative_position_spearman_r: 0.7778172084945254
+  relative_position_pearson_r: 0.7903960332623683
+  rgb_mae: 0.19878644961863756
+acceptance:
+  # The mixed run need not improve the specialist, but must preserve a useful
+  # depth signal before it can count as a Vision-Banana reproduction control.
+  relative_position_spearman_r_min: 0.74
+  relative_position_pearson_r_min: 0.75
+  rgb_mae_max: 0.215
+
+model:
+  name: sana-600m-512px
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+
+data:
+  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  pair_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
+  generation_dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_generation_5k
+  resolution: 512
+  # 10% visual instruction samples, 90% native text-to-image preservation.
+  vision_ratio: 0.1
+  num_workers: 0
+  tasks:
+    - depth
+  task_weights: sqrt
+
+training:
+  steps: 6000
+  batch_size: 1
+  gradient_accumulation: 1
+  lr: 5.0e-6
+  max_grad_norm: 1.0
+  seed: 42
+
+scheduler:
+  type: constant
+  warmup_steps: 100
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: false
+  cfg_dropout_rate: 0.0
+
+ema:
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/sana_depth_gate_mixed_v01_lr5e6_20260815
+  save_every: 500
+  eval_every: 3000
+  log_every: 10
+
+device: mps

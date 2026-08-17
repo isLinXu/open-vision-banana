@@ -1,0 +1,67 @@
+# SANA full-depth refinement after the 12,000-step full-data baseline.
+#
+# This is a single-variable continuation experiment: retain the full-data
+# depth objective and architecture, reset the optimizer, and run one more
+# approximate data pass at a lower constant learning rate.
+experiment: sana_depth_gate_full_refine_lr1e5_20260814
+baseline_checkpoint: output/sana_depth_gate_full_20260814/checkpoint-12000/lora.pt
+baseline_validation:
+  relative_position_spearman_r: 0.7679278990253806
+  relative_position_pearson_r: 0.7764700506813824
+  rgb_mae: 0.19153329078108072
+acceptance:
+  relative_position_spearman_r_min: 0.785
+  relative_position_pearson_r_min: 0.79
+  rgb_mae_max: 0.19153329078108072
+  negative_spearman_samples_max: 1
+
+model:
+  name: sana-600m-512px
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+
+data:
+  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  pair_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  num_workers: 0
+  tasks:
+    - depth
+  task_weights: sqrt
+
+training:
+  steps: 6000
+  batch_size: 1
+  gradient_accumulation: 1
+  lr: 1.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+
+scheduler:
+  type: constant
+  warmup_steps: 100
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: false
+  cfg_dropout_rate: 0.0
+
+ema:
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/sana_depth_gate_full_refine_lr1e5_20260814
+  save_every: 500
+  eval_every: 3000
+  log_every: 10
+
+device: mps

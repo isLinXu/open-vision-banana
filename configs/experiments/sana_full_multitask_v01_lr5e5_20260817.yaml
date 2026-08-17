@@ -1,0 +1,80 @@
+# Full-manifest SANA-600M Vision-Banana paradigm validation.
+# Every row in the audited v5 pair manifest is eligible for one of the four
+# visual tasks. The 10% vision ratio retains the base generator with the
+# repository's generation-preservation set while task sampling stays uniform.
+experiment: sana_full_multitask_v01_lr5e5_20260817
+
+model:
+  name: sana-600m-512px
+  model_id: Efficient-Large-Model/Sana_600M_512px_diffusers
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - linear
+    - proj_out
+    - conv_inverted
+    - conv_point
+
+data:
+  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  pair_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
+  generation_dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_generation_5k
+  resolution: 512
+  vision_ratio: 0.1
+  num_workers: 0
+  tasks:
+    - depth
+    - normal
+    - segmentation
+    - structure
+  task_weights: uniform
+
+training:
+  steps: 10000
+  batch_size: 1
+  gradient_accumulation: 8
+  lr: 5.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+  warmup_steps: null
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/sana_full_multitask_v01_lr5e5_20260817
+  save_every: 500
+  eval_every: 1000
+  log_every: 50
+
+device: mps
+resume: null
+
+evaluation:
+  evaluator: scripts/eval_sana_unified.py
+  split: val
+  n_per_task: 32
+  batch_size: 1
+  num_inference_steps: 20
+  guidance_scale: 1.0
+  seed: 42

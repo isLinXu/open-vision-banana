@@ -1,0 +1,29 @@
+# Final v02 gate extension.  Stage 250 retained depth above the strict
+# threshold and improved the fixed generation-preservation proxy.
+experiment: sana_depth_gate_mixed_v02_lr1e6_stage500_20260816
+resume_checkpoint: output/sana_depth_gate_mixed_v02_lr1e6_stage250_20260816/checkpoint-250_final/lora.pt
+acceptance_at_32:
+  relative_position_spearman_r_min: 0.758
+  relative_position_pearson_r_min: 0.775
+  rgb_mae_max: 0.214
+model: {name: sana-600m-512px, dtype: float16, resolution: 512}
+lora: {rank: 16, alpha: 32, rs_lora: true}
+data:
+  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  pair_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
+  generation_dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_generation_5k
+  resolution: 512
+  vision_ratio: 0.1
+  num_workers: 0
+  tasks: [depth]
+  task_weights: sqrt
+training: {steps: 500, batch_size: 1, gradient_accumulation: 1, lr: 1.0e-6, max_grad_norm: 1.0, seed: 42}
+scheduler: {type: constant, warmup_steps: 20}
+flow: {img2img_flow: true, sigma: 0.0, logit_normal_timesteps: true, min_snr: false, cfg_dropout_rate: 0.0}
+ema: {decay: 0.9999, warmup_steps: 100}
+checkpoint:
+  output_dir: output/sana_depth_gate_mixed_v02_lr1e6_stage500_20260816
+  save_every: 50
+  eval_every: 1000
+  log_every: 10
+device: mps

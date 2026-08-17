@@ -1,0 +1,93 @@
+# Metric-gated geometry refinement from the strongest edge-reweighted depth
+# checkpoint.  The auxiliary loss is evaluated only for depth rows and applies
+# edge-aware endpoint/gradient supervision at the 16x16 SANA latent grid.
+experiment: sana_depth_edge_aux_v01_lr2e7_stage50_20260817
+resume_checkpoint: output/sana_depth_edge_reweight_short_lr1e6_20260817/checkpoint-250/lora.pt
+
+parent_metric:
+  checkpoint: output/sana_depth_edge_reweight_short_lr1e6_20260817/checkpoint-250/lora_adapter
+  relative_position_spearman_r: 0.7886882820166647
+  relative_position_pearson_r: 0.7930655349045992
+  rgb_mae: 0.18705577473156154
+
+model:
+  name: sana-600m-512px
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+
+data:
+  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  pair_manifest: output/sana_depth_edge_reweight_short_lr1e6_20260817/pairs_depth_edge_q75_x2.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  num_workers: 0
+  tasks:
+    - depth
+  task_weights: uniform
+  reweighting:
+    source_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
+    strategy: decoded_depth_edge_density_top_25_percent_x2
+    edge_fraction: 0.25
+    high_edge_repeat: 2
+    edge_resolution: 128
+    edge_threshold: 0.025
+
+training:
+  # A single short stage lets the external depth metric veto continuation.
+  steps: 50
+  batch_size: 1
+  gradient_accumulation: 1
+  lr: 2.0e-7
+  max_grad_norm: 1.0
+  seed: 42
+
+scheduler:
+  type: constant
+  warmup_steps: 5
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: false
+  cfg_dropout_rate: 0.0
+
+loss:
+  # The base flow loss is unchanged; this adds about a 10% structured term.
+  depth_edge_aux_weight: 0.10
+  depth_edge_aux_gradient_weight: 0.25
+  depth_edge_aux_edge_weight: 2.0
+  depth_edge_aux_edge_threshold: 0.025
+  depth_edge_aux_sigma_floor: 0.10
+
+ema:
+  decay: 0.9999
+  warmup_steps: 25
+
+checkpoint:
+  output_dir: output/sana_depth_edge_aux_v01_lr2e7_stage50_20260817
+  save_every: 50
+  eval_every: 50
+  log_every: 10
+
+metric_gate:
+  split: val
+  n_samples: 32
+  chunk_size: 4
+  resolution: 512
+  num_inference_steps: 20
+  guidance_scale: 1.0
+  seed: 42
+  select: max(relative_position_spearman_r), max(relative_position_pearson_r), min(rgb_mae)
+  continue_only_if:
+    relative_position_spearman_r_min: 0.7886882820166647
+    relative_position_pearson_r_min: 0.7930655349045992
+    rgb_mae_max: 0.18705577473156154
+  max_cumulative_steps: 200
+
+device: mps

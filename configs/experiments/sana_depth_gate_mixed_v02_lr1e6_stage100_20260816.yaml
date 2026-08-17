@@ -1,0 +1,66 @@
+# Conservative Vision-Banana generation-preservation gate.  The prior mixed
+# continuation (LR 5e-6) retained generation better but lost too much depth.
+# This stage restarts from the validated depth specialist and limits exposure
+# to 100 updates before any extension is considered.
+experiment: sana_depth_gate_mixed_v02_lr1e6_stage100_20260816
+resume_checkpoint: output/sana_depth_gate_full_refine_lr1e5_20260814/checkpoint-3000_best/lora.pt
+reference_depth_validation_128:
+  relative_position_spearman_r: 0.7778172084945254
+  relative_position_pearson_r: 0.7903960332623683
+  rgb_mae: 0.19878644961863756
+acceptance_at_32:
+  relative_position_spearman_r_min: 0.758
+  relative_position_pearson_r_min: 0.775
+  rgb_mae_max: 0.214
+
+model:
+  name: sana-600m-512px
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+
+data:
+  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  pair_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
+  generation_dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_generation_5k
+  resolution: 512
+  vision_ratio: 0.1
+  num_workers: 0
+  tasks:
+    - depth
+  task_weights: sqrt
+
+training:
+  steps: 100
+  batch_size: 1
+  gradient_accumulation: 1
+  lr: 1.0e-6
+  max_grad_norm: 1.0
+  seed: 42
+
+scheduler:
+  type: constant
+  warmup_steps: 20
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: false
+  cfg_dropout_rate: 0.0
+
+ema:
+  decay: 0.9999
+  warmup_steps: 100
+
+checkpoint:
+  output_dir: output/sana_depth_gate_mixed_v02_lr1e6_stage100_20260816
+  save_every: 100
+  eval_every: 1000
+  log_every: 10
+
+device: mps
