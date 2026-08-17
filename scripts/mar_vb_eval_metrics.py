@@ -43,7 +43,7 @@ print(f"[load] {os.path.basename(CKPT)} step={sd['step']} val_loss={sd['val_loss
 
 vae = AutoencoderKL(embed_dim=16, ch_mult=(1, 1, 2, 2, 4),
                     ckpt_path=f"{CKPT_DIR}/kl16.safetensors").to(device).eval()
-mapper = DepthRGBMapper(colormap="cube_edge")
+mapper = DepthRGBMapper(colormap="turbo")  # v3/v5 depth targets use turbo-like rainbow encoding
 
 stems = sorted({p.stem for p in __import__("pathlib").Path(DATA_DIR, "images").glob("*.jpg")}
                & {p.stem for p in __import__("pathlib").Path(DATA_DIR, "targets").glob("*.png")})
@@ -73,7 +73,7 @@ for i, (im, tg) in enumerate(dl):
         scale = (gd.squeeze(1)[valid].median() /
                  pd.squeeze(1)[valid].median().clamp(min=1e-6))  # median align
         ali = evaluate_depth(pd * scale, gd, valid_mask=valid)
-        rel = evaluate_relative_depth_rgb(pred01[b:b+1], gt01[b:b+1], colormap="cube_edge")
+        rel = evaluate_relative_depth_rgb(pred01[b:b+1], gt01[b:b+1], colormap="turbo")
         all_metrics.append({
             "AbsRel_raw": raw["AbsRel"], "δ1_raw": raw["δ<1.25"],
             "AbsRel_aligned": ali["AbsRel"], "δ1_aligned": ali["δ<1.25"],

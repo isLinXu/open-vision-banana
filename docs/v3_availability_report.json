@@ -1,19 +1,19 @@
 {
-  "timestamp": "2026-08-02T18:51:59.355513",
+  "timestamp": "2026-08-04T15:00:02.803258",
   "total_samples": 58331,
-  "total_available": 39381,
-  "overall_rate": "67.5%",
+  "total_available": 42879,
+  "overall_rate": "73.5%",
   "task_summary": {
     "segmentation": {
-      "available": 13451,
+      "available": 14715,
       "total": 23831
     },
     "keypoint": {
-      "available": 9019,
+      "available": 11046,
       "total": 13500
     },
     "depth": {
-      "available": 5912,
+      "available": 6119,
       "total": 9000
     },
     "normal": {
@@ -37,11 +37,11 @@
       "missing": 500,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "10-vehicle/image/006287.png",
-        "02highway/image/001398.png",
-        "01urban/image/000552.png",
-        "10-vehicle/image/007409.png",
-        "10-vehicle/image/001937.png"
+        "51world/10-vehicle/image/006287.png",
+        "51world/02highway/image/001398.png",
+        "51world/01urban/image/000552.png",
+        "51world/10-vehicle/image/007409.png",
+        "51world/10-vehicle/image/001937.png"
       ],
       "found_samples": []
     },
@@ -52,11 +52,11 @@
       "missing": 1000,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "10-vehicle/image/007776.png",
-        "02highway/image/000624.png",
-        "01urban/image/000409.png",
-        "10-vehicle/image/001806.png",
-        "10-vehicle/image/001312.png"
+        "51world/10-vehicle/image/007776.png",
+        "51world/02highway/image/000624.png",
+        "51world/01urban/image/000409.png",
+        "51world/10-vehicle/image/001806.png",
+        "51world/10-vehicle/image/001312.png"
       ],
       "found_samples": []
     },
@@ -93,11 +93,11 @@
       "missing": 1000,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "IDD/leftImg8bit/train/125/615515_leftImg8bit.png",
-        "IDD/leftImg8bit/train/63/699353_leftImg8bit.png",
-        "IDD/leftImg8bit/train/90/110115_leftImg8bit.png",
-        "IDD/leftImg8bit/train/96/665951_leftImg8bit.png",
-        "IDD/leftImg8bit/train/41/020598_leftImg8bit.png"
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/125/615515_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/63/699353_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/90/110115_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/96/665951_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/41/020598_leftImg8bit.png"
       ],
       "found_samples": []
     },
@@ -226,17 +226,15 @@
     {
       "name": "dota_point_sampled",
       "total": 1000,
-      "available": 0,
-      "missing": 1000,
-      "availability_rate": "0.0%",
-      "missing_samples": [
+      "available": 1000,
+      "missing": 0,
+      "availability_rate": "100.0%",
+      "missing_samples": [],
+      "found_samples": [
         "DOTA/train/images/P1113.png",
         "DOTA/train/images/P0531.png",
-        "DOTA/train/images/P1659.png",
-        "DOTA/train/images/P10634.png",
-        "DOTA/train/images/P10747.png"
-      ],
-      "found_samples": []
+        "DOTA/train/images/P1659.png"
+      ]
     },
     {
       "name": "egoobjects_point_sampled",
@@ -256,17 +254,21 @@
     {
       "name": "entityv2_gcg_sampled",
       "total": 500,
-      "available": 0,
-      "missing": 500,
-      "availability_rate": "0.0%",
+      "available": 131,
+      "missing": 369,
+      "availability_rate": "26.2%",
       "missing_samples": [
         "entityv2/entity_01_11580/unsplash_11_pond_3.jpg",
         "entityv2/entity_01_11580/openimage__m_02ctlc___189ec72d50200a68.jpg",
-        "entityv2/entity_01_11580/sc_0000150.JPEG",
         "entityv2/entity_01_11580/flickr2k_001281.png",
-        "entityv2/entity_01_11580/pixabay_0069_0753_3463705.jpg"
+        "entityv2/entity_01_11580/pixabay_0000_0175_1787.jpg",
+        "entityv2/entity_01_11580/openimage__m_06nwz___f552d3230a841fa4.jpg"
       ],
-      "found_samples": []
+      "found_samples": [
+        "entityv2/entity_01_11580/sc_0000150.JPEG",
+        "entityv2/entity_01_11580/pixabay_0069_0753_3463705.jpg",
+        "entityv2/entity_01_11580/pixabay_0061_0831_3111659.jpg"
+      ]
     },
     {
       "name": "fair1m_point_sampled",
@@ -366,47 +368,41 @@
     {
       "name": "humanparts_point_sampled",
       "total": 1000,
-      "available": 206,
-      "missing": 794,
-      "availability_rate": "20.6%",
-      "missing_samples": [
-        "HumanParts/Priv_personpart/Images/365c3ee9a5e188a42393e117ed10dcd1013275dc.jpg",
-        "HumanParts/Priv_personpart/Images/397843eeed160d932bf0f0a9e319a59311cb4ba5.jpg",
-        "HumanParts/Priv_personpart/Images/4be57fb7f9c594411bcf9bf4de68b31349995037.jpg",
-        "HumanParts/Priv_personpart/Images/9ccdb495ee87a6969b9d4b4cb2123824a7d05108.jpg",
-        "HumanParts/Priv_personpart/Images/69b0b879077f116cebbad74edca14c656ce0496d.jpg"
-      ],
+      "available": 1000,
+      "missing": 0,
+      "availability_rate": "100.0%",
+      "missing_samples": [],
       "found_samples": [
         "HumanParts/Priv_personpart/Images/2d7d46343f6f430aca0d79a8b31fd2d0d1a7f35a.jpg",
-        "HumanParts/Priv_personpart/Images/1671ed93f8c1de8d26ed9c4641a2cf370dcee251.jpg",
-        "HumanParts/Priv_personpart/Images/49a7953f6570340fc1e134c06b45434469a3e776.jpg"
+        "HumanParts/Priv_personpart/Images/365c3ee9a5e188a42393e117ed10dcd1013275dc.jpg",
+        "HumanParts/Priv_personpart/Images/397843eeed160d932bf0f0a9e319a59311cb4ba5.jpg"
       ]
     },
     {
       "name": "hypersim_gcg_sampled",
       "total": 1000,
-      "available": 555,
-      "missing": 445,
-      "availability_rate": "55.5%",
+      "available": 571,
+      "missing": 429,
+      "availability_rate": "57.1%",
       "missing_samples": [
-        "hypersim/scenes_v2/ai_029_001/images/scene_cam_02_final_preview/frame.0066.tonemap.jpg",
         "hypersim/scenes_v2/ai_036_001/images/scene_cam_00_final_preview/frame.0007.tonemap.jpg",
         "hypersim/scenes_v2/ai_007_010/images/scene_cam_01_final_preview/frame.0098.tonemap.jpg",
         "hypersim/scenes_v2/ai_035_008/images/scene_cam_00_final_preview/frame.0067.tonemap.jpg",
-        "hypersim/scenes_v2/ai_031_001/images/scene_cam_00_final_preview/frame.0098.tonemap.jpg"
+        "hypersim/scenes_v2/ai_031_001/images/scene_cam_00_final_preview/frame.0098.tonemap.jpg",
+        "hypersim/scenes_v2/ai_035_010/images/scene_cam_00_final_preview/frame.0050.tonemap.jpg"
       ],
       "found_samples": [
+        "hypersim/scenes_v2/ai_029_001/images/scene_cam_02_final_preview/frame.0066.tonemap.jpg",
         "hypersim/scenes_v2/ai_004_007/images/scene_cam_00_final_preview/frame.0065.tonemap.jpg",
-        "hypersim/scenes_v2/ai_001_006/images/scene_cam_02_final_preview/frame.0066.tonemap.jpg",
-        "hypersim/scenes_v2/ai_009_005/images/scene_cam_01_final_preview/frame.0003.tonemap.jpg"
+        "hypersim/scenes_v2/ai_001_006/images/scene_cam_02_final_preview/frame.0066.tonemap.jpg"
       ]
     },
     {
       "name": "hypersim_genseg_sampled",
       "total": 3000,
-      "available": 1509,
-      "missing": 1491,
-      "availability_rate": "50.3%",
+      "available": 1564,
+      "missing": 1436,
+      "availability_rate": "52.1%",
       "missing_samples": [
         "hypersim/scenes_v2/ai_044_001/images/scene_cam_00_final_preview/frame.0004.tonemap.jpg",
         "hypersim/scenes_v2/ai_007_006/images/scene_cam_01_final_preview/frame.0099.tonemap.jpg",
@@ -427,11 +423,11 @@
       "missing": 1000,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "IDD/leftImg8bit/train/472/frame40003_leftImg8bit.jpg",
-        "IDD/leftImg8bit/train/252/frame25188_leftImg8bit.jpg",
-        "IDD/leftImg8bit/train/213/frame26658_leftImg8bit.jpg",
-        "IDD/leftImg8bit/train/525/0002052_leftImg8bit.jpg",
-        "IDD/leftImg8bit/train/322/frame4349_leftImg8bit.jpg"
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/472/frame40003_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/252/frame25188_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/213/frame26658_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/525/0002052_leftImg8bit.png",
+        "IDD/extracted/IDD_Segmentation/leftImg8bit/train/322/frame4349_leftImg8bit.png"
       ],
       "found_samples": []
     },
@@ -468,9 +464,9 @@
     {
       "name": "imagenetpart_point_sampled",
       "total": 1000,
-      "available": 402,
-      "missing": 598,
-      "availability_rate": "40.2%",
+      "available": 635,
+      "missing": 365,
+      "availability_rate": "63.5%",
       "missing_samples": [
         "ImageNet/train/n01632458/n01632458_2974.JPEG",
         "ImageNet/train/n02006656/n02006656_11219.JPEG",
@@ -553,9 +549,9 @@
     {
       "name": "object365_total_unified_depth_edit_regenerated_sampled",
       "total": 3000,
-      "available": 912,
-      "missing": 2088,
-      "availability_rate": "30.4%",
+      "available": 1119,
+      "missing": 1881,
+      "availability_rate": "37.3%",
       "missing_samples": [
         "Objects365/extracted/patch31/objects365_v2_01537011.jpg",
         "Objects365/extracted/patch12/objects365_v1_00580765.jpg",
@@ -600,17 +596,15 @@
     {
       "name": "pixmo_bbox_sampled",
       "total": 100,
-      "available": 0,
-      "missing": 100,
-      "availability_rate": "0.0%",
-      "missing_samples": [
+      "available": 100,
+      "missing": 0,
+      "availability_rate": "100.0%",
+      "missing_samples": [],
+      "found_samples": [
         "pixmo/images/04d713107f9183e773e3e01ca2a1a55f977de4104b16340ac0b9d13904f12b01.jpg",
         "pixmo/images/edb09df9401a22f92229173ad957cc13ad2de2c7f454793a24c2f4f9982528a1.jpg",
-        "pixmo/images/5f08947808ec563741c57252632da2e5b50f52acc0f2f89e6d2b9644200f04cb.jpg",
-        "pixmo/images/fefb0efa5459558c576361f5dc3582724f501eb5c55160c5ab160226764f03dc.jpg",
-        "pixmo/images/9ac55c08c416d2dbe289c01a90ad00927cf69402e1f3b51ded154a74b3792b42.jpg"
-      ],
-      "found_samples": []
+        "pixmo/images/5f08947808ec563741c57252632da2e5b50f52acc0f2f89e6d2b9644200f04cb.jpg"
+      ]
     },
     {
       "name": "refcocog_gcg_sampled",
@@ -632,11 +626,11 @@
       "missing": 500,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "d593a4f87a/images/frame_004740.png",
-        "2150596d57/images/frame_007140.png",
-        "079a326597/images/frame_000470.png",
-        "f36e3e1e53/images/frame_005500.png",
-        "5654092cc2/images/frame_000740.png"
+        "scannetpp/d593a4f87a/images/frame_004740.png",
+        "scannetpp/2150596d57/images/frame_007140.png",
+        "scannetpp/079a326597/images/frame_000470.png",
+        "scannetpp/f36e3e1e53/images/frame_005500.png",
+        "scannetpp/5654092cc2/images/frame_000740.png"
       ],
       "found_samples": []
     },
@@ -673,9 +667,9 @@
     {
       "name": "streethazards_gcg_sampled",
       "total": 500,
-      "available": 24,
-      "missing": 476,
-      "availability_rate": "4.8%",
+      "available": 120,
+      "missing": 380,
+      "availability_rate": "24.0%",
       "missing_samples": [
         "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/4108.png",
         "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1712.png",
@@ -685,58 +679,54 @@
       ],
       "found_samples": [
         "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1693.png",
-        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1941.png",
-        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1495.png"
+        "streethazards_hf_v2/extracted_v2/train/images/validation/t4/324.png",
+        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1328.png"
       ]
     },
     {
       "name": "streethazards_genseg_sampled",
       "total": 500,
-      "available": 31,
-      "missing": 469,
-      "availability_rate": "6.2%",
+      "available": 167,
+      "missing": 333,
+      "availability_rate": "33.4%",
       "missing_samples": [
-        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/182.png",
-        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1182.png",
-        "streethazards_hf_v2/extracted_v2/train/images/validation/t4/925.png",
         "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/3026.png",
-        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/2804.png"
+        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/2804.png",
+        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/2644.png",
+        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/2027.png",
+        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1754.png"
       ],
       "found_samples": [
         "streethazards_hf_v2/extracted_v2/train/images/validation/t4/172.png",
-        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/5019.png",
-        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/2464.png"
+        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/182.png",
+        "streethazards_hf_v2/extracted_v2/train/images/training/t1-3/1182.png"
       ]
     },
     {
       "name": "tas500_gcg_sampled",
       "total": 290,
-      "available": 0,
-      "missing": 290,
-      "availability_rate": "0.0%",
-      "missing_samples": [
+      "available": 290,
+      "missing": 0,
+      "availability_rate": "100.0%",
+      "missing_samples": [],
+      "found_samples": [
         "TAS500/extracted/tas500v1.1/train/1527245932460366848.png",
         "TAS500/extracted/tas500v1.1/train/1527245939931266816.png",
-        "TAS500/extracted/tas500v1.1/train/1527246300465208064.png",
-        "TAS500/extracted/tas500v1.1/train/1527246312973161728.png",
-        "TAS500/extracted/tas500v1.1/train/1527246350517620992.png"
-      ],
-      "found_samples": []
+        "TAS500/extracted/tas500v1.1/train/1527246300465208064.png"
+      ]
     },
     {
       "name": "tas500_genseg_sampled",
       "total": 440,
-      "available": 0,
-      "missing": 440,
-      "availability_rate": "0.0%",
-      "missing_samples": [
+      "available": 440,
+      "missing": 0,
+      "availability_rate": "100.0%",
+      "missing_samples": [],
+      "found_samples": [
         "TAS500/extracted/tas500v1.1/train/1527245932460366848.png",
         "TAS500/extracted/tas500v1.1/train/1527245939931266816.png",
-        "TAS500/extracted/tas500v1.1/train/1527245947414495488.png",
-        "TAS500/extracted/tas500v1.1/train/1527246287955684352.png",
-        "TAS500/extracted/tas500v1.1/train/1527246300465208064.png"
-      ],
-      "found_samples": []
+        "TAS500/extracted/tas500v1.1/train/1527245947414495488.png"
+      ]
     },
     {
       "name": "trashcan_genseg_sampled",
@@ -777,11 +767,11 @@
       "missing": 43,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "train/src/001401.JPG",
-        "train/src/001441.JPG",
-        "train/src/001521.JPG",
-        "train/src/0119_3img2041.JPG",
-        "train/src/0119_3img3041.JPG"
+        "udd5/train/src/001401.JPG",
+        "udd5/train/src/001441.JPG",
+        "udd5/train/src/001521.JPG",
+        "udd5/train/src/0119_3img2041.JPG",
+        "udd5/train/src/0119_3img3041.JPG"
       ],
       "found_samples": []
     },
@@ -792,11 +782,11 @@
       "missing": 100,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "train/src/DJI_0437.JPG",
-        "train/src/001241.JPG",
-        "train/src/000101.JPG",
-        "train/src/DJI_0481.JPG",
-        "train/src/0119_5img3021.JPG"
+        "udd5/train/src/DJI_0437.JPG",
+        "udd5/train/src/001241.JPG",
+        "udd5/train/src/000101.JPG",
+        "udd5/train/src/DJI_0481.JPG",
+        "udd5/train/src/0119_5img3021.JPG"
       ],
       "found_samples": []
     },
@@ -807,11 +797,11 @@
       "missing": 58,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "train/src/000021.JPG",
-        "train/src/000141.JPG",
-        "train/src/000241.JPG",
-        "train/src/000301.JPG",
-        "train/src/000341.JPG"
+        "udd6/train/src/000021.JPG",
+        "udd6/train/src/000141.JPG",
+        "udd6/train/src/000241.JPG",
+        "udd6/train/src/000301.JPG",
+        "udd6/train/src/000341.JPG"
       ],
       "found_samples": []
     },
@@ -822,11 +812,11 @@
       "missing": 100,
       "availability_rate": "0.0%",
       "missing_samples": [
-        "train/src/DJI_0424_heda.JPG",
-        "train/src/001241.JPG",
-        "train/src/000101.JPG",
-        "train/src/DJI_0529.JPG",
-        "train/src/0119_5img3021.JPG"
+        "udd6/train/src/DJI_0424_heda.JPG",
+        "udd6/train/src/001241.JPG",
+        "udd6/train/src/000101.JPG",
+        "udd6/train/src/DJI_0529.JPG",
+        "udd6/train/src/0119_5img3021.JPG"
       ],
       "found_samples": []
     },

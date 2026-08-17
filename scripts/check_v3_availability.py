@@ -151,11 +151,17 @@ PATH_FIXES = {
     ),
     "egoobjects_point": lambda p: f"EgoObjects/{p}" if not p.startswith("EgoObjects/") else p,
     "aptv2_point": lambda p: p if p.startswith("APTv2/") else p,
-    "idd2_genseg": lambda p: f"IDD/{p}" if not p.startswith("IDD/") else p,
+    "idd2_genseg": lambda p: (
+        f"IDD/extracted/IDD_Segmentation/{p.replace('.jpg', '.png')}"
+        if not p.startswith("IDD/") and p.startswith("leftImg8bit/")
+        else (f"IDD/{p}" if not p.startswith("IDD/") else p)
+    ),
     "iddav3_gcg": lambda p: f"IDD/{p}" if not p.startswith("IDD/") else p,
     "iddav3_genseg": lambda p: f"IDD/{p}" if not p.startswith("IDD/") else p,
     "IDD-1_total_unified_genseg_edit_regenerated": lambda p: (
-        f"IDD/{p}" if not p.startswith("IDD/") else p
+        f"IDD/extracted/IDD_Segmentation/{p}"
+        if not p.startswith("IDD/") and p.startswith("leftImg8bit/")
+        else (f"IDD/{p}" if not p.startswith("IDD/") else p)
     ),
     "KITTI_total_unified_genseg_edit_regenerated": lambda p: (
         f"KITTI/tracking_extract/{p}" if not p.startswith("KITTI/") else p
@@ -179,6 +185,21 @@ PATH_FIXES = {
     "nuimages_point": lambda p: f"nuimages/{p}" if not p.startswith("nuimages/") else p,
     "imagenetpart_point": lambda p: f"ImageNet/{p}" if not p.startswith("ImageNet/") else p,
     "humanparts_point": lambda p: f"HumanParts/{p}" if not p.startswith("HumanParts/") else p,
+    "udd5_gcg": lambda p: f"udd5/{p}" if not p.startswith("udd5/") else p,
+    "udd5_genseg": lambda p: f"udd5/{p}" if not p.startswith("udd5/") else p,
+    "udd6_gcg": lambda p: f"udd6/{p}" if not p.startswith("udd6/") else p,
+    "udd6_genseg": lambda p: f"udd6/{p}" if not p.startswith("udd6/") else p,
+    "51world_gcg": lambda p: f"51world/{p}" if not p.startswith("51world/") else p,
+    "51world_genseg": lambda p: f"51world/{p}" if not p.startswith("51world/") else p,
+    "object365_total_unified_depth": lambda p: (
+        f"Objects365/{p}" if not p.startswith("Objects365/") else p
+    ),
+    "scannetpp_total_unified_depth": lambda p: (
+        f"scannetpp/{p}" if not p.startswith("scannetpp/") else p
+    ),
+    "scannetpp_normal": lambda p: (
+        f"scannetpp/{p}" if not p.startswith("scannetpp/") else p
+    ),
 }
 
 
