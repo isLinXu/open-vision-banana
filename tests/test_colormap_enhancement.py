@@ -26,6 +26,7 @@ def test_available_colormaps() -> None:
         "viridis",
         "grayscale",
         "rainbow",
+        "turbo",
     ]
     assert sorted(names) == sorted(expected), f"Expected {expected}, got {names}"
 
