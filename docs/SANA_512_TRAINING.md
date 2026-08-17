@@ -1,13 +1,14 @@
 # Sana_600M_512px Training — Open-Vision-Banana
 
-使用 `Sana_600M_512px_diffusers` 模型在 `vb_snvc_train_v3` 数据集上进行 LoRA 指令微调。
+使用 `Sana_600M_512px_diffusers` 在 `vb_snvc_train_v5_full` 上进行 LoRA 指令微调，复刻 Vision Banana 的方法范式：所有视觉任务都编码为 RGB 图像，由同一生成器和文本指令共同条件化，不使用任务专属预测头。
 
 ## 文件清单
 
 | 文件 | 说明 |
 |------|------|
 | `scripts/train_sana_512.py` | 主训练脚本 |
-| `configs/sana_512_train.yaml` | 训练配置文件（参考用，CLI 参数优先） |
+| `configs/sana_512_train.yaml` | v5_full 多任务复现实验配置（CLI 参数优先） |
+| `output/mar_vb_clean_pairs_v4/pairs.jsonl` | 标注驱动、无 source/target 泄漏的 v5 训练/验证配对清单 |
 | `src/open_vision_banana/model_registry.py` | 已新增 `sana-600m-512px` 模型注册 |
 
 ## 模型架构
@@ -33,33 +34,34 @@ pip install diffusers peft transformers accelerate
 ### 基本训练
 
 ```bash
-# 全任务训练（12个视觉任务）
-python scripts/train_sana_512.py \
-    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3 \
-    --steps 10000 \
-    --lr 5e-5 \
-    --batch-size 4 \
-    --grad-accum 4 \
-    --output-dir output/sana_512_vb
+# v5_full 统一多任务方法复现（默认 10% vision / 90% generation retention）
+python scripts/train_sana_512.py --config configs/sana_512_train.yaml
 ```
+
+`v5_full` 是扁平化图片目录，不能按同名文件猜测 source/target 关系。默认配置使用 `output/mar_vb_clean_pairs_v4/pairs.jsonl`，其中包含 25,476 对已审计样本：depth 6,114、normal 4,991、semantic 9,709、structure 4,662；划分按输入图片分组，避免跨任务泄漏。
+
+生成保持集位于 `data/vb_generation_5k`，可读取仓库已有的 `captions.json`。训练中视觉样本走 `source image -> task RGB target` 的 img2img flow，生成保持样本走 `noise -> original image` 的 text-to-image flow；后者不会错误退化为原图到原图的零速度目标。
 
 ### 单任务调试
 
 ```bash
 # 仅训练 depth 任务
 python scripts/train_sana_512.py \
-    --data-dir /path/to/vb_snvc_train_v3 \
+    --data-dir /path/to/vb_snvc_train_v5_full \
+    --pair-manifest output/mar_vb_clean_pairs_v4/pairs.jsonl \
     --tasks depth \
     --steps 2000 \
     --output-dir output/sana_512_depth_debug
 ```
 
-### 带 Generation 数据混合（9:1）
+### 带 Generation 数据混合（vision:generation = 1:9）
 
 ```bash
 python scripts/train_sana_512.py \
-    --data-dir /path/to/vb_snvc_train_v3 \
-    --vision-ratio 0.9 \
+    --data-dir /path/to/vb_snvc_train_v5_full \
+    --pair-manifest output/mar_vb_clean_pairs_v4/pairs.jsonl \
+    --generation-dir /path/to/vb_generation_5k \
+    --vision-ratio 0.1 \
     --output-dir output/sana_512_mixed
 ```
 
@@ -67,7 +69,8 @@ python scripts/train_sana_512.py \
 
 ```bash
 python scripts/train_sana_512.py \
-    --data-dir /path/to/vb_snvc_train_v3 \
+    --data-dir /path/to/vb_snvc_train_v5_full \
+    --pair-manifest output/mar_vb_clean_pairs_v4/pairs.jsonl \
     --resume output/sana_512_vb/checkpoint-5000/lora.pt \
     --steps 10000 \
     --output-dir output/sana_512_vb
@@ -80,8 +83,8 @@ python scripts/train_sana_512.py \
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `--model-name` | `sana-600m-512px` | 模型注册名 |
-| `--lora-rank` | 16 | LoRA 秩 |
-| `--lora-alpha` | 32 | LoRA alpha |
+| `--lora-rank` | 32 | LoRA 秩 |
+| `--lora-alpha` | 64 | LoRA alpha |
 | `--no-rslora` | false | 禁用 rsLoRA scaling |
 | `--dtype` | float16 | transformer 精度（text_encoder/VAE 自动转 bf16） |
 
@@ -91,8 +94,8 @@ python scripts/train_sana_512.py \
 |------|--------|------|
 | `--steps` | 10000 | 总训练步数 |
 | `--lr` | 5e-5 | 学习率 |
-| `--batch-size` | 4 | 每步 batch size |
-| `--grad-accum` | 4 | 梯度累积步数（effective batch = 4*4 = 16） |
+| `--batch-size` | 1 | 每步 batch size |
+| `--grad-accum` | 8 | 梯度累积步数（effective batch = 8） |
 | `--resolution` | 512 | 训练分辨率 |
 | `--task-weights` | sqrt | 任务采样权重（sqrt/uniform/逗号分隔权重） |
 
@@ -116,43 +119,35 @@ python scripts/train_sana_512.py \
 
 ## 数据集
 
-使用 `vb_snvc_train_v3` 数据集（v3 格式）：
+默认使用 `vb_snvc_train_v5_full` 及其 annotation-backed v4 配对清单：
 
 | 任务 | 训练样本 | 验证样本 |
 |------|----------|----------|
-| depth | 2,181 | 115 |
-| normal | 1,705 | 91 |
-| segmentation | 7,132 | 351 |
-| generation | 5,644 | 337 |
-| structure (edge) | 2,454 | 144 |
-| instance | 5,291 | 290 |
-| keypoint | 8,969 | 438 |
-| object_detection | 8,956 | 477 |
-| depth_edge | 8,606 | 439 |
-| referring | 1,616 | 74 |
-| multiview | 918 | 47 |
-| specular_removal | 534 | 30 |
-| **总计** | **48,362** | **2,496** |
+| depth | 5,813 | 301 |
+| normal | 4,740 | 251 |
+| semantic segmentation | 9,215 | 494 |
+| structure | 4,424 | 238 |
+| **总计** | **24,192** | **1,284** |
 
-数据格式：每个任务包含 `images/`（输入图像）、`targets/`（目标可视化）、`prompts/`（文本提示）。
+生成保持集单独提供 1,968 张有 caption 的图像。v5 输入/目标配对仅由 JSONL manifest 提供，不允许从 `images/` 与 `targets/` 目录按文件名自行匹配。
 
 ## 训练流程
 
 1. **模型加载**: 从 HuggingFace 下载 `Sana_600M_512px_diffusers`，提取 transformer/VAE/text_encoder
 2. **LoRA 注入**: 对 transformer 的 `linear`、`proj_out`、`conv_inverted`、`conv_point` 层注入 LoRA 适配器
-3. **数据加载**: 按任务权重（默认 sqrt 平衡）从多任务数据集中采样
-4. **Flow Matching**: 
-   - VAE 编码 target 和 input 图像到 latent 空间
+3. **数据加载**: 以统一权重采样 4 类 RGB 视觉任务；外层按 1:9 混入生成保持样本
+4. **Flow Matching**:
+   - VAE 编码 target 和 vision input 图像到 latent 空间
    - 采样 logit-normal 时间步
-   - 构建 noisy latent: `(1-t)*input + t*target`（img2img flow）
-   - 预测 velocity: `target - input`
+   - 视觉样本构建 source-image 到 task-target 的 flow；生成样本构建 noise 到原图的 flow
+   - 两种样本共享 SANA transformer、LoRA 和 prompt 条件
 5. **损失计算**: MSE loss + 可选 Min-SNR 加权
 6. **优化**: AdamW + cosine LR scheduler + 梯度裁剪 + EMA
 
 ## Checkpoint 输出
 
 ```
-output/sana_512_vb/
+output/sana_v5_vision_banana/
 ├── training_config.json          # 训练配置
 ├── checkpoint-1000/
 │   ├── lora.pt                   # LoRA 权重 + optimizer/scheduler state

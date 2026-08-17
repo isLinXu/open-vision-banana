@@ -27,6 +27,7 @@ class GenerationDataset(Dataset):
         <root>/
           images/              ← RGB images (*.jpg / *.png)
           prompts.json         ← {"stem": "prompt text", ...}  (optional)
+          captions.json        ← [{"filename": "file.jpg", "caption": "..."}] (optional)
           metadata.jsonl       ← {"image": "file.jpg", "prompt": "..."}  (optional)
           prompts.jsonl        ← Same format as metadata.jsonl (v3 convention)
 
@@ -38,6 +39,9 @@ class GenerationDataset(Dataset):
         resolution: Target image resolution.
         default_prompt: Fallback prompt when no per-sample prompt is found.
         include_input_image: If True, also return the image as ``image`` key.
+            Its corresponding ``flow_source`` is still ``"noise"``: using
+            the image itself as an img2img source would produce a zero
+            velocity target and fail to preserve text-to-image generation.
         split_filter: Optional ``(filenames_set, split_name)`` tuple.
             When provided, only samples whose image filename appears in
             ``filenames_set`` are loaded. ``split_name`` is used for logging.
@@ -67,7 +71,7 @@ class GenerationDataset(Dataset):
         return {str(k): str(v) for k, v in data.items()}
 
     def _load_metadata_jsonl(self) -> list[dict]:
-        """Load metadata from metadata.jsonl or prompts.jsonl (v3 format)."""
+        """Load metadata from JSONL or the project's legacy ``captions.json``."""
         for filename in ("metadata.jsonl", "prompts.jsonl"):
             path = self.root_dir / filename
             if path.exists():
@@ -83,6 +87,27 @@ class GenerationDataset(Dataset):
                         "GenerationDataset: loaded prompts from %s (%d rows)", filename, len(rows)
                     )
                     return rows
+
+        captions_path = self.root_dir / "captions.json"
+        if captions_path.exists():
+            with captions_path.open(encoding="utf-8") as f:
+                captions = json.load(f)
+            if not isinstance(captions, list):
+                logger.warning("GenerationDataset: captions.json must contain a list")
+                return []
+            rows = [
+                {
+                    "image": row.get("filename"),
+                    "prompt": row.get("caption", self.default_prompt),
+                }
+                for row in captions
+                if isinstance(row, dict) and row.get("filename")
+            ]
+            if rows:
+                logger.info(
+                    "GenerationDataset: loaded prompts from captions.json (%d rows)", len(rows)
+                )
+                return rows
         return []
 
     def _load(self, split_filter: tuple[set[str], str] | None = None) -> None:
@@ -121,7 +146,7 @@ class GenerationDataset(Dataset):
                 )
             if self.samples:
                 logger.info(
-                    "GenerationDataset: loaded %d samples from metadata.jsonl (split=%s)",
+                    "GenerationDataset: loaded %d samples from prompt metadata (split=%s)",
                     len(self.samples),
                     split_name,
                 )
@@ -166,6 +191,8 @@ class GenerationDataset(Dataset):
         item = {
             "prompt": sample["prompt"],
             "target_rgb": target_rgb,
+            "task": "generation",
+            "flow_source": "noise",
         }
         if self.include_input_image:
             item["image"] = target_rgb * 2.0 - 1.0

@@ -36,6 +36,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -1476,8 +1477,20 @@ def load_pipeline(
     else:
         raise ValueError(f"Unknown pipeline class: {cls_name}")
 
+    local_model_path = os.environ.get("OPEN_VISION_BANANA_MODEL_PATH")
+    model_source = config.model_id
+    if local_model_path:
+        resolved_model_path = Path(local_model_path).expanduser().resolve()
+        if not resolved_model_path.is_dir():
+            raise NotADirectoryError(
+                "OPEN_VISION_BANANA_MODEL_PATH does not point to a model directory: "
+                f"{resolved_model_path}"
+            )
+        model_source = str(resolved_model_path)
+        logger.info("Using local model snapshot: %s", resolved_model_path)
+
     pipe = PipeClass.from_pretrained(
-        config.model_id,
+        model_source,
         torch_dtype=dtype,
     )
 

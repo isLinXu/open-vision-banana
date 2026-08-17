@@ -42,11 +42,13 @@ import json
 import logging
 import os
 import sys
-import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+from PIL import Image
+from torch.utils.data import Dataset
 
 # Use HF mirror for models
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -68,11 +70,20 @@ from open_vision_banana.model_registry import (
 )
 from open_vision_banana.training.optimization import (
     SchedulerFactory,
-    sample_timesteps_logit_normal,
-    compute_min_snr_weight,
 )
-from open_vision_banana.training.utils import EMAModel, VisionAugmentation
-from open_vision_banana.training.checkpoint import CheckpointManager
+from open_vision_banana.training.sana_flow import (
+    flow_min_snr_weight,
+    native_sana_timestep,
+    normalize_vae_latents,
+    prepare_sana_flow_batch,
+    sample_sana_flow_timesteps,
+    denormalize_vae_latents,
+)
+from open_vision_banana.training.sana_depth_aux import (
+    depth_edge_endpoint_loss,
+    depth_task_mask,
+)
+from open_vision_banana.training.utils import EMAModel
 
 logger = logging.getLogger(__name__)
 
@@ -102,106 +113,271 @@ DEFAULT_TASK_WEIGHTS: dict[str, float] = {
 
 
 def parse_args() -> argparse.Namespace:
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=Path)
+    config_args, _ = config_parser.parse_known_args()
+    config_defaults = load_config_defaults(config_args.config)
+
     p = argparse.ArgumentParser(
         description="Train Open-Vision-Banana with Sana_600M_512px_diffusers",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=config_args.config,
+        help="YAML configuration; explicit CLI arguments take precedence.",
+    )
 
     # ── Data ──────────────────────────────────────────────────────────
-    p.add_argument("--data-dir", required=True, help="Path to vb_snvc_train_v3 dataset")
     p.add_argument(
-        "--tasks", nargs="+", default=None, help="Subset of tasks to train (default: all)"
+        "--data-dir",
+        required="data_dir" not in config_defaults,
+        default=config_defaults.get("data_dir"),
+        help="Path to a v3 dataset or the v5_full dataset root",
+    )
+    p.add_argument(
+        "--tasks", nargs="+", default=config_defaults.get("tasks"), help="Subset of tasks to train (default: all)"
     )
     p.add_argument(
         "--resolution",
         type=int,
-        default=512,
+        default=config_defaults.get("resolution", 512),
         help="Training resolution (default 512, matching model native)",
     )
     p.add_argument(
         "--vision-ratio",
         type=float,
-        default=1.0,
+        default=config_defaults.get("vision_ratio", 1.0),
         help="Ratio of vision vs generation data (default 1.0 = all vision)",
+    )
+    p.add_argument(
+        "--pair-manifest",
+        type=Path,
+        default=config_defaults.get("pair_manifest"),
+        help=(
+            "Explicit JSONL of input/target pairs. Required for the v5_full "
+            "flat dataset to preserve annotation-backed pair semantics."
+        ),
+    )
+    p.add_argument(
+        "--generation-dir",
+        type=Path,
+        default=config_defaults.get("generation_dir"),
+        help=(
+            "Text-to-image preservation dataset. Required when --vision-ratio is below 1.0 "
+            "for v5_full training."
+        ),
     )
 
     # ── Model ────────────────────────────────────────────────────────
     p.add_argument(
         "--model-name",
-        default="sana-600m-512px",
+        default=config_defaults.get("model_name", "sana-600m-512px"),
         help="Model registry name (default: sana-600m-512px)",
     )
-    p.add_argument("--lora-rank", type=int, default=16)
-    p.add_argument("--lora-alpha", type=int, default=32)
-    p.add_argument("--no-rslora", action="store_true", help="Disable rsLoRA scaling")
-    p.add_argument("--dtype", default="float16", choices=["float16", "bfloat16", "float32"])
+    p.add_argument("--lora-rank", type=int, default=config_defaults.get("lora_rank", 16))
+    p.add_argument("--lora-alpha", type=int, default=config_defaults.get("lora_alpha", 32))
+    p.add_argument("--no-rslora", action="store_true", default=not config_defaults.get("rslora", True), help="Disable rsLoRA scaling")
+    p.add_argument("--dtype", default=config_defaults.get("dtype", "float16"), choices=["float16", "bfloat16", "float32"])
 
     # ── Training ─────────────────────────────────────────────────────
-    p.add_argument("--steps", type=int, default=10000, help="Total training steps")
-    p.add_argument("--lr", type=float, default=5e-5)
-    p.add_argument("--batch-size", type=int, default=4)
+    p.add_argument("--steps", type=int, default=config_defaults.get("steps", 10000), help="Total training steps")
+    p.add_argument("--lr", type=float, default=config_defaults.get("lr", 5e-5))
+    p.add_argument("--batch-size", type=int, default=config_defaults.get("batch_size", 4))
     p.add_argument(
         "--grad-accum",
         type=int,
-        default=4,
+        default=config_defaults.get("grad_accum", 4),
         help="Gradient accumulation steps (effective batch = batch_size * grad_accum)",
     )
-    p.add_argument("--max-grad-norm", type=float, default=1.0)
-    p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--num-workers", type=int, default=4)
+    p.add_argument("--max-grad-norm", type=float, default=config_defaults.get("max_grad_norm", 1.0))
+    p.add_argument("--seed", type=int, default=config_defaults.get("seed", 42))
+    p.add_argument("--num-workers", type=int, default=config_defaults.get("num_workers", 4))
 
     # ── Scheduler ────────────────────────────────────────────────────
     p.add_argument(
         "--scheduler",
-        default="cosine",
+        default=config_defaults.get("scheduler", "cosine"),
         choices=["cosine", "constant", "cosine_restarts", "one_cycle"],
     )
-    p.add_argument("--warmup-ratio", type=float, default=0.05)
-    p.add_argument("--warmup-steps", type=int, default=None)
+    p.add_argument("--warmup-ratio", type=float, default=config_defaults.get("warmup_ratio", 0.05))
+    p.add_argument("--warmup-steps", type=int, default=config_defaults.get("warmup_steps"))
 
     # ── Loss ─────────────────────────────────────────────────────────
-    p.add_argument("--no-min-snr", action="store_true", help="Disable Min-SNR loss weighting")
-    p.add_argument("--min-snr-gamma", type=float, default=5.0)
+    p.add_argument(
+        "--no-min-snr",
+        action="store_true",
+        default=not config_defaults.get("min_snr", True),
+        help="Disable Min-SNR loss weighting",
+    )
+    p.add_argument("--min-snr-gamma", type=float, default=config_defaults.get("min_snr_gamma", 5.0))
     p.add_argument(
         "--no-logit-normal-timesteps",
         action="store_true",
+        default=not config_defaults.get("logit_normal_timesteps", True),
         help="Use uniform timesteps instead of logit-normal",
     )
     p.add_argument(
-        "--cfg-dropout-rate", type=float, default=0.1, help="CFG dropout rate for text conditioning"
+        "--cfg-dropout-rate",
+        type=float,
+        default=config_defaults.get("cfg_dropout_rate", 0.1),
+        help="CFG dropout rate for text conditioning",
     )
     p.add_argument(
-        "--flow-sigma", type=float, default=0.0, help="Flow-matching noise sigma (0 = pure flow)"
+        "--flow-sigma",
+        type=float,
+        default=config_defaults.get("flow_sigma", 0.0),
+        help="Flow-matching noise sigma (0 = pure flow)",
     )
     p.add_argument(
         "--no-img2img-flow",
         action="store_true",
+        default=not config_defaults.get("img2img_flow", True),
         help="Disable img2img-style flow matching (use noise→target instead)",
+    )
+    p.add_argument(
+        "--depth-edge-aux-weight",
+        type=float,
+        default=config_defaults.get("depth_edge_aux_weight", 0.0),
+        help="Add depth-edge-aware endpoint loss with this multiplier (0 disables it).",
+    )
+    p.add_argument(
+        "--depth-edge-aux-gradient-weight",
+        type=float,
+        default=config_defaults.get("depth_edge_aux_gradient_weight", 0.25),
+        help="Relative spatial-gradient term within the depth-edge auxiliary loss.",
+    )
+    p.add_argument(
+        "--depth-edge-aux-edge-weight",
+        type=float,
+        default=config_defaults.get("depth_edge_aux_edge_weight", 2.0),
+        help="Additional loss weight for latent cells covered by target depth edges.",
+    )
+    p.add_argument(
+        "--depth-edge-aux-edge-threshold",
+        type=float,
+        default=config_defaults.get("depth_edge_aux_edge_threshold", 0.025),
+        help="Decoded normalized-depth gradient needed to mark an edge.",
+    )
+    p.add_argument(
+        "--depth-edge-aux-sigma-floor",
+        type=float,
+        default=config_defaults.get("depth_edge_aux_sigma_floor", 0.10),
+        help="Minimum flow sigma used to normalize endpoint reconstruction error.",
     )
 
     # ── Evaluation & Saving ──────────────────────────────────────────
-    p.add_argument("--output-dir", default="output/sana_512_vb")
-    p.add_argument("--save-every", type=int, default=1000)
-    p.add_argument("--eval-every", type=int, default=500)
-    p.add_argument("--log-every", type=int, default=50)
-    p.add_argument("--ema-decay", type=float, default=0.9999)
-    p.add_argument("--ema-warmup", type=int, default=500)
+    p.add_argument("--output-dir", default=config_defaults.get("output_dir", "output/sana_512_vb"))
+    p.add_argument("--save-every", type=int, default=config_defaults.get("save_every", 1000))
+    p.add_argument("--eval-every", type=int, default=config_defaults.get("eval_every", 500))
+    p.add_argument("--log-every", type=int, default=config_defaults.get("log_every", 50))
+    p.add_argument("--ema-decay", type=float, default=config_defaults.get("ema_decay", 0.9999))
+    p.add_argument("--ema-warmup", type=int, default=config_defaults.get("ema_warmup", 500))
     p.add_argument("--gradient-checkpointing", action="store_true", default=True)
 
     # ── Resume ───────────────────────────────────────────────────────
     p.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
+    p.add_argument(
+        "--resume-weights-only",
+        action="store_true",
+        help="Load only LoRA weights from --resume and reset optimizer, scheduler, and step count.",
+    )
 
     # ── Device ───────────────────────────────────────────────────────
-    p.add_argument("--device", default=None, help="Device (auto-detect if not set)")
+    p.add_argument("--device", default=config_defaults.get("device"), help="Device (auto-detect if not set)")
 
     # ── Task weights ─────────────────────────────────────────────────
     p.add_argument(
         "--task-weights",
-        default="sqrt",
+        default=config_defaults.get("task_weights", "sqrt"),
         help="Task weight mode: sqrt, uniform, or comma-separated floats",
+    )
+    p.add_argument(
+        "--max-samples-per-task",
+        type=int,
+        default=None,
+        help="Debug gate: cap manifest samples independently for each task.",
+    )
+    p.add_argument(
+        "--task-loss-weights",
+        default=None,
+        help="Optional per-task loss multipliers, e.g. semantic=2,structure=2.",
     )
 
     return p.parse_args()
+
+
+def load_config_defaults(config_path: Path | None) -> dict[str, object]:
+    """Map the documented SANA YAML format to CLI defaults.
+
+    The training script intentionally remains CLI-first.  Reading the YAML
+    before parsing lets command-line flags override its values naturally.
+    """
+    if config_path is None:
+        return {}
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Training config not found: {config_path}")
+
+    import yaml
+
+    with config_path.open(encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    if not isinstance(raw, dict):
+        raise ValueError("SANA training config must be a mapping")
+
+    model = raw.get("model", {}) or {}
+    lora = raw.get("lora", {}) or {}
+    data = raw.get("data", {}) or {}
+    training = raw.get("training", {}) or {}
+    scheduler = raw.get("scheduler", {}) or {}
+    flow = raw.get("flow", {}) or {}
+    loss = raw.get("loss", {}) or {}
+    checkpoint = raw.get("checkpoint", {}) or {}
+    ema = raw.get("ema", {}) or {}
+    defaults: dict[str, object] = {
+        "model_name": model.get("name"),
+        "dtype": model.get("dtype"),
+        "lora_rank": lora.get("rank"),
+        "lora_alpha": lora.get("alpha"),
+        "rslora": lora.get("rs_lora"),
+        "data_dir": data.get("dir"),
+        "pair_manifest": data.get("pair_manifest"),
+        "generation_dir": data.get("generation_dir"),
+        "resolution": data.get("resolution", model.get("resolution")),
+        "vision_ratio": data.get("vision_ratio"),
+        "tasks": data.get("tasks"),
+        "num_workers": data.get("num_workers"),
+        "task_weights": data.get("task_weights"),
+        "steps": training.get("steps"),
+        "batch_size": training.get("batch_size"),
+        "grad_accum": training.get("gradient_accumulation"),
+        "lr": training.get("lr"),
+        "max_grad_norm": training.get("max_grad_norm"),
+        "seed": training.get("seed"),
+        "scheduler": scheduler.get("type"),
+        "warmup_ratio": scheduler.get("warmup_ratio"),
+        "warmup_steps": scheduler.get("warmup_steps"),
+        "img2img_flow": flow.get("img2img_flow"),
+        "flow_sigma": flow.get("sigma"),
+        "logit_normal_timesteps": flow.get("logit_normal_timesteps"),
+        "min_snr": flow.get("min_snr"),
+        "min_snr_gamma": flow.get("min_snr_gamma"),
+        "cfg_dropout_rate": flow.get("cfg_dropout_rate"),
+        "depth_edge_aux_weight": loss.get("depth_edge_aux_weight"),
+        "depth_edge_aux_gradient_weight": loss.get("depth_edge_aux_gradient_weight"),
+        "depth_edge_aux_edge_weight": loss.get("depth_edge_aux_edge_weight"),
+        "depth_edge_aux_edge_threshold": loss.get("depth_edge_aux_edge_threshold"),
+        "depth_edge_aux_sigma_floor": loss.get("depth_edge_aux_sigma_floor"),
+        "output_dir": checkpoint.get("output_dir"),
+        "save_every": checkpoint.get("save_every"),
+        "eval_every": checkpoint.get("eval_every"),
+        "log_every": checkpoint.get("log_every"),
+        "ema_decay": ema.get("decay"),
+        "ema_warmup": ema.get("warmup_steps"),
+        "device": raw.get("device"),
+    }
+    return {name: value for name, value in defaults.items() if value is not None}
 
 
 def get_dtype(dtype_str: str) -> torch.dtype:
@@ -243,10 +419,6 @@ def encode_text_sana(
     input_ids = tokenized.input_ids.to(device)
     attention_mask = tokenized.attention_mask.to(device)
 
-    # Cast text encoder to float32 for stability (Gemma-2B is large)
-    original_dtype = text_encoder.dtype
-    text_encoder.to(torch.float32)
-
     with torch.no_grad():
         outputs = text_encoder(input_ids, attention_mask=attention_mask)
         # Gemma returns last_hidden_state
@@ -255,7 +427,6 @@ def encode_text_sana(
         else:
             encoder_hidden_states = outputs[0]
 
-    text_encoder.to(original_dtype)
     return encoder_hidden_states.to(dtype), attention_mask.to(dtype)
 
 
@@ -273,11 +444,8 @@ def vae_encode_sana(
 
     DC-AE's encode() returns EncoderOutput(latent=...) — NOT latent_dist.
     """
-    original_dtype = vae.dtype
-    vae.to(dtype)
-
     with torch.no_grad():
-        enc_out = vae.encode(images.to(dtype))
+        enc_out = vae.encode(images.to(dtype=vae.dtype))
         # DC-AE returns EncoderOutput with .latent attribute
         if hasattr(enc_out, "latent_dist"):
             latents = enc_out.latent_dist.mode()
@@ -299,8 +467,7 @@ def vae_encode_sana(
                     f"latent attribute. Available: {dir(enc_out)}"
                 )
 
-    vae.to(original_dtype)
-    return latents
+    return normalize_vae_latents(latents.to(dtype), vae)
 
 
 def vae_decode_sana(
@@ -314,11 +481,8 @@ def vae_decode_sana(
     Input: [B, 32, H/32, W/32]
     Output: [B, 3, H, W] in [-1, 1]
     """
-    original_dtype = vae.dtype
-    vae.to(dtype)
-
     with torch.no_grad():
-        dec_out = vae.decode(latents.to(dtype))
+        dec_out = vae.decode(denormalize_vae_latents(latents, vae).to(dtype=vae.dtype))
         # DC-AE decode may return DecoderOutput or tensor
         if hasattr(dec_out, "sample"):
             images = dec_out.sample
@@ -336,7 +500,6 @@ def vae_decode_sana(
                     f"sample attribute. Available: {dir(dec_out)}"
                 )
 
-    vae.to(original_dtype)
     return images
 
 
@@ -351,17 +514,210 @@ def flexible_collate(batch: list[dict]) -> dict:
       3. Any non-common key is dropped (the training loop does not use
          task-specific extras like 'colormap').
     """
-    all_keys = set(batch[0].keys())
-    for sample in batch[1:]:
+    normalized = []
+    for sample in batch:
+        sample = dict(sample)
+        # Vision tasks begin flow matching at their source image; generation
+        # preservation samples explicitly override this with ``noise``.
+        sample.setdefault("flow_source", "input")
+        normalized.append(sample)
+
+    all_keys = set(normalized[0].keys())
+    for sample in normalized[1:]:
         all_keys &= set(sample.keys())
-    common = [{k: s[k] for k in all_keys} for s in batch]
+    common = [{k: s[k] for k in all_keys} for s in normalized]
     from torch.utils.data._utils.collate import default_collate
 
     return default_collate(common)
 
 
+def select_sana_flow_sources(
+    input_latents: torch.Tensor,
+    target_latents: torch.Tensor,
+    flow_source: object,
+) -> torch.Tensor:
+    """Select per-item flow origins for mixed vision/generation batches.
+
+    Vision items use their encoded source image. Generation-preservation items
+    use fresh Gaussian noise even though an image tensor is present for batch
+    collation. This preserves the paper's text-to-image retention objective.
+    """
+    batch_size = target_latents.shape[0]
+    if input_latents.shape != target_latents.shape:
+        raise ValueError("input and target latent shapes must match")
+    if isinstance(flow_source, str):
+        flow_source = [flow_source]
+    if flow_source is None:
+        flow_source = ["input"] * batch_size
+    flow_source = list(flow_source)
+    if len(flow_source) != batch_size:
+        raise ValueError("flow_source must contain one value per batch item")
+    use_input_source = torch.tensor(
+        [str(source) == "input" for source in flow_source],
+        device=target_latents.device,
+        dtype=torch.bool,
+    )
+    return torch.where(
+        use_input_source.view(batch_size, 1, 1, 1),
+        input_latents,
+        torch.randn_like(target_latents),
+    )
+
+
+def apply_task_loss_weights(
+    per_sample_loss: torch.Tensor,
+    task_values: object,
+    task_loss_weights: dict[str, float] | None,
+) -> torch.Tensor:
+    """Scale each sample loss with the configured task multiplier."""
+    if not task_loss_weights:
+        return per_sample_loss
+
+    if isinstance(task_values, str):
+        tasks = [task_values]
+    elif task_values is None:
+        tasks = [""] * per_sample_loss.shape[0]
+    else:
+        tasks = [str(task) for task in task_values]
+
+    if len(tasks) != per_sample_loss.shape[0]:
+        raise ValueError(
+            "Task labels must have one value per sample: "
+            f"got {len(tasks)} labels for batch size {per_sample_loss.shape[0]}"
+        )
+
+    task_scale = torch.tensor(
+        [task_loss_weights.get(task, 1.0) for task in tasks],
+        device=per_sample_loss.device,
+        dtype=per_sample_loss.dtype,
+    )
+    return per_sample_loss * task_scale
+
+
+class ManifestVisionDataset(Dataset):
+    """Load explicit RGB input/target pairs emitted by the v5 manifest builder.
+
+    The v5 pack stores both source and supervision images in flat task
+    directories.  Pairing by filename can therefore use a target image as its
+    own input.  This dataset accepts only the annotation-backed pair manifest
+    produced by ``build_mar_v5_clean_manifest.py``.
+    """
+
+    TASKS: dict[str, tuple[str, str]] = {
+        "depth": (
+            "depth",
+            "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
+        ),
+        "normal": (
+            "normal",
+            "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry.",
+        ),
+        "seg": (
+            "semantic",
+            "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries.",
+        ),
+        "structure": (
+            "structure",
+            "Generate a binary structural edge map. Use a black background and thin white edges aligned to visible scene boundaries.",
+        ),
+    }
+
+    def __init__(
+        self,
+        manifest_path: Path,
+        resolution: int,
+        split: str,
+        tasks: set[str],
+        max_samples: int | None = None,
+    ) -> None:
+        self.task = "unknown"
+        self.dir_name = "manifest"
+        self.resolution = resolution
+        self.samples: list[dict[str, str]] = []
+
+        with manifest_path.open(encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, 1):
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                raw_task = row.get("task")
+                task_info = self.TASKS.get(raw_task)
+                if task_info is None or task_info[0] not in tasks:
+                    continue
+                if row.get("split") != split:
+                    continue
+                image_path = Path(row.get("input", ""))
+                target_path = Path(row.get("target", ""))
+                if not image_path.is_file() or not target_path.is_file():
+                    logger.warning(
+                        "Skipping unavailable manifest pair at %s:%d", manifest_path, line_no
+                    )
+                    continue
+                self.samples.append(
+                    {
+                        "image_path": str(image_path),
+                        "target_path": str(target_path),
+                        "task": task_info[0],
+                        "dir_name": raw_task,
+                        "prompt": task_info[1],
+                    }
+                )
+
+        if max_samples is not None and max_samples > 0:
+            self.samples = self.samples[:max_samples]
+
+        if self.samples:
+            names = {sample["dir_name"] for sample in self.samples}
+            self.dir_name = next(iter(names)) if len(names) == 1 else "manifest"
+            labels = {sample["task"] for sample in self.samples}
+            self.task = next(iter(labels)) if len(labels) == 1 else "mixed"
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        with Image.open(sample["image_path"]) as image:
+            image = image.convert("RGB").resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
+            input_tensor = torch.from_numpy(
+                np.asarray(image, dtype=np.float32) / 255.0
+            ).permute(2, 0, 1)
+        with Image.open(sample["target_path"]) as image:
+            target_resampling = (
+                Image.Resampling.NEAREST
+                if sample["task"] == "semantic"
+                else Image.Resampling.LANCZOS
+            )
+            image = image.convert("RGB").resize(
+                (self.resolution, self.resolution), target_resampling
+            )
+            target_tensor = torch.from_numpy(
+                np.asarray(image, dtype=np.float32) / 255.0
+            ).permute(2, 0, 1)
+
+        return {
+            "prompt": sample["prompt"],
+            "image": input_tensor * 2.0 - 1.0,
+            "image_range": "-1_1",
+            "target_rgb": target_tensor,
+            "target_rgb_range": "0_1",
+            "task": sample["task"],
+            "flow_source": "input",
+        }
+
+
 def main():
     args = parse_args()
+    if args.depth_edge_aux_weight < 0:
+        raise ValueError("--depth-edge-aux-weight must be non-negative")
+    if args.depth_edge_aux_gradient_weight < 0:
+        raise ValueError("--depth-edge-aux-gradient-weight must be non-negative")
+    if args.depth_edge_aux_edge_weight < 0:
+        raise ValueError("--depth-edge-aux-edge-weight must be non-negative")
+    if args.depth_edge_aux_edge_threshold <= 0:
+        raise ValueError("--depth-edge-aux-edge-threshold must be positive")
+    if args.depth_edge_aux_sigma_floor <= 0:
+        raise ValueError("--depth-edge-aux-sigma-floor must be positive")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -384,6 +740,13 @@ def main():
     logger.info(f"Data: {args.data_dir}")
     logger.info(f"Resolution: {args.resolution}")
     logger.info(f"Output: {args.output_dir}")
+    if args.depth_edge_aux_weight:
+        logger.info(
+            "Depth edge auxiliary loss: weight=%.3f edge_weight=%.3f gradient_weight=%.3f",
+            args.depth_edge_aux_weight,
+            args.depth_edge_aux_edge_weight,
+            args.depth_edge_aux_gradient_weight,
+        )
 
     # ── Set seed ─────────────────────────────────────────────────────
     torch.manual_seed(args.seed)
@@ -405,13 +768,12 @@ def main():
         enable_gradient_checkpointing=args.gradient_checkpointing,
     )
 
-    # Sana-specific dtype adjustments (per model card recommendations):
-    #   - transformer stays in fp16/bf16 (training dtype)
-    #   - text_encoder (Gemma-2B) in bfloat16 for stability
-    #   - VAE (DC-AE) in bfloat16 or float32
+    # Sana-specific dtype adjustments. Keep the frozen components at a stable
+    # dtype for the full run; recasting a 2B text encoder every batch is both
+    # slow and prone to MPS memory fragmentation.
     if dtype == torch.float16:
-        logger.info("Applying Sana dtype adjustments: text_encoder→bf16, vae→bf16")
-        components.text_encoder.to(torch.bfloat16)
+        logger.info("Applying Sana dtype adjustments: text_encoder→fp32, vae→bf16")
+        components.text_encoder.to(torch.float32)
         components.vae.to(torch.bfloat16)
 
     backbone = components.unet  # transformer
@@ -437,15 +799,6 @@ def main():
     logger.info("Building datasets...")
     data_root = Path(args.data_dir)
 
-    v3_split = load_v3_train_val_split(data_root)
-    is_v3 = v3_split is not None or (data_root / "manifest.json").exists()
-
-    if not is_v3:
-        logger.error("Dataset must be in v3 format (with train_val_split.json or manifest.json)")
-        return
-
-    logger.info(f"Detected v3-format dataset at {data_root}")
-
     # Determine which tasks to load
     all_tasks = [
         "depth",
@@ -463,88 +816,179 @@ def main():
     ]
     tasks_to_load = args.tasks if args.tasks else all_tasks
 
-    # Filter v3 split to selected tasks
-    train_vision_datasets = build_v3_datasets(
-        data_root,
-        resolution=args.resolution,
-        split="train",
-        use_split_file=v3_split is not None,
-    )
-    # Filter by requested tasks
-    train_vision_datasets = [
-        ds
-        for ds in train_vision_datasets
-        if ds.task in tasks_to_load or ds.dir_name in tasks_to_load
-    ]
+    generation_dataset = None
+    if args.pair_manifest is not None:
+        manifest_path = args.pair_manifest.expanduser().resolve()
+        if not manifest_path.is_file():
+            logger.error("Pair manifest not found: %s", manifest_path)
+            return
+        aliases = {"segmentation": "semantic", "seg": "semantic"}
+        manifest_tasks = {aliases.get(task, task) for task in tasks_to_load}
+        train_vision_datasets = [
+            ManifestVisionDataset(
+                manifest_path,
+                args.resolution,
+                "train",
+                {task},
+                args.max_samples_per_task,
+            )
+            for task in sorted(manifest_tasks)
+        ]
+        train_vision_datasets = [ds for ds in train_vision_datasets if len(ds) > 0]
+        val_datasets = [
+            ManifestVisionDataset(manifest_path, args.resolution, "val", {task})
+            for task in sorted(manifest_tasks)
+        ]
+        val_datasets = [ds for ds in val_datasets if len(ds) > 0]
+        from torch.utils.data import ConcatDataset
 
-    for ds in train_vision_datasets:
-        logger.info(f"  [train] {ds.dir_name}/{ds.task}: {len(ds)} samples")
+        val_dataset = ConcatDataset(val_datasets) if val_datasets else None
+        logger.info("Detected explicit v5 pair manifest: %s", manifest_path)
+    else:
+        v3_split = load_v3_train_val_split(data_root)
+        is_v3 = v3_split is not None or (data_root / "manifest.json").exists()
 
-    if not train_vision_datasets:
-        logger.error("No training datasets loaded. Check --data-dir and --tasks")
-        return
+        if not is_v3:
+            logger.error(
+                "Dataset must be v3 format or supply --pair-manifest for v5_full data"
+            )
+            return
 
-    # Build validation set
-    val_dataset = None
-    if v3_split is not None:
-        val_datasets = build_v3_datasets(
+        logger.info(f"Detected v3-format dataset at {data_root}")
+        train_vision_datasets = build_v3_datasets(
             data_root,
             resolution=args.resolution,
-            split="val",
-            use_split_file=True,
+            split="train",
+            use_split_file=v3_split is not None,
         )
-        val_datasets = [
-            ds for ds in val_datasets if ds.task in tasks_to_load or ds.dir_name in tasks_to_load
+        train_vision_datasets = [
+            ds
+            for ds in train_vision_datasets
+            if ds.task in tasks_to_load or ds.dir_name in tasks_to_load
         ]
-        if val_datasets:
-            from torch.utils.data import ConcatDataset
 
-            val_dataset = ConcatDataset(val_datasets)
-            logger.info(f"  [val] Validation set: {len(val_dataset)} samples")
+        val_dataset = None
+        if v3_split is not None:
+            val_datasets = build_v3_datasets(
+                data_root,
+                resolution=args.resolution,
+                split="val",
+                use_split_file=True,
+            )
+            val_datasets = [
+                ds
+                for ds in val_datasets
+                if ds.task in tasks_to_load or ds.dir_name in tasks_to_load
+            ]
+            if val_datasets:
+                from torch.utils.data import ConcatDataset
 
-    # Generation dataset (for 9:1 mix)
-    generation_dataset = None
-    gen_dir = data_root / "generation"
-    if gen_dir.is_dir() and args.vision_ratio < 1.0:
+                val_dataset = ConcatDataset(val_datasets)
+
+    if args.vision_ratio < 1.0:
         from open_vision_banana.data import build_generation_dataset
 
+        generation_dir = args.generation_dir
+        if generation_dir is None and args.pair_manifest is None:
+            candidate = data_root / "generation"
+            generation_dir = candidate if candidate.is_dir() else None
+        if generation_dir is None:
+            raise ValueError(
+                "--generation-dir is required when --vision-ratio is below 1.0 "
+                "for an explicit v5 pair manifest."
+            )
+        generation_dir = generation_dir.expanduser().resolve()
+        if not generation_dir.is_dir():
+            raise NotADirectoryError(f"Generation preservation data not found: {generation_dir}")
+
         gen_split_filter = None
-        if v3_split is not None:
+        if args.pair_manifest is None and v3_split is not None:
             gen_filenames = v3_split.get("train", {}).get("generation")
             if gen_filenames is not None:
                 gen_split_filter = (set(gen_filenames), "train")
         generation_dataset = build_generation_dataset(
-            str(gen_dir),
+            generation_dir,
             resolution=args.resolution,
+            include_input_image=True,
             split_filter=gen_split_filter,
         )
-        if len(generation_dataset) > 0:
-            logger.info(f"  Generation data: {len(generation_dataset)} samples")
-        else:
-            generation_dataset = None
+        if len(generation_dataset) == 0:
+            raise ValueError(f"No usable samples found in generation dataset: {generation_dir}")
+        logger.info(
+            "  Generation preservation data: %d samples from %s",
+            len(generation_dataset),
+            generation_dir,
+        )
 
-    # Task weights — pass directly to MixedVisionDataset (supports "sqrt", "uniform", or list)
-    task_weights = args.task_weights
-    if task_weights == "uniform":
-        task_weights = None
-    elif task_weights not in ("sqrt", None):
-        # Parse comma-separated floats
+    for ds in train_vision_datasets:
+        logger.info(f"  [train] {ds.dir_name}/{ds.task}: {len(ds)} samples")
+    if val_dataset is not None:
+        logger.info(f"  [val] Validation set: {len(val_dataset)} samples")
+
+    if not train_vision_datasets:
+        logger.error("No training datasets loaded. Check --data-dir, --pair-manifest, and --tasks")
+        return
+
+    # Task weights — resolve to a dict[str, float] for MixedVisionDataset.
+    # Supported values: "sqrt" (1/sqrt(count)), "uniform" (equal), or
+    # comma-separated floats matching the number of vision datasets.
+    task_weights_raw = args.task_weights
+    task_weights: dict[str, float] | None = None
+
+    if task_weights_raw == "uniform":
+        task_weights = None  # uniform sampling
+    elif task_weights_raw in ("sqrt", None):
+        # 1/sqrt(n_samples) weighting per task
+        import math
+        from open_vision_banana.data.mixed import _dataset_task
+        task_weights = {}
+        for ds in train_vision_datasets:
+            task = _dataset_task(ds)
+            task_weights[task] = task_weights.get(task, 0.0) + len(ds)
+        task_weights = {t: 1.0 / math.sqrt(n) for t, n in task_weights.items()}
+    else:
+        # Parse comma-separated floats → assign to tasks in sorted order
         try:
-            weights_list = [float(w.strip()) for w in task_weights.split(",")]
-            if len(weights_list) != len(train_vision_datasets):
+            weights_list = [float(w.strip()) for w in task_weights_raw.split(",")]
+            from open_vision_banana.data.mixed import _dataset_task
+            tasks_sorted = sorted({_dataset_task(ds) for ds in train_vision_datasets})
+            if len(weights_list) != len(tasks_sorted):
                 logger.warning(
                     f"task_weights count ({len(weights_list)}) != "
-                    f"num datasets ({len(train_vision_datasets)}); ignoring"
+                    f"num tasks ({len(tasks_sorted)}); using sqrt"
                 )
-                task_weights = None
+                import math
+                task_weights = {}
+                for ds in train_vision_datasets:
+                    task = _dataset_task(ds)
+                    task_weights[task] = task_weights.get(task, 0.0) + len(ds)
+                task_weights = {t: 1.0 / math.sqrt(n) for t, n in task_weights.items()}
             else:
-                task_weights = weights_list
+                task_weights = dict(zip(tasks_sorted, weights_list))
         except ValueError:
-            logger.warning(f"Invalid task_weights value: {args.task_weights}; using sqrt")
-            task_weights = "sqrt"
+            logger.warning(f"Invalid task_weights value: {task_weights_raw}; using sqrt")
+            import math
+            from open_vision_banana.data.mixed import _dataset_task
+            task_weights = {}
+            for ds in train_vision_datasets:
+                task = _dataset_task(ds)
+                task_weights[task] = task_weights.get(task, 0.0) + len(ds)
+            task_weights = {t: 1.0 / math.sqrt(n) for t, n in task_weights.items()}
 
     if task_weights:
-        logger.info(f"  Task weights mode: {task_weights}")
+        # Normalize for display
+        w_sum = sum(task_weights.values())
+        w_display = {t: round(w / w_sum, 4) for t, w in task_weights.items()}
+        logger.info(f"  Task weights (normalized): {w_display}")
+
+    task_loss_weights: dict[str, float] = {}
+    if args.task_loss_weights:
+        for item in args.task_loss_weights.split(","):
+            name, separator, value = item.partition("=")
+            if not separator:
+                raise ValueError(f"Invalid task loss weight {item!r}; expected task=value")
+            task_loss_weights[name.strip()] = float(value)
+        logger.info("  Task loss weights: %s", task_loss_weights)
 
     mixed_ds = MixedVisionDataset(
         vision_datasets=train_vision_datasets,
@@ -606,10 +1050,17 @@ def main():
     config_dump = {
         "model": args.model_name,
         "model_id": model_cfg.model_id,
+        "data_dir": str(data_root.resolve()),
+        "pair_manifest": str(args.pair_manifest.resolve()) if args.pair_manifest else None,
+        "generation_dir": str(args.generation_dir.resolve()) if args.generation_dir else None,
+        "vision_ratio": args.vision_ratio if generation_dataset else 1.0,
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "rslora": not args.no_rslora,
         "lr": args.lr,
+        "scheduler": args.scheduler,
+        "warmup_steps": warmup_steps,
+        "warmup_ratio": args.warmup_ratio,
         "steps": args.steps,
         "batch_size": args.batch_size,
         "grad_accum": args.grad_accum,
@@ -617,11 +1068,23 @@ def main():
         "dtype": args.dtype,
         "flow_sigma": args.flow_sigma,
         "cfg_dropout_rate": args.cfg_dropout_rate,
+        "depth_edge_aux_weight": args.depth_edge_aux_weight,
+        "depth_edge_aux_gradient_weight": args.depth_edge_aux_gradient_weight,
+        "depth_edge_aux_edge_weight": args.depth_edge_aux_edge_weight,
+        "depth_edge_aux_edge_threshold": args.depth_edge_aux_edge_threshold,
+        "depth_edge_aux_sigma_floor": args.depth_edge_aux_sigma_floor,
         "use_img2img_flow": not args.no_img2img_flow,
         "use_min_snr": not args.no_min_snr,
         "use_logit_normal": not args.no_logit_normal_timesteps,
+        "flow_scheduler": "native_dpmsolver_flow_prediction",
+        "flow_shift": float(getattr(getattr(components.scheduler, "config", None), "flow_shift", 3.0)),
+        "vae_scaling_factor": float(getattr(getattr(vae, "config", None), "scaling_factor", 1.0)),
         "ema_decay": args.ema_decay,
         "tasks": [d.task for d in train_vision_datasets],
+        "task_weights": args.task_weights,
+        "task_loss_weights": task_loss_weights,
+        "resume": args.resume,
+        "resume_weights_only": args.resume_weights_only,
         "seed": args.seed,
     }
     (output_dir / "training_config.json").write_text(
@@ -639,17 +1102,23 @@ def main():
             logger.info(f"Resuming from {resume_path}")
             ckpt = torch.load(str(resume_path), map_location=device)
             peft_model.load_state_dict(ckpt.get("lora_state_dict", ckpt), strict=False)
-            global_step = ckpt.get("step", 0)
-            best_val_loss = ckpt.get("best_val_loss", float("inf"))
-            if "optimizer_state_dict" in ckpt:
-                optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-            if "scheduler_state_dict" in ckpt:
-                lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-            logger.info(f"  Resumed at step {global_step}, best_val_loss={best_val_loss:.4f}")
+            if args.resume_weights_only:
+                logger.info("  Loaded LoRA weights only; optimizer, scheduler, and step count reset")
+            else:
+                global_step = ckpt.get("step", 0)
+                best_val_loss = ckpt.get("best_val_loss", float("inf"))
+                if "optimizer_state_dict" in ckpt:
+                    optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+                if "scheduler_state_dict" in ckpt:
+                    lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+                logger.info(f"  Resumed at step {global_step}, best_val_loss={best_val_loss:.4f}")
 
     # ── Training loop ────────────────────────────────────────────────
     logger.info("Starting training...")
     model_dtype = next(peft_model.parameters()).dtype
+    flow_scheduler = components.scheduler
+    if flow_scheduler is None:
+        raise RuntimeError("SANA pipeline did not provide its native flow scheduler")
     vae_downsample = model_cfg.vae_downsample_factor  # 32 for DC-AE
     max_length = model_cfg.text_encoder_max_length  # 300
 
@@ -658,10 +1127,15 @@ def main():
     amp_dtype = torch.bfloat16 if device.type == "mps" else dtype
     scaler = torch.amp.GradScaler("cuda") if use_amp and dtype == torch.float16 else None
 
-    train_metrics = {"loss": 0.0, "steps": 0}
+    train_metrics = {"loss": 0.0, "flow_loss": 0.0, "depth_edge_aux_loss": 0.0, "steps": 0}
+    last_avg_loss: float | None = None
+    micro_step = 0
+    optimizer.zero_grad(set_to_none=True)
 
     while global_step < args.steps:
-        epoch = start_epoch + (global_step // max(1, len(train_loader)))
+        updates_per_epoch = max(1, (len(train_loader) + args.grad_accum - 1) // args.grad_accum)
+        epoch = start_epoch + (global_step // updates_per_epoch)
+        mixed_ds.set_epoch(epoch)
         peft_model.train()
 
         for batch in train_loader:
@@ -685,7 +1159,9 @@ def main():
             with torch.no_grad():
                 target_latents = vae_encode_sana(vae, target_images, device, model_dtype)
 
-                # Encode input image for img2img flow
+                # Generation-preservation items provide an image only to keep
+                # the batch tensor schema uniform.  They still use noise as
+                # their flow source below.
                 input_latents = None
                 if not args.no_img2img_flow:
                     input_latents = vae_encode_sana(vae, input_images, device, model_dtype)
@@ -697,28 +1173,27 @@ def main():
 
             batch_size = target_latents.shape[0]
 
-            # ── Sample timesteps ──────────────────────────────────────
-            if not args.no_logit_normal_timesteps:
-                timesteps = sample_timesteps_logit_normal(batch_size, device).to(model_dtype)
-            else:
-                timesteps = torch.rand(batch_size, device=device).to(model_dtype)
-
-            noise = torch.randn_like(target_latents)
-            t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
-
-            # ── Flow matching ─────────────────────────────────────────
+            # ── Native SANA flow matching ─────────────────────────────
+            sigma, timesteps = sample_sana_flow_timesteps(
+                batch_size,
+                device,
+                flow_scheduler,
+                logit_normal=not args.no_logit_normal_timesteps,
+            )
             if not args.no_img2img_flow and input_latents is not None:
-                # img2img flow: input → target
-                if args.flow_sigma > 0:
-                    noise_term = args.flow_sigma * (t_b * (1.0 - t_b)).sqrt() * noise
-                else:
-                    noise_term = torch.zeros_like(input_latents)
-                noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
-                velocity_target = target_latents - input_latents
+                source_latents = select_sana_flow_sources(
+                    input_latents,
+                    target_latents,
+                    batch.get("flow_source", ["input"] * batch_size),
+                )
             else:
-                # Standard flow: noise → target
-                noisy_latents = (1.0 - t_b) * target_latents + t_b * noise
-                velocity_target = target_latents - noise
+                source_latents = torch.randn_like(target_latents)
+            noisy_latents, velocity_target = prepare_sana_flow_batch(
+                source_latents,
+                target_latents,
+                sigma,
+                noise_scale=args.flow_sigma,
+            )
 
             # ── Text encoding ─────────────────────────────────────────
             with torch.no_grad():
@@ -751,23 +1226,38 @@ def main():
                     noisy_latents,
                     encoder_hidden_states=prompt_embeds,
                     encoder_attention_mask=attention_mask,
-                    timestep=timesteps,
+                    timestep=native_sana_timestep(timesteps, batch_size, peft_model),
                     return_dict=False,
                 )[0]
 
-                # Velocity loss (flow matching)
-                loss = F.mse_loss(predicted_velocity.float(), velocity_target.float())
+                sq_error = (predicted_velocity.float() - velocity_target.float()).square()
+                per_sample_loss = sq_error.flatten(1).mean(dim=1)
+                per_sample_loss = apply_task_loss_weights(
+                    per_sample_loss, batch.get("task"), task_loss_weights
+                )
+                flow_loss = per_sample_loss.mean()
 
-                # Min-SNR weighting
                 if not args.no_min_snr:
-                    snr_weights = compute_min_snr_weight(
-                        timesteps,
-                        args.min_snr_gamma,
-                    )
-                    if snr_weights is not None:
-                        loss = (loss * snr_weights.view(-1, *([1] * (loss.dim() - 1)))).mean()
+                    flow_loss = (per_sample_loss * flow_min_snr_weight(sigma, args.min_snr_gamma)).mean()
 
-                loss = loss / args.grad_accum
+            depth_aux_loss = flow_loss.new_zeros(())
+            if args.depth_edge_aux_weight:
+                depth_mask = depth_task_mask(batch.get("task"), batch_size, device)
+                if depth_mask.any():
+                    with torch.amp.autocast(device_type=device.type, enabled=False):
+                        depth_aux_loss = depth_edge_endpoint_loss(
+                            predicted_velocity[depth_mask],
+                            noisy_latents[depth_mask],
+                            target_latents[depth_mask],
+                            target_rgb[depth_mask],
+                            sigma[depth_mask],
+                            edge_threshold=args.depth_edge_aux_edge_threshold,
+                            edge_weight=args.depth_edge_aux_edge_weight,
+                            gradient_weight=args.depth_edge_aux_gradient_weight,
+                            sigma_floor=args.depth_edge_aux_sigma_floor,
+                        )
+            total_loss = flow_loss.float() + args.depth_edge_aux_weight * depth_aux_loss
+            loss = total_loss / args.grad_accum
 
             # ── Backward ──────────────────────────────────────────────
             if scaler is not None:
@@ -775,42 +1265,49 @@ def main():
             else:
                 loss.backward()
 
-            train_metrics["loss"] += loss.item() * args.grad_accum
+            train_metrics["loss"] += total_loss.item()
+            train_metrics["flow_loss"] += flow_loss.item()
+            train_metrics["depth_edge_aux_loss"] += depth_aux_loss.item()
             train_metrics["steps"] += 1
 
-            # ── Optimizer step (with gradient accumulation) ───────────
-            if (global_step + 1) % args.grad_accum == 0:
-                if scaler is not None:
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        [p for p in peft_model.parameters() if p.requires_grad],
-                        args.max_grad_norm,
-                    )
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    torch.nn.utils.clip_grad_norm_(
-                        [p for p in peft_model.parameters() if p.requires_grad],
-                        args.max_grad_norm,
-                    )
-                    optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
-                ema.update(peft_model.parameters())
+            # ``global_step`` is an optimizer update, never a micro-batch.
+            micro_step += 1
+            if micro_step % args.grad_accum != 0:
+                continue
 
+            if scaler is not None:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(
+                    [p for p in peft_model.parameters() if p.requires_grad],
+                    args.max_grad_norm,
+                )
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(
+                    [p for p in peft_model.parameters() if p.requires_grad],
+                    args.max_grad_norm,
+                )
+                optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
+            ema.update(peft_model.parameters())
             global_step += 1
 
             # ── Logging ──────────────────────────────────────────────
             if global_step % args.log_every == 0:
                 avg_loss = train_metrics["loss"] / max(1, train_metrics["steps"])
+                avg_flow_loss = train_metrics["flow_loss"] / max(1, train_metrics["steps"])
+                avg_depth_aux_loss = train_metrics["depth_edge_aux_loss"] / max(1, train_metrics["steps"])
+                last_avg_loss = avg_loss
                 lr = lr_scheduler.get_last_lr()[0]
                 logger.info(
                     f"  [step {global_step}/{args.steps}] "
-                    f"loss={avg_loss:.4f} lr={lr:.2e} "
+                    f"loss={avg_loss:.4f} flow={avg_flow_loss:.4f} edge_aux={avg_depth_aux_loss:.4f} lr={lr:.2e} "
                     f"epoch={epoch} "
                     f"latent_shape={list(target_latents.shape[1:])}"
                 )
-                train_metrics = {"loss": 0.0, "steps": 0}
+                train_metrics = {"loss": 0.0, "flow_loss": 0.0, "depth_edge_aux_loss": 0.0, "steps": 0}
 
             # ── Save checkpoint ──────────────────────────────────────
             if global_step % args.save_every == 0:
@@ -820,7 +1317,7 @@ def main():
                     optimizer,
                     lr_scheduler,
                     global_step,
-                    avg_loss if train_metrics["steps"] > 0 else None,
+                    last_avg_loss,
                     best_val_loss,
                     args,
                 )
@@ -838,6 +1335,7 @@ def main():
                     args,
                     vae_downsample,
                     max_length,
+                    task_loss_weights,
                 )
                 logger.info(f"  [val] step={global_step} val_loss={val_loss:.4f}")
 
@@ -936,6 +1434,7 @@ def validate(
     args,
     vae_downsample: int,
     max_length: int,
+    task_loss_weights: dict[str, float] | None = None,
 ) -> float:
     """Run validation and return average loss."""
     peft_model.eval()
@@ -946,6 +1445,9 @@ def validate(
     # Match training autocast settings to avoid fp16 overflow on MPS
     amp_dtype = torch.bfloat16 if device.type == "mps" else model_dtype
     use_autocast = device.type == "mps" or (device.type == "cuda" and model_dtype != torch.float32)
+    flow_scheduler = components.scheduler
+    if flow_scheduler is None:
+        raise RuntimeError("SANA pipeline did not provide its native flow scheduler")
 
     for i, batch in enumerate(val_loader):
         if i >= max_val_batches:
@@ -969,25 +1471,26 @@ def validate(
 
         batch_size = target_latents.shape[0]
 
-        if not args.no_logit_normal_timesteps:
-            timesteps = sample_timesteps_logit_normal(batch_size, device).to(model_dtype)
-        else:
-            timesteps = torch.rand(batch_size, device=device).to(model_dtype)
-
-        noise = torch.randn_like(target_latents)
-        t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
-
+        sigma, timesteps = sample_sana_flow_timesteps(
+            batch_size,
+            device,
+            flow_scheduler,
+            logit_normal=not args.no_logit_normal_timesteps,
+        )
         if not args.no_img2img_flow and input_latents is not None:
-            # Match training: add flow_sigma noise term if configured
-            if args.flow_sigma > 0:
-                noise_term = args.flow_sigma * (t_b * (1.0 - t_b)).sqrt() * noise
-            else:
-                noise_term = torch.zeros_like(input_latents)
-            noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
-            velocity_target = target_latents - input_latents
+            source_latents = select_sana_flow_sources(
+                input_latents,
+                target_latents,
+                batch.get("flow_source", ["input"] * batch_size),
+            )
         else:
-            noisy_latents = (1.0 - t_b) * target_latents + t_b * noise
-            velocity_target = target_latents - noise
+            source_latents = torch.randn_like(target_latents)
+        noisy_latents, velocity_target = prepare_sana_flow_batch(
+            source_latents,
+            target_latents,
+            sigma,
+            noise_scale=args.flow_sigma,
+        )
 
         prompt_embeds, attention_mask = encode_text_sana(
             components, prompts, device, model_dtype, max_length
@@ -1002,11 +1505,35 @@ def validate(
                 noisy_latents,
                 encoder_hidden_states=prompt_embeds,
                 encoder_attention_mask=attention_mask,
-                timestep=timesteps,
+                timestep=native_sana_timestep(timesteps, batch_size, peft_model),
                 return_dict=False,
             )[0]
 
-        loss = F.mse_loss(predicted_velocity.float(), velocity_target.float())
+        sq_error = (predicted_velocity.float() - velocity_target.float()).square()
+        per_sample_loss = sq_error.flatten(1).mean(dim=1)
+        per_sample_loss = apply_task_loss_weights(
+            per_sample_loss, batch.get("task"), task_loss_weights
+        )
+        flow_loss = per_sample_loss.mean()
+        if not args.no_min_snr:
+            flow_loss = (per_sample_loss * flow_min_snr_weight(sigma, args.min_snr_gamma)).mean()
+
+        depth_aux_loss = flow_loss.new_zeros(())
+        if args.depth_edge_aux_weight:
+            depth_mask = depth_task_mask(batch.get("task"), batch_size, device)
+            if depth_mask.any():
+                depth_aux_loss = depth_edge_endpoint_loss(
+                    predicted_velocity[depth_mask],
+                    noisy_latents[depth_mask],
+                    target_latents[depth_mask],
+                    target_rgb[depth_mask],
+                    sigma[depth_mask],
+                    edge_threshold=args.depth_edge_aux_edge_threshold,
+                    edge_weight=args.depth_edge_aux_edge_weight,
+                    gradient_weight=args.depth_edge_aux_gradient_weight,
+                    sigma_floor=args.depth_edge_aux_sigma_floor,
+                )
+        loss = flow_loss.float() + args.depth_edge_aux_weight * depth_aux_loss
 
         # Skip NaN/Inf batches to avoid poisoning the average
         if torch.isnan(loss) or torch.isinf(loss):

@@ -9,13 +9,15 @@ from ..core.depth_mapper import DepthRGBMapper
 
 def _average_ranks(values: torch.Tensor) -> torch.Tensor:
     """Return one-based average ranks, assigning tied values their midrank."""
-    values = values.flatten().to(dtype=torch.float64)
+    # Use float32: MPS doesn't support float64, and float32 is sufficient
+    # for rank computation on typical image sizes (<= 512*512 = 262144 pixels).
+    values = values.flatten().to(dtype=torch.float32)
     order = torch.argsort(values)
     sorted_values = values[order]
     _, counts = torch.unique_consecutive(sorted_values, return_counts=True)
     ends = counts.cumsum(0)
     starts = ends - counts
-    midranks = (starts + ends - 1).to(dtype=torch.float64) / 2.0 + 1.0
+    midranks = (starts + ends - 1).to(dtype=torch.float32) / 2.0 + 1.0
     sorted_ranks = torch.repeat_interleave(midranks, counts)
     ranks = torch.empty_like(sorted_ranks)
     ranks[order] = sorted_ranks
@@ -46,13 +48,13 @@ def evaluate_relative_depth_rgb(
     target_flat = target_position.flatten()
     pearson = 0.0
     if pred_flat.std() > 1e-8 and target_flat.std() > 1e-8:
-        pearson = float(torch.corrcoef(torch.stack((pred_flat, target_flat)))[0, 1])
+        pearson = float(torch.corrcoef(torch.stack((pred_flat, target_flat)).float())[0, 1])
     pred_ranks = _average_ranks(pred_flat)
     target_ranks = _average_ranks(target_flat)
     spearman = 0.0
     if pred_ranks.std() > 1e-8 and target_ranks.std() > 1e-8:
         spearman = float(
-            torch.corrcoef(torch.stack((pred_ranks, target_ranks)))[0, 1]
+            torch.corrcoef(torch.stack((pred_ranks, target_ranks)).float())[0, 1]
         )
     return {
         "rgb_mae": float((prediction - target).abs().mean()),

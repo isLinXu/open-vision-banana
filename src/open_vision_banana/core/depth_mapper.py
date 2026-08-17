@@ -137,6 +137,20 @@ RAINBOW_KEYPOINTS = torch.tensor(
     dtype=torch.float32,
 )
 
+# Turbo-like colormap: Blue → Cyan → Green → Yellow → Red
+# Matches the gen_depth_targets_v5_full.py / build_v3_dataset.py encoding
+# used for v3 and v5_full depth target generation.
+TURBO_KEYPOINTS = torch.tensor(
+    [
+        [0.000, 0.00, 0.00, 1.00],  # Blue
+        [0.250, 0.00, 1.00, 1.00],  # Cyan
+        [0.500, 0.00, 1.00, 0.00],  # Green
+        [0.750, 1.00, 1.00, 0.00],  # Yellow
+        [1.000, 1.00, 0.00, 0.00],  # Red
+    ],
+    dtype=torch.float32,
+)
+
 # Colormap registry
 _COLORMAP_REGISTRY: dict[str, torch.Tensor] = {
     "cube_edge": CUBE_EDGE_KEYPOINTS,
@@ -146,6 +160,7 @@ _COLORMAP_REGISTRY: dict[str, torch.Tensor] = {
     "viridis": VIRIDIS_KEYPOINTS,
     "grayscale": GRAYSCALE_KEYPOINTS,
     "rainbow": RAINBOW_KEYPOINTS,
+    "turbo": TURBO_KEYPOINTS,
 }
 
 _AVAILABLE_COLORMAPS = list(_COLORMAP_REGISTRY.keys())
@@ -374,5 +389,7 @@ __all__ = [
     "INFERNO_KEYPOINTS",
     "VIRIDIS_KEYPOINTS",
     "GRAYSCALE_KEYPOINTS",
+    "RAINBOW_KEYPOINTS",
+    "TURBO_KEYPOINTS",
     "get_available_colormaps",
 ]
