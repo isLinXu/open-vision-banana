@@ -61,6 +61,16 @@ def test_paper_aligned_training_defaults():
     assert module.PAPER_LORA_RANK == 64
     assert module.PAPER_LORA_ALPHA == 128
     assert pytest.approx(0.1) == module.PAPER_VISION_RATIO
+    assert module.MODEL_ID_MAP["flux-schnell"] == "flux-schnell"
+
+
+def test_flux_defaults_to_img2img_flow_sdxl_stays_off():
+    module = _load_script_module()
+    assert module.resolve_use_img2img_flow("flux-schnell", None) is True
+    assert module.resolve_use_img2img_flow("ssd-1b", None) is False
+    assert module.resolve_use_img2img_flow("sdxl", None) is False
+    assert module.resolve_use_img2img_flow("ssd-1b", True) is True
+    assert module.resolve_use_img2img_flow("flux-schnell", False) is False
 
 
 def test_generation_is_outer_ninety_percent_branch():

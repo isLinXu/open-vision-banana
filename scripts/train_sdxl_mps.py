@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
-"""SDXL/SSD-1B LoRA fine-tuning on Apple MPS — full multi-task training.
+"""SDXL / SSD-1B / FLUX-schnell LoRA fine-tuning on Apple MPS.
 
-Trains SSD-1B (SDXL-distilled, 1.3B UNet) or full SDXL (2.6B UNet) with LoRA on:
-  - Depth estimation (COCO pseudo + SNVC)
-  - Normal estimation (SNVC)
-  - Semantic segmentation (ADE20K-style)
-  - Edge detection (BSDS500-style)
-  - Text-to-image generation (COCO captions)
+Trains SSD-1B, full SDXL, or FLUX.1-schnell with one shared LoRA on:
+  - Depth estimation
+  - Normal estimation
+  - Semantic segmentation
+  - Edge detection
+  - Text-to-image generation
 
-Uses the unified InstructionTuner + BaseGenerator infrastructure, which handles
-SDXL-specific concerns:
-  - Dual text encoder (CLIP-L + OpenCLIP-bigG) → concatenated hidden states + pooled embeds
-  - added_cond_kwargs (pooled text_embeds + time_ids) required by SDXL UNet
-  - scheduler-aware SDXL epsilon/v-prediction objective
-  - img2img vision tasks use SAMPLE (x0) prediction (stable target norm)
-  - text-to-image uses standard epsilon prediction
+FLUX.1-schnell uses transformer LoRA, img2img flow matching, and the local
+snapshot via OPEN_VISION_BANANA_MODEL_PATH. SDXL keeps the original UNet
+epsilon path with img2img flow off unless --img2img-flow is set.
 
 Usage:
-  python scripts/train_sdxl_mps.py                              # full training, defaults
-  python scripts/train_sdxl_mps.py --model sdxl                 # full SDXL (2.6B)
-  python scripts/train_sdxl_mps.py --max-steps 50 --dry-run    # smoke test
-  python scripts/train_sdxl_mps.py --resume                     # auto-resume
+    python scripts/train_sdxl_mps.py                              # SSD-1B defaults
+    python scripts/train_sdxl_mps.py --model sdxl                 # full SDXL (2.6B)
+    python scripts/train_sdxl_mps.py --model flux-schnell --dry-run
+    python scripts/train_sdxl_mps.py --resume                     # auto-resume
 """
 
 from __future__ import annotations
@@ -54,6 +50,11 @@ logger = logging.getLogger("train_sdxl")
 PAPER_LORA_RANK = 64
 PAPER_LORA_ALPHA = 128
 PAPER_VISION_RATIO = 0.1
+MODEL_ID_MAP = {
+    "ssd-1b": "segmind/SSD-1B",
+    "sdxl": "stabilityai/stable-diffusion-xl-base-1.0",
+    "flux-schnell": "flux-schnell",
+}
 
 
 def get_device() -> torch.device:
@@ -85,6 +86,31 @@ def resolve_data_dirs(data_dir: str | None) -> list[Path]:
     if not resolved.is_dir():
         raise NotADirectoryError(f"Training data directory not found: {resolved}")
     return [resolved]
+
+
+def resolve_use_img2img_flow(model: str, override: bool | None) -> bool:
+    """FLUX trains vision tasks with img2img flow; SDXL/SSD-1B keep the original off path."""
+    if override is not None:
+        return override
+    return model.startswith("flux")
+
+
+def enable_backbone_gradient_checkpointing(generator, peft_model) -> str:
+    """Enable native checkpointing on UNet or transformer, else the generic fallback."""
+    pipe = getattr(generator, "pipe", None)
+    unet = getattr(pipe, "unet", None) if pipe is not None else None
+    transformer = getattr(pipe, "transformer", None) if pipe is not None else None
+    enabled: list[str] = []
+    if unet is not None and hasattr(unet, "enable_gradient_checkpointing"):
+        unet.enable_gradient_checkpointing()
+        enabled.append("unet")
+    if transformer is not None and hasattr(transformer, "enable_gradient_checkpointing"):
+        transformer.enable_gradient_checkpointing()
+        enabled.append("transformer")
+    if not enabled:
+        enable_gradient_checkpointing(peft_model)
+        return "generic"
+    return ",".join(enabled)
 
 
 def combine_training_datasets(
@@ -146,10 +172,10 @@ def combine_training_datasets(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SDXL/SSD-1B LoRA training on MPS")
+    parser = argparse.ArgumentParser(description="SDXL/SSD-1B/FLUX LoRA training on MPS")
     parser.add_argument("--model", type=str, default="ssd-1b",
-                        choices=["ssd-1b", "sdxl"],
-                        help="Base model (default: ssd-1b, use sdxl for full 2.6B)")
+                        choices=["ssd-1b", "sdxl", "flux-schnell"],
+                        help="Base model (default: ssd-1b; flux-schnell uses the local FLUX snapshot)")
     parser.add_argument("--epochs", type=int, default=3, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate")
     parser.add_argument("--max-steps", type=int, default=5000, help="Max steps")
@@ -196,6 +222,12 @@ def main():
                         help="Which task to train on ('core' = depth+normal+segmentation+structure)")
     parser.add_argument("--no-logit-normal", action="store_true",
                         help="Disable logit-normal timestep sampling (use uniform)")
+    parser.add_argument(
+        "--img2img-flow",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Vision img2img flow matching. Default: on for flux-schnell, off for SDXL/SSD-1B.",
+    )
     args = parser.parse_args()
 
     if not 0.0 < args.vision_ratio < 1.0:
@@ -206,15 +238,10 @@ def main():
     device = get_device()
     logger.info(f"Device: {device}")
 
-    # ─── Load SDXL/SSD-1B model ───────────────────────────────────────────
-    # Use registered model name → resolve to HF repo ID for BaseGenerator.
-    # SSD-1B is preferred on MPS (5.5GB vs 7GB for full SDXL).
-    # Map short names to HF repo IDs so diffusers can use the local cache.
-    _MODEL_ID_MAP = {
-        "ssd-1b": "segmind/SSD-1B",
-        "sdxl": "stabilityai/stable-diffusion-xl-base-1.0",
-    }
-    model_name = _MODEL_ID_MAP.get(args.model, args.model)
+    # ─── Load base model ────────────────────────────────────────────────
+    # Map short names to registry / Hub ids. flux-schnell resolves through
+    # OPEN_VISION_BANANA_MODEL_PATH when that env var points at a snapshot.
+    model_name = MODEL_ID_MAP.get(args.model, args.model)
     logger.info(f"Loading {args.model} → {model_name} pipeline (bfloat16)...")
     t0 = time.time()
     generator = BaseGenerator(
@@ -237,12 +264,13 @@ def main():
     logger.info(f"Needs pooled projections: {mc.needs_pooled_projections}")
     logger.info(f"Memory budget: {mc.memory_budget_gb}GB")
 
-    if args.dry_run:
-        logger.info("Dry run complete — model loaded successfully")
-        return
-
     # ─── Setup LoRA training ─────────────────────────────────────────────
-    logger.info(f"Setting up LoRA: rank={args.rank}, alpha={args.alpha}, lr={args.lr}")
+    use_img2img_flow = resolve_use_img2img_flow(args.model, args.img2img_flow)
+    use_min_snr = not args.model.startswith("flux")
+    logger.info(
+        f"Setting up LoRA: rank={args.rank}, alpha={args.alpha}, lr={args.lr}, "
+        f"img2img_flow={use_img2img_flow}, min_snr={use_min_snr}"
+    )
 
     tuner = InstructionTuner(
         model=generator,
@@ -252,24 +280,23 @@ def main():
         lr=args.lr,
         use_ema=not args.no_ema,
         ema_decay=0.9999,
-        use_min_snr=True,
+        use_min_snr=use_min_snr,
         use_logit_normal_timesteps=not args.no_logit_normal,
-        use_img2img_flow=False,
+        use_img2img_flow=use_img2img_flow,
         cfg_dropout_rate=0.1,
         warmup_ratio=0.05,
     )
 
-    # Enable gradient checkpointing for UNet on MPS.
-    # diffusers UNet uses `_gradient_checkpointing_func` (set by
+    # Enable gradient checkpointing on UNet (SDXL) or transformer (FLUX).
+    # diffusers uses `_gradient_checkpointing_func` (set by
     # `enable_gradient_checkpointing()`), not the raw `gradient_checkpointing`
     # flag that utils.enable_gradient_checkpointing toggles.
-    unet = getattr(generator.pipe, "unet", None)
-    if unet is not None and hasattr(unet, "enable_gradient_checkpointing"):
-        unet.enable_gradient_checkpointing()
-        logger.info("Gradient checkpointing enabled on UNet (diffusers native)")
-    else:
-        enable_gradient_checkpointing(tuner.peft_model)
-        logger.info("Gradient checkpointing enabled (generic fallback)")
+    ckpt_backend = enable_backbone_gradient_checkpointing(generator, tuner.peft_model)
+    logger.info("Gradient checkpointing enabled (%s)", ckpt_backend)
+
+    if args.dry_run:
+        logger.info("Dry run complete — model and LoRA loaded successfully")
+        return
 
     # ─── Load training data ──────────────────────────────────────────────
     res = args.resolution

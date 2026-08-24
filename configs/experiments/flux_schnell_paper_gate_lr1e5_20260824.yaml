@@ -1,0 +1,66 @@
+# FLUX.1-schnell shared-LoRA paper-method gate.
+# Paper base is closed Nano Banana Pro. This run substitutes local schnell
+# (4-step distilled, Apache-2.0), not FLUX.1-dev. Do not claim Table 1.
+# One LoRA, RGB tasks, vision_ratio=0.1. First 100 steps only.
+experiment: flux_schnell_paper_gate_lr1e5_20260824
+
+model:
+  name: flux-schnell
+  model_id: black-forest-labs/FLUX.1-schnell
+  local_path: /Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell
+  dtype: bfloat16
+  resolution: 512
+  num_inference_steps: 4
+  guidance_scale: 0.0
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+  target_modules: null
+
+data:
+  dir: data/flux_paper_gate_512
+  resolution: 512
+  vision_ratio: 0.1
+  num_workers: 0
+  tasks: [depth, semantic, generation]
+  depth_pairs: 200
+  segmentation_pairs: 376
+  generation_pairs: 1968
+  omitted: [kitti, normal, instance, referring]
+
+training:
+  steps: 100
+  batch_size: 1
+  gradient_accumulation: 4
+  lr: 1.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+  ema: false
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: false
+  cfg_dropout_rate: 0.1
+
+checkpoint:
+  output_dir: output/flux_schnell_paper_gate_lr1e5_20260824
+  save_every: 50
+  log_every: 10
+
+evaluation:
+  evaluator: scripts/evaluate_paper_benchmarks.py
+  nyu_max_samples: 32
+  cityscapes_max_samples: 16
+  num_inference_steps: 4
+  guidance_scale: 0.0
+
+device: mps
