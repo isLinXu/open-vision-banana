@@ -60,7 +60,22 @@ The values below are reported by arXiv:2604.20329v3 for the closed Vision Banana
 
 ### Project Evaluation Status
 
-No release checkpoint in this repository currently has a complete, three-seed, five-task benchmark plus generation-preservation report. Hardware memory and latency are also not frozen release claims. Use `scripts/benchmark_pipeline.py` on the target hardware and publish its machine-readable output with the model artifact.
+No checkpoint in this repository currently has a complete, three-seed, five-task
+paper-benchmark plus GenAI-Bench report. The local specialist below is an
+internal relative-depth gate, not a paper Table 1 number.
+
+#### Local specialist (relative depth only)
+
+`registry:sana-depth-relative-v1` →
+`output/sana_depth_gate_full_refine_lr1e5_20260814/checkpoint-3000_best/lora_adapter`
+
+| Checkpoint | n | Pearson r | Spearman r | Rel. MAE | Notes |
+|:-----------|--:|----------:|-----------:|---------:|:------|
+| SANA-600M depth `ckpt-3000_best` | 128 | 0.790 | 0.778 | 0.147 | internal val, 512px, 20 steps |
+| Frozen SSD probe (control) | 115 | 0.771 | 0.757 | 0.130 | 3-seed, not generative |
+
+Metric-depth δ1 / AbsRel are **not** available: v5 targets have no metric scale.
+Multitask shared LoRAs (v01/v02) dilute this Pearson to ≤ 0.30 and are not release candidates.
 
 ### Checkpoint Registry
 
@@ -69,6 +84,7 @@ LoRA weights can be loaded via registry aliases defined in
 
 | Alias | Hugging Face Repo | Status |
 |:------|:------------------|:-------|
+| ``sana-depth-relative-v1`` | local adapter (see `local_path`) | **local** |
 | ``vision-banana`` | ``open-vision-banana/vision-banana-lora`` | placeholder |
 | ``vision-banana-depth`` | ``open-vision-banana/vision-banana-depth-lora`` | placeholder |
 | ``vision-banana-normal`` | ``open-vision-banana/vision-banana-normal-lora`` | placeholder |
@@ -81,7 +97,7 @@ python scripts/download_checkpoint.py --alias vision-banana
 Usage in Python:
 
 ```python
-model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
+model = VisionBanana.from_pretrained(lora_path="registry:sana-depth-relative-v1")
 ```
 
 ## Technical Specifications

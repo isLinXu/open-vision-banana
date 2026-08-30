@@ -815,6 +815,15 @@ python scripts/validate_dataset.py --data-path vision_data/ --task all --output 
 # Checks: image/target pair integrity, corrupt files, depth/normal range sanity, resolution consistency
 ```
 
+### Paper Reproduction Track
+
+The paper-aligned workflow is documented in
+[`docs/PAPER_REPRODUCTION_QUICKSTART.md`](docs/PAPER_REPRODUCTION_QUICKSTART.md).
+It starts with a model-free benchmark preflight, supports official Hypersim
+HDF5 metric depth preparation, and writes machine-readable fingerprints before
+any expensive evaluation. Use `RGBMapper.paper_reproduction()` when evaluating
+instance segmentation so the decoder uses the fixed seed-grouping protocol.
+
 ### Inference Optimization Presets
 
 ```bash

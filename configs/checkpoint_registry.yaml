@@ -159,6 +159,101 @@ checkpoints:
     training_data:
       - COCO Keypoints
 
+  sana-depth-relative-v1:
+    repo_id: "open-vision-banana/sana-depth-relative-v1"
+    revision: main
+    status: local
+    version: "0.1.0-local"
+    description: >
+      SANA-600M relative-depth specialist LoRA (ckpt-3000_best).
+      Internal val Pearson 0.790 (n=128, 512px, 20 steps). This is
+      relative ordering, not metric depth and not a paper NYU δ1 result.
+    base_model: "Efficient-Large-Model/Sana_600M_512px_diffusers"
+    lora_rank: 16
+    lora_alpha: 32
+    tasks:
+      - depth
+    local_path: "output/sana_depth_gate_full_refine_lr1e5_20260814/checkpoint-3000_best/lora_adapter"
+    training_data:
+      - vb_snvc_train_v5_full (turbo relative-depth RGB targets)
+    metrics:
+      relative_position_pearson_r: 0.790
+      relative_position_spearman_r: 0.778
+      relative_position_mae: 0.147
+      n_val: 128
+      metric_depth_delta1: null
+
+  sana-hypersim-metric-v1:
+    repo_id: "open-vision-banana/sana-hypersim-metric-v1"
+    revision: main
+    status: local
+    version: "0.1.0-local"
+    description: >
+      SANA-600M metric-depth LoRA after 500 Hypersim steps (200 pairs from
+      ai_001_001/002, Eq.1 cube-edge). NYU Eigen+10m full val n=654:
+      δ1=0.403 / AbsRel=0.367 / RMSE=1.090. n=32 probe was δ1=0.357.
+      Checkpoint-1000 on expanded data is worse (δ1=0.227); do not lengthen.
+      Not a Table 1 result. Prompt during these 500 steps was still the
+      relative-depth specialist string.
+    base_model: "Efficient-Large-Model/Sana_600M_512px_diffusers"
+    lora_rank: 16
+    lora_alpha: 32
+    tasks:
+      - depth
+    local_path: "output/sana_hypersim_metric_depth_lr1e5_20260822/checkpoint-500/lora_adapter"
+    training_data:
+      - Hypersim ai_001_001 + ai_001_002 (200 metric pairs, 512px)
+    metrics:
+      nyu_protocol: eigen_crop_10m_cap
+      nyu_delta1_n654: 0.403
+      nyu_absrel_n654: 0.367
+      nyu_rmse_n654: 1.090
+      nyu_delta1_aligned_n654: 0.541
+      nyu_delta1_n32: 0.357
+      nyu_absrel_n32: 0.437
+      nyu_rmse_n32: 1.491
+      nyu_delta1_n32_step1000: 0.227
+      eth3d_note: courtyard+electro n=83 subset, not full paper ETH3D
+      eth3d_protocol: cap_80m
+      eth3d_delta1_n83: 0.022
+      eth3d_absrel_n83: 0.614
+      eth3d_rmse_n83: 6.895
+      eth3d_delta1_aligned_n83: 0.730
+      outdoor_continue: sana-kitti-metric-v1
+
+  sana-kitti-metric-v1:
+    repo_id: "open-vision-banana/sana-kitti-metric-v1"
+    revision: main
+    status: local
+    version: "0.1.0-local"
+    description: >
+      Outdoor metric-depth LoRA: Hypersim ckpt-500 continued 400 steps on
+      298 KITTI train annotated metres (3 raw drives; official val drives
+      excluded). ETH3D courtyard+electro n=83 80m-cap δ1=0.167 / AbsRel=0.604
+      / RMSE=7.707. Indoor NYU n=32 collapsed to δ1=0.092; keep
+      sana-hypersim-metric-v1 for NYU. Not a Table 1 result. Do not lengthen.
+    base_model: "Efficient-Large-Model/Sana_600M_512px_diffusers"
+    lora_rank: 16
+    lora_alpha: 32
+    tasks:
+      - depth
+    local_path: "output/sana_kitti_metric_depth_lr1e5_20260823/checkpoint-400/lora_adapter"
+    training_data:
+      - KITTI raw official 2011_09_26_drive_0001/0017 + 2011_09_28_drive_0001 (298 metric pairs, 512px)
+    metrics:
+      eth3d_note: courtyard+electro n=83 subset, not full paper ETH3D
+      eth3d_protocol: cap_80m
+      eth3d_delta1_n83: 0.167
+      eth3d_absrel_n83: 0.604
+      eth3d_rmse_n83: 7.707
+      eth3d_delta1_aligned_n83: 0.296
+      nyu_protocol: eigen_crop_10m_cap
+      nyu_delta1_n32: 0.092
+      nyu_absrel_n32: 0.966
+      nyu_rmse_n32: 3.071
+      nyu_delta1_aligned_n32: 0.436
+      indoor_specialist: sana-hypersim-metric-v1
+
   # ── Published checkpoints (flip status to "available" after publishing) ──
   # Example template:
   #
