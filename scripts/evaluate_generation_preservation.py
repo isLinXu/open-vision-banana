@@ -19,9 +19,9 @@ Example (requires local model weights and a local generation dataset)::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
+import os
 import platform
 import sys
 import time
@@ -36,6 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from open_vision_banana.data import build_generation_dataset  # noqa: E402
+from open_vision_banana.data.manifest import fingerprint_records  # noqa: E402
 from open_vision_banana.evaluation.generation_preservation import (  # noqa: E402
     evaluate_generation_preservation,
     extract_inception_features,
@@ -54,13 +55,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--failure-jsonl", type=Path, default=None)
     parser.add_argument("--device", default=None)
-    parser.add_argument("--dtype", choices=["float32", "float16", "bfloat16"], default="bfloat16")
+    parser.add_argument("--dtype", choices=["float32", "float16", "bfloat16"], default="float32")
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--num-inference-steps", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-samples", type=int, default=None)
+    parser.add_argument(
+        "--allow-failures",
+        action="store_true",
+        help="Keep a proxy report despite failed samples (never use for an acceptance gate).",
+    )
     parser.add_argument(
         "--feature-backend",
         choices=["rgb_proxy", "inception"],
@@ -88,16 +94,36 @@ def resolve_dtype(value: str) -> torch.dtype:
     }[value]
 
 
+def resolve_runtime_dtype(value: str, device: str) -> torch.dtype:
+    """Reject unstable reduced-precision generation on Apple MPS."""
+    dtype = resolve_dtype(value)
+    if device == "mps" and dtype != torch.float32:
+        raise ValueError(
+            "Generation replay on MPS requires --dtype float32; fp16/bf16 can "
+            "produce non-finite diffusion samples."
+        )
+    return dtype
+
+
 def dataset_fingerprint(dataset: Any) -> str:
-    digest = hashlib.sha256()
+    root = Path(getattr(dataset, "root_dir", "."))
+    root_abs = root.absolute()
+    records = []
     for sample in getattr(dataset, "samples", []):
         path = Path(sample["image_path"])
-        digest.update(str(path.resolve()).encode())
-        if path.exists():
-            stat = path.stat()
-            digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
-        digest.update(str(sample.get("prompt", "")).encode())
-    return digest.hexdigest()
+        # Keep the manifest path lexical: ``generation/images`` is allowed to
+        # contain symlinks to a separately stored image corpus.  Resolving the
+        # symlink before ``relative_to`` makes an otherwise valid portable
+        # manifest look external and aborts report generation.
+        image_rel = Path(os.path.relpath(path.absolute(), root_abs)).as_posix()
+        records.append(
+            {
+                "task": "generation",
+                "image": image_rel,
+                "prompt": sample.get("prompt", ""),
+            }
+        )
+    return fingerprint_records(records, root)
 
 
 def _json_safe(value: Any) -> Any:
@@ -130,7 +156,11 @@ def main() -> int:
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
 
-    dataset = build_generation_dataset(str(args.dataset_root), resolution=args.resolution)
+    dataset = build_generation_dataset(
+        str(args.dataset_root),
+        resolution=args.resolution,
+        require_captions=True,
+    )
     if not len(dataset):
         raise SystemExit(f"No generation samples found under {args.dataset_root}")
     selected = dataset if args.max_samples is None else Subset(dataset, range(min(args.max_samples, len(dataset))))
@@ -141,11 +171,12 @@ def main() -> int:
         num_workers=args.num_workers if device == "cuda" else 0,
     )
 
+    runtime_dtype = resolve_runtime_dtype(args.dtype, device)
     model = BaseGenerator(
         model_name=args.model_name,
         lora_path=args.lora_path,
         device=device,
-        dtype=resolve_dtype(args.dtype),
+        dtype=runtime_dtype,
     )
     failure_path = args.failure_jsonl or args.output_json.with_suffix(".failures.jsonl")
     failure_path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,6 +220,12 @@ def main() -> int:
                     logger.warning("sample %d failed: %s", index, exc)
             sample_index += len(prompts)
 
+    if failures and not args.allow_failures:
+        raise RuntimeError(
+            f"{failures} generation samples failed; refusing an incomplete acceptance report. "
+            f"See {failure_path} or pass --allow-failures for a non-gating proxy."
+        )
+
     if not generated_images:
         raise RuntimeError(f"All {failures} generation samples failed; see {failure_path}")
 
@@ -217,7 +254,7 @@ def main() -> int:
             "dataset_root": str(args.dataset_root),
             "dataset_fingerprint": dataset_fingerprint(dataset),
             "device": device,
-            "dtype": args.dtype,
+            "dtype": str(runtime_dtype).replace("torch.", ""),
             "resolution": args.resolution,
             "seed": args.seed,
             "num_inference_steps": args.num_inference_steps,

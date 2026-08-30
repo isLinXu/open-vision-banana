@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
+
+from .depth import median_scale_align
 
 
 @dataclass
@@ -18,31 +20,37 @@ class DepthAccumulator:
     log_squared_sum: float = 0.0
     valid_pixels: int = 0
     delta_counts: list[int] | None = None
+    aligned_abs_rel_sum: float = 0.0
+    aligned_sq_rel_sum: float = 0.0
+    aligned_squared_sum: float = 0.0
+    aligned_log_squared_sum: float = 0.0
+    aligned_valid_pixels: int = 0
+    aligned_delta_counts: list[int] = field(default_factory=lambda: [0, 0, 0])
 
     def __post_init__(self) -> None:
         if self.delta_counts is None:
             self.delta_counts = [0, 0, 0]
 
-    def update(
+    def _add(
         self,
         pred: torch.Tensor,
         gt: torch.Tensor,
-        valid_mask: torch.Tensor | None = None,
+        *,
+        aligned: bool,
     ) -> None:
-        pred = pred.squeeze(1).float()
-        gt = gt.squeeze(1).float()
-        mask = torch.isfinite(pred) & torch.isfinite(gt) & (gt > 0) & (pred > 0)
-        if valid_mask is not None:
-            valid_mask = valid_mask.bool()
-            if valid_mask.dim() == mask.dim() + 1 and valid_mask.shape[1] == 1:
-                valid_mask = valid_mask.squeeze(1)
-            mask &= valid_mask
-        pred = pred[mask]
-        gt = gt[mask]
         if pred.numel() == 0:
             return
         error = pred - gt
         ratio = torch.maximum(pred / gt, gt / pred)
+        if aligned:
+            self.aligned_abs_rel_sum += torch.sum(error.abs() / gt).item()
+            self.aligned_sq_rel_sum += torch.sum(error.square() / gt).item()
+            self.aligned_squared_sum += torch.sum(error.square()).item()
+            self.aligned_log_squared_sum += torch.sum((pred.log() - gt.log()).square()).item()
+            self.aligned_valid_pixels += pred.numel()
+            for index, threshold in enumerate((1.25, 1.25**2, 1.25**3)):
+                self.aligned_delta_counts[index] += int((ratio < threshold).sum().item())
+            return
         self.abs_rel_sum += torch.sum(error.abs() / gt).item()
         self.sq_rel_sum += torch.sum(error.square() / gt).item()
         self.squared_sum += torch.sum(error.square()).item()
@@ -52,9 +60,38 @@ class DepthAccumulator:
         for index, threshold in enumerate((1.25, 1.25**2, 1.25**3)):
             self.delta_counts[index] += int((ratio < threshold).sum().item())
 
+    def update(
+        self,
+        pred: torch.Tensor,
+        gt: torch.Tensor,
+        valid_mask: torch.Tensor | None = None,
+    ) -> None:
+        pred = pred.squeeze(1).float()
+        gt = gt.squeeze(1).float()
+        if pred.dim() == 2:
+            pred = pred.unsqueeze(0)
+            gt = gt.unsqueeze(0)
+        mask = torch.isfinite(pred) & torch.isfinite(gt) & (gt > 0) & (pred > 0)
+        if valid_mask is not None:
+            valid_mask = valid_mask.to(device=mask.device).bool()
+            if valid_mask.dim() == mask.dim() + 1 and valid_mask.shape[1] == 1:
+                valid_mask = valid_mask.squeeze(1)
+            if valid_mask.dim() == 2:
+                valid_mask = valid_mask.unsqueeze(0).expand_as(mask)
+            mask &= valid_mask
+        self._add(pred[mask], gt[mask], aligned=False)
+        aligned, stable = median_scale_align(pred, gt, mask)
+        if stable.dim() == 0:
+            stable = stable.view(1)
+        pixel_stable = stable.view(-1, *([1] * (mask.dim() - 1))).expand_as(mask) & mask
+        if bool(pixel_stable.any()):
+            self._add(aligned[pixel_stable], gt[pixel_stable], aligned=True)
+
     def compute(self) -> dict[str, float | int]:
         n = max(self.valid_pixels, 1)
+        aligned_n = max(self.aligned_valid_pixels, 1)
         deltas = self.delta_counts or [0, 0, 0]
+        aligned_deltas = self.aligned_delta_counts
         return {
             "AbsRel": self.abs_rel_sum / n,
             "SqRel": self.sq_rel_sum / n,
@@ -64,6 +101,10 @@ class DepthAccumulator:
             "delta_1.25^2": deltas[1] / n,
             "delta_1.25^3": deltas[2] / n,
             "valid_pixels": self.valid_pixels,
+            "AbsRel_aligned": self.aligned_abs_rel_sum / aligned_n,
+            "delta_1.25_aligned": aligned_deltas[0] / aligned_n,
+            "RMSE_aligned": math.sqrt(self.aligned_squared_sum / aligned_n),
+            "aligned_valid_pixels": self.aligned_valid_pixels,
         }
 
 
@@ -92,7 +133,7 @@ class NormalAccumulator:
         mask = torch.isfinite(pred).all(dim=1) & torch.isfinite(gt).all(dim=1)
         mask &= (pred_norm > 1e-6) & (gt_norm > 1e-6)
         if valid_mask is not None:
-            valid_mask = valid_mask.bool()
+            valid_mask = valid_mask.to(device=mask.device).bool()
             if valid_mask.dim() == mask.dim() + 1 and valid_mask.shape[1] == 1:
                 valid_mask = valid_mask.squeeze(1)
             mask &= valid_mask
@@ -130,6 +171,24 @@ class NormalAccumulator:
         }
 
 
+def as_batch_hw_labels(labels: torch.Tensor) -> torch.Tensor:
+    """Coerce class maps to ``[B, H, W]``.
+
+    Decoded semantic masks are ``[B, 1, H, W]``. Cityscapes GT after DataLoader
+    collate is ``[B, H, W]``. In-place masks cannot broadcast those two.
+    """
+    labels = labels.long()
+    while labels.dim() > 3:
+        if labels.shape[1] != 1:
+            raise ValueError(f"semantic labels must be [B, H, W], got {tuple(labels.shape)}")
+        labels = labels.squeeze(1)
+    if labels.dim() == 2:
+        labels = labels.unsqueeze(0)
+    if labels.dim() != 3:
+        raise ValueError(f"semantic labels must be [B, H, W], got {tuple(labels.shape)}")
+    return labels
+
+
 class SemanticAccumulator:
     """Accumulate a global Cityscapes-style confusion matrix."""
 
@@ -139,10 +198,14 @@ class SemanticAccumulator:
         self.confusion = torch.zeros(num_classes, num_classes, dtype=torch.int64)
 
     def update(self, pred: torch.Tensor, gt: torch.Tensor) -> None:
-        pred = pred.long().cpu()
-        gt = gt.long().cpu()
+        pred = as_batch_hw_labels(pred).cpu()
+        gt = as_batch_hw_labels(gt).cpu()
+        if pred.shape != gt.shape:
+            raise ValueError(
+                f"pred/gt spatial shapes must match: {tuple(pred.shape)} vs {tuple(gt.shape)}"
+            )
         valid = (gt != self.ignore_index) & (gt >= 0) & (gt < self.num_classes)
-        valid &= (pred >= 0) & (pred < self.num_classes)
+        valid = valid & (pred >= 0) & (pred < self.num_classes)
         indices = gt[valid] * self.num_classes + pred[valid]
         self.confusion += torch.bincount(
             indices, minlength=self.num_classes * self.num_classes
@@ -162,6 +225,47 @@ class SemanticAccumulator:
         }
 
 
+DEPTH_EVAL_CAPS = {
+    "nyu": 10.0,
+    "kitti": 80.0,
+    "eth3d": 80.0,
+}
+
+
+def canonical_depth_dataset(dataset: str) -> str:
+    """Map adapter keys such as nyu_depth onto the Eigen/Garg protocol names."""
+    key = dataset.strip().lower()
+    if key.startswith("nyu"):
+        return "nyu"
+    if key.startswith("kitti"):
+        return "kitti"
+    if key.startswith("eth3d"):
+        return "eth3d"
+    return key
+
+
+def apply_depth_benchmark_protocol(
+    dataset: str,
+    pred: torch.Tensor,
+    gt: torch.Tensor,
+    valid_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Crop, mask, and cap depths the way NYU Eigen / KITTI Garg eval expect.
+
+    Predictions that decode to tens or thousands of metres (cube-edge near
+    white) must be clipped, or a few pixels dominate AbsRel/RMSE.
+    """
+    protocol = canonical_depth_dataset(dataset)
+    mask = benchmark_valid_mask(protocol, gt, valid_mask)
+    cap = DEPTH_EVAL_CAPS.get(protocol)
+    if cap is not None:
+        finite_gt = torch.isfinite(gt) & (gt > 1e-3) & (gt <= cap)
+        mask = mask & finite_gt
+        pred = pred.clamp(1e-3, cap)
+        gt = gt.clamp(1e-3, cap)
+    return pred, gt, mask
+
+
 def benchmark_valid_mask(
     dataset: str,
     gt: torch.Tensor,
@@ -173,7 +277,24 @@ def benchmark_valid_mask(
     evaluation canvas. Callers may pass a precomputed mask to override the
     default validity rule.
     """
-    mask = valid_mask.bool() if valid_mask is not None else torch.ones_like(gt, dtype=torch.bool)
+    mask = (
+        valid_mask.to(device=gt.device).bool()
+        if valid_mask is not None
+        else torch.ones_like(gt, dtype=torch.bool)
+    )
+    # Dataset adapters expose masks as [B,H,W] while decoded depth/GT may be
+    # [B,1,H,W]. Normalize before applying a crop; otherwise broadcasting a
+    # [B,H,W] mask against [B,1,H,W] creates an accidental [B,B,H,W] mask
+    # whenever batch_size > 1.
+    if mask.dim() == gt.dim() - 1 and gt.dim() >= 3:
+        mask = mask.unsqueeze(1)
+    elif mask.dim() == 2 and gt.dim() == 3:
+        mask = mask.unsqueeze(0)
+    if mask.shape != gt.shape:
+        raise ValueError(
+            "Depth validity mask shape must match ground truth after channel "
+            f"normalization: mask={tuple(mask.shape)}, gt={tuple(gt.shape)}"
+        )
     height, width = gt.shape[-2:]
     if dataset == "nyu" and height >= 400 and width >= 500:
         crop = torch.zeros_like(mask)
@@ -191,8 +312,12 @@ def benchmark_valid_mask(
 
 
 __all__ = [
+    "DEPTH_EVAL_CAPS",
     "DepthAccumulator",
     "NormalAccumulator",
     "SemanticAccumulator",
+    "as_batch_hw_labels",
+    "apply_depth_benchmark_protocol",
     "benchmark_valid_mask",
+    "canonical_depth_dataset",
 ]

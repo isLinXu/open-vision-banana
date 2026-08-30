@@ -15,7 +15,14 @@ Provides:
 VisionEvaluator: Unified evaluation runner for all 10 tasks.
 """
 
-from .benchmark import DepthAccumulator, NormalAccumulator, SemanticAccumulator
+from .benchmark import (
+    DEPTH_EVAL_CAPS,
+    DepthAccumulator,
+    NormalAccumulator,
+    SemanticAccumulator,
+    apply_depth_benchmark_protocol,
+    canonical_depth_dataset,
+)
 from .depth import evaluate_depth
 from .edge import evaluate_edge, evaluate_edge_dataset
 from .evaluator import VisionEvaluator
@@ -61,8 +68,11 @@ __all__ = [
     "SACoAccumulator",
     "ReferringAccumulator",
     "VisionEvaluator",
+    "DEPTH_EVAL_CAPS",
     "DepthAccumulator",
     "NormalAccumulator",
     "SemanticAccumulator",
+    "apply_depth_benchmark_protocol",
+    "canonical_depth_dataset",
     "GeminiPaperJudge",
 ]

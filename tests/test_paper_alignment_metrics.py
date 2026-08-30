@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 import torch
+from PIL import Image
 
 from open_vision_banana.core.depth_mapper import (
     CUBE_EDGE_KEYPOINTS,
@@ -126,3 +129,46 @@ def test_cityscapes_evaluation_prompt_contains_all_nineteen_classes() -> None:
     assert len(color_map) == 19
     for class_name, (red, green, blue) in color_map.items():
         assert f'"{class_name}": <{red}, {green}, {blue}>' in prompt
+
+
+def test_cityscapes_subset_prompt_expands_to_canonical_legend() -> None:
+    prompt = PromptBuilder.build_semantic_prompt(
+        {"road": (128, 64, 128), "sky": (70, 130, 180)}
+    )
+    assert '"bicycle": <119, 11, 32>' in prompt
+    assert prompt.count('<') == 19
+
+
+def test_manifest_cityscapes_prompt_matches_inference_contract(tmp_path) -> None:
+    """A prompt omitted from a manifest must use the full Cityscapes legend."""
+    from scripts.train_sana_512 import ManifestVisionDataset
+    from open_vision_banana.data.datasets import CityscapesSegDataset
+
+    image = tmp_path / "input.png"
+    target = tmp_path / "target.png"
+    Image.new("RGB", (4, 4), (0, 0, 0)).save(image)
+    Image.new("RGB", (4, 4), (128, 64, 128)).save(target)
+    manifest = tmp_path / "pairs.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "task": "cityscapes",
+                "split": "train",
+                "input": image.name,
+                "target": target.name,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = ManifestVisionDataset(
+        manifest_path=manifest,
+        resolution=4,
+        split="train",
+        tasks={"semantic"},
+    )
+    expected = PromptBuilder.build_semantic_prompt(CityscapesSegDataset.CITYSCAPES_COLORS)
+    assert len(dataset) == 1
+    assert dataset[0]["prompt"] == expected
+    assert '"road": <128, 64, 128>' in dataset[0]["prompt"]

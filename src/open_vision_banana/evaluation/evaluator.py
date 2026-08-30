@@ -31,7 +31,7 @@ from .benchmark import (
     DepthAccumulator,
     NormalAccumulator,
     SemanticAccumulator,
-    benchmark_valid_mask,
+    apply_depth_benchmark_protocol,
 )
 from .depth import evaluate_depth
 from .edge import evaluate_edge
@@ -75,9 +75,10 @@ class VisionEvaluator:
     whenever the fallback path is taken.
     """
 
-    def __init__(self, model, device: str = "cuda"):
+    def __init__(self, model, device: str = "cuda", strict_nonfinite: bool = True):
         self.model = model
         self.device = device
+        self.strict_nonfinite = bool(strict_nonfinite)
         # Detect whether the model exposes the VisionBanana.predict() API.
         self._has_predict = callable(getattr(model, "predict", None))
         if not self._has_predict:
@@ -217,6 +218,7 @@ class VisionEvaluator:
         normal_mapper = NormalRGBMapper() if task == "normal" else None
         seg_decoder = SegmentationDecoder() if task in ("semantic", "instance") else None
 
+        skipped_samples = 0
         for batch_idx, batch in enumerate(dataloader):
             if max_batches and batch_idx >= max_batches:
                 break
@@ -225,16 +227,28 @@ class VisionEvaluator:
             target_rgb = batch["target_rgb"].to(self.device)
 
             # ── Run model inference ───────────────────────────────────────
-            pred_rgb = self._run_inference(
-                image=image,
-                task=task,
-                class_color_map=class_color_map or batch.get("class_color_map"),
-                object_name=object_name,
-                expression=expression or batch.get("expression"),
-                num_inference_steps=num_inference_steps,
-                strength=strength,
-                seed=None if seed is None else seed + batch_idx,
-            )
+            try:
+                pred_rgb = self._run_inference(
+                    image=image,
+                    task=task,
+                    class_color_map=class_color_map or batch.get("class_color_map"),
+                    object_name=object_name,
+                    expression=expression or batch.get("expression"),
+                    num_inference_steps=num_inference_steps,
+                    strength=strength,
+                    seed=None if seed is None else seed + batch_idx,
+                )
+            except ValueError as exc:
+                if "NaN or Inf" not in str(exc):
+                    raise
+                if self.strict_nonfinite:
+                    raise RuntimeError(
+                        f"Non-finite generator output at evaluation batch {batch_idx}"
+                    ) from exc
+                skipped = int(image.shape[0]) if image.dim() == 4 else 1
+                skipped_samples += skipped
+                logger.warning("Skipping batch %d (%d sample(s)): %s", batch_idx, skipped, exc)
+                continue
 
             # ── Decode & compute metrics ──────────────────────────────────
             metrics: dict[str, Any]
@@ -246,10 +260,14 @@ class VisionEvaluator:
                 else:
                     gt_depth = gt_depth.to(self.device)
                 valid_mask = batch.get("valid_mask")
-                valid_mask = benchmark_valid_mask(dataset_name or "", gt_depth, valid_mask)
+                if valid_mask is not None:
+                    valid_mask = valid_mask.to(self.device)
+                pred_depth, gt_depth, valid_mask = apply_depth_benchmark_protocol(
+                    dataset_name or "", pred_depth, gt_depth, valid_mask
+                )
                 if depth_accumulator is not None:
                     depth_accumulator.update(pred_depth, gt_depth, valid_mask)
-                metrics = evaluate_depth(pred_depth, gt_depth)
+                metrics = evaluate_depth(pred_depth, gt_depth, valid_mask)
 
             elif task == "normal":
                 pred_normal = normal_mapper.rgb_to_normal(pred_rgb)
@@ -429,7 +447,9 @@ class VisionEvaluator:
             return {}
 
         if task == "depth" and depth_accumulator is not None:
-            return depth_accumulator.compute()
+            metrics = depth_accumulator.compute()
+            metrics["skipped_samples"] = skipped_samples
+            return metrics
         if task == "normal" and normal_accumulator is not None:
             return normal_accumulator.compute()
         if task == "semantic" and semantic_accumulator is not None:
@@ -586,13 +606,19 @@ class VisionEvaluator:
                     "from task-specific keys."
                 )
                 pred_rgb = self._extract_rgb_from_result(result, task, image)
-            return pred_rgb.to(self.device)
+            pred_rgb = pred_rgb.to(self.device)
+            if not torch.isfinite(pred_rgb).all():
+                raise ValueError("generator output contains NaN or Inf values")
+            return pred_rgb
 
         # ── Fallback: direct model(image) call ───────────────────────────
         pred_rgb = self.model(image)
         if isinstance(pred_rgb, dict):
             pred_rgb = pred_rgb.get("rgb_output", next(iter(pred_rgb.values())))
-        return pred_rgb.to(self.device)
+        pred_rgb = pred_rgb.to(self.device)
+        if not torch.isfinite(pred_rgb).all():
+            raise ValueError("generator output contains NaN or Inf values")
+        return pred_rgb
 
     @staticmethod
     def _extract_rgb_from_result(result: dict, task: str, image: torch.Tensor) -> torch.Tensor:
