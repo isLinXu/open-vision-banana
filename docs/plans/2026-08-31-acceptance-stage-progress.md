@@ -44,6 +44,15 @@ with delta-1.25 `0.4030` and zero skipped samples. Its fingerprint predates the
 relative-path manifest contract, so it is retained as legacy evidence and is
 not relabeled as a current-fingerprint acceptance result.
 
+The planned indoor/outdoor replay was also executed through its first gate
+from the same baseline, using 1,200 metric-depth training pairs (1,000
+Hypersim + 200 KITTI). Step 100 produced
+`output/sana_depth_replay_from_hypersim500_20260830/evals/nyu_delta1_n32_step100.json`:
+delta-1.25 `0.2859`, `skipped_samples=0`. This is below the configured early-stop
+threshold `0.33`, so the runner stopped and retained the original Hypersim-500
+checkpoint as the best depth baseline. The replay is a negative result, not a
+candidate for shared-LoRA promotion.
+
 ### Semantic
 
 The Cityscapes-19 specialist checkpoint is
