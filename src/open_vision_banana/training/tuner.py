@@ -18,8 +18,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset as _Dataset
 
+from ..conditioning import (
+    build_source_conditioned_input,
+    sample_source_conditioned_timesteps,
+    scheduler_prediction_type,
+)
 from ..model_registry import ModelConfig, resolve_model_config
+from ..model_registry import vae_decode as registry_vae_decode
 from ..model_registry import vae_encode as registry_vae_encode
+from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT, normalize_task_prompt
 from .checkpoint import CheckpointManager
 from .early_stopping import EarlyStopping
 from .logging import TrainingLogger
@@ -28,10 +35,27 @@ from .optimization import (
     compute_min_snr_weight,
     sample_timesteps_logit_normal,
 )
+from .structure_loss import decoded_x0_scalar_geometry_loss, decoded_x0_structure_loss
 from .trainer_interface import TrainerInterface
 from .utils import EMAModel, VisionAugmentation, enable_gradient_checkpointing
 
 logger = logging.getLogger(__name__)
+
+# Public compatibility constant used by the dedicated SSD source-conditioning
+# gate.  The expanded input projection is the only convolution that should be
+# adapted in addition to the standard SDXL attention/MLP targets.
+SDXL_CONV_LORA_TARGET_MODULES = ["conv_in"]
+
+
+def euler_v_prediction_target(
+    noisy_sample: torch.Tensor,
+    clean_sample: torch.Tensor,
+    sigma: torch.Tensor,
+) -> torch.Tensor:
+    """Convert an Euler-discrete noisy sample to its v-prediction target."""
+    sigma = sigma.to(device=noisy_sample.device, dtype=noisy_sample.dtype).clamp_min(1e-6)
+    scale = (sigma.square() + 1.0).sqrt()
+    return (noisy_sample / (sigma.square() + 1.0) - clean_sample) * scale / sigma
 
 
 class VisionTaskDataset(_Dataset):
@@ -56,8 +80,8 @@ class VisionTaskDataset(_Dataset):
     TASK_PROMPTS = {
         "depth": "Generate a metric depth visualization of this image.",
         "normal": "Generate a surface normal estimation visualization of this image.",
-        "semantic": "Generate a semantic segmentation visualization of this image.",
-        "segmentation": "Generate a semantic segmentation visualization of this image.",
+        "semantic": SEMANTIC_SEGMENTATION_PROMPT,
+        "segmentation": SEMANTIC_SEGMENTATION_PROMPT,
         "instance": "Generate an instance segmentation visualization of this image.",
         "referring": "Generate a referring expression segmentation visualization of this image.",
         "edge": "Generate an edge detection visualization of this image.",
@@ -138,11 +162,19 @@ class VisionTaskDataset(_Dataset):
         # Sort for deterministic ordering
         image_paths.sort()
 
-        prompt = self.TASK_PROMPTS.get(self.task, self.DEFAULT_PROMPT)
+        default_prompt = self.TASK_PROMPTS.get(self.task, self.DEFAULT_PROMPT)
+        prompt_dir = root / "prompts"
         for img_path in image_paths:
             tgt_path = target_index.get(img_path.stem)
             if tgt_path is None:
                 continue
+            prompt = default_prompt
+            prompt_path = prompt_dir / f"{img_path.stem}.txt"
+            if prompt_path.is_file():
+                text = prompt_path.read_text(encoding="utf-8").strip()
+                if text:
+                    prompt = text
+            prompt = normalize_task_prompt(self.task, prompt)
             self.samples.append(
                 {
                     "image_path": str(img_path),
@@ -170,10 +202,11 @@ class VisionTaskDataset(_Dataset):
         try:
             image = _load(sample["image_path"], (-1.0, 1.0))
             target_rgb = _load(sample["target_path"], (0.0, 1.0))
-        except (FileNotFoundError, OSError):
-            # Fallback: skip missing file, load a random other sample
-            fallback_idx = (idx + 1) % len(self.samples)
-            return self.__getitem__(fallback_idx)
+        except (FileNotFoundError, OSError) as exc:
+            raise RuntimeError(
+                f"Missing or unreadable training pair at index {idx}: "
+                f"{sample['image_path']} / {sample['target_path']}"
+            ) from exc
 
         return {
             "prompt": sample["prompt"],
@@ -182,6 +215,7 @@ class VisionTaskDataset(_Dataset):
             "target_rgb": target_rgb,
             "target_rgb_range": "0_1",
             "task": self.task,
+            "flow_source": "input",
         }
 
 
@@ -212,6 +246,7 @@ class InstructionTuner:
         cfg_dropout_rate: float = 0.1,
         use_img2img_flow: bool = True,
         flow_sigma: float = 0.0,
+        allow_component_fallback: bool = False,
         warmup_ratio: float | None = None,
         trainer_backend: TrainerInterface | None = None,
         lora_dropout: float = 0.0,
@@ -263,6 +298,7 @@ class InstructionTuner:
         self.cfg_dropout_rate = cfg_dropout_rate
         self.use_img2img_flow = use_img2img_flow
         self.flow_sigma = flow_sigma
+        self.allow_component_fallback = bool(allow_component_fallback)
         self.warmup_ratio = warmup_ratio
         self.use_rslora = use_rslora
         self.peft_model: nn.Module | Any = None
@@ -611,6 +647,11 @@ class InstructionTuner:
         transformer = backbone  # Keep variable name for dtype logic below
         self.peft_model = get_peft_model(backbone, lora_config)
         self.peft_model.print_trainable_parameters()
+        self._diffusers_lora_component = (
+            "transformer"
+            if getattr(pipeline, "transformer", None) is not None
+            else "unet"
+        )
 
         # Cast LoRA parameters to the base model's dtype.
         # PEFT initializes LoRA adapters in float32 by default, but on MPS
@@ -647,6 +688,7 @@ class InstructionTuner:
         self,
         train_dataset: _Dataset,
         val_dataset: _Dataset | None = None,
+        val_datasets: dict[str, _Dataset] | None = None,
         epochs: int = 10,
         batch_size: int = 8,
         gradient_accumulation_steps: int = 1,
@@ -665,12 +707,14 @@ class InstructionTuner:
         early_stopping_patience: int | None = None,
         early_stopping_min_delta: float = 0.0,
         train_sampler=None,
+        batch_sampler=None,
         is_main_process: bool = True,
         start_step: int = 0,
         start_epoch: int = 0,
         resume_checkpoint: str | Path | None = None,
         restore_rng_on_resume: bool = False,
         max_steps: int | None = None,
+        skip_nonfinite: bool = False,
     ) -> dict:
         """Train the LoRA instruction alignment.
 
@@ -684,6 +728,12 @@ class InstructionTuner:
         """
         self.peft_model.train()
 
+        # ``val_datasets`` was the pre-v1 keyword used by the multitask runner.
+        # Keep accepting it while evaluating the first declared validation set;
+        # the current API uses the singular ``val_dataset``.
+        if val_dataset is None and val_datasets:
+            val_dataset = next(iter(val_datasets.values()))
+
         if val_dataset is None:
             logger.info("No val_dataset provided — per-step evaluation is disabled.")
             if early_stopping_patience is not None:
@@ -692,15 +742,26 @@ class InstructionTuner:
                 )
                 early_stopping_patience = None
 
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            shuffle=(train_sampler is None),
-            sampler=train_sampler,
-            num_workers=num_workers,
-            pin_memory=False,
-            collate_fn=_collate_fn,
-        )
+        if batch_sampler is not None and train_sampler is not None:
+            raise ValueError("Pass only one of train_sampler or batch_sampler")
+        if batch_sampler is not None:
+            train_loader = DataLoader(
+                train_dataset,
+                batch_sampler=batch_sampler,
+                num_workers=num_workers,
+                pin_memory=False,
+                collate_fn=_collate_fn,
+            )
+        else:
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=batch_size,
+                shuffle=(train_sampler is None),
+                sampler=train_sampler,
+                num_workers=num_workers,
+                pin_memory=False,
+                collate_fn=_collate_fn,
+            )
 
         total_steps = (
             len(train_loader) * epochs + gradient_accumulation_steps - 1
@@ -745,6 +806,7 @@ class InstructionTuner:
         global_step = start_step
         best_val_loss: float | None = None
         stopped_early = False
+        last_training_metrics: dict[str, Any] = {}
 
         scheduler_state_loaded = False
         if resume_checkpoint is not None:
@@ -777,6 +839,8 @@ class InstructionTuner:
         for epoch in range(start_epoch, epochs):
             if train_sampler is not None and hasattr(train_sampler, "set_epoch"):
                 train_sampler.set_epoch(epoch)
+            if batch_sampler is not None and hasattr(batch_sampler, "set_epoch"):
+                batch_sampler.set_epoch(epoch)
             if hasattr(train_dataset, "set_epoch"):
                 train_dataset.set_epoch(epoch)
             epoch_loss = 0.0
@@ -818,7 +882,22 @@ class InstructionTuner:
                     # ── Legacy native path (backward compat) ──
                     with torch.autocast(device_type, enabled=use_amp, dtype=torch.bfloat16):
                         loss = self._training_step(batch)
+                    if isinstance(getattr(self, "_last_step_metrics", None), dict):
+                        last_training_metrics = dict(self._last_step_metrics)
                     if not torch.isfinite(loss).all():
+                        if skip_nonfinite:
+                            _task_name = batch.get("task", ["unknown"])
+                            if isinstance(_task_name, list) and _task_name:
+                                _task_name = _task_name[0]
+                            logger.warning(
+                                "Skipping non-finite loss at epoch %s, batch %s, "
+                                "global_step=%s, task=%s",
+                                epoch,
+                                step,
+                                global_step,
+                                _task_name,
+                            )
+                            continue
                         self.optimizer.zero_grad(set_to_none=True)
                         raise FloatingPointError(
                             f"Non-finite loss at epoch {epoch}, batch {step}"
@@ -897,6 +976,8 @@ class InstructionTuner:
                         callback(global_step, running_loss, current_lr)
 
                 if use_trainer_interface:
+                    if isinstance(getattr(self, "_last_step_metrics", None), dict):
+                        last_training_metrics = dict(self._last_step_metrics)
                     epoch_loss += loss.item()
                     num_steps += 1
 
@@ -968,6 +1049,9 @@ class InstructionTuner:
                         lr=scheduler.get_last_lr()[0],
                         ema=self.ema,
                         scheduler=scheduler,
+                        diffusers_component=getattr(
+                            self, "_diffusers_lora_component", None
+                        ),
                     )
                     if training_logger:
                         training_logger.log_checkpoint(
@@ -1001,6 +1085,9 @@ class InstructionTuner:
                                     lr=scheduler.get_last_lr()[0],
                                     ema=self.ema,
                                     scheduler=scheduler,
+                                    diffusers_component=getattr(
+                                        self, "_diffusers_lora_component", None
+                                    ),
                                 )
                                 if training_logger:
                                     training_logger.log_checkpoint(
@@ -1017,8 +1104,18 @@ class InstructionTuner:
                                 stopped_early = True
                                 break
 
+                if max_steps is not None and global_step >= max_steps:
+                    logger.info(
+                        "Reached max_steps=%d at epoch %d, step %d — stopping.",
+                        max_steps,
+                        epoch + 1,
+                        global_step,
+                    )
+                    stopped_early = True
+                    break
+
             # Do not carry an incomplete gradient window into the next epoch.
-            if accumulated_steps > 0:
+            if accumulated_steps > 0 and not stopped_early:
                 if use_trainer_interface:
                     if trainer.flush_accumulation(accumulated_steps):
                         scheduler.step()
@@ -1091,6 +1188,7 @@ class InstructionTuner:
                 lr=scheduler.get_last_lr()[0],
                 ema=self.ema,
                 scheduler=scheduler,
+                diffusers_component=getattr(self, "_diffusers_lora_component", None),
             )
             if training_logger:
                 training_logger.log_checkpoint(
@@ -1112,6 +1210,8 @@ class InstructionTuner:
             if early_stopper
             else None,
             "stopped_early": stopped_early,
+            "reached_max_steps": bool(max_steps is not None and global_step >= max_steps),
+            "last_training_metrics": last_training_metrics,
         }
 
     def _encode_text(self, prompts: list[str], device: torch.device) -> dict[str, torch.Tensor | None]:
@@ -1216,6 +1316,8 @@ class InstructionTuner:
             }
 
         except Exception as e:
+            if not getattr(self, "allow_component_fallback", False):
+                raise RuntimeError("FLUX text encoding failed") from e
             logger.warning(
                 f"Text encoding failed ({e}); falling back to zero conditioning. "
                 "The model will train without text guidance for this batch."
@@ -1284,6 +1386,8 @@ class InstructionTuner:
                 "attention_mask": None,
             }
         except Exception as e:
+            if not getattr(self, "allow_component_fallback", False):
+                raise RuntimeError("Dual-encoder text encoding failed") from e
             logger.warning(f"Dual-encoder text encoding failed ({e}); using zero conditioning.")
             B = len(prompts)
             return {
@@ -1362,6 +1466,8 @@ class InstructionTuner:
             return result
 
         except Exception as e:
+            if not getattr(self, "allow_component_fallback", False):
+                raise RuntimeError("Registry text encoding failed") from e
             logger.warning(f"Text encoding failed ({e}); using zero conditioning.")
             B = len(prompts)
             return {
@@ -1386,6 +1492,8 @@ class InstructionTuner:
 
         vae = getattr(pipeline, "vae", None)
         if vae is None:
+            if not getattr(self, "allow_component_fallback", False):
+                raise RuntimeError("VAE is required for training; no VAE found on pipeline")
             logger.warning(
                 "VAE not found on pipeline; using identity proxy for latents. "
                 "Training will proceed but latent statistics will be incorrect."
@@ -1408,8 +1516,8 @@ class InstructionTuner:
                 latents = latents.to(dtype=model_dtype)
             return latents
         except Exception as e:
-            if self.model_config.family == "sdxl":
-                raise RuntimeError("SDXL VAE encoding failed; refusing silent fallback") from e
+            if not getattr(self, "allow_component_fallback", False):
+                raise RuntimeError("VAE encoding failed") from e
             logger.warning(f"VAE encoding failed ({e}); using zero latents.")
             B, _, H, W = images.shape
             # Use model's expected latent channels (FLUX/Z-Image=16, others=4)
@@ -1512,10 +1620,9 @@ class InstructionTuner:
         # VisionTaskDataset historically emits [0, 1], while generation emits
         # [-1, 1].  New datasets may declare the range explicitly; retain the
         # legacy default for existing callers and tests.
-        pixel_range = batch.get("target_rgb_range", "0_1")
-        if isinstance(pixel_range, list):
-            pixel_range = pixel_range[0]
-        target_pixels = target_rgb if pixel_range == "-1_1" else target_rgb * 2.0 - 1.0
+        target_pixels = normalize_target_pixels(
+            target_rgb, batch.get("target_rgb_range", "0_1")
+        )
         target_latents = self._encode_latents(target_pixels)  # [B, 16, H/8, W/8]
 
         input_latents = None
@@ -1524,28 +1631,21 @@ class InstructionTuner:
 
         # ── Flow matching in latent space ────────────────────────────────
         model_dtype = next(self.peft_model.parameters()).dtype
-        if self.use_logit_normal_timesteps:
+        if getattr(self, "use_logit_normal_timesteps", True):
             timesteps = sample_timesteps_logit_normal(batch_size, device).to(model_dtype)
         else:
             timesteps = torch.rand(batch_size, device=device).to(model_dtype)
 
         noise = torch.randn_like(target_latents)
-        t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
-
-        if self.use_img2img_flow and input_latents is not None:
-            if input_latents.shape != target_latents.shape:
-                input_latents = torch.nn.functional.adaptive_avg_pool2d(
-                    input_latents, target_latents.shape[-2:]
-                )
-            if self.flow_sigma > 0:
-                noise_term = self.flow_sigma * (t_b * (1.0 - t_b)).sqrt() * noise
-            else:
-                noise_term = torch.zeros_like(input_latents)
-            noisy_latents = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
-            velocity_target = target_latents - input_latents
-        else:
-            noisy_latents = (1.0 - t_b) * target_latents + t_b * noise
-            velocity_target = target_latents - noise
+        noisy_latents, velocity_target = mix_rectified_flow_latents(
+            target_latents,
+            noise,
+            timesteps,
+            input_latents=input_latents,
+            flow_source=batch.get("flow_source"),
+            use_img2img_flow=self.use_img2img_flow,
+            flow_sigma=self.flow_sigma,
+        )
 
         # ── P0-1: Text conditioning ───────────────────────────────────────
         text_cond = self._encode_text(prompts, device)
@@ -1631,6 +1731,18 @@ class InstructionTuner:
 
         For generation tasks (image=None), pure t2i: noise is added to target.
         """
+        # Preserve the explicit source-conditioned SSD/SDXL contract used by
+        # dedicated overfit gates.  The regular path below remains the native
+        # four-channel SDXL img2img objective.
+        if hasattr(self, "use_source_conditioning"):
+            if bool(self.use_source_conditioning):
+                return self._training_step_sdxl_source_conditioned(batch)
+            if batch.get("image") is not None:
+                raise RuntimeError(
+                    "Paired source/target SDXL training requires "
+                    "use_source_conditioning=True"
+                )
+
         target = batch.get("target_rgb")
         if target is None:
             raise ValueError("SDXL batch requires target_rgb")
@@ -1671,7 +1783,7 @@ class InstructionTuner:
             raise RuntimeError("SDXL training requires a pipeline scheduler with add_noise()")
         cfg = getattr(scheduler, "config", scheduler)
         n_train = int(getattr(cfg, "num_train_timesteps", 1000))
-        if self.use_logit_normal_timesteps:
+        if getattr(self, "use_logit_normal_timesteps", True):
             # Logit-normal sampling (SD3/FLUX style): concentrates samples
             # around mid-noise levels where the model learns most effectively.
             # t ~ sigmoid(N(mean, std)) ∈ (0, 1), then scale to [0, n_train-1].
@@ -1745,13 +1857,18 @@ class InstructionTuner:
         if effective_pred_type == "epsilon":
             # Compute epsilon target
             sigma_flat = sigma_vals.view(b, *([1] * (z0.dim() - 1)))
-            if z_cond is not None:
-                # img2img: epsilon = (noisy - z0) / sigma
-                # noisy = z_cond + noise * sigma, so epsilon = noise + (z_cond - z0) / sigma
-                eps_target = (noisy - z0) / sigma_flat
-            else:
-                # t2i: epsilon = noise (standard)
-                eps_target = noise
+            # img2img: epsilon = (noisy - z0) / sigma. At the terminal
+            # sigma=0 step epsilon is undefined, so use the sampled noise
+            # target rather than introducing an Inf into the loss.
+            eps_target = (
+                torch.where(
+                    sigma_flat > 1e-6,
+                    (noisy - z0) / sigma_flat.clamp_min(1e-6),
+                    noise,
+                )
+                if z_cond is not None
+                else noise
+            )
 
             pred_f = pred.float()
             target_f = eps_target.float()
@@ -1766,16 +1883,12 @@ class InstructionTuner:
             per_sample = 0.9 * l2_loss + 0.1 * l1_loss
 
         elif effective_pred_type == "v_prediction":
-            # v = sigma * eps + x0  (EulerDiscrete v-prediction)
-            # For img2img: v_target = sigma * eps + z0 where eps = (noisy - z0)/sigma
-            #            = sigma * (noisy - z0)/sigma + z0 = noisy - z0 + z0 = noisy
-            # Wait, that's not right. Let me use the standard formula:
-            # v = alpha * eps + sigma * x0, where alpha = sqrt(1 - sigma^2/(1+sigma^2))
-            # For Euler: x0 = v * (-sigma / sqrt(sigma^2+1)) + sample / (sigma^2+1)
-            # So v = (x0 - sample / (sigma^2+1)) * (-sqrt(sigma^2+1) / sigma)
-            # This is complex; fall back to sample prediction for v models
+            # EulerDiscreteScheduler reconstructs x0 as:
+            #   x0 = v * (-sigma / sqrt(sigma^2 + 1)) + sample / (sigma^2 + 1)
+            # Invert that equation so training and inference use the same
+            # prediction contract for both t2i and img2img branches.
             sigma_flat = sigma_vals.view(b, *([1] * (z0.dim() - 1)))
-            target_value = z0
+            target_value = euler_v_prediction_target(noisy, z0, sigma_flat)
             pred_f = pred.float()
             target_f = target_value.float()
             diff = pred_f - target_f
@@ -1803,15 +1916,166 @@ class InstructionTuner:
                 alpha = alpha.to(device=device, dtype=torch.float32)[timesteps]
                 snr = alpha / (1.0 - alpha).clamp_min(1e-12)
             cap = torch.minimum(snr, torch.full_like(snr, self.min_snr_gamma))
-            if effective_pred_type == "v_prediction":
-                weight = cap / (snr + 1.0)
-            elif effective_pred_type == "sample":
+            if effective_pred_type == "v_prediction" or effective_pred_type == "sample":
                 weight = cap / (snr + 1.0)
             else:
                 # epsilon: standard min-SNR weight
                 weight = cap / snr.clamp_min(1e-12)
             per_sample = per_sample * weight.view(per_sample.shape)
         return per_sample.mean()
+
+    def _training_step_sdxl_source_conditioned(self, batch: dict) -> torch.Tensor:
+        """Run the opt-in 8-channel source-conditioned SSD objective.
+
+        This compatibility path is intentionally isolated from the native
+        four-channel SDXL branch. It noises the target latent, concatenates a
+        clean source latent (zeros for text-to-image replay), and supervises
+        the declared epsilon/x0 output contract.
+        """
+        target = batch.get("target_rgb")
+        if target is None:
+            raise ValueError("Source-conditioned SDXL batch requires target_rgb")
+        if isinstance(target, list):
+            target = torch.stack(target)
+        target_range = batch.get("target_rgb_range", "0_1")
+        if isinstance(target_range, list):
+            target_range = target_range[0]
+        target_pixels = target if target_range == "-1_1" else target * 2.0 - 1.0
+        device = next((p.device for p in self.peft_model.parameters()), target_pixels.device)
+        target_pixels = target_pixels.to(device)
+        target_latent = self._encode_latents(target_pixels)
+        batch_size = target_latent.shape[0]
+
+        source = batch.get("image")
+        if isinstance(source, list):
+            source = next((item for item in source if isinstance(item, torch.Tensor)), None)
+        if source is None:
+            source_latent = torch.zeros_like(target_latent)
+        else:
+            source = source.to(device)
+            source_range = batch.get("image_range", "-1_1")
+            if isinstance(source_range, list):
+                source_range = source_range[0]
+            source_pixels = source if source_range == "-1_1" else source * 2.0 - 1.0
+            source_latent = self._encode_latents(source_pixels)
+            if source_latent.shape != target_latent.shape:
+                source_latent = F.adaptive_avg_pool2d(source_latent, target_latent.shape[-2:])
+
+        pipeline = (
+            getattr(self.base_model, "_t2i_pipe", None)
+            or getattr(self.base_model, "pipe", None)
+            or self.base_model
+        )
+        scheduler = getattr(pipeline, "scheduler", None)
+        if scheduler is None or not hasattr(scheduler, "add_noise"):
+            raise RuntimeError("Source-conditioned SDXL training requires a scheduler")
+        timesteps = sample_source_conditioned_timesteps(
+            scheduler,
+            batch_size=batch_size,
+            device=device,
+            mode=getattr(self, "source_timestep_sampling", "uniform"),
+            inference_steps=int(getattr(self, "source_training_inference_steps", 4)),
+        )
+        noise = torch.randn_like(target_latent)
+        model_input, noisy_target, sigma = build_source_conditioned_input(
+            scheduler, target_latent, source_latent, noise, timesteps
+        )
+
+        prompts = batch.get("prompt", [""] * batch_size)
+        if isinstance(prompts, str):
+            prompts = [prompts]
+        text = self._encode_text(prompts, device)
+        pooled = text.get("pooled_prompt_embeds")
+        if pooled is None:
+            raise RuntimeError("Source-conditioned SDXL requires pooled_prompt_embeds")
+        pred = self._forward_registry(
+            model_input,
+            timesteps,
+            text["prompt_embeds"],
+            pooled,
+            text.get("attention_mask"),
+            next(self.peft_model.parameters()).dtype,
+            device,
+            micro_conditioning=batch,
+        )
+        if hasattr(pred, "sample"):
+            pred = pred.sample
+        if pred.shape != target_latent.shape:
+            raise RuntimeError(
+                f"Source-conditioned output shape {tuple(pred.shape)} != "
+                f"target latent shape {tuple(target_latent.shape)}"
+            )
+
+        sigma_safe = sigma.clamp_min(1e-6)
+        prediction_type = getattr(
+            self,
+            "prediction_type",
+            scheduler_prediction_type(scheduler),
+        )
+        if prediction_type == "epsilon":
+            epsilon_target = torch.where(
+                sigma > 1e-6,
+                (noisy_target - target_latent)
+                / sigma_safe,
+                noise,
+            )
+            prediction_target = epsilon_target
+            x0_prediction = (
+                noisy_target - sigma * pred
+            )
+        elif prediction_type in {"sample", "x0"}:
+            prediction_target = target_latent
+            x0_prediction = pred
+            epsilon_target = torch.where(
+                sigma > 1e-6,
+                (noisy_target - target_latent)
+                / sigma_safe,
+                noise,
+            )
+        else:
+            raise RuntimeError(f"Unsupported source-conditioning prediction_type: {prediction_type}")
+
+        diff = pred.float() - prediction_target.float()
+        per_sample = 0.9 * diff.square().mean(dim=(1, 2, 3)) + 0.1 * diff.abs().mean(dim=(1, 2, 3))
+        x0_diff = x0_prediction.float() - target_latent.float()
+        x0_loss = x0_diff.square().mean(dim=(1, 2, 3))
+        loss = per_sample.mean() + float(getattr(self, "x0_loss_weight", 0.0)) * x0_loss.mean()
+
+        decoded_prediction = None
+        pixel_weight = float(getattr(self, "pixel_loss_weight", 0.0))
+        structure_weight = float(getattr(self, "structure_loss_weight", 0.0))
+        scalar_weight = float(getattr(self, "scalar_geometry_loss_weight", 0.0))
+        if pixel_weight or structure_weight or scalar_weight:
+            vae = getattr(pipeline, "vae", None)
+            if vae is None:
+                raise RuntimeError("Source-conditioned decoded losses require a VAE")
+            decoded_prediction = registry_vae_decode(vae, x0_prediction, self.model_config)
+            decoded_prediction = decoded_prediction.float().clamp(-1.0, 1.0)
+            if pixel_weight:
+                pixel_target = target_pixels.float()
+                loss = loss + pixel_weight * F.mse_loss(decoded_prediction, pixel_target)
+            if structure_weight:
+                loss = loss + structure_weight * decoded_x0_structure_loss(
+                    decoded_prediction,
+                    target_pixels.float(),
+                    gradient_weight=float(getattr(self, "structure_gradient_weight", 1.0)),
+                )
+            if scalar_weight:
+                loss = loss + scalar_weight * decoded_x0_scalar_geometry_loss(
+                    decoded_prediction,
+                    target_pixels.float(),
+                    colormap=getattr(self, "source_target_colormap", "unknown"),
+                    gradient_weight=float(getattr(self, "scalar_geometry_gradient_weight", 1.0)),
+                    ordinal_weight=float(getattr(self, "scalar_geometry_ordinal_weight", 1.0)),
+                )
+
+        if not torch.isfinite(loss):
+            raise FloatingPointError("Source-conditioned SDXL loss is non-finite")
+        self._last_step_metrics = {
+            "train/raw_epsilon_mse": float((pred.float() - epsilon_target.float()).square().mean().item()),
+            "train/raw_x0_mse": float(x0_diff.square().mean().item()),
+        }
+        return loss
 
     def _forward_flux(
         self, noisy_latents_input, timesteps, prompt_embeds,
@@ -2073,32 +2337,159 @@ class InstructionTuner:
         )
 
 
+def normalize_target_pixels(target_rgb: torch.Tensor, pixel_range: object) -> torch.Tensor:
+    """Map per-sample target RGB into VAE ``[-1, 1]`` without collapsing a mixed batch."""
+    batch_size = target_rgb.shape[0]
+    if isinstance(pixel_range, str) or pixel_range is None:
+        ranges = [pixel_range or "0_1"] * batch_size
+    else:
+        ranges = list(pixel_range)
+        if len(ranges) == 1 and batch_size > 1:
+            ranges = ranges * batch_size
+        if len(ranges) != batch_size:
+            raise ValueError(
+                f"target_rgb_range must contain one value per sample: "
+                f"{len(ranges)} != {batch_size}"
+            )
+    converted = [
+        sample if rng == "-1_1" else sample * 2.0 - 1.0
+        for sample, rng in zip(target_rgb, ranges, strict=True)
+    ]
+    return torch.stack(converted, dim=0)
+
+
+def resolve_flow_sources(
+    flow_source: object,
+    batch_size: int,
+    *,
+    has_input_image: bool,
+    use_img2img_flow: bool,
+) -> list[str]:
+    """Resolve per-item flow origins for mixed vision/generation batches."""
+    if isinstance(flow_source, str):
+        flow_source = [flow_source]
+    if flow_source is None:
+        if use_img2img_flow and has_input_image:
+            return ["input"] * batch_size
+        return ["noise"] * batch_size
+    sources = [str(source) for source in flow_source]
+    if len(sources) != batch_size:
+        raise ValueError(
+            f"flow_source must contain one value per sample: {len(sources)} != {batch_size}"
+        )
+    return sources
+
+
+def mix_rectified_flow_latents(
+    target_latents: torch.Tensor,
+    noise: torch.Tensor,
+    timesteps: torch.Tensor,
+    *,
+    input_latents: torch.Tensor | None = None,
+    flow_source: object = None,
+    use_img2img_flow: bool = True,
+    flow_sigma: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Mix img2img and t2i rectified-flow objectives inside one batch.
+
+    Vision items start at the encoded source image. Generation items start at
+    Gaussian noise even when a dummy image tensor is present for collation.
+    """
+    batch_size = target_latents.shape[0]
+    t_b = timesteps.view(batch_size, *([1] * (target_latents.dim() - 1)))
+    t2i_noisy = (1.0 - t_b) * target_latents + t_b * noise
+    t2i_velocity = target_latents - noise
+    sources = resolve_flow_sources(
+        flow_source,
+        batch_size,
+        has_input_image=input_latents is not None,
+        use_img2img_flow=use_img2img_flow,
+    )
+    use_input = [source == "input" for source in sources]
+    if not (use_img2img_flow and input_latents is not None and any(use_input)):
+        return t2i_noisy, t2i_velocity
+
+    if input_latents.shape != target_latents.shape:
+        input_latents = torch.nn.functional.adaptive_avg_pool2d(
+            input_latents, target_latents.shape[-2:]
+        )
+    if flow_sigma > 0:
+        noise_term = flow_sigma * (t_b * (1.0 - t_b)).sqrt() * noise
+    else:
+        noise_term = torch.zeros_like(input_latents)
+    img2img_noisy = (1.0 - t_b) * input_latents + t_b * target_latents + noise_term
+    img2img_velocity = target_latents - input_latents
+    if all(use_input):
+        return img2img_noisy, img2img_velocity
+
+    mask = torch.tensor(use_input, device=target_latents.device, dtype=torch.bool)
+    mask = mask.view(batch_size, *([1] * (target_latents.dim() - 1)))
+    return (
+        torch.where(mask, img2img_noisy, t2i_noisy),
+        torch.where(mask, img2img_velocity, t2i_velocity),
+    )
+
+
 def _collate_fn(batch: list[dict]) -> dict:
-    """Schema-aware collate that rejects heterogeneous tensor/None fields."""
+    """Collate mixed vision/generation samples for micro-batches larger than 1.
+
+    Generation items use ``image=None`` so they train as text-to-image. Dummy
+    zeros pad that field for stacking; ``flow_source`` keeps them on the noise
+    branch so the zeros are never used as img2img conditioning.
+    """
     if not batch:
         raise ValueError("Cannot collate an empty batch")
-    keys = set().union(*(sample.keys() for sample in batch))
+    normalized = []
+    for sample in batch:
+        sample = dict(sample)
+        image = sample.get("image")
+        if "flow_source" not in sample:
+            sample["flow_source"] = "noise" if image is None else "input"
+        sample.setdefault("task", "generation" if image is None else "unknown")
+        normalized.append(sample)
+    keys = set().union(*(sample.keys() for sample in normalized))
     result: dict = {}
     for key in keys:
-        values = [sample.get(key) for sample in batch]
-        if all(isinstance(v, torch.Tensor) for v in values):
+        values = [sample.get(key) for sample in normalized]
+        tensors = [value for value in values if isinstance(value, torch.Tensor)]
+        if tensors and all(value is None or isinstance(value, torch.Tensor) for value in values):
+            reference = tensors[0]
+            padded = [
+                value if isinstance(value, torch.Tensor) else torch.zeros_like(reference)
+                for value in values
+            ]
+            try:
+                result[key] = torch.stack(padded)
+            except RuntimeError as exc:
+                raise ValueError(
+                    f"Cannot stack field {key!r}: {[tuple(value.shape) for value in padded]}"
+                ) from exc
+        elif all(isinstance(value, torch.Tensor) for value in values):
             try:
                 result[key] = torch.stack(values)
             except RuntimeError as exc:
-                raise ValueError(f"Cannot stack field {key!r}: {[tuple(v.shape) for v in values]}") from exc
-        elif all(isinstance(v, str) for v in values):
+                raise ValueError(
+                    f"Cannot stack field {key!r}: {[tuple(value.shape) for value in values]}"
+                ) from exc
+        elif all(isinstance(value, str) for value in values):
             result[key] = values
-        elif key == "image" and all(v is None for v in values):
-            # Generation has no visual condition; keep this explicit rather
-            # than manufacturing a zero image that can be mistaken for one.
+        elif key == "image" and all(value is None for value in values) or all(value is None for value in values):
             result[key] = None
-        elif all(v is None for v in values):
-            result[key] = None
-        elif all(isinstance(v, (int, float, bool)) for v in values):
+        elif all(isinstance(value, (int, float, bool, str, type(None))) for value in values):
             result[key] = values
         else:
-            raise ValueError(f"Heterogeneous batch field {key!r}: {[type(v).__name__ for v in values]}")
+            raise ValueError(
+                f"Heterogeneous batch field {key!r}: {[type(value).__name__ for value in values]}"
+            )
     return result
 
 
-__all__ = ["InstructionTuner", "VisionTaskDataset", "EarlyStopping", "TrainingLogger"]
+__all__ = [
+    "InstructionTuner",
+    "VisionTaskDataset",
+    "EarlyStopping",
+    "TrainingLogger",
+    "normalize_target_pixels",
+    "resolve_flow_sources",
+    "mix_rectified_flow_latents",
+]

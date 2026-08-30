@@ -467,6 +467,7 @@ class TestInstructionTunerForwardKwargs:
             model=gen,
             lora_rank=2,
             lora_alpha=4,
+            allow_component_fallback=True,
             use_ema=False,
             use_gradient_checkpointing=False,
         )

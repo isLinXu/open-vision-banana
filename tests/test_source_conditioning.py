@@ -49,7 +49,11 @@ from open_vision_banana.training.structure_loss import (
     decoded_x0_structure_loss,
     soft_colormap_position,
 )
-from open_vision_banana.training.tuner import InstructionTuner, VisionTaskDataset
+from open_vision_banana.training.tuner import (
+    InstructionTuner,
+    VisionTaskDataset,
+    euler_v_prediction_target,
+)
 
 
 class FakeUNet(nn.Module):
@@ -822,7 +826,16 @@ def test_dataset_prefers_per_sample_prompt(tmp_path: Path):
     assert dataset[0]["prompt"] == "Use the v3 depth encoding."
 
 
-def test_semantic_dataset_replaces_long_per_sample_prompt(tmp_path: Path):
+def test_euler_v_target_round_trips_scheduler_formula():
+    noisy = torch.full((1, 2, 1, 1), 3.0)
+    clean = torch.full_like(noisy, 1.5)
+    sigma = torch.full((1, 1, 1, 1), 2.0)
+    target = euler_v_prediction_target(noisy, clean, sigma)
+    reconstructed = target * (-sigma / (sigma.square() + 1).sqrt()) + noisy / (sigma.square() + 1)
+    assert torch.allclose(reconstructed, clean)
+
+
+def test_semantic_dataset_uses_complete_cityscapes_legend(tmp_path: Path):
     (tmp_path / "images").mkdir()
     (tmp_path / "targets").mkdir()
     (tmp_path / "prompts").mkdir()
@@ -836,7 +849,8 @@ def test_semantic_dataset_replaces_long_per_sample_prompt(tmp_path: Path):
     dataset = VisionTaskDataset(str(tmp_path), resolution=8, task="semantic")
 
     assert dataset[0]["prompt"] == SEMANTIC_SEGMENTATION_PROMPT
-    assert len(dataset[0]["prompt"].split()) < 77
+    assert '"road": <128, 64, 128>' in dataset[0]["prompt"]
+    assert '"bicycle": <119, 11, 32>' in dataset[0]["prompt"]
 
 
 def test_diffusers_lora_companion_uses_component_prefix_and_rslora_metadata(
