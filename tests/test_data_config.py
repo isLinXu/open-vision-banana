@@ -221,10 +221,16 @@ class TestConfigSystem:
         assert d == {}
 
     def test_segmentation_config_roundtrip(self):
-        cfg = SegmentationConfig(color_tolerance=20.0)
+        cfg = SegmentationConfig(
+            color_tolerance=20.0,
+            grouping_mode="seed",
+            adaptive_color_tolerance=False,
+        )
         d = cfg.to_dict()
         loaded = SegmentationConfig.from_dict(d)
         assert loaded.color_tolerance == 20.0
+        assert loaded.grouping_mode == "seed"
+        assert loaded.adaptive_color_tolerance is False
 
     def test_model_config_roundtrip(self):
         cfg = ModelConfig(name="test-model", dtype="float32")

@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
+
+# Homogeneous batch encoding: indices >= GEN_INDEX_BASE force the generation
+# branch; smaller indices force vision. Keeps the paper 9:1 ratio at batch
+# granularity so micro-batches >1 do not dilute vision gradients.
+GEN_INDEX_BASE = 1 << 30
 
 
 class MixedVisionDataset(Dataset):
@@ -97,50 +103,68 @@ class MixedVisionDataset(Dataset):
         """
         if self.generation_dataset is None or self.vision_ratio >= 1.0:
             return self.total_vision
-        # P1-19: cap epoch length so generation samples are not oversampled
-        effective_from_ratio = max(1, round(self.total_vision / self.vision_ratio))
-        gen_len = len(self.generation_dataset)
-        return min(effective_from_ratio, self.total_vision + gen_len)
+        # The ratio defines how many calls are needed to expose the complete
+        # vision set once on average. Generation samples are intentionally
+        # drawn with replacement, matching the paper's replay formulation.
+        return max(1, round(self.total_vision / self.vision_ratio))
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
+        # Homogeneous batch samplers encode the branch in the index so every
+        # slot in a micro-batch shares vision-only or generation-only flow:
+        #   idx < 0              → forced vision (seed = -(idx + 1))
+        #   idx >= GEN_INDEX_BASE → forced generation
+        #   otherwise            → legacy per-sample 9:1 mixture
+        if idx >= GEN_INDEX_BASE:
+            if self.generation_dataset is None:
+                raise IndexError("Generation branch requested but no generation dataset")
+            rng = self._generator_for_index(idx - GEN_INDEX_BASE)
+            return self._draw_generation_sample(rng)
+        if idx < 0:
+            rng = self._generator_for_index(-(idx + 1))
+            return self._draw_vision_sample(rng)
+
         rng = self._generator_for_index(idx)
         use_vision = (
             self.generation_dataset is None
             or torch.rand(1, generator=rng).item() < self.vision_ratio
         )
-
         if use_vision:
-            if not self.vision_datasets:
-                raise IndexError("MixedVisionDataset has no non-empty vision datasets")
-            ds = self._sample_vision_dataset(rng)
-            sample_idx = int(torch.randint(len(ds), (1,), generator=rng).item())
-            sample = ds[sample_idx]
-            if isinstance(sample, dict):
-                sample = dict(sample)
-                sample.setdefault("task", _dataset_task(ds, sample_idx))
-            # Multi-colormap training augmentation: attach random colormap for depth tasks
-            if isinstance(sample, dict) and sample.get("task") == "depth":
-                cmap_idx = int(torch.randint(len(self.colormaps), (1,), generator=rng).item())
-                colormap = self.colormaps[cmap_idx]
-                sample["colormap"] = colormap
-                if colormap != "cube_edge" and "target_rgb" in sample:
-                    from ..core.depth_mapper import DepthRGBMapper
-                    mapper = DepthRGBMapper(lam=self.depth_lam, c=self.depth_c)
-                    depth = sample.get("gt_depth")
-                    if not isinstance(depth, torch.Tensor):
-                        target_rgb = sample["target_rgb"]
-                        if isinstance(target_rgb, torch.Tensor):
-                            depth = mapper.rgb_to_depth(target_rgb.unsqueeze(0)).squeeze(0)
-                    if isinstance(depth, torch.Tensor):
-                        if depth.dim() == 2:
-                            depth = depth.unsqueeze(0)
-                        mapper.set_colormap(colormap)
-                        sample["target_rgb"] = mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
-            return sample
-        else:
-            assert self.generation_dataset is not None
-            sample_idx = int(torch.randint(len(self.generation_dataset), (1,), generator=rng).item())
-            return self.generation_dataset[sample_idx]
+            return self._draw_vision_sample(rng)
+        return self._draw_generation_sample(rng)
+
+    def _draw_vision_sample(self, rng: torch.Generator) -> dict[str, Any]:
+        if not self.vision_datasets:
+            raise IndexError("MixedVisionDataset has no non-empty vision datasets")
+        ds = self._sample_vision_dataset(rng)
+        sample_idx = int(torch.randint(len(ds), (1,), generator=rng).item())
+        sample = ds[sample_idx]
+        if isinstance(sample, dict):
+            sample = dict(sample)
+            sample.setdefault("task", _dataset_task(ds, sample_idx))
+        if isinstance(sample, dict) and sample.get("task") == "depth":
+            cmap_idx = int(torch.randint(len(self.colormaps), (1,), generator=rng).item())
+            colormap = self.colormaps[cmap_idx]
+            sample["colormap"] = colormap
+            if colormap != "cube_edge" and "target_rgb" in sample:
+                from ..core.depth_mapper import DepthRGBMapper
+
+                mapper = DepthRGBMapper(lam=self.depth_lam, c=self.depth_c)
+                depth = sample.get("gt_depth")
+                if not isinstance(depth, torch.Tensor):
+                    target_rgb = sample["target_rgb"]
+                    if isinstance(target_rgb, torch.Tensor):
+                        depth = mapper.rgb_to_depth(target_rgb.unsqueeze(0)).squeeze(0)
+                if isinstance(depth, torch.Tensor):
+                    if depth.dim() == 2:
+                        depth = depth.unsqueeze(0)
+                    mapper.set_colormap(colormap)
+                    sample["target_rgb"] = mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+        return sample
+
+    def _draw_generation_sample(self, rng: torch.Generator) -> dict[str, Any]:
+        assert self.generation_dataset is not None
+        sample_idx = int(torch.randint(len(self.generation_dataset), (1,), generator=rng).item())
+        return self.generation_dataset[sample_idx]
 
     def set_epoch(self, epoch: int) -> None:
         """Change deterministic sampling streams between training epochs."""
@@ -185,6 +209,65 @@ class MixedVisionDataset(Dataset):
         )
 
 
+class HomogeneousMixedBatchSampler(Sampler[list[int]]):
+    """Yield whole micro-batches from one branch so mean-loss stays undiluted.
+
+    With probability ``vision_ratio`` the batch is all vision samples; otherwise
+    all generation. Expected vision fraction stays at ``vision_ratio``, matching
+    the paper mix, without averaging a lone depth sample against three t2i
+    samples inside ``batch_size>1``.
+    """
+
+    def __init__(
+        self,
+        *,
+        num_batches: int,
+        batch_size: int,
+        vision_ratio: float,
+        seed: int = 42,
+    ) -> None:
+        if num_batches < 1:
+            raise ValueError("num_batches must be positive")
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if not 0.0 < vision_ratio <= 1.0:
+            raise ValueError(f"vision_ratio must be in (0, 1]; got {vision_ratio}")
+        self.num_batches = int(num_batches)
+        self.batch_size = int(batch_size)
+        self.vision_ratio = float(vision_ratio)
+        self.seed = int(seed)
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    def __len__(self) -> int:
+        return self.num_batches
+
+    def __iter__(self) -> Iterator[list[int]]:
+        rng = torch.Generator().manual_seed(self.seed + self.epoch * 1_000_003)
+        vision_batches = round(self.num_batches * self.vision_ratio)
+        branch_schedule = [True] * vision_batches + [False] * (self.num_batches - vision_batches)
+        order = torch.randperm(self.num_batches, generator=rng).tolist()
+        use_vision_by_batch = [False] * self.num_batches
+        for position, batch_id in enumerate(order):
+            use_vision_by_batch[batch_id] = branch_schedule[position]
+        for batch_id in range(self.num_batches):
+            use_vision = use_vision_by_batch[batch_id]
+            indices: list[int] = []
+            for slot in range(self.batch_size):
+                local = int(
+                    torch.randint(0, GEN_INDEX_BASE, (1,), generator=rng).item()
+                )
+                # Fold batch/slot into the seed space so slots differ.
+                local = (local + batch_id * 10_007 + slot * 97) % GEN_INDEX_BASE
+                if use_vision:
+                    indices.append(-(local + 1))
+                else:
+                    indices.append(GEN_INDEX_BASE + local)
+            yield indices
+
+
 def _dataset_task(dataset: Dataset, index: int | None = None) -> str:
     """Resolve a task label through Subset/ConcatDataset wrappers."""
     from torch.utils.data import ConcatDataset, Subset
@@ -206,4 +289,8 @@ def _dataset_task(dataset: Dataset, index: int | None = None) -> str:
     return str(task or "unknown")
 
 
-__all__ = ["MixedVisionDataset"]
+__all__ = [
+    "MixedVisionDataset",
+    "HomogeneousMixedBatchSampler",
+    "GEN_INDEX_BASE",
+]

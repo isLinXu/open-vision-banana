@@ -83,6 +83,13 @@ class TestGenerationDataset:
         assert len(ds) == 1
         assert "Generate" in ds[0]["prompt"]
 
+    def test_require_captions_rejects_unannotated_images(self, tmp_path: Path):
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        Image.new("RGB", (32, 32), (0, 128, 255)).save(img_dir / "uncaptioned.png")
+        with pytest.raises(ValueError, match="Missing caption"):
+            GenerationDataset(tmp_path, resolution=32, require_captions=True)
+
 
 class TestSplitDataset:
     def test_split_disabled(self):
@@ -113,6 +120,7 @@ class TestInstructionTunerEarlyStopping:
             model=gen,
             lora_rank=2,
             lora_alpha=4,
+            allow_component_fallback=True,
             use_ema=False,
             use_gradient_checkpointing=False,
         )

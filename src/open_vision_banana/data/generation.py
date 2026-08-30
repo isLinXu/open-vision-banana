@@ -54,11 +54,13 @@ class GenerationDataset(Dataset):
         default_prompt: str = DEFAULT_GENERATION_PROMPT,
         include_input_image: bool = False,
         split_filter: tuple[set[str], str] | None = None,
+        require_captions: bool = False,
     ) -> None:
         self.root_dir = Path(root_dir)
         self.resolution = resolution
         self.default_prompt = default_prompt
         self.include_input_image = include_input_image
+        self.require_captions = bool(require_captions)
         self.samples: list[dict] = []
         self._load(split_filter)
 
@@ -98,7 +100,7 @@ class GenerationDataset(Dataset):
             rows = [
                 {
                     "image": row.get("filename"),
-                    "prompt": row.get("caption", self.default_prompt),
+                    "prompt": row.get("caption"),
                 }
                 for row in captions
                 if isinstance(row, dict) and row.get("filename")
@@ -138,12 +140,13 @@ class GenerationDataset(Dataset):
                 # Apply split filter
                 if allowed_filenames is not None and img_path.name not in allowed_filenames:
                     continue
-                self.samples.append(
-                    {
-                        "image_path": str(img_path),
-                        "prompt": row.get("prompt", self.default_prompt),
-                    }
-                )
+                prompt = row.get("prompt")
+                if self.require_captions and (not isinstance(prompt, str) or not prompt.strip()):
+                    raise ValueError(
+                        f"Missing caption for generation image {img_path}; "
+                        "acceptance replay requires explicit prompt metadata"
+                    )
+                self.samples.append({"image_path": str(img_path), "prompt": prompt or self.default_prompt})
             if self.samples:
                 logger.info(
                     "GenerationDataset: loaded %d samples from prompt metadata (split=%s)",
@@ -161,6 +164,11 @@ class GenerationDataset(Dataset):
             prompt = prompt_map.get(img_path.name) or prompt_map.get(
                 img_path.stem, self.default_prompt
             )
+            if self.require_captions and img_path.name not in prompt_map and img_path.stem not in prompt_map:
+                raise ValueError(
+                    f"Missing caption for generation image {img_path}; "
+                    "acceptance replay requires explicit prompt metadata"
+                )
             self.samples.append(
                 {
                     "image_path": str(img_path),

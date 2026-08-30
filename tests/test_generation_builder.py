@@ -13,6 +13,7 @@ from open_vision_banana.data.generation_builder import (
 )
 from open_vision_banana.training.checkpoint import CheckpointManager
 from open_vision_banana.training.logging import TrainingLogger
+from scripts.evaluate_generation_preservation import dataset_fingerprint
 
 
 class TestGenerationBuilder:
@@ -48,6 +49,25 @@ class TestGenerationBuilder:
         path = tmp_path / "prompts.json"
         path.write_text('["alpha", "beta"]', encoding="utf-8")
         assert load_prompts_file(path) == ["alpha", "beta"]
+
+    def test_fingerprint_keeps_symlink_manifest_paths(self, tmp_path: Path):
+        root = tmp_path / "gate" / "generation"
+        images = root / "images"
+        images.mkdir(parents=True)
+        source = tmp_path / "source" / "real.jpg"
+        source.parent.mkdir()
+        from PIL import Image
+
+        Image.new("RGB", (4, 4), (12, 34, 56)).save(source)
+        (images / "real.jpg").symlink_to(source)
+        (root / "prompts.jsonl").write_text(
+            json.dumps({"image": "real.jpg", "prompt": "a real caption"}) + "\n",
+            encoding="utf-8",
+        )
+
+        dataset = build_generation_dataset(root, resolution=4, require_captions=True)
+        assert len(dataset) == 1
+        assert len(dataset_fingerprint(dataset)) == 64
 
 
 class TestWandbCheckpointLogging:

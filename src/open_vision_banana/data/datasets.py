@@ -20,9 +20,14 @@ from torch.utils.data import Dataset
 from ..core.depth_mapper import DepthRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
 from ..inference.prompt import PromptBuilder
-from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT, normalize_task_prompt
+from ..task_prompts import (
+    CITYSCAPES_RGB_LEGEND,
+    SEMANTIC_SEGMENTATION_PROMPT,
+    normalize_task_prompt,
+)
 from .benchmark_io import (
     find_matching_file,
+    load_eth3d_depth,
     load_normal,
     load_scalar,
     resize_normal,
@@ -124,12 +129,42 @@ class HypersimDepthDataset(BaseVisionDataset):
 
     def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
         self.depth_mapper = DepthRGBMapper()
+        self.prepared_manifest: dict | None = None
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
         if not self.root_dir.exists():
             logger.warning(f"Hypersim directory not found: {self.root_dir}")
             return
+        prepared_images = self.root_dir / "images"
+        prepared_metric = self.root_dir / "metric_depth"
+        prepared_targets = self.root_dir / "targets"
+        if prepared_images.is_dir() and prepared_metric.is_dir() and prepared_targets.is_dir():
+            manifest_path = self.root_dir / "manifest.json"
+            if manifest_path.is_file():
+                try:
+                    import json
+
+                    self.prepared_manifest = json.loads(
+                        manifest_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                    logger.warning("Could not read Hypersim manifest %s: %s", manifest_path, exc)
+            for img_path in sorted(prepared_images.iterdir()):
+                if img_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                    continue
+                metric_path = prepared_metric / f"{img_path.stem}.npy"
+                target_path = prepared_targets / f"{img_path.stem}.png"
+                if metric_path.is_file() and target_path.is_file():
+                    self.samples.append(
+                        {
+                            "image": img_path,
+                            "target": target_path,
+                            "metric_depth": metric_path,
+                        }
+                    )
+            if self.samples:
+                return
         for img_path in sorted(self.root_dir.rglob("*color*")):
             depth_path = Path(str(img_path).replace("color", "depth"))
             if depth_path.exists():
@@ -139,10 +174,27 @@ class HypersimDepthDataset(BaseVisionDataset):
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
 
-        depth_img = Image.open(sample["target"])
-        depth = _pil_to_tensor(depth_img).float()
-        if depth.max() > 1.0:
-            depth = depth / 1000.0
+        if "metric_depth" in sample:
+            depth_arr = np.load(sample["metric_depth"], allow_pickle=False)
+            if depth_arr.ndim != 2:
+                raise ValueError(
+                    f"Prepared metric depth must be 2-D, got {depth_arr.shape} "
+                    f"for {sample['metric_depth']}"
+                )
+            depth = torch.from_numpy(np.ascontiguousarray(depth_arr)).float().unsqueeze(0)
+            with Image.open(sample["target"]) as source:
+                target_img = source.convert("RGB")
+            if target_img.size != (self.resolution, self.resolution):
+                target_img = target_img.resize(
+                    (self.resolution, self.resolution), Image.Resampling.LANCZOS
+                )
+            target_rgb = _pil_to_tensor(target_img).float() / 255.0
+        else:
+            depth_img = Image.open(sample["target"])
+            depth = _pil_to_tensor(depth_img).float()
+            if depth.max() > 1.0:
+                depth = depth / 1000.0
+            target_rgb = None
 
         # depth is [1, H, W] → add batch dim for interpolate
         depth = torch.nn.functional.interpolate(
@@ -151,8 +203,10 @@ class HypersimDepthDataset(BaseVisionDataset):
             mode="nearest",
         ).squeeze(0)
 
-        valid_mask = depth > 0
-        target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+        valid_mask = torch.isfinite(depth) & (depth > 0)
+        depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
+        if target_rgb is None:
+            target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
         return {
             "prompt": prompt,
@@ -208,27 +262,7 @@ class CityscapesSegDataset(BaseVisionDataset):
 
     TASK_TYPE = "semantic"
 
-    CITYSCAPES_COLORS = {
-        "road": (128, 64, 128),
-        "sidewalk": (244, 35, 232),
-        "building": (70, 70, 70),
-        "wall": (102, 102, 156),
-        "fence": (190, 153, 153),
-        "pole": (153, 153, 153),
-        "traffic_light": (250, 170, 30),
-        "traffic_sign": (220, 220, 0),
-        "vegetation": (107, 142, 35),
-        "terrain": (152, 251, 152),
-        "sky": (70, 130, 180),
-        "person": (220, 20, 60),
-        "rider": (255, 0, 0),
-        "car": (0, 0, 142),
-        "truck": (0, 0, 70),
-        "bus": (0, 60, 100),
-        "train": (0, 80, 100),
-        "motorcycle": (0, 0, 230),
-        "bicycle": (119, 11, 32),
-    }
+    CITYSCAPES_COLORS = dict(CITYSCAPES_RGB_LEGEND)
 
     # Official Cityscapes labelIds -> trainIds mapping. Labels not listed are
     # ignored during evaluation, including license plate and void regions.
@@ -564,18 +598,74 @@ class NYUDepthDataset(BaseVisionDataset):
     """
 
     TASK_TYPE = "depth"
+    OFFICIAL_TRAIN_COUNT = 795
+    OFFICIAL_TEST_COUNT = 654
 
     def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
         self.depth_mapper = DepthRGBMapper()
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
-        img_dir = self.root_dir / "images"
-        depth_dir = self.root_dir / "depths"
+        # Official exports often retain one HDF5 file per frame under
+        # ``train/official`` and ``test/official``.  Keep the split boundary
+        # in the directory path and decode those files lazily in __getitem__.
+        split_root = self.root_dir / self.split
+        h5_paths = sorted(split_root.rglob("*.h5")) + sorted(split_root.rglob("*.hdf5"))
+        if h5_paths:
+            self.samples.extend({"image": path, "target": path, "format": "nyu_h5"} for path in h5_paths)
+            return
+        # Prefer an explicit official split layout.  The extracted NYU test
+        # archive is flat (images/ + depths/) and must never be reused as train.
+        split_root = self.root_dir / self.split
+        if (split_root / "images").is_dir() and (split_root / "depths").is_dir():
+            img_dir = split_root / "images"
+            depth_dir = split_root / "depths"
+            allowed_names: set[str] | None = None
+        elif (self.root_dir / "images" / self.split).is_dir() and (
+            self.root_dir / "depths" / self.split
+        ).is_dir():
+            img_dir = self.root_dir / "images" / self.split
+            depth_dir = self.root_dir / "depths" / self.split
+            allowed_names = None
+        elif (self.root_dir / "images").is_dir() and (self.root_dir / "depths").is_dir():
+            if self.split not in {"test", "val"}:
+                logger.warning(
+                    "NYU flat layout has no official train split; refusing to use "
+                    "the extracted test set for split=%s: %s",
+                    self.split,
+                    self.root_dir,
+                )
+                return
+            img_dir = self.root_dir / "images"
+            depth_dir = self.root_dir / "depths"
+            allowed_names = self._read_split_index()
+            if allowed_names is None:
+                image_count = sum(
+                    1
+                    for path in img_dir.rglob("*")
+                    if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png"}
+                )
+                if image_count > self.OFFICIAL_TEST_COUNT:
+                    logger.warning(
+                        "NYU flat layout contains %d frames without an official split index; "
+                        "refusing ambiguous split=%s (expected %d test frames)",
+                        image_count,
+                        self.split,
+                        self.OFFICIAL_TEST_COUNT,
+                    )
+                    return
+        else:
+            img_dir = self.root_dir / "images"
+            depth_dir = self.root_dir / "depths"
+            allowed_names = None
         if not img_dir.exists():
             logger.warning(f"NYU images directory not found: {img_dir}")
             return
-        for img_path in sorted(img_dir.rglob("*.jpg")):
+        for img_path in sorted(img_dir.rglob("*")):
+            if img_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+                continue
+            if allowed_names is not None and img_path.name not in allowed_names:
+                continue
             # Match depth file
             depth_name = img_path.stem + ".png"
             depth_path = depth_dir / depth_name
@@ -584,14 +674,63 @@ class NYUDepthDataset(BaseVisionDataset):
             if depth_path.exists():
                 self.samples.append({"image": img_path, "target": depth_path})
 
+    def _read_split_index(self) -> set[str] | None:
+        """Read an optional split index for flat benchmark exports."""
+        candidates = (
+            self.root_dir / "splits" / f"{self.split}.txt",
+            self.root_dir / f"{self.split}.txt",
+            self.root_dir / f"{self.split}_files.txt",
+        )
+        for index_path in candidates:
+            if not index_path.is_file():
+                continue
+            names: set[str] = set()
+            for line in index_path.read_text(encoding="utf-8").splitlines():
+                value = line.strip()
+                if value and not value.startswith("#"):
+                    names.add(Path(value).name)
+            return names
+        return None
+
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
+        if sample.get("format") == "nyu_h5":
+            try:
+                import h5py
+            except ImportError as exc:  # pragma: no cover - optional dependency
+                raise RuntimeError("NYU .h5 loading requires h5py") from exc
+            with h5py.File(sample["image"], "r") as handle:
+                rgb = np.asarray(handle["rgb"])
+                depth_array = np.asarray(handle["depth"])
+            if rgb.ndim != 3 or rgb.shape[0] != 3:
+                raise ValueError(f"NYU rgb must have shape [3,H,W], got {rgb.shape}")
+            image_tensor = torch.from_numpy(rgb.astype(np.float32) / 255.0)
+            image = torch.nn.functional.interpolate(
+                image_tensor.unsqueeze(0),
+                size=(self.resolution, self.resolution),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(0) * 2.0 - 1.0
+            depth = torch.from_numpy(np.asarray(depth_array, dtype=np.float32)).unsqueeze(0)
+            depth = torch.nn.functional.interpolate(
+                depth.unsqueeze(0),
+                size=(self.resolution, self.resolution),
+                mode="nearest",
+            ).squeeze(0)
+            valid_mask = torch.isfinite(depth) & (depth > 0)
+            depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
+            target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+            return {
+                "prompt": PromptBuilder.build_depth_prompt(),
+                "image": image,
+                "target_rgb": target_rgb,
+                "gt_depth": depth,
+                "valid_mask": valid_mask.squeeze(0),
+            }
         image = self._load_image(sample["image"])
 
         depth_path = sample["target"]
         if depth_path.suffix == ".npy":
-            import numpy as np
-
             depth = np.load(depth_path)
             depth = torch.from_numpy(depth).float().unsqueeze(0)
         else:
@@ -755,23 +894,81 @@ class NYUNormalDataset(BaseVisionDataset):
     """NYU surface-normal benchmark adapter."""
 
     TASK_TYPE = "normal"
+    OFFICIAL_TEST_COUNT = 654
 
     def __init__(self, root_dir, split="val", resolution=512, **kwargs) -> None:
         self.normal_mapper = NormalRGBMapper()
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
-        image_dir = self.root_dir / "images"
-        normal_dir = self.root_dir / "normals"
+        split_root = self.root_dir / self.split
+        if (split_root / "images").is_dir() and (split_root / "normals").is_dir():
+            image_dir = split_root / "images"
+            normal_dir = split_root / "normals"
+            allowed_names = None
+        elif (self.root_dir / "images" / self.split).is_dir() and (
+            self.root_dir / "normals" / self.split
+        ).is_dir():
+            image_dir = self.root_dir / "images" / self.split
+            normal_dir = self.root_dir / "normals" / self.split
+            allowed_names = None
+        elif (self.root_dir / "images").is_dir() and (self.root_dir / "normals").is_dir():
+            if self.split not in {"test", "val"}:
+                logger.warning(
+                    "NYU normal flat layout has no official train split; refusing "
+                    "to use it for split=%s: %s",
+                    self.split,
+                    self.root_dir,
+                )
+                return
+            image_dir = self.root_dir / "images"
+            normal_dir = self.root_dir / "normals"
+            allowed_names = self._read_split_index()
+            if allowed_names is None:
+                image_count = sum(
+                    1
+                    for path in image_dir.rglob("*")
+                    if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png"}
+                )
+                if image_count > self.OFFICIAL_TEST_COUNT:
+                    logger.warning(
+                        "NYU normal flat layout contains %d frames without an official "
+                        "split index; refusing ambiguous split=%s",
+                        image_count,
+                        self.split,
+                    )
+                    return
+        else:
+            image_dir = self.root_dir / "images"
+            normal_dir = self.root_dir / "normals"
+            allowed_names = None
         if not image_dir.exists() or not normal_dir.exists():
             logger.warning("NYU normal image/normal directories not found under %s", self.root_dir)
             return
         for image_path in sorted(image_dir.rglob("*")):
             if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
                 continue
+            if allowed_names is not None and image_path.name not in allowed_names:
+                continue
             normal_path = find_matching_file(normal_dir, image_path.stem, (".npy", ".png"))
             if normal_path is not None:
                 self.samples.append({"image": image_path, "target": normal_path})
+
+    def _read_split_index(self) -> set[str] | None:
+        candidates = (
+            self.root_dir / "splits" / f"{self.split}.txt",
+            self.root_dir / f"{self.split}.txt",
+            self.root_dir / f"{self.split}_files.txt",
+        )
+        for index_path in candidates:
+            if not index_path.is_file():
+                continue
+            return {
+                Path(line.strip()).name
+                for line in index_path.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
+            }
+        return None
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -798,18 +995,26 @@ class DIODENormalDataset(BaseVisionDataset):
 
     def _scan(self) -> None:
         split_dir = self.root_dir / self.split
-        if not split_dir.exists():
-            split_dir = self.root_dir
+        if not split_dir.is_dir():
+            logger.warning("DIODE normal split directory not found: %s", split_dir)
+            return
         for image_path in sorted(split_dir.rglob("*")):
             if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
                 continue
+            stem = image_path.stem
+            if stem.endswith("_depth") or stem.endswith("_normal"):
+                continue
+            rgb_stem = stem[:-4] if stem.endswith("_rgb") else stem
             normal_path = find_matching_file(
                 image_path.parent,
-                image_path.stem.replace("_rgb", ""),
+                f"{rgb_stem}_normal",
                 (".npy", ".png"),
             )
-            if normal_path is not None:
-                self.samples.append({"image": image_path, "target": normal_path})
+            if normal_path is None:
+                normal_path = find_matching_file(image_path.parent, rgb_stem, (".npy",))
+            if normal_path is None or normal_path.resolve() == image_path.resolve():
+                continue
+            self.samples.append({"image": image_path, "target": normal_path})
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -1038,18 +1243,40 @@ class KITTIDataset(BaseVisionDataset):
     def _scan(self) -> None:
         rgb_dir = self.root_dir / self.split / "rgb"
         depth_dir = self.root_dir / self.split / "depth"
-        if not rgb_dir.exists():
-            logger.warning(f"KITTI RGB directory not found: {rgb_dir}")
+        if rgb_dir.exists():
+            for img_path in sorted(rgb_dir.rglob("*")):
+                if img_path.suffix.lower() not in (".jpg", ".png", ".jpeg"):
+                    continue
+                depth_name = img_path.stem + ".npy"
+                depth_path = depth_dir / depth_name
+                if not depth_path.exists():
+                    depth_path = depth_dir / (img_path.stem + ".png")
+                if depth_path.exists():
+                    self.samples.append({"image": img_path, "target": depth_path})
+        if self.samples:
             return
-        for img_path in sorted(rgb_dir.rglob("*")):
-            if img_path.suffix.lower() not in (".jpg", ".png", ".jpeg"):
+        self._scan_official_annotated()
+        if not self.samples:
+            logger.warning(
+                "KITTI RGB/depth pairs not found under %s (need val/rgb+depth "
+                "or drive/image_02/data + proj_depth/groundtruth/image_02)",
+                self.root_dir,
+            )
+
+    def _scan_official_annotated(self) -> None:
+        """Pair KITTI raw RGB with the depth-completion annotated maps."""
+        split_dir = self.root_dir / self.split
+        if not split_dir.is_dir():
+            split_dir = self.root_dir
+        for drive in sorted(path for path in split_dir.glob("*_sync") if path.is_dir()):
+            depth_dir = drive / "proj_depth" / "groundtruth" / "image_02"
+            rgb_dir = drive / "image_02" / "data"
+            if not depth_dir.is_dir() or not rgb_dir.is_dir():
                 continue
-            depth_name = img_path.stem + ".npy"
-            depth_path = depth_dir / depth_name
-            if not depth_path.exists():
-                depth_path = depth_dir / (img_path.stem + ".png")
-            if depth_path.exists():
-                self.samples.append({"image": img_path, "target": depth_path})
+            for depth_path in sorted(depth_dir.glob("*.png")):
+                rgb_path = rgb_dir / depth_path.name
+                if rgb_path.is_file():
+                    self.samples.append({"image": rgb_path, "target": depth_path})
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -1288,13 +1515,21 @@ class ETH3DDataset(BaseVisionDataset):
     scanned depth ground truth. Standard benchmark for multi-view stereo
     and depth estimation.
 
-    Expected directory structure::
+    Expected directory structure (flat adapter layout)::
 
         root_dir/
           images/          ← RGB images (*.png, *.jpg)
           depths/          ← Depth maps (*.npy or *.png, in meters)
 
-    Depth values are in meters (float32).
+    Official ETH3D high-res DSLR layout is also accepted::
+
+        root_dir/
+          <scene>/
+            images/dslr_images_undistorted/*.JPG
+            ground_truth_depth/dslr_images/*.JPG   ← raw float32 metres
+
+    Depth values are in meters (float32). Official dumps use inf for invalid
+    pixels and have no image header.
     """
 
     TASK_TYPE = "depth"
@@ -1304,10 +1539,17 @@ class ETH3DDataset(BaseVisionDataset):
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
+        self._scan_flat()
+        if self.samples:
+            return
+        self._scan_official_scenes()
+        if not self.samples:
+            logger.warning("ETH3D images/depths not found under %s", self.root_dir)
+
+    def _scan_flat(self) -> None:
         img_dir = self.root_dir / "images"
         depth_dir = self.root_dir / "depths"
         if not img_dir.exists():
-            logger.warning(f"ETH3D images directory not found: {img_dir}")
             return
         for img_path in sorted(img_dir.rglob("*")):
             if img_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
@@ -1319,21 +1561,40 @@ class ETH3DDataset(BaseVisionDataset):
             if depth_path.exists():
                 self.samples.append({"image": img_path, "target": depth_path})
 
+    def _scan_official_scenes(self) -> None:
+        if not self.root_dir.is_dir():
+            return
+        for scene in sorted(path for path in self.root_dir.iterdir() if path.is_dir()):
+            depth_dir = scene / "ground_truth_depth" / "dslr_images"
+            img_dir = scene / "images" / "dslr_images_undistorted"
+            if not img_dir.is_dir():
+                img_dir = scene / "images" / "dslr_images"
+            if not depth_dir.is_dir() or not img_dir.is_dir():
+                continue
+            for img_path in sorted(img_dir.iterdir()):
+                if img_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                    continue
+                depth_path = find_matching_file(
+                    depth_dir,
+                    img_path.stem,
+                    (img_path.suffix, ".JPG", ".jpg", ".png", ".npy"),
+                )
+                if depth_path is not None:
+                    self.samples.append({"image": img_path, "target": depth_path})
+
+    def _load_depth(self, depth_path: Path) -> torch.Tensor:
+        if depth_path.suffix.lower() == ".npy":
+            return load_scalar(depth_path)
+        try:
+            return load_scalar(depth_path)
+        except (ValueError, OSError, Image.UnidentifiedImageError):
+            return load_eth3d_depth(depth_path)
+
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
 
-        depth_path = sample["target"]
-        if depth_path.suffix == ".npy":
-            import numpy as np
-
-            depth = np.load(depth_path)
-            depth = torch.from_numpy(depth).float().unsqueeze(0)
-        else:
-            depth_img = Image.open(depth_path)
-            depth = _pil_to_tensor(depth_img).float()
-            if depth.max() > 10.0:
-                depth = depth / 1000.0
+        depth = self._load_depth(Path(sample["target"]))
 
         depth = torch.nn.functional.interpolate(
             depth.unsqueeze(0),
@@ -2531,10 +2792,9 @@ class V3FlatDataset(Dataset):
                 continue
 
             # Apply split filter
-            if allowed_filenames is not None:
-                if img_path.name not in allowed_filenames:
-                    skipped += 1
-                    continue
+            if allowed_filenames is not None and img_path.name not in allowed_filenames:
+                skipped += 1
+                continue
 
             prompt = default_prompt
             prompt_path = prompt_dir / f"{img_path.stem}.txt"
