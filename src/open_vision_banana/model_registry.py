@@ -1308,6 +1308,32 @@ def resolve_model_config(model_name_or_path: str) -> ModelConfig:
     return _clone_config_with_path(cfg, model_name_or_path)
 
 
+def resolve_pretrained_source(config: ModelConfig, model_name: str | None = None) -> str:
+    """Return a local snapshot or Hub id for ``from_pretrained``.
+
+    Registry aliases such as ``sana-600m-512px`` are not Hub repo ids.
+    Prefer ``OPEN_VISION_BANANA_MODEL_PATH``, then a directory ``model_name``,
+    then ``config.model_id``.
+    """
+    import os
+
+    local_model_path = os.environ.get("OPEN_VISION_BANANA_MODEL_PATH")
+    if local_model_path:
+        resolved_model_path = Path(local_model_path).expanduser().resolve()
+        if not resolved_model_path.is_dir():
+            raise NotADirectoryError(
+                "OPEN_VISION_BANANA_MODEL_PATH does not point to a model directory: "
+                f"{resolved_model_path}"
+            )
+        logger.info("Using local model snapshot: %s", resolved_model_path)
+        return str(resolved_model_path)
+    if model_name:
+        candidate = Path(model_name).expanduser()
+        if candidate.is_dir():
+            return str(candidate.resolve())
+    return config.model_id
+
+
 def _clone_config_with_path(cfg: ModelConfig, model_id: str) -> ModelConfig:
     """Clone a ModelConfig with a new model_id (for local paths)."""
     import copy
@@ -1477,17 +1503,7 @@ def load_pipeline(
     else:
         raise ValueError(f"Unknown pipeline class: {cls_name}")
 
-    local_model_path = os.environ.get("OPEN_VISION_BANANA_MODEL_PATH")
-    model_source = config.model_id
-    if local_model_path:
-        resolved_model_path = Path(local_model_path).expanduser().resolve()
-        if not resolved_model_path.is_dir():
-            raise NotADirectoryError(
-                "OPEN_VISION_BANANA_MODEL_PATH does not point to a model directory: "
-                f"{resolved_model_path}"
-            )
-        model_source = str(resolved_model_path)
-        logger.info("Using local model snapshot: %s", resolved_model_path)
+    model_source = resolve_pretrained_source(config)
 
     pipe = PipeClass.from_pretrained(
         model_source,

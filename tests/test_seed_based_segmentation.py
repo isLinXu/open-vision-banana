@@ -9,7 +9,13 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from open_vision_banana.core.segmentation import SegmentationDecoder
+from open_vision_banana.core.rgb_mapper import RGBMapper
+from open_vision_banana.core.segmentation import (
+    PAPER_INSTANCE_DECODING_CONFIG,
+    InstanceDecodingConfig,
+    SegmentationDecoder,
+)
+from open_vision_banana.inference.pipeline import VisionBanana
 
 
 def test_adjacent_mode_default() -> None:
@@ -24,6 +30,50 @@ def test_adjacent_mode_default() -> None:
 
     instances = decoder.decode_instance(rgb, background_color=(0, 0, 0), grouping_mode="adjacent")
     assert len(instances[0]) >= 3, f"Expected >= 3 instances, got {len(instances[0])}"
+
+
+def test_paper_reproduction_decoder_has_fixed_protocol() -> None:
+    decoder = SegmentationDecoder.paper_reproduction()
+
+    assert decoder.instance_config == PAPER_INSTANCE_DECODING_CONFIG
+    assert decoder.instance_config.to_dict() == {
+        "color_tolerance": 14.0,
+        "min_area_fraction": 2e-4,
+        "erosion_threshold": 0.1,
+        "bbox_expansion_factor": 5.0,
+        "grouping_mode": "seed",
+        "adaptive_color_tolerance": False,
+    }
+
+
+def test_paper_reproduction_rgb_mapper_propagates_protocol() -> None:
+    mapper = RGBMapper.paper_reproduction()
+    assert mapper.seg_decoder.instance_config == PAPER_INSTANCE_DECODING_CONFIG
+
+
+def test_rgb_mapper_accepts_full_instance_decoding_config() -> None:
+    config = InstanceDecodingConfig(
+        color_tolerance=9.0,
+        min_area_fraction=1e-3,
+        erosion_threshold=0.2,
+        bbox_expansion_factor=3.0,
+        grouping_mode="seed",
+        adaptive_color_tolerance=False,
+    )
+    mapper = RGBMapper(instance_decoding_config=config)
+    assert mapper.seg_decoder.instance_config == config
+
+
+def test_vision_banana_propagates_instance_protocol() -> None:
+    class FakeGenerator:
+        source_conditioning_config = None
+
+    model = VisionBanana(
+        FakeGenerator(),
+        instance_grouping_mode="seed",
+        instance_adaptive_color_tolerance=False,
+    )
+    assert model.rgb_mapper.seg_decoder.instance_config == PAPER_INSTANCE_DECODING_CONFIG
 
 
 def test_seed_mode_convergence() -> None:

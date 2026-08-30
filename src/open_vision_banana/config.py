@@ -61,7 +61,12 @@ class NormalMappingConfig:
 
 
 class SegmentationConfig:
-    """Instance segmentation decoding parameters."""
+    """Instance segmentation decoding parameters.
+
+    Defaults follow the paper-aligned protocol (Appendix A): seed grouping
+    with a fixed color tolerance τ=14. Adjacent grouping and adaptive
+    tolerance remain available as explicit opt-ins.
+    """
 
     def __init__(
         self,
@@ -69,11 +74,15 @@ class SegmentationConfig:
         min_area_fraction: float = 2e-4,
         erosion_threshold: float = 0.1,
         bbox_expansion_factor: float = 5.0,
+        grouping_mode: str = "seed",
+        adaptive_color_tolerance: bool = False,
     ):
         self.color_tolerance = color_tolerance
         self.min_area_fraction = min_area_fraction
         self.erosion_threshold = erosion_threshold
         self.bbox_expansion_factor = bbox_expansion_factor
+        self.grouping_mode = grouping_mode
+        self.adaptive_color_tolerance = adaptive_color_tolerance
 
     def to_dict(self) -> dict:
         return {
@@ -81,6 +90,8 @@ class SegmentationConfig:
             "min_area_fraction": self.min_area_fraction,
             "erosion_threshold": self.erosion_threshold,
             "bbox_expansion_factor": self.bbox_expansion_factor,
+            "grouping_mode": self.grouping_mode,
+            "adaptive_color_tolerance": self.adaptive_color_tolerance,
         }
 
     @classmethod
@@ -535,6 +546,21 @@ class VisionBananaConfig:
             errors.append("training.warmup_ratio must be in [0, 1)")
         if self.depth_mapping.lam >= -1.0 or self.depth_mapping.c <= 0.0:
             errors.append("depth_mapping.lam must be < -1 and depth_mapping.c must be positive")
+        if self.segmentation.color_tolerance <= 0:
+            errors.append("segmentation.color_tolerance must be positive")
+        if self.segmentation.min_area_fraction < 0:
+            errors.append("segmentation.min_area_fraction must be non-negative")
+        if not 0.0 <= self.segmentation.erosion_threshold <= 1.0:
+            errors.append("segmentation.erosion_threshold must be in [0, 1]")
+        if self.segmentation.bbox_expansion_factor <= 0:
+            errors.append("segmentation.bbox_expansion_factor must be positive")
+        if (
+            not isinstance(self.segmentation.grouping_mode, str)
+            or self.segmentation.grouping_mode not in {"adjacent", "seed"}
+        ):
+            errors.append("segmentation.grouping_mode must be 'adjacent' or 'seed'")
+        if not isinstance(self.segmentation.adaptive_color_tolerance, bool):
+            errors.append("segmentation.adaptive_color_tolerance must be boolean")
         if errors:
             raise ValueError("Invalid Vision Banana configuration:\n- " + "\n- ".join(errors))
 

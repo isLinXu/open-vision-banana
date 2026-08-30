@@ -51,9 +51,23 @@ def get_registry_entry(
     return entry
 
 
+def _registry_local_dir(entry: dict, registry_path: str | Path | None = None) -> Path | None:
+    """Return an existing local adapter directory from a registry entry, if any."""
+    raw = entry.get("local_path")
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        registry_file = Path(registry_path) if registry_path else DEFAULT_REGISTRY_PATH
+        path = registry_file.parent.parent / path
+    return path if path.exists() else None
+
+
 def is_registry_placeholder(alias: str, registry_path: str | Path | None = None) -> bool:
     """Return True when a registry alias exists but weights are not published."""
     entry = get_registry_entry(alias, registry_path=registry_path)
+    if _registry_local_dir(entry, registry_path=registry_path) is not None:
+        return False
     return entry.get("status", "unknown") == "placeholder"
 
 
@@ -159,6 +173,13 @@ def resolve_lora_path(
     if is_local_path(lora_path):
         return str(Path(lora_path).resolve())
 
+    if lora_path.startswith(REGISTRY_PREFIX):
+        alias = lora_path[len(REGISTRY_PREFIX):]
+        entry = get_registry_entry(alias, registry_path=registry_path)
+        local_dir = _registry_local_dir(entry, registry_path=registry_path)
+        if local_dir is not None:
+            return str(local_dir.resolve())
+
     repo_id = resolve_lora_repo_id(
         lora_path,
         registry_path=registry_path,
@@ -175,6 +196,35 @@ def resolve_lora_path(
         token=token,
     )
     return str(local)
+
+
+def peft_adapter_state_to_diffusers(
+    state_dict: dict,
+    component: str,
+) -> dict:
+    """Rewrite a PEFT ``adapter_model`` state dict into Diffusers LoRA keys.
+
+    PEFT stores ``base_model.model.<module>.lora_A.weight``. FluxPipeline then
+    treats any key containing ``base_model`` as a Fal Kontext / BFL LoRA and
+    looks for ``double_blocks.*.img_mod.lin``, which our Diffusers-trained
+    adapters do not have. Prefixing with ``transformer.`` / ``unet.`` keeps
+    ``pipe.load_lora_weights`` on the native PEFT inject path.
+    """
+    if component not in {"unet", "transformer"}:
+        raise ValueError(f"Unsupported Diffusers LoRA component: {component!r}")
+
+    packed: dict = {}
+    for key, value in state_dict.items():
+        normalized = key
+        for prefix in ("module.", "base_model.model."):
+            if normalized.startswith(prefix):
+                normalized = normalized.removeprefix(prefix)
+        if ".lora_A." not in normalized and ".lora_B." not in normalized:
+            continue
+        packed[f"{component}.{normalized}"] = value
+    if not packed:
+        raise RuntimeError("PEFT adapter contains no LoRA A/B weights to convert")
+    return packed
 
 
 def list_registry_checkpoints(registry_path: str | Path | None = None) -> list[dict]:
@@ -201,6 +251,7 @@ __all__ = [
     "is_registry_placeholder",
     "list_registry_checkpoints",
     "load_checkpoint_registry",
+    "peft_adapter_state_to_diffusers",
     "resolve_lora_path",
     "resolve_lora_repo_id",
 ]

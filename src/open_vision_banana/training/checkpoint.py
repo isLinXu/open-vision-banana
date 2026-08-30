@@ -356,20 +356,16 @@ class CheckpointManager:
         from safetensors.torch import save_file
 
         model = getattr(peft_model, "module", peft_model)
-        state_dict = get_peft_model_state_dict(model)
-        packed: dict[str, torch.Tensor] = {}
-        for key, value in state_dict.items():
-            normalized = key
-            for prefix in ("module.", "base_model.model."):
-                if normalized.startswith(prefix):
-                    normalized = normalized.removeprefix(prefix)
-            if ".lora_A." not in normalized and ".lora_B." not in normalized:
-                continue
-            packed[f"{component}.{normalized}"] = (
-                value.detach().to(device="cpu").contiguous()
-            )
-        if not packed:
-            raise RuntimeError("PEFT model contains no LoRA A/B weights to export")
+        from ..inference.checkpoint import peft_adapter_state_to_diffusers
+
+        packed = peft_adapter_state_to_diffusers(
+            get_peft_model_state_dict(model),
+            component,
+        )
+        packed = {
+            key: value.detach().to(device="cpu").contiguous()
+            for key, value in packed.items()
+        }
 
         configs = getattr(model, "peft_config", {})
         adapter_config = next(iter(configs.values()), None)

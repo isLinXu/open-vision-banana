@@ -33,12 +33,12 @@ from ..conditioning import (
     sigma_for_timesteps,
     validate_scheduler_prediction_type,
 )
-from ..model_registry import ModelConfig, resolve_model_config
+from ..model_registry import ModelConfig, resolve_model_config, resolve_pretrained_source
 from ..spatial_adapter import (
     SPATIAL_ADAPTER_STATE_NAME,
     create_source_spatial_adapter,
 )
-from .checkpoint import resolve_lora_path
+from .checkpoint import peft_adapter_state_to_diffusers, resolve_lora_path
 from .optimization import InferenceOptions, apply_pipeline_optimizations
 
 logger = logging.getLogger(__name__)
@@ -210,11 +210,14 @@ class BaseGenerator:
                 f"This may require a newer diffusers version. Error: {e}"
             ) from e
 
-        pipe = PipeClass.from_pretrained(
-            self.model_name,
-            torch_dtype=self.dtype,
-            low_cpu_mem_usage=False,
-        )
+        model_source = resolve_pretrained_source(self.model_config, self.model_name)
+        pipe_kwargs: dict[str, Any] = {
+            "torch_dtype": self.dtype,
+            "low_cpu_mem_usage": False,
+        }
+        if Path(model_source).is_dir():
+            pipe_kwargs["local_files_only"] = True
+        pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
         if family == "sdxl" and hasattr(pipe, "scheduler"):
             # SSD-1B/SDXL LoRA training uses epsilon prediction. Keep the base
             # pipeline on that contract before any checkpoint-specific setup.
@@ -229,24 +232,19 @@ class BaseGenerator:
             logger.info(f"Loading LoRA weights from {self._resolved_lora_path!r} …")
             checkpoint_dir = Path(self._resolved_lora_path)
             lora_dir = checkpoint_dir
-            nested_lora_dir = checkpoint_dir / "adapter"
-            if (
-                not (lora_dir / "adapter_model.safetensors").is_file()
-                and (nested_lora_dir / "adapter_model.safetensors").is_file()
-            ):
-                lora_dir = nested_lora_dir
-                logger.info("Using nested PEFT adapter directory %s", lora_dir)
+            if not (lora_dir / "adapter_model.safetensors").is_file():
+                # CheckpointManager uses ``lora_adapter`` while older
+                # diffusers/PEFT exports commonly use ``adapter``.  Both are
+                # part of the supported checkpoint contract.
+                for nested_name in ("lora_adapter", "adapter"):
+                    nested_lora_dir = checkpoint_dir / nested_name
+                    if (nested_lora_dir / "adapter_model.safetensors").is_file():
+                        lora_dir = nested_lora_dir
+                        logger.info("Using nested PEFT adapter directory %s", lora_dir)
+                        break
             try:
-                load_kwargs = {}
-                diffusers_weights = (
-                    lora_dir / DIFFUSERS_LORA_WEIGHT_NAME
-                )
-                if diffusers_weights.is_file():
-                    # The directory also contains PEFT's adapter_model file for
-                    # resume. Select the pipeline-format companion explicitly
-                    # so Diffusers does not have to guess between two files.
-                    load_kwargs["weight_name"] = DIFFUSERS_LORA_WEIGHT_NAME
-                pipe.load_lora_weights(str(lora_dir), **load_kwargs)
+                lora_payload, load_kwargs = self._prepare_lora_load(lora_dir, pipe)
+                pipe.load_lora_weights(lora_payload, **load_kwargs)
                 # Verify LoRA actually attached (diffusers can silently load 0 layers)
                 backbone = getattr(pipe, "transformer", None) or getattr(pipe, "unet", None)
                 lora_count = sum(
@@ -630,6 +628,23 @@ class BaseGenerator:
             else:
                 encode_prompt = True
 
+        family = getattr(getattr(self, "model_config", None), "family", None)
+        if image is not None and family == "sana":
+            return self._generate_sana_img2img(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                seed=seed,
+            )
+        if image is not None and family == "flux":
+            return self._generate_flux_img2img(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=num_inference_steps,
+                seed=seed,
+            )
+
         if image is not None:
             pil_images = self._to_pil_list(image)
             pipe = self._get_i2i_pipe()
@@ -671,6 +686,102 @@ class BaseGenerator:
                     mode="nearest",
                 )
         return output_tensor.clamp(0, 1)
+
+    @torch.no_grad()
+    def _generate_sana_img2img(
+        self,
+        *,
+        prompt: str | list[str],
+        image: torch.Tensor | Image.Image,
+        num_inference_steps: int,
+        guidance_scale: float,
+        seed: int | None,
+    ) -> torch.Tensor:
+        """SANA vision-task img2img via the training flow-matching ODE."""
+        from .sana_img2img import (
+            flow_matching_inference,
+            images_to_sana_source,
+            pipeline_components_from_sana,
+            resolve_sana_img2img_settings,
+        )
+
+        pipe = self._t2i_pipe
+        if pipe is None:
+            raise RuntimeError("SANA text-to-image pipeline is not loaded")
+
+        default_steps = int(getattr(self.model_config, "default_num_inference_steps", 20) or 20)
+        steps, cfg = resolve_sana_img2img_settings(
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            default_steps=default_steps,
+        )
+        if steps != num_inference_steps or cfg != guidance_scale:
+            logger.info(
+                "SANA img2img using training contract: steps=%d (was %d), guidance=%.2f (was %.2f)",
+                steps,
+                num_inference_steps,
+                cfg,
+                guidance_scale,
+            )
+
+        prompts = [prompt] if isinstance(prompt, str) else list(prompt)
+        device = torch.device(self.device)
+        source = images_to_sana_source(image, device)
+        components = pipeline_components_from_sana(pipe, self.model_config)
+        max_length = int(getattr(self.model_config, "text_encoder_max_length", 300) or 300)
+        if seed is not None:
+            torch.manual_seed(seed)
+
+        return flow_matching_inference(
+            peft_model=pipe.transformer,
+            vae=pipe.vae,
+            components=components,
+            input_images=source,
+            prompts=prompts,
+            device=device,
+            model_dtype=self.dtype,
+            num_steps=steps,
+            use_img2img=True,
+            max_length=max_length,
+            guidance_scale=cfg,
+        )
+
+    @torch.no_grad()
+    def _generate_flux_img2img(
+        self,
+        *,
+        prompt: str | list[str],
+        image: torch.Tensor | Image.Image,
+        num_inference_steps: int,
+        seed: int | None,
+    ) -> torch.Tensor:
+        """FLUX vision-task img2img via the training Euler flow."""
+        from .flux_img2img import flow_matching_inference, images_to_flux_source
+
+        pipe = self._t2i_pipe
+        if pipe is None:
+            raise RuntimeError("FLUX text-to-image pipeline is not loaded")
+        default_steps = int(getattr(self.model_config, "default_num_inference_steps", 4) or 4)
+        steps = default_steps if num_inference_steps <= 1 else num_inference_steps
+        if seed is not None:
+            torch.manual_seed(seed)
+        prompts = [prompt] if isinstance(prompt, str) else list(prompt)
+        device = torch.device(self.device)
+        source = images_to_flux_source(image, device)
+        logger.info(
+            "FLUX vision img2img using training Euler flow: steps=%d (requested %d)",
+            steps,
+            num_inference_steps,
+        )
+        return flow_matching_inference(
+            pipe=pipe,
+            config=self.model_config,
+            input_images=source,
+            prompts=prompts,
+            device=device,
+            model_dtype=self.dtype,
+            num_steps=steps,
+        )
 
     @torch.no_grad()
     def _generate_source_conditioned(
@@ -1004,6 +1115,54 @@ class BaseGenerator:
             self._i2i_pipe = None  # force rebuild without LoRA
             self._prompt_cache.clear()  # invalidate cached embeddings
             logger.info("LoRA weights unloaded")
+
+    def _prepare_lora_load(self, lora_dir: Path, pipe) -> tuple[str | dict, dict]:
+        """Return a Diffusers-compatible LoRA payload.
+
+        PEFT ``adapter_model.safetensors`` keys start with ``base_model.model.``.
+        FluxPipeline treats that prefix as Fal Kontext / BFL format and looks
+        for ``double_blocks.*.img_mod.lin``, which fails. Convert those keys
+        to ``transformer.*`` / ``unet.*`` so ``load_lora_weights`` injects
+        adapters instead of falling through to a destructive merge.
+        """
+        load_kwargs: dict = {}
+        companion = lora_dir / DIFFUSERS_LORA_WEIGHT_NAME
+        if companion.is_file():
+            load_kwargs["weight_name"] = DIFFUSERS_LORA_WEIGHT_NAME
+            return str(lora_dir), load_kwargs
+
+        adapter = lora_dir / "adapter_model.safetensors"
+        if adapter.is_file():
+            from safetensors.torch import load_file
+
+            raw = load_file(str(adapter))
+            if any(key.startswith("base_model.model.") for key in raw):
+                family = getattr(getattr(self, "model_config", None), "family", None)
+                # FLUX needed PEFT→Diffusers conversion to avoid Fal Kontext routing.
+                # SANA PEFT adapters historically rely on load_lora failing (0 layers)
+                # then manual merge with rsLoRA scale=alpha/sqrt(r). Converting SANA
+                # keys makes load_lora "succeed" without that scale and collapses
+                # metric-depth δ1 (Hypersim-500: ~0.36 → ~0.02 under current stack).
+                if family in {"sana", "sana-sprint"}:
+                    logger.info(
+                        "Skipping PEFT→Diffusers LoRA conversion for family=%s; "
+                        "prefer manual rsLoRA merge fallback",
+                        family,
+                    )
+                    return str(lora_dir), load_kwargs
+                component = (
+                    "transformer"
+                    if getattr(pipe, "transformer", None) is not None
+                    else "unet"
+                )
+                converted = peft_adapter_state_to_diffusers(raw, component)
+                logger.info(
+                    "Converted PEFT adapter keys to Diffusers %s LoRA format (%d tensors)",
+                    component,
+                    len(converted),
+                )
+                return converted, load_kwargs
+        return str(lora_dir), load_kwargs
 
     def _load_and_merge_lora(self, pipe, lora_path: str) -> int:
         """Load LoRA weights from safetensors and merge into base model.
