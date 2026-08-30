@@ -1,0 +1,46 @@
+# FLUX.1-schnell shared-LoRA continuation with a real micro-batch of 4.
+# Resume checkpoint-170. Same paper method: vision_ratio=0.1, rank 64 / alpha 128.
+# grad_accum=1 keeps effective batch=4 (same as the previous 1x4 run) so wall-clock
+# per optimizer step stays comparable. Do not claim Table 1.
+experiment: flux_schnell_paper_gate_resume300_bs4_20260825
+
+model:
+  name: flux-schnell
+  local_path: /Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell
+  dtype: bfloat16
+  resolution: 512
+  num_inference_steps: 4
+  guidance_scale: 0.0
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+
+data:
+  dir: data/flux_paper_gate_512
+  vision_ratio: 0.1
+
+training:
+  resume_from: output/flux_schnell_paper_gate_lr1e5_20260824/checkpoint-170
+  steps: 300
+  batch_size: 4
+  gradient_accumulation: 1
+  lr: 1.0e-5
+  seed: 42
+  ema: false
+
+flow:
+  img2img_flow: true
+
+checkpoint:
+  output_dir: output/flux_schnell_paper_gate_lr1e5_20260824
+  save_every: 10
+  log_every: 10
+
+evaluation:
+  nyu_max_samples: 32
+  cityscapes_max_samples: 16
+  num_inference_steps: 4
+
+device: mps

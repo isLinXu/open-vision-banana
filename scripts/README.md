@@ -31,6 +31,7 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 | `distill_depth_pseudo_labels.py` | Distill depth pseudo-labels |
 | `prepare_depth_dataset.py` | Prepare depth estimation dataset |
 | `prepare_hypersim.py` | Prepare Hypersim dataset |
+| `evaluate_paper_benchmarks.py` | Preflight and evaluate decoded paper benchmarks |
 | `validate_data.py` | Validate dataset integrity |
 | `validate_dataset.py` | Comprehensive dataset validation |
 

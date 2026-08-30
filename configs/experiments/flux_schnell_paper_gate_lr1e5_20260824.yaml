@@ -53,7 +53,7 @@ flow:
 
 checkpoint:
   output_dir: output/flux_schnell_paper_gate_lr1e5_20260824
-  save_every: 50
+  save_every: 10
   log_every: 10
 
 evaluation:

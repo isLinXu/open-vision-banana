@@ -27,7 +27,7 @@ echo "[flux-paper-gate] 100-step shared LoRA on schnell, then NYU n=32 + Citysca
   --output-dir "$OUT" \
   --lr 1e-5 \
   --max-steps 100 \
-  --save-every 50 \
+  --save-every 10 \
   --log-every 10 \
   --batch-size 1 \
   --grad-accum 4 \
@@ -42,7 +42,7 @@ echo "[flux-paper-gate] 100-step shared LoRA on schnell, then NYU n=32 + Citysca
   >"$OUT/logs/train_to_100.log" 2>&1
 
 ckpt=""
-for cand in 100 50; do
+for cand in 100 90 80 70 60 50 40 30 20 10; do
   if [ -d "$OUT/checkpoint-$cand" ]; then
     ckpt="$OUT/checkpoint-$cand"
     break

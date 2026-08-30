@@ -1,0 +1,60 @@
+# Depth-only indoor-heavy + light KITTI replay from Hypersim-500.
+# Dual gate: NYU n=32 δ1 ≥ 0.55 AND NYU n=8 qualitative structure.
+# Early-stop if δ1 < 0.33. Not Table 1. Sequential MPS only.
+# Design: docs/plans/2026-08-30-sana-depth-indoor-outdoor-replay-design.md
+experiment: sana_depth_replay_from_hypersim500_20260830
+baseline_checkpoint: output/sana_hypersim_metric_depth_lr1e5_20260822/checkpoint-500/lora.pt
+
+model:
+  name: sana-600m-512px
+  model_id: Efficient-Large-Model/Sana_600M_512px_diffusers
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+
+data:
+  dir: data/sana_depth_indoor_outdoor_replay_512
+  pair_manifest: data/sana_depth_indoor_outdoor_replay_512/pairs.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  num_workers: 0
+  tasks: [depth]
+  task_weights: uniform
+
+training:
+  steps: 500
+  batch_size: 1
+  gradient_accumulation: 8
+  lr: 3.0e-6
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 50
+
+checkpoint:
+  output_dir: output/sana_depth_replay_from_hypersim500_20260830
+  save_every: 50
+  eval_every: 100
+  log_every: 10
+
+device: mps

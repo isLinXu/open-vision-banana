@@ -1,0 +1,51 @@
+# FLUX paper-gate vision-boost phase. Deviates from paper 9:1 sampling on purpose:
+# vision_ratio=0.5 + homogeneous micro-batches so depth/semantic can actually learn.
+# Resume checkpoint-430 (0.1 homog run stopped: depth loss stuck ~1.1–1.3).
+# Do not claim Table 1. t2i still gets 50% of batches.
+experiment: flux_schnell_paper_gate_vision_boost_r05_20260826
+
+model:
+  name: flux-schnell
+  local_path: /Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell
+  dtype: bfloat16
+  resolution: 512
+  num_inference_steps: 4
+  guidance_scale: 0.0
+
+lora:
+  rank: 64
+  alpha: 128
+  rs_lora: true
+
+data:
+  dir: data/flux_paper_gate_512
+  vision_ratio: 0.5
+
+training:
+  resume_from: output/flux_schnell_paper_gate_lr1e5_20260824/checkpoint-430
+  steps: 750
+  batch_size: 4
+  gradient_accumulation: 1
+  homogeneous_batches: true
+  lr: 1.0e-5
+  seed: 42
+  ema: false
+
+flow:
+  img2img_flow: true
+
+checkpoint:
+  output_dir: output/flux_schnell_paper_gate_lr1e5_20260824
+  save_every: 10
+  max_keep: 20
+  log_every: 10
+
+evaluation:
+  nyu_max_samples: 32
+  cityscapes_max_samples: 16
+  num_inference_steps: 4
+
+notes: |
+  ckpt-300 NYU δ1=0.037 AbsRel=1.69; Cityscapes mIoU=0.012.
+  Homog 0.1 phase 300→430: generation loss↓, depth loss flat/worse.
+  This phase raises vision sampling to 50% while keeping shared LoRA + Euler flow.

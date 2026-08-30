@@ -16,8 +16,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
+
+from open_vision_banana.data.manifest import fingerprint_records, resolve_manifest_path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("prepare_flux_paper_gate")
@@ -77,6 +80,7 @@ def link_vision_pairs(
     rows: list[dict],
     dest: Path,
     *,
+    manifest_path: Path,
     limit: int | None = None,
 ) -> int:
     image_dir = dest / "images"
@@ -86,8 +90,8 @@ def link_vision_pairs(
     selected = rows if limit is None else rows[:limit]
     written = 0
     for row in selected:
-        image = Path(row["input"])
-        target = Path(row["target"])
+        image = resolve_manifest_path(row["input"], manifest_path)
+        target = resolve_manifest_path(row["target"], manifest_path)
         _symlink(image, image_dir / image.name)
         _symlink(target, target_dir / target.name)
         written += 1
@@ -135,17 +139,51 @@ def prepare_flux_paper_gate(
         raise ValueError(
             f"Need {depth_limit} Hypersim pairs, found {len(hypersim_pairs)} in {hypersim_root}"
         )
-    depth_n = link_vision_pairs(hypersim_pairs, output / "depth", limit=depth_limit)
-    seg_n = link_vision_pairs(cityscapes_pairs, output / "segmentation")
+    depth_n = link_vision_pairs(
+        hypersim_pairs,
+        output / "depth",
+        manifest_path=hypersim_root / "pairs.jsonl",
+        limit=depth_limit,
+    )
+    seg_n = link_vision_pairs(
+        cityscapes_pairs,
+        output / "segmentation",
+        manifest_path=cityscapes_root / "pairs.jsonl",
+    )
     gen_n = link_generation(generation_root, output / "generation")
+    fingerprint_rows: list[dict] = []
+    for task_name in ("depth", "segmentation"):
+        for image in sorted((output / task_name / "images").iterdir()):
+            target = output / task_name / "targets" / image.name
+            if target.is_file():
+                fingerprint_rows.append(
+                    {
+                        "task": task_name,
+                        "input": image.relative_to(output).as_posix(),
+                        "target": target.relative_to(output).as_posix(),
+                    }
+                )
+    for row in _read_jsonl(output / "generation" / "prompts.jsonl"):
+        fingerprint_rows.append(
+            {
+                "task": "generation",
+                "image": f"generation/images/{row['image']}",
+                "prompt": row["prompt"],
+            }
+        )
     manifest = {
-        "output": str(output.resolve()),
+        "schema_version": 2,
+        "output": ".",
         "depth_pairs": depth_n,
         "segmentation_pairs": seg_n,
         "generation_pairs": gen_n,
-        "depth_source": str(hypersim_root.resolve()),
-        "segmentation_source": str(cityscapes_root.resolve()),
-        "generation_source": str(generation_root.resolve()),
+        "pairs_written": len(fingerprint_rows),
+        "path_policy": "manifest-relative",
+        "depth_source": Path(os.path.relpath(hypersim_root, output)).as_posix(),
+        "segmentation_source": Path(os.path.relpath(cityscapes_root, output)).as_posix(),
+        "generation_source": generation_root.name,
+        "dataset_fingerprint": fingerprint_records(fingerprint_rows, output),
+        "fingerprint_algorithm": "sha256:canonical-pairs-v1",
         "notes": [
             "Shared LoRA paper-method gate. One adapter, RGB tasks, ~9:1 generation:vision.",
             "KITTI omitted to avoid indoor/outdoor metric-depth clash on the first gate.",
