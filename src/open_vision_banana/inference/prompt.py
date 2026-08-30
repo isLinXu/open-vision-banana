@@ -9,7 +9,11 @@ The paper uses various prompting styles:
 
 from __future__ import annotations
 
-from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT
+from ..task_prompts import (
+    CITYSCAPES_RGB_LEGEND,
+    SEMANTIC_GENERIC_PROMPT,
+    SEMANTIC_SEGMENTATION_PROMPT,
+)
 
 
 class PromptBuilder:
@@ -56,14 +60,27 @@ class PromptBuilder:
         class_color_map: dict[str, tuple[int, int, int]],
         template_idx: int | None = None,
     ) -> str:
-        """Build a CLIP-safe semantic prompt.
+        """Build the semantic prompt used by the RGB decoder.
 
-        The default deliberately omits the per-class colour legend so training
-        and inference stay below CLIP's 77-token limit.  Explicit template
-        indices remain available for dataset inspection and legacy tooling.
+        Cityscapes has a fixed 19-class output alphabet.  Its complete RGB
+        legend is part of the model contract and therefore is included by
+        default.  Larger open-vocabulary maps keep the compact prompt unless
+        a template is explicitly selected, since their legends cannot fit in
+        the short-text encoders used by some legacy tasks.
         """
+        # Callers often pass only the classes present in one image.  If those
+        # colors are an exact Cityscapes subset, expand back to the canonical
+        # alphabet so training, inference, and evaluation share one contract.
+        if template_idx is None and class_color_map and all(
+            name in CITYSCAPES_RGB_LEGEND
+            and tuple(color) == CITYSCAPES_RGB_LEGEND[name]
+            for name, color in class_color_map.items()
+        ):
+            class_color_map = CITYSCAPES_RGB_LEGEND
         if template_idx is None:
-            return cls.SEMANTIC_PROMPT
+            template_idx = 0 if len(class_color_map) <= 19 else None
+            if template_idx is None:
+                return SEMANTIC_GENERIC_PROMPT
         if template_idx == 0:
             color_parts = []
             for cls_name, (r, g, b) in class_color_map.items():

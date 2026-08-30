@@ -1,0 +1,67 @@
+# Stage B v2: depth + Cityscapes-19 with the unified legend prompt.
+#
+# Differences vs sana_depth_sem_from_hypersim500_20260830 (v1, failed):
+#   1. pairs.jsonl rebuilt: cityscapes prompt is now the inline 19-class RGB
+#      legend, byte-identical to inference (task_prompts.py).
+#   2. EMA fixed: save_checkpoint writes EMA shadow into lora_adapter/ and
+#      validates on EMA weights. v1 checkpoints had no usable EMA.
+#   3. lr dropped 5e-6 -> 1e-6 to avoid eroding the depth-only baseline.
+# Not Table 1. Sequential MPS only. Gate: NYU n=32 delta1 >= 0.28 AND
+# Cityscapes n=16 mIoU clearly above the 0.02 v1 floor.
+experiment: sana_depth_sem_v2_legend_20260830
+baseline_checkpoint: output/sana_hypersim_metric_depth_lr1e5_20260822/checkpoint-500/lora.pt
+
+model:
+  name: sana-600m-512px
+  model_id: Efficient-Large-Model/Sana_600M_512px_diffusers
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+
+data:
+  dir: data/sana_paper_gate_512
+  pair_manifest: data/sana_paper_gate_512/pairs.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  num_workers: 0
+  tasks: [depth, semantic]
+  task_weights: uniform
+
+training:
+  steps: 1000
+  batch_size: 1
+  gradient_accumulation: 8
+  lr: 1.0e-6
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 100
+
+checkpoint:
+  output_dir: output/sana_depth_sem_v2_legend_20260830
+  save_every: 200
+  eval_every: 100000
+  log_every: 10
+
+device: mps
+resume: null

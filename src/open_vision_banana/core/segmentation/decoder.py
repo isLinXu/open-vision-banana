@@ -11,6 +11,7 @@ From the paper (Appendix A):
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import torch
 
@@ -18,6 +19,52 @@ from .grouping import GroupingMixin
 from .postprocess import PostprocessMixin
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class InstanceDecodingConfig:
+    """Complete, serializable contract for the five-stage instance decoder."""
+
+    color_tolerance: float = 14.0
+    min_area_fraction: float = 2e-4
+    erosion_threshold: float = 0.1
+    bbox_expansion_factor: float = 5.0
+    # Paper protocol (Appendix A) is the default: seed-based grouping with a
+    # fixed tolerance τ=14. The adjacent/adaptive variants remain available
+    # as explicit opt-ins for ablation studies.
+    grouping_mode: str = "seed"
+    adaptive_color_tolerance: bool = False
+
+    def __post_init__(self) -> None:
+        if self.color_tolerance <= 0:
+            raise ValueError("color_tolerance must be positive")
+        if self.min_area_fraction < 0:
+            raise ValueError("min_area_fraction must be non-negative")
+        if not 0.0 <= self.erosion_threshold <= 1.0:
+            raise ValueError("erosion_threshold must be in [0, 1]")
+        if self.bbox_expansion_factor <= 0:
+            raise ValueError("bbox_expansion_factor must be positive")
+        if self.grouping_mode not in {"adjacent", "seed"}:
+            raise ValueError("grouping_mode must be 'adjacent' or 'seed'")
+        if not isinstance(self.adaptive_color_tolerance, bool):
+            raise ValueError("adaptive_color_tolerance must be boolean")
+
+    def to_dict(self) -> dict[str, float | str | bool]:
+        """Return a JSON-safe decoding contract for run metadata."""
+        return {
+            "color_tolerance": self.color_tolerance,
+            "min_area_fraction": self.min_area_fraction,
+            "erosion_threshold": self.erosion_threshold,
+            "bbox_expansion_factor": self.bbox_expansion_factor,
+            "grouping_mode": self.grouping_mode,
+            "adaptive_color_tolerance": self.adaptive_color_tolerance,
+        }
+
+
+PAPER_INSTANCE_DECODING_CONFIG = InstanceDecodingConfig(
+    grouping_mode="seed",
+    adaptive_color_tolerance=False,
+)
 
 
 class SegmentationDecoder(GroupingMixin, PostprocessMixin):
@@ -33,11 +80,26 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
         min_area_fraction: float = 2e-4,
         erosion_threshold: float = 0.1,
         bbox_expansion_factor: float = 5.0,
+        grouping_mode: str = "seed",
+        adaptive_color_tolerance: bool = False,
     ) -> None:
-        self.color_tolerance = color_tolerance
-        self.min_area_fraction = min_area_fraction
-        self.erosion_threshold = erosion_threshold
-        self.bbox_expansion_factor = bbox_expansion_factor
+        self.instance_config = InstanceDecodingConfig(
+            color_tolerance=color_tolerance,
+            min_area_fraction=min_area_fraction,
+            erosion_threshold=erosion_threshold,
+            bbox_expansion_factor=bbox_expansion_factor,
+            grouping_mode=grouping_mode,
+            adaptive_color_tolerance=adaptive_color_tolerance,
+        )
+        self.color_tolerance = self.instance_config.color_tolerance
+        self.min_area_fraction = self.instance_config.min_area_fraction
+        self.erosion_threshold = self.instance_config.erosion_threshold
+        self.bbox_expansion_factor = self.instance_config.bbox_expansion_factor
+
+    @classmethod
+    def paper_reproduction(cls) -> SegmentationDecoder:
+        """Build the fixed-tolerance, seed-grouping decoder from Appendix A."""
+        return cls(**PAPER_INSTANCE_DECODING_CONFIG.to_dict())
 
     def decode_semantic(
         self,
@@ -88,8 +150,8 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
         self,
         rgb_image: torch.Tensor,
         background_color: tuple[int, int, int] = (0, 0, 0),
-        adaptive_color_tolerance: bool = True,
-        grouping_mode: str = "adjacent",  # 新增
+        adaptive_color_tolerance: bool | None = None,
+        grouping_mode: str | None = None,
     ) -> list[list[dict]]:
         """Decode instance segmentation using multi-stage clustering.
 
@@ -107,14 +169,22 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
         Args:
             rgb_image: Generated RGB image [B, 3, H, W] in [0, 1].
             background_color: Background color (R, G, B) in [0, 255].
-            adaptive_color_tolerance: Whether to adaptively adjust τ.
-            grouping_mode: "adjacent" (default) or "seed".  Seed-based
-                uses the component's seed color for comparison, which
-                produces more compact instances per paper Appendix A.
+            adaptive_color_tolerance: Whether to adaptively adjust τ. If None,
+                uses this decoder's recorded instance configuration.
+            grouping_mode: "adjacent" or "seed". If None, uses this
+                decoder's recorded instance configuration. Use
+                :meth:`paper_reproduction` for the paper protocol.
 
         Returns:
             List of lists of instance masks, one per image in batch.
         """
+        if adaptive_color_tolerance is None:
+            adaptive_color_tolerance = self.instance_config.adaptive_color_tolerance
+        if grouping_mode is None:
+            grouping_mode = self.instance_config.grouping_mode
+        if grouping_mode not in {"adjacent", "seed"}:
+            raise ValueError(f"Unknown grouping_mode: {grouping_mode}")
+
         B, C, H, W = rgb_image.shape
         total_pixels = H * W
         min_area = self.min_area_fraction * total_pixels
@@ -143,9 +213,6 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
                     labels = self._union_find_grouping_adaptive(img, bg_mask, tau_map[b])
                 else:
                     labels = self._union_find_grouping(img, bg_mask)
-            else:
-                raise ValueError(f"Unknown grouping_mode: {grouping_mode}")
-
             # Stage 3: Noise Pruning (vectorized)
             labels = self._noise_pruning(labels, min_area)
 
@@ -162,5 +229,8 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
         return all_instances
 
 
-
-__all__ = ["SegmentationDecoder"]
+__all__ = [
+    "InstanceDecodingConfig",
+    "PAPER_INSTANCE_DECODING_CONFIG",
+    "SegmentationDecoder",
+]

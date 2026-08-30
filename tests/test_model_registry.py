@@ -32,6 +32,7 @@ from open_vision_banana.model_registry import (
     get_models_by_family,
     list_models,
     prepare_position_ids,
+    resolve_pretrained_source,
     unet_forward,
     vae_decode,
     vae_encode,
@@ -867,3 +868,20 @@ class TestUnetForwardAlias:
             )
             mock_bfw.assert_called_once()
             assert result is mock_bfw.return_value
+
+
+class TestResolvePretrainedSource:
+    def test_registry_alias_uses_model_id(self, monkeypatch):
+        monkeypatch.delenv("OPEN_VISION_BANANA_MODEL_PATH", raising=False)
+        cfg = get_model_config("sana-600m-512px")
+        assert resolve_pretrained_source(cfg, "sana-600m-512px") == cfg.model_id
+
+    def test_env_snapshot_overrides_alias(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OPEN_VISION_BANANA_MODEL_PATH", str(tmp_path))
+        cfg = get_model_config("sana-600m-512px")
+        assert resolve_pretrained_source(cfg, "sana-600m-512px") == str(tmp_path.resolve())
+
+    def test_directory_model_name_is_used(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("OPEN_VISION_BANANA_MODEL_PATH", raising=False)
+        cfg = get_model_config("sana-600m-512px")
+        assert resolve_pretrained_source(cfg, str(tmp_path)) == str(tmp_path.resolve())

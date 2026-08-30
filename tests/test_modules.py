@@ -310,7 +310,7 @@ class TestPromptBuilder:
         prompt = PromptBuilder.build_semantic_prompt(class_map, template_idx=0)
         assert "road" in prompt.lower() or "128" in prompt
 
-    def test_semantic_prompt_default_is_clip_safe(self):
+    def test_semantic_prompt_large_map_stays_generic(self):
         class_map = {f"class_{index}": (index, index, index) for index in range(100)}
         prompt = PromptBuilder.build_semantic_prompt(class_map)
         assert "distinct RGB color" in prompt

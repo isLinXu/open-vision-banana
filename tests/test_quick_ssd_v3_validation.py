@@ -208,6 +208,7 @@ def test_tuner_stops_at_exact_optimizer_step(tmp_path: Path):
         model=FakeGenerator(),
         lora_rank=2,
         lora_alpha=4,
+        allow_component_fallback=True,
         use_ema=False,
         use_gradient_checkpointing=False,
     )
@@ -255,6 +256,7 @@ def test_resumed_scheduler_keeps_absolute_max_step_horizon(
         model=FakeGenerator(),
         lora_rank=2,
         lora_alpha=4,
+        allow_component_fallback=True,
         use_ema=False,
         use_gradient_checkpointing=False,
     )

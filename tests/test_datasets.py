@@ -437,3 +437,115 @@ class TestRefCOCOgDataset:
         ds = RefCOCOgDataset(root_dir=str(tmp_path), resolution=8)
         mask = ds._load_mask(ann_id=1)
         assert mask.sum() == 0
+
+
+class TestETH3DOfficialLayout:
+    def test_scans_official_scene_and_loads_binary_depth(self, tmp_path):
+        from open_vision_banana.data.benchmark_io import infer_planar_hw, load_eth3d_depth
+        from open_vision_banana.data.datasets import ETH3DDataset
+
+        height, width = 4, 6
+        assert infer_planar_hw(height * width) == (height, width)
+        rgb_dir = tmp_path / "courtyard" / "images" / "dslr_images_undistorted"
+        depth_dir = tmp_path / "courtyard" / "ground_truth_depth" / "dslr_images"
+        rgb_dir.mkdir(parents=True)
+        depth_dir.mkdir(parents=True)
+        Image.new("RGB", (width, height), color=(10, 20, 30)).save(rgb_dir / "DSC_0001.JPG")
+        depth = np.array(
+            [[1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
+             [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
+             [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
+             [1.5, 2.0, 3.0, 4.0, 5.0, np.inf]],
+            dtype=np.float32,
+        )
+        depth.tofile(depth_dir / "DSC_0001.JPG")
+
+        loaded = load_eth3d_depth(depth_dir / "DSC_0001.JPG")
+        assert loaded.shape == (1, height, width)
+        assert torch.isinf(loaded[0, 0, -1])
+
+        ds = ETH3DDataset(root_dir=str(tmp_path), split="val", resolution=8)
+        assert len(ds) == 1
+        item = ds[0]
+        assert item["gt_depth"].shape == (1, 8, 8)
+        assert bool(item["valid_mask"].any())
+
+    def test_flat_layout_still_preferred(self, tmp_path):
+        from open_vision_banana.data.datasets import ETH3DDataset
+
+        img_dir = tmp_path / "images"
+        depth_dir = tmp_path / "depths"
+        img_dir.mkdir()
+        depth_dir.mkdir()
+        Image.new("RGB", (8, 8)).save(img_dir / "a.png")
+        np.save(depth_dir / "a.npy", np.ones((8, 8), dtype=np.float32))
+        official_rgb = tmp_path / "scene" / "images" / "dslr_images_undistorted"
+        official_depth = tmp_path / "scene" / "ground_truth_depth" / "dslr_images"
+        official_rgb.mkdir(parents=True)
+        official_depth.mkdir(parents=True)
+        Image.new("RGB", (8, 8)).save(official_rgb / "b.JPG")
+        np.ones((4, 6), dtype=np.float32).tofile(official_depth / "b.JPG")
+
+        ds = ETH3DDataset(root_dir=str(tmp_path), resolution=8)
+        assert len(ds) == 1
+        assert ds.samples[0]["image"].name == "a.png"
+
+
+class TestKITTIOfficialLayout:
+    def test_scans_annotated_drive_when_rgb_present(self, tmp_path):
+        from open_vision_banana.data.datasets import KITTIDataset
+
+        drive = tmp_path / "val" / "2011_09_26_drive_0002_sync"
+        rgb_dir = drive / "image_02" / "data"
+        depth_dir = drive / "proj_depth" / "groundtruth" / "image_02"
+        rgb_dir.mkdir(parents=True)
+        depth_dir.mkdir(parents=True)
+        Image.new("RGB", (16, 8), color=(1, 2, 3)).save(rgb_dir / "0000000005.png")
+        Image.new("I;16", (16, 8), color=256).save(depth_dir / "0000000005.png")
+
+        ds = KITTIDataset(root_dir=str(tmp_path), split="val", resolution=8)
+        assert len(ds) == 1
+
+    def test_depth_only_drive_is_not_a_pair(self, tmp_path):
+        from open_vision_banana.data.datasets import KITTIDataset
+
+        depth_dir = (
+            tmp_path / "val" / "2011_09_26_drive_0002_sync" / "proj_depth" / "groundtruth" / "image_02"
+        )
+        depth_dir.mkdir(parents=True)
+        Image.new("I;16", (16, 8), color=256).save(depth_dir / "0000000005.png")
+        ds = KITTIDataset(root_dir=str(tmp_path), split="val", resolution=8)
+        assert len(ds) == 0
+
+
+class TestDIODENormalPairing:
+    def test_requires_distinct_normal_file(self, tmp_path):
+        from open_vision_banana.data.datasets import DIODENormalDataset
+
+        val = tmp_path / "val" / "indoor"
+        val.mkdir(parents=True)
+        Image.new("RGB", (8, 8)).save(val / "frame_rgb.png")
+        np.save(val / "frame_normal.npy", np.ones((8, 8, 3), dtype=np.float32))
+        Image.new("RGB", (8, 8)).save(val / "orphan.png")
+        ds = DIODENormalDataset(root_dir=str(tmp_path), split="val", resolution=8)
+        assert len(ds) == 1
+        assert ds.samples[0]["image"].name == "frame_rgb.png"
+
+    def test_missing_val_split_is_empty(self, tmp_path):
+        from open_vision_banana.data.datasets import DIODENormalDataset
+
+        Image.new("RGB", (8, 8)).save(tmp_path / "frame.png")
+        ds = DIODENormalDataset(root_dir=str(tmp_path), split="val", resolution=8)
+        assert len(ds) == 0
+
+
+class TestCityscapesFlattenedVal:
+    def test_scan_finds_export_val_pairs(self, tmp_path):
+        img_dir = tmp_path / "leftImg8bit" / "val" / "export"
+        gt_dir = tmp_path / "gtFine" / "val" / "export"
+        img_dir.mkdir(parents=True)
+        gt_dir.mkdir(parents=True)
+        Image.new("RGB", (32, 16)).save(img_dir / "export_000000_000000_leftImg8bit.png")
+        Image.new("L", (32, 16)).save(gt_dir / "export_000000_000000_gtFine_labelIds.png")
+        ds = CityscapesSegDataset(root_dir=str(tmp_path), split="val", resolution=16)
+        assert len(ds) == 1

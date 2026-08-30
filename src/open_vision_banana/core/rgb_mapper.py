@@ -20,16 +20,41 @@ from .flow_mapper import FlowRGBMapper
 from .keypoint_mapper import KeypointRGBMapper
 from .normal_mapper import NormalRGBMapper
 from .object_detection_mapper import ObjectDetectionRGBMapper
-from .segmentation import SegmentationDecoder
+from .segmentation import (
+    PAPER_INSTANCE_DECODING_CONFIG,
+    InstanceDecodingConfig,
+    SegmentationDecoder,
+)
 
 
 class RGBMapper:
     """Unified RGB mapping dispatcher for all vision tasks."""
 
-    def __init__(self, depth_colormap: str = "cube_edge") -> None:
+    @classmethod
+    def paper_reproduction(cls, depth_colormap: str = "cube_edge") -> RGBMapper:
+        """Build a mapper with the paper's fixed-tolerance instance protocol."""
+        return cls(
+            depth_colormap=depth_colormap,
+            instance_decoding_config=PAPER_INSTANCE_DECODING_CONFIG,
+        )
+
+    def __init__(
+        self,
+        depth_colormap: str = "cube_edge",
+        *,
+        instance_grouping_mode: str = "seed",
+        instance_adaptive_color_tolerance: bool = False,
+        instance_decoding_config: InstanceDecodingConfig | None = None,
+    ) -> None:
         self.depth_mapper = DepthRGBMapper(colormap=depth_colormap)
         self.normal_mapper = NormalRGBMapper()
-        self.seg_decoder = SegmentationDecoder()
+        decoder_config = instance_decoding_config or InstanceDecodingConfig(
+            grouping_mode=instance_grouping_mode,
+            adaptive_color_tolerance=instance_adaptive_color_tolerance,
+        )
+        self.seg_decoder = SegmentationDecoder(
+            **decoder_config.to_dict(),
+        )
         self.edge_mapper = EdgeRGBMapper()
         self.flow_mapper = FlowRGBMapper()
         self.keypoint_mapper = KeypointRGBMapper()
@@ -73,7 +98,8 @@ class RGBMapper:
         task: str,
         class_color_map: dict | None = None,
         background_color: tuple = (0, 0, 0),
-        grouping_mode: str = "adjacent",
+        grouping_mode: str | None = None,
+        adaptive_color_tolerance: bool | None = None,
         **kwargs,
     ) -> Any:
         """Decode RGB visualization back to vision task output.
@@ -84,6 +110,8 @@ class RGBMapper:
             class_color_map: Required for semantic segmentation.
             background_color: Background color for instance segmentation.
             grouping_mode: "adjacent" or "seed" for instance segmentation.
+                ``None`` uses the mapper's recorded decoder configuration.
+            adaptive_color_tolerance: Optional instance-decoder override.
             **kwargs: Task-specific extra arguments.
 
         Returns:
@@ -98,7 +126,12 @@ class RGBMapper:
                 raise ValueError("class_color_map required for semantic segmentation")
             return self.seg_decoder.decode_semantic(rgb, class_color_map)
         elif task == "instance":
-            return self.seg_decoder.decode_instance(rgb, background_color, grouping_mode=grouping_mode)
+            return self.seg_decoder.decode_instance(
+                rgb,
+                background_color,
+                grouping_mode=grouping_mode,
+                adaptive_color_tolerance=adaptive_color_tolerance,
+            )
         elif task == "edge":
             return self.edge_mapper.rgb_to_edge(rgb)
         elif task == "flow":

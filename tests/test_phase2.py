@@ -226,6 +226,7 @@ def _make_minimal_tuner():
         model=_FakeGenerator(),
         lora_rank=2,
         lora_alpha=4,
+        allow_component_fallback=True,
         use_ema=False,
         use_gradient_checkpointing=False,
     )
@@ -260,6 +261,12 @@ class TestTunerFallbackPaths:
         assert embeds.shape[0] == 2  # batch dim matches prompts
         # Fallback zeros: all entries should be zero
         assert embeds.abs().sum().item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_component_fallback_is_opt_in(self):
+        tuner = _make_minimal_tuner()
+        tuner.allow_component_fallback = False
+        with pytest.raises(RuntimeError, match="VAE is required"):
+            tuner._encode_latents(torch.rand(1, 3, 8, 8))
 
     def test_training_step_no_vae_no_encoder_finite_loss(self):
         tuner = _make_minimal_tuner()

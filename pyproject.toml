@@ -59,6 +59,9 @@ evaluation = [
     "pycocotools>=2.0.7",
     "lpips>=0.1.4",
 ]
+data = [
+    "h5py>=3.8",
+]
 serving = [
     "fastapi>=0.100",
     "uvicorn>=0.23",
@@ -70,7 +73,7 @@ dev = [
     "mypy>=1.10",
 ]
 all = [
-    "open-vision-banana[inference,training,export,evaluation,serving,dev,deepspeed]",
+    "open-vision-banana[inference,training,export,evaluation,data,serving,dev,deepspeed]",
 ]
 
 [project.urls]

@@ -86,5 +86,7 @@ segmentation:
   min_area_fraction: 2.0e-4
   erosion_threshold: 0.1
   bbox_expansion_factor: 5.0
+  grouping_mode: "seed"
+  adaptive_color_tolerance: false
 
 output_dir: "output/paper-optimized-multitask"

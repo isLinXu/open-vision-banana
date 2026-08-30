@@ -30,6 +30,7 @@ from pathlib import Path
 import torch
 
 from ..core.rgb_mapper import RGBMapper
+from ..core.segmentation import InstanceDecodingConfig
 from .decoder import VisualizationDecoder
 from .generator import BaseGenerator
 from .optimization import InferenceOptions
@@ -64,13 +65,21 @@ class VisionBanana:
         decoder: VisualizationDecoder | None = None,
         enable_cache: bool = True,
         cache_size: int = 64,
+        instance_grouping_mode: str = "seed",
+        instance_adaptive_color_tolerance: bool = False,
+        instance_decoding_config: InstanceDecodingConfig | None = None,
     ) -> None:
         self.generator = base_generator
         conditioning = getattr(base_generator, "source_conditioning_config", None)
         depth_colormap = "cube_edge"
         if conditioning is not None and conditioning.target_colormap != "unknown":
             depth_colormap = conditioning.target_colormap
-        self.rgb_mapper = rgb_mapper or RGBMapper(depth_colormap=depth_colormap)
+        self.rgb_mapper = rgb_mapper or RGBMapper(
+            depth_colormap=depth_colormap,
+            instance_grouping_mode=instance_grouping_mode,
+            instance_adaptive_color_tolerance=instance_adaptive_color_tolerance,
+            instance_decoding_config=instance_decoding_config,
+        )
         self.decoder = decoder or VisualizationDecoder(self.rgb_mapper)
         self.prompt_builder = PromptBuilder()
         self.enable_cache = enable_cache
@@ -85,6 +94,9 @@ class VisionBanana:
         lora_revision: str | None = None,
         enable_sequential_cpu_offload: bool = False,
         inference_options: InferenceOptions | None = None,
+        instance_grouping_mode: str = "seed",
+        instance_adaptive_color_tolerance: bool = False,
+        instance_decoding_config: InstanceDecodingConfig | None = None,
     ) -> VisionBanana:
         """Load a pretrained Vision Banana model.
 
@@ -96,6 +108,12 @@ class VisionBanana:
             lora_revision: Optional HF revision for remote LoRA weights.
             enable_sequential_cpu_offload: Reduce VRAM via CPU offload.
             inference_options: Full optimization config (overrides offload flag).
+            instance_grouping_mode: Compatibility grouping mode when no full
+                instance decoding config is supplied.
+            instance_adaptive_color_tolerance: Compatibility adaptive-tolerance
+                setting when no full config is supplied.
+            instance_decoding_config: Full instance decoder contract. Use
+                ``PAPER_INSTANCE_DECODING_CONFIG`` for paper-aligned decoding.
         """
         from .optimization import InferenceOptions
 
@@ -111,7 +129,12 @@ class VisionBanana:
             lora_revision=lora_revision,
             inference_options=opts,
         )
-        return cls(base_generator=generator)
+        return cls(
+            base_generator=generator,
+            instance_grouping_mode=instance_grouping_mode,
+            instance_adaptive_color_tolerance=instance_adaptive_color_tolerance,
+            instance_decoding_config=instance_decoding_config,
+        )
 
     @torch.no_grad()
     def predict(

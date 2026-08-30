@@ -56,18 +56,22 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+
 from open_vision_banana.data import (
+    HomogeneousMixedBatchSampler,
     MixedVisionDataset,
     build_v3_datasets,
     load_v3_train_val_split,
 )
-from open_vision_banana.data.split import split_vision_datasets
+from open_vision_banana.data.datasets import CityscapesSegDataset
+from open_vision_banana.data.manifest import resolve_manifest_path
 from open_vision_banana.model_registry import (
     PipelineComponents,
     apply_lora,
     get_model_config,
     load_pipeline,
 )
+from open_vision_banana.inference.prompt import PromptBuilder
 from open_vision_banana.training.optimization import (
     SchedulerFactory,
 )
@@ -86,6 +90,17 @@ from open_vision_banana.training.sana_depth_aux import (
 from open_vision_banana.training.utils import EMAModel
 
 logger = logging.getLogger(__name__)
+
+
+def portable_project_path(value: Path | None) -> str | None:
+    """Serialize project-local paths relative to the repository root."""
+    if value is None:
+        return None
+    path = Path(value)
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 # Default LoRA targets for Sana transformer blocks
 SANA_LORA_TARGETS = [
@@ -169,6 +184,18 @@ def parse_args() -> argparse.Namespace:
             "for v5_full training."
         ),
     )
+    p.add_argument(
+        "--require-captioned-generation",
+        action=argparse.BooleanOptionalAction,
+        default=config_defaults.get("require_captioned_generation", False),
+        help="Require explicit per-image caption metadata for generation replay.",
+    )
+    p.add_argument(
+        "--homogeneous-batches",
+        action=argparse.BooleanOptionalAction,
+        default=config_defaults.get("homogeneous_batches", False),
+        help="Use deterministic all-vision or all-generation micro-batches when replay is enabled.",
+    )
 
     # ── Model ────────────────────────────────────────────────────────
     p.add_argument(
@@ -183,6 +210,12 @@ def parse_args() -> argparse.Namespace:
 
     # ── Training ─────────────────────────────────────────────────────
     p.add_argument("--steps", type=int, default=config_defaults.get("steps", 10000), help="Total training steps")
+    p.add_argument(
+        "--stop-after-step",
+        type=int,
+        default=None,
+        help="Stop cleanly after this global step while preserving the regular checkpoint.",
+    )
     p.add_argument("--lr", type=float, default=config_defaults.get("lr", 5e-5))
     p.add_argument("--batch-size", type=int, default=config_defaults.get("batch_size", 4))
     p.add_argument(
@@ -301,7 +334,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--task-loss-weights",
-        default=None,
+        default=config_defaults.get("task_loss_weights"),
         help="Optional per-task loss multipliers, e.g. semantic=2,structure=2.",
     )
 
@@ -344,6 +377,8 @@ def load_config_defaults(config_path: Path | None) -> dict[str, object]:
         "data_dir": data.get("dir"),
         "pair_manifest": data.get("pair_manifest"),
         "generation_dir": data.get("generation_dir"),
+        "require_captioned_generation": data.get("require_captioned_generation", False),
+        "homogeneous_batches": data.get("homogeneous_batches", False),
         "resolution": data.get("resolution", model.get("resolution")),
         "vision_ratio": data.get("vision_ratio"),
         "tasks": data.get("tasks"),
@@ -369,6 +404,7 @@ def load_config_defaults(config_path: Path | None) -> dict[str, object]:
         "depth_edge_aux_edge_weight": loss.get("depth_edge_aux_edge_weight"),
         "depth_edge_aux_edge_threshold": loss.get("depth_edge_aux_edge_threshold"),
         "depth_edge_aux_sigma_floor": loss.get("depth_edge_aux_sigma_floor"),
+        "task_loss_weights": loss.get("task_loss_weights", training.get("task_loss_weights")),
         "output_dir": checkpoint.get("output_dir"),
         "save_every": checkpoint.get("save_every"),
         "eval_every": checkpoint.get("eval_every"),
@@ -608,6 +644,10 @@ class ManifestVisionDataset(Dataset):
             "depth",
             "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
         ),
+        "metric_depth": (
+            "depth",
+            "Generate a metric depth visualization of this image.",
+        ),
         "normal": (
             "normal",
             "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry.",
@@ -615,6 +655,10 @@ class ManifestVisionDataset(Dataset):
         "seg": (
             "semantic",
             "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries.",
+        ),
+        "cityscapes": (
+            "semantic",
+            "Generate a 19-class Cityscapes semantic segmentation mask. Use only the official Cityscapes trainId palette, with one solid class color per pixel and sharp object boundaries.",
         ),
         "structure": (
             "structure",
@@ -646,20 +690,28 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
-                image_path = Path(row.get("input", ""))
-                target_path = Path(row.get("target", ""))
+                image_path = resolve_manifest_path(row.get("input") or "", manifest_path)
+                target_path = resolve_manifest_path(row.get("target") or "", manifest_path)
                 if not image_path.is_file() or not target_path.is_file():
                     logger.warning(
                         "Skipping unavailable manifest pair at %s:%d", manifest_path, line_no
                     )
                     continue
+                prompt = row.get("prompt")
+                if not prompt and raw_task == "cityscapes":
+                    # The Cityscapes RGB palette is part of the task contract;
+                    # keep the training prompt identical to inference.
+                    prompt = PromptBuilder.build_semantic_prompt(
+                        CityscapesSegDataset.CITYSCAPES_COLORS
+                    )
+                prompt = prompt or task_info[1]
                 self.samples.append(
                     {
                         "image_path": str(image_path),
                         "target_path": str(target_path),
                         "task": task_info[0],
                         "dir_name": raw_task,
-                        "prompt": task_info[1],
+                        "prompt": prompt,
                     }
                 )
 
@@ -911,6 +963,7 @@ def main():
             resolution=args.resolution,
             include_input_image=True,
             split_filter=gen_split_filter,
+            require_captions=args.require_captioned_generation,
         )
         if len(generation_dataset) == 0:
             raise ValueError(f"No usable samples found in generation dataset: {generation_dir}")
@@ -1004,16 +1057,40 @@ def main():
 
     persistent = args.num_workers > 0
 
-    train_loader = DataLoader(
-        mixed_ds,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=(device.type == "cuda"),
-        drop_last=True,
-        persistent_workers=persistent,
-        collate_fn=flexible_collate,
-    )
+    homogeneous_sampler = None
+    if args.homogeneous_batches and generation_dataset is not None:
+        num_batches = max(1, len(mixed_ds) // args.batch_size)
+        homogeneous_sampler = HomogeneousMixedBatchSampler(
+            num_batches=num_batches,
+            batch_size=args.batch_size,
+            vision_ratio=args.vision_ratio,
+            seed=args.seed,
+        )
+        train_loader = DataLoader(
+            mixed_ds,
+            batch_sampler=homogeneous_sampler,
+            num_workers=args.num_workers,
+            pin_memory=(device.type == "cuda"),
+            persistent_workers=persistent,
+            collate_fn=flexible_collate,
+        )
+        logger.info(
+            "  Homogeneous branch schedule: %d batches (%d vision / %d generation)",
+            num_batches,
+            round(num_batches * args.vision_ratio),
+            num_batches - round(num_batches * args.vision_ratio),
+        )
+    else:
+        train_loader = DataLoader(
+            mixed_ds,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=(device.type == "cuda"),
+            drop_last=True,
+            persistent_workers=persistent,
+            collate_fn=flexible_collate,
+        )
     val_loader = None
     if val_dataset is not None:
         val_loader = DataLoader(
@@ -1046,14 +1123,28 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    dataset_fingerprint = None
+    if args.pair_manifest is not None:
+        manifest_path = args.pair_manifest.parent / "manifest.json"
+        if manifest_path.is_file():
+            try:
+                dataset_fingerprint = json.loads(
+                    manifest_path.read_text(encoding="utf-8")
+                ).get("dataset_fingerprint")
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Could not read dataset fingerprint from %s", manifest_path)
+
     # Save config
     config_dump = {
         "model": args.model_name,
         "model_id": model_cfg.model_id,
-        "data_dir": str(data_root.resolve()),
-        "pair_manifest": str(args.pair_manifest.resolve()) if args.pair_manifest else None,
-        "generation_dir": str(args.generation_dir.resolve()) if args.generation_dir else None,
+        "data_dir": portable_project_path(data_root),
+        "pair_manifest": portable_project_path(args.pair_manifest),
+        "generation_dir": portable_project_path(args.generation_dir),
+        "require_captioned_generation": bool(args.require_captioned_generation),
+        "dataset_fingerprint": dataset_fingerprint,
         "vision_ratio": args.vision_ratio if generation_dataset else 1.0,
+        "homogeneous_batches": bool(homogeneous_sampler is not None),
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "rslora": not args.no_rslora,
@@ -1111,6 +1202,16 @@ def main():
                     optimizer.load_state_dict(ckpt["optimizer_state_dict"])
                 if "scheduler_state_dict" in ckpt:
                     lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+                # Restore EMA shadow; move to the shadow tensors' device.
+                ema_ckpt = ckpt.get("ema_state_dict")
+                if ema_ckpt:
+                    for name, tensor in ema_ckpt.items():
+                        if name in ema.shadow_params:
+                            ema.shadow_params[name] = tensor.to(
+                                ema.shadow_params[name].device
+                            )
+                    ema.step = ckpt.get("step", 0)
+                    logger.info("  Restored EMA shadow weights")
                 logger.info(f"  Resumed at step {global_step}, best_val_loss={best_val_loss:.4f}")
 
     # ── Training loop ────────────────────────────────────────────────
@@ -1132,14 +1233,22 @@ def main():
     micro_step = 0
     optimizer.zero_grad(set_to_none=True)
 
-    while global_step < args.steps:
+    target_step = args.steps
+    if args.stop_after_step is not None:
+        if args.stop_after_step <= 0:
+            raise ValueError("--stop-after-step must be positive")
+        target_step = min(target_step, args.stop_after_step)
+
+    while global_step < target_step:
         updates_per_epoch = max(1, (len(train_loader) + args.grad_accum - 1) // args.grad_accum)
         epoch = start_epoch + (global_step // updates_per_epoch)
         mixed_ds.set_epoch(epoch)
+        if homogeneous_sampler is not None:
+            homogeneous_sampler.set_epoch(epoch)
         peft_model.train()
 
         for batch in train_loader:
-            if global_step >= args.steps:
+            if global_step >= target_step:
                 break
 
             prompts = batch.get("prompt", [""] * args.batch_size)
@@ -1257,6 +1366,11 @@ def main():
                             sigma_floor=args.depth_edge_aux_sigma_floor,
                         )
             total_loss = flow_loss.float() + args.depth_edge_aux_weight * depth_aux_loss
+            if not torch.isfinite(total_loss).all():
+                raise FloatingPointError(
+                    f"Non-finite training loss at global_step={global_step}, "
+                    f"tasks={batch.get('task')}"
+                )
             loss = total_loss / args.grad_accum
 
             # ── Backward ──────────────────────────────────────────────
@@ -1291,7 +1405,7 @@ def main():
                 optimizer.step()
             lr_scheduler.step()
             optimizer.zero_grad(set_to_none=True)
-            ema.update(peft_model.parameters())
+            ema.update(peft_model)
             global_step += 1
 
             # ── Logging ──────────────────────────────────────────────
@@ -1320,23 +1434,28 @@ def main():
                     last_avg_loss,
                     best_val_loss,
                     args,
+                    ema=ema,
                 )
                 logger.info(f"  Saved checkpoint at step {global_step}")
 
-            # ── Validation ───────────────────────────────────────────
+            # ── Validation (on EMA shadow weights) ────────────────────
             if val_loader is not None and global_step % args.eval_every == 0:
-                val_loss = validate(
-                    peft_model,
-                    vae,
-                    components,
-                    val_loader,
-                    device,
-                    model_dtype,
-                    args,
-                    vae_downsample,
-                    max_length,
-                    task_loss_weights,
-                )
+                ema_backup = ema.apply_shadow(peft_model)
+                try:
+                    val_loss = validate(
+                        peft_model,
+                        vae,
+                        components,
+                        val_loader,
+                        device,
+                        model_dtype,
+                        args,
+                        vae_downsample,
+                        max_length,
+                        task_loss_weights,
+                    )
+                finally:
+                    ema.restore_shadow(peft_model, ema_backup)
                 logger.info(f"  [val] step={global_step} val_loss={val_loss:.4f}")
 
                 if val_loss < best_val_loss:
@@ -1351,8 +1470,13 @@ def main():
                         best_val_loss,
                         args,
                         suffix="_best",
+                        ema=ema,
                     )
                     logger.info(f"  New best val_loss={best_val_loss:.4f}")
+
+    if args.stop_after_step is not None and global_step >= target_step and target_step < args.steps:
+        logger.info("Segment stop reached at step %d/%d; regular checkpoint retained", global_step, args.steps)
+        return
 
     # ── Final save ──────────────────────────────────────────────────
     save_checkpoint(
@@ -1365,6 +1489,7 @@ def main():
         best_val_loss,
         args,
         suffix="_final",
+        ema=ema,
     )
     logger.info("Training complete!")
     logger.info(f"  Total steps: {global_step}")
@@ -1382,8 +1507,14 @@ def save_checkpoint(
     best_val_loss: float,
     args,
     suffix: str = "",
+    ema=None,
 ):
-    """Save LoRA checkpoint with training state."""
+    """Save LoRA checkpoint with training state.
+
+    ``lora.pt`` keeps online weights for resume plus ``ema_state_dict``.
+    ``lora_adapter/`` holds EMA shadow weights (what viz/eval should load);
+    online weights go to ``lora_adapter_online/``.
+    """
     ckpt_dir = output_dir / f"checkpoint-{step}{suffix}"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1402,14 +1533,33 @@ def save_checkpoint(
         "scheduler_state_dict": lr_scheduler.state_dict(),
     }
 
+    has_ema = ema is not None and getattr(ema, "shadow_params", None)
+    if has_ema:
+        # EMA shadow saved for resume/inspection; lora.pt stays online-weighted.
+        ckpt["ema_state_dict"] = {
+            name: tensor.cpu().clone() for name, tensor in ema.shadow_params.items()
+        }
+
     torch.save(ckpt, str(ckpt_dir / "lora.pt"))
 
-    # Also save as safetensors if possible
-    try:
-        peft_model.save_pretrained(str(ckpt_dir / "lora_adapter"))
-        logger.info(f"  LoRA adapter saved to {ckpt_dir / 'lora_adapter'}")
-    except Exception as e:
-        logger.warning(f"  Could not save LoRA adapter via save_pretrained: {e}")
+    # lora_adapter = inference-facing weights; prefer EMA when available.
+    if has_ema:
+        backup = ema.apply_shadow(peft_model)
+        try:
+            peft_model.save_pretrained(str(ckpt_dir / "lora_adapter"))
+            logger.info(f"  LoRA adapter (EMA) saved to {ckpt_dir / 'lora_adapter'}")
+        finally:
+            ema.restore_shadow(peft_model, backup)
+        try:
+            peft_model.save_pretrained(str(ckpt_dir / "lora_adapter_online"))
+        except Exception as e:
+            logger.warning(f"  Could not save online LoRA adapter: {e}")
+    else:
+        try:
+            peft_model.save_pretrained(str(ckpt_dir / "lora_adapter"))
+            logger.info(f"  LoRA adapter saved to {ckpt_dir / 'lora_adapter'}")
+        except Exception as e:
+            logger.warning(f"  Could not save LoRA adapter via save_pretrained: {e}")
 
     # Save metadata
     meta = {
@@ -1419,6 +1569,8 @@ def save_checkpoint(
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "model_name": args.model_name,
+        "ema_decay": getattr(args, "ema_decay", None),
+        "adapter_dir": "lora_adapter (EMA shadow)" if has_ema else "lora_adapter (online)",
     }
     (ckpt_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
@@ -1535,10 +1687,8 @@ def validate(
                 )
         loss = flow_loss.float() + args.depth_edge_aux_weight * depth_aux_loss
 
-        # Skip NaN/Inf batches to avoid poisoning the average
-        if torch.isnan(loss) or torch.isinf(loss):
-            logger.warning(f"  [val] batch {i} loss is NaN/Inf, skipping")
-            continue
+        if not torch.isfinite(loss).all():
+            raise FloatingPointError(f"Non-finite validation loss at batch {i}")
 
         total_loss += loss.item()
         num_batches += 1

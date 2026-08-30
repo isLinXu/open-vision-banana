@@ -20,9 +20,9 @@ Extended benchmarks (15+ datasets):
 
 from .datasets import (
     BaseVisionDataset,
+    CityscapesSegDataset,
     COCODetectionDataset,
     COCOStuffDataset,
-    CityscapesSegDataset,
     DIODEDataset,
     DIODENormalDataset,
     ETH3DDataset,
@@ -37,16 +37,16 @@ from .datasets import (
     RefCOCODataset,
     RefCOCOgDataset,
     SACoInstanceDataset,
-    SintelFlowDataset,
     ScanNetNormalDataset,
+    SintelFlowDataset,
     TUMRGBDDataset,
+    V3FlatDataset,
     VirtualKITTIDataset,
     VirtualKITTINormalDataset,
-    nuScenesDataset,
     build_dataset,
-    V3FlatDataset,
     build_v3_datasets,
     load_v3_train_val_split,
+    nuScenesDataset,
 )
 from .generation import GenerationDataset, build_generation_dataset
 from .generation_builder import (
@@ -54,7 +54,8 @@ from .generation_builder import (
     build_synthetic_generation_dataset,
     load_prompts_file,
 )
-from .mixed import MixedVisionDataset
+from .manifest import fingerprint_records, read_jsonl, resolve_manifest_path
+from .mixed import HomogeneousMixedBatchSampler, MixedVisionDataset
 from .split import split_dataset, split_vision_datasets
 from .validation import ValidationReport, validate_vision_dataset
 
@@ -84,6 +85,10 @@ __all__ = [
     "MapillaryVistasDataset",
     "nuScenesDataset",
     "MixedVisionDataset",
+    "HomogeneousMixedBatchSampler",
+    "fingerprint_records",
+    "read_jsonl",
+    "resolve_manifest_path",
     "GenerationDataset",
     "build_dataset",
     "V3FlatDataset",

@@ -1,0 +1,63 @@
+# SANA shared-LoRA paper-method gate (not Table 1).
+# Resume Hypersim metric-depth checkpoint-500 (NYU δ1≈0.40 capped fullval),
+# then continue on depth + Cityscapes-19 + generation at vision_ratio=0.1.
+# One adapter, RGB task outputs, img2img flow. Sequential MPS only.
+experiment: sana_paper_gate_from_hypersim500_20260828
+baseline_checkpoint: output/sana_hypersim_metric_depth_lr1e5_20260822/checkpoint-500/lora.pt
+
+model:
+  name: sana-600m-512px
+  model_id: Efficient-Large-Model/Sana_600M_512px_diffusers
+  dtype: float16
+  resolution: 512
+
+lora:
+  rank: 16
+  alpha: 32
+  rs_lora: true
+
+data:
+  dir: data/sana_paper_gate_512
+  pair_manifest: data/sana_paper_gate_512/pairs.jsonl
+  generation_dir: data/sana_paper_gate_512/generation
+  require_captioned_generation: true
+  resolution: 512
+  vision_ratio: 0.1
+  homogeneous_batches: true
+  num_workers: 0
+  tasks: [depth, semantic]
+  task_weights: uniform
+
+training:
+  steps: 1000
+  batch_size: 1
+  gradient_accumulation: 8
+  lr: 1.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 50
+
+checkpoint:
+  output_dir: output/sana_paper_gate_from_hypersim500_20260828
+  save_every: 50
+  eval_every: 250
+  log_every: 10
+
+device: mps

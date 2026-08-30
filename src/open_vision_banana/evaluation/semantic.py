@@ -11,6 +11,9 @@ from __future__ import annotations
 import torch
 
 
+from .benchmark import as_batch_hw_labels
+
+
 def evaluate_semantic(
     pred: torch.Tensor,
     gt: torch.Tensor,
@@ -20,14 +23,16 @@ def evaluate_semantic(
     """Compute semantic segmentation metrics.
 
     Args:
-        pred: Predicted labels [B, H, W] (integer class indices).
-        gt: Ground truth labels [B, H, W] (integer class indices).
+        pred: Predicted labels [B, H, W] or [B, 1, H, W] (integer class indices).
+        gt: Ground truth labels [B, H, W] or [H, W] (integer class indices).
         num_classes: Total number of classes.
         ignore_index: Class index to ignore in evaluation.
 
     Returns:
         Dictionary with mIoU, pixel accuracy, and per-class IoU.
     """
+    pred = as_batch_hw_labels(pred)
+    gt = as_batch_hw_labels(gt)
     valid = gt != ignore_index
     pred_valid = pred[valid]
     gt_valid = gt[valid]

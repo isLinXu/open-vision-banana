@@ -72,6 +72,64 @@ def depth_rmse_log(
     return torch.sqrt(((pred.log() - gt.log()) ** 2).mean()).item()
 
 
+# Skip median-scale when the prediction is degenerate. A 1e-6 floor
+# turns near-zero RGB decodes into 10^6–10^7 scale factors and explodes
+# AbsRel_aligned / RMSE_aligned. Those images stay in the raw paper metrics.
+ALIGNED_MIN_PRED_MEDIAN = 1e-3
+ALIGNED_MAX_SCALE = 50.0
+
+
+def median_scale_align(
+    pred: torch.Tensor,
+    gt: torch.Tensor,
+    valid_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Scale each image so ``median(pred)`` matches ``median(gt)``.
+
+    Returns ``(aligned, stable)`` where ``stable`` is a per-image bool mask.
+    Images with a near-zero prediction median, or a scale outside
+    ``[1/50, 50]``, are left unchanged and marked unstable.
+
+    This is a diagnostic for relative-to-metric transfer. Paper-protocol
+    metric depth must still be reported on the unaligned prediction.
+    """
+    pred = pred.float()
+    gt = gt.float()
+    squeezed = False
+    if pred.dim() == 2:
+        pred = pred.unsqueeze(0)
+        gt = gt.unsqueeze(0)
+        squeezed = True
+    if valid_mask is None:
+        mask = torch.isfinite(pred) & torch.isfinite(gt) & (gt > 0) & (pred > 0)
+    else:
+        mask = valid_mask.to(device=pred.device).bool()
+        if mask.dim() == pred.dim() + 1 and mask.shape[1] == 1:
+            mask = mask.squeeze(1)
+        if mask.dim() == 2:
+            mask = mask.unsqueeze(0).expand_as(pred)
+        mask = mask & torch.isfinite(pred) & torch.isfinite(gt) & (gt > 0) & (pred > 0)
+
+    aligned = pred.clone()
+    stable = torch.zeros(pred.shape[0], dtype=torch.bool, device=pred.device)
+    for index in range(pred.shape[0]):
+        valid = mask[index]
+        if not bool(valid.any()):
+            continue
+        pred_median = pred[index][valid].median()
+        if float(pred_median) < ALIGNED_MIN_PRED_MEDIAN:
+            continue
+        gt_median = gt[index][valid].median()
+        scale = float(gt_median / pred_median)
+        if scale <= 0.0 or scale > ALIGNED_MAX_SCALE or scale < 1.0 / ALIGNED_MAX_SCALE:
+            continue
+        aligned[index] = pred[index] * scale
+        stable[index] = True
+    if squeezed:
+        return aligned.squeeze(0), stable.squeeze(0)
+    return aligned, stable
+
+
 def depth_delta(
     pred: torch.Tensor,
     gt: torch.Tensor,
@@ -156,6 +214,10 @@ def evaluate_depth(
     """
     pred = pred.squeeze(1)
     gt = gt.squeeze(1)
+    if valid_mask is not None:
+        valid_mask = valid_mask.to(device=pred.device)
+        if valid_mask.dim() == pred.dim() + 1 and valid_mask.shape[1] == 1:
+            valid_mask = valid_mask.squeeze(1)
 
     result = {
         "AbsRel": depth_abs_rel(pred, gt, valid_mask),
@@ -175,4 +237,4 @@ def evaluate_depth(
     return result
 
 
-__all__ = ["evaluate_depth", "encoding_noise_baseline"]
+__all__ = ["evaluate_depth", "encoding_noise_baseline", "median_scale_align"]

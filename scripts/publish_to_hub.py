@@ -113,11 +113,15 @@ model = VisionBanana.from_pretrained(
     lora_path="hf:{repo_id}",
 )
 
-result = model.predict("input.jpg", task="{usage_task}")
+input_tensor = "input.jpg"  # replace with a PIL image or tensor in your pipeline
+result = model.predict(input_tensor, task="{usage_task}")
 ```
 
 ## Limitations
 
+- Paper metrics do not apply to this open checkpoint unless they are explicitly
+  reported from the attached benchmark protocol; the paper's base model is
+  closed and cannot be reproduced numerically here.
 - Requires FLUX.1 [schnell] base model weights (~24GB download)
 - Supported tasks are limited to those listed by this artifact's training manifest
 - RGB parameterization introduces roundtrip error (see paper for analysis)

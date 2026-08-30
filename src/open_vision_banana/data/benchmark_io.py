@@ -33,6 +33,37 @@ def find_matching_file(
     return matches[0] if matches else None
 
 
+def infer_planar_hw(num_pixels: int) -> tuple[int, int]:
+    """Infer a landscape H×W for a raw float depth dump.
+
+    ETH3D DSLR ground-truth maps are 3:2 float32 arrays with no header.
+    """
+    if num_pixels <= 0:
+        raise ValueError(f"Cannot infer depth shape from {num_pixels} pixels")
+    width = int(round((num_pixels * 1.5) ** 0.5))
+    if width > 0 and num_pixels % width == 0:
+        height = num_pixels // width
+        return height, width
+    width = int(num_pixels**0.5)
+    while width > 1 and num_pixels % width != 0:
+        width -= 1
+    height = num_pixels // width
+    if height > width:
+        height, width = width, height
+    return height, width
+
+
+def load_eth3d_depth(path: str | Path) -> torch.Tensor:
+    """Load official ETH3D geometric depth (raw float32 metres, inf = invalid)."""
+    source = Path(path)
+    raw = np.fromfile(source, dtype=np.float32)
+    if raw.size == 0:
+        raise ValueError(f"Empty ETH3D depth file: {source}")
+    height, width = infer_planar_hw(int(raw.size))
+    depth = np.ascontiguousarray(raw.reshape(height, width))
+    return torch.from_numpy(depth).float().unsqueeze(0)
+
+
 def load_scalar(path: str | Path, *, scale: float = 1.0) -> torch.Tensor:
     """Load a scalar map as a float tensor with shape ``[1, H, W]``."""
     source = Path(path)
@@ -93,6 +124,8 @@ def resize_normal(value: torch.Tensor, resolution: int | tuple[int, int]) -> tor
 
 __all__ = [
     "find_matching_file",
+    "infer_planar_hw",
+    "load_eth3d_depth",
     "load_normal",
     "load_scalar",
     "resize_normal",

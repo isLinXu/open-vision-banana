@@ -50,16 +50,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from open_vision_banana.data import build_v3_datasets, load_v3_train_val_split
+from open_vision_banana.inference.sana_img2img import (
+    encode_text_sana,
+    flow_matching_inference,
+    vae_decode_sana,
+    vae_encode_sana,
+)
 from open_vision_banana.model_registry import (
     PipelineComponents,
     apply_lora,
     get_model_config,
     load_pipeline,
-)
-from open_vision_banana.training.sana_flow import (
-    denormalize_vae_latents,
-    native_sana_timestep,
-    normalize_vae_latents,
 )
 
 logger = logging.getLogger(__name__)
@@ -151,199 +152,6 @@ def auto_device() -> str:
     if torch.backends.mps.is_available():
         return "mps"
     return "cpu"
-
-
-# ── Model loading ───────────────────────────────────────────────────
-
-
-def encode_text_sana(
-    components: PipelineComponents,
-    prompts: list[str],
-    device: torch.device,
-    dtype: torch.dtype,
-    max_length: int = 300,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Encode text prompts using Gemma-2-2B-IT."""
-    tokenizer = components.tokenizer
-    text_encoder = components.text_encoder
-
-    tokenized = tokenizer(
-        prompts,
-        padding="max_length",
-        max_length=max_length,
-        truncation=True,
-        return_tensors="pt",
-    )
-    input_ids = tokenized.input_ids.to(device)
-    attention_mask = tokenized.attention_mask.to(device)
-
-    with torch.no_grad():
-        outputs = text_encoder(input_ids, attention_mask=attention_mask)
-        if hasattr(outputs, "last_hidden_state"):
-            encoder_hidden_states = outputs.last_hidden_state
-        else:
-            encoder_hidden_states = outputs[0]
-
-    return encoder_hidden_states.to(dtype), attention_mask.to(dtype)
-
-
-def vae_encode_sana(
-    vae: torch.nn.Module,
-    images: torch.Tensor,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> torch.Tensor:
-    """Encode images to latents using DC-AE (32x downsample, 32 channels).
-
-    Input: [B, 3, H, W] in [-1, 1]
-    Output: [B, 32, H/32, W/32]
-    """
-    with torch.no_grad():
-        enc_out = vae.encode(images.to(dtype=vae.dtype))
-        if hasattr(enc_out, "latent_dist"):
-            latents = enc_out.latent_dist.mode()
-        elif hasattr(enc_out, "latent"):
-            latents = enc_out.latent
-        elif hasattr(enc_out, "sample"):
-            latents = enc_out.sample
-        elif isinstance(enc_out, torch.Tensor):
-            latents = enc_out
-        else:
-            for attr in ("latents", "encoded", "z"):
-                if hasattr(enc_out, attr):
-                    latents = getattr(enc_out, attr)
-                    break
-            else:
-                raise TypeError(
-                    f"VAE encode returned {type(enc_out).__name__} with no known "
-                    f"latent attribute. Available: {dir(enc_out)}"
-                )
-
-    return normalize_vae_latents(latents.to(dtype), vae)
-
-
-def vae_decode_sana(
-    vae: torch.nn.Module,
-    latents: torch.Tensor,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> torch.Tensor:
-    """Decode latents to images using DC-AE.
-
-    Input: [B, 32, H/32, W/32]
-    Output: [B, 3, H, W] in [-1, 1]
-    """
-    with torch.no_grad():
-        dec_out = vae.decode(denormalize_vae_latents(latents, vae).to(dtype=vae.dtype))
-        if hasattr(dec_out, "sample"):
-            images = dec_out.sample
-        elif isinstance(dec_out, torch.Tensor):
-            images = dec_out
-        else:
-            for attr in ("image", "images", "decoded", "x"):
-                if hasattr(dec_out, attr):
-                    images = getattr(dec_out, attr)
-                    break
-            else:
-                raise TypeError(
-                    f"VAE decode returned {type(dec_out).__name__} with no known "
-                    f"sample attribute. Available: {dir(dec_out)}"
-                )
-
-    return images
-
-
-# ── Flow matching inference ─────────────────────────────────────────
-
-
-@torch.no_grad()
-def flow_matching_inference(
-    peft_model,
-    vae,
-    components: PipelineComponents,
-    input_images: torch.Tensor,  # [B, 3, H, W] in [-1, 1]
-    prompts: list[str],
-    device: torch.device,
-    model_dtype: torch.dtype,
-    num_steps: int = 20,
-    use_img2img: bool = True,
-    max_length: int = 300,
-    guidance_scale: float = 1.0,
-) -> torch.Tensor:
-    """Run flow-matching inference to generate target images from inputs.
-
-    For img2img flow: starts from input latents, integrates ODE toward target.
-    For noise->target flow: starts from pure noise, integrates toward target.
-
-    Returns: [B, 3, H, W] in [0, 1]
-    """
-    # Encode text
-    prompt_embeds, attention_mask = encode_text_sana(
-        components, prompts, device, model_dtype, max_length
-    )
-    uncond_embeds = None
-    uncond_attention_mask = None
-    if guidance_scale != 1.0:
-        uncond_embeds, uncond_attention_mask = encode_text_sana(
-            components, [""] * len(prompts), device, model_dtype, max_length
-        )
-
-    # Encode input images to latents
-    input_latents = vae_encode_sana(vae, input_images, device, model_dtype)
-
-    # This fine-tuning setup uses source-to-target img2img flow.  For the
-    # standard noise endpoint, preserve the same native scheduler semantics.
-    current_latents = input_latents.clone() if use_img2img else torch.randn_like(input_latents)
-
-    batch_size = current_latents.shape[0]
-
-    # Autocast for MPS stability (matching training)
-    amp_dtype = torch.bfloat16 if device.type == "mps" else model_dtype
-    use_autocast = device.type == "mps" or (device.type == "cuda" and model_dtype != torch.float32)
-
-    scheduler = components.scheduler
-    if scheduler is None:
-        raise RuntimeError("SANA pipeline did not provide its native flow scheduler")
-    scheduler.set_timesteps(num_steps, device=device)
-
-    for timestep in scheduler.timesteps:
-        t = timestep.expand(batch_size)
-
-        with torch.amp.autocast(
-            device_type=device.type,
-            dtype=amp_dtype,
-            enabled=use_autocast,
-        ):
-            predicted_velocity = peft_model(
-                current_latents,
-                encoder_hidden_states=prompt_embeds,
-                encoder_attention_mask=attention_mask,
-                timestep=native_sana_timestep(t, batch_size, peft_model),
-                return_dict=False,
-            )[0]
-            if uncond_embeds is not None:
-                unconditional_velocity = peft_model(
-                    current_latents,
-                    encoder_hidden_states=uncond_embeds,
-                    encoder_attention_mask=uncond_attention_mask,
-                    timestep=native_sana_timestep(t, batch_size, peft_model),
-                    return_dict=False,
-                )[0]
-                predicted_velocity = unconditional_velocity + guidance_scale * (
-                    predicted_velocity - unconditional_velocity
-                )
-
-        current_latents = scheduler.step(
-            predicted_velocity.float(), timestep, current_latents, return_dict=False
-        )[0]
-
-    # Decode predicted latents to images
-    predicted_images = vae_decode_sana(vae, current_latents, device, model_dtype)
-    # Convert from [-1, 1] to [0, 1]
-    predicted_images = (predicted_images.float() + 1.0) / 2.0
-    predicted_images = predicted_images.clamp(0.0, 1.0)
-
-    return predicted_images
 
 
 # ── Visualization ───────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from ..core.rgb_mapper import RGBMapper
+from ..core.segmentation import InstanceDecodingConfig
 from .prompt import PromptBuilder
 
 try:
@@ -148,12 +149,19 @@ class VisualizationDecoder:
         *,
         semantic_color_map: dict[str, tuple[int, int, int]] | None = None,
         semantic_palette_path: str | Path | None = None,
+        instance_grouping_mode: str = "seed",
+        instance_adaptive_color_tolerance: bool = False,
+        instance_decoding_config: InstanceDecodingConfig | None = None,
     ) -> None:
         if semantic_color_map is not None and semantic_palette_path is not None:
             raise ValueError(
                 "Provide semantic_color_map or semantic_palette_path, not both"
             )
-        self.rgb_mapper = rgb_mapper or RGBMapper()
+        self.rgb_mapper = rgb_mapper or RGBMapper(
+            instance_grouping_mode=instance_grouping_mode,
+            instance_adaptive_color_tolerance=instance_adaptive_color_tolerance,
+            instance_decoding_config=instance_decoding_config,
+        )
         self.prompt_builder = PromptBuilder()
         self.semantic_color_map = (
             load_segmentation_color_map(semantic_palette_path)
@@ -230,11 +238,16 @@ class VisualizationDecoder:
         self,
         rgb_image: torch.Tensor,
         background_color: tuple[int, int, int] = (0, 0, 0),
-        grouping_mode: str = "adjacent",
+        grouping_mode: str | None = None,
+        adaptive_color_tolerance: bool | None = None,
     ) -> dict:
         """Decode instance segmentation from RGB visualization."""
         instances = self.rgb_mapper.decode(
-            rgb_image, task="instance", background_color=background_color, grouping_mode=grouping_mode
+            rgb_image,
+            task="instance",
+            background_color=background_color,
+            grouping_mode=grouping_mode,
+            adaptive_color_tolerance=adaptive_color_tolerance,
         )
         return {"instances": instances}
 

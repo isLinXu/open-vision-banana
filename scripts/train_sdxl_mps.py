@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import random
 import sys
@@ -36,7 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from open_vision_banana.inference.generator import BaseGenerator  # noqa: E402
-from open_vision_banana.data import MixedVisionDataset  # noqa: E402
+from open_vision_banana.data import HomogeneousMixedBatchSampler, MixedVisionDataset  # noqa: E402
 from open_vision_banana.training.tuner import InstructionTuner, VisionTaskDataset  # noqa: E402
 from open_vision_banana.training.utils import enable_gradient_checkpointing  # noqa: E402
 
@@ -55,6 +56,91 @@ MODEL_ID_MAP = {
     "sdxl": "stabilityai/stable-diffusion-xl-base-1.0",
     "flux-schnell": "flux-schnell",
 }
+
+
+class TaskScheduleSampler(torch.utils.data.Sampler[int]):
+    """Deterministic task-block sampler for the legacy SDXL runner."""
+
+    def __init__(self, lengths, task_names, batch_size: int, seed: int = 42):
+        if len(lengths) != len(task_names) or not lengths:
+            raise ValueError("lengths and task_names must have the same non-zero size")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        self.lengths = [int(length) for length in lengths]
+        self.task_names = list(task_names)
+        self.batch_size = int(batch_size)
+        self.seed = int(seed)
+
+    def __iter__(self):
+        # Emit one complete block from each task first, then continue round
+        # robin. This guarantees every task is represented in the first cycle.
+        offsets = [0] * len(self.lengths)
+        task_order = list(range(len(self.lengths)))
+        rng = random.Random(self.seed)
+        rng.shuffle(task_order)
+        while True:
+            emitted = False
+            for task_index in task_order:
+                if offsets[task_index] >= self.lengths[task_index]:
+                    continue
+                start = offsets[task_index]
+                offsets[task_index] += min(self.batch_size, self.lengths[task_index] - start)
+                for index in range(start, offsets[task_index]):
+                    emitted = True
+                    yield sum(self.lengths[:task_index]) + index
+            if not emitted:
+                return
+
+    def __len__(self) -> int:
+        return sum(self.lengths)
+
+
+def resolve_max_per_task(value, *, source_conditioned: bool, explicit_data_dir: bool):
+    if value is not None:
+        return value
+    if source_conditioned and explicit_data_dir:
+        return None
+    return 300
+
+
+def resolve_source_training_defaults(args) -> None:
+    perception = str(getattr(args, "task", "")).lower() not in {"generation", "t2i"}
+    if getattr(args, "source_conditioned", None) is None:
+        args.source_conditioned = perception
+    if getattr(args, "x0_loss_weight", None) is None:
+        args.x0_loss_weight = 1.0 if perception else 0.0
+    if getattr(args, "pixel_loss_weight", None) is None:
+        args.pixel_loss_weight = 0.5 if perception else 0.0
+
+
+def validation_task_names(task: str) -> tuple[str, ...]:
+    mapping = {
+        "depth": ("depth",),
+        "normal": ("normal",),
+        "segmentation": ("semantic",),
+        "edge": ("edge",),
+        "generation": ("generation",),
+        "all": ("depth", "normal", "semantic", "edge", "generation"),
+    }
+    if task not in mapping:
+        raise ValueError(f"Unsupported validation task: {task}")
+    return mapping[task]
+
+
+def filter_dataset_to_manifest_split(dataset, dataset_root: Path, task: str) -> int:
+    manifest_path = Path(dataset_root) / "train_val_split.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(manifest_path)
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    split_key = "segmentation" if task == "semantic" else task
+    allowed = set(payload.get("train", {}).get(split_key, []))
+    before = len(dataset.samples)
+    dataset.samples = [
+        sample
+        for sample in dataset.samples
+        if Path(sample["image_path"]).name in allowed
+    ]
+    return before - len(dataset.samples)
 
 
 def get_device() -> torch.device:
@@ -180,6 +266,7 @@ def main():
     parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate")
     parser.add_argument("--max-steps", type=int, default=5000, help="Max steps")
     parser.add_argument("--save-every", type=int, default=500, help="Save every N steps")
+    parser.add_argument("--max-keep", type=int, default=5, help="Number of rolling checkpoints to keep")
     parser.add_argument("--output-dir", type=str, default=None,
                         help="Checkpoint directory (default: output/<model>_checkpoints)")
     parser.add_argument("--log-every", type=int, default=10, help="Log every N steps")
@@ -198,6 +285,15 @@ def main():
         type=float,
         default=PAPER_VISION_RATIO,
         help="Probability of sampling a vision task when generation data is available",
+    )
+    parser.add_argument(
+        "--homogeneous-batches",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Sample whole micro-batches from one branch (vision or generation). "
+            "Default: on when batch_size>1 and both vision+generation are present."
+        ),
     )
     parser.add_argument(
         "--data-dir",
@@ -394,8 +490,12 @@ def main():
             # through the pure t2i branch: noisy = (1-t)*target + t*noise,
             # velocity_target = target - noise (standard flow matching).
             return {
-                "prompt": s["prompt"], "image": None, "target_rgb": img_tensor,
+                "prompt": s["prompt"],
+                "image": None,
+                "target_rgb": img_tensor,
                 "target_rgb_range": "-1_1",
+                "task": "generation",
+                "flow_source": "noise",
             }
 
     datasets = []
@@ -513,6 +613,32 @@ def main():
         seed=args.seed,
     )
     total_samples = len(combined)
+    batch_sampler = None
+    use_homogeneous = args.homogeneous_batches
+    if use_homogeneous is None:
+        use_homogeneous = (
+            args.batch_size > 1
+            and bool(datasets)
+            and bool(generation_datasets)
+            and isinstance(combined, MixedVisionDataset)
+        )
+    if use_homogeneous:
+        if not isinstance(combined, MixedVisionDataset):
+            raise TypeError("--homogeneous-batches requires MixedVisionDataset")
+        if sampler is not None:
+            raise ValueError("homogeneous batches cannot be combined with a WeightedRandomSampler")
+        num_batches = max(1, (total_samples + args.batch_size - 1) // args.batch_size)
+        batch_sampler = HomogeneousMixedBatchSampler(
+            num_batches=num_batches,
+            batch_size=args.batch_size,
+            vision_ratio=args.vision_ratio,
+            seed=args.seed,
+        )
+        logger.info(
+            "Homogeneous micro-batches enabled: batch_size=%d, ~%.0f%% vision batches",
+            args.batch_size,
+            args.vision_ratio * 100,
+        )
     if datasets and generation_datasets:
         logger.info(
             "Paper-aligned sampling: %.0f%% vision / %.0f%% generation",
@@ -617,6 +743,7 @@ def main():
         warmup_steps=warmup_steps,
         output_dir=str(output_dir),
         save_every=args.save_every,
+        max_keep=args.max_keep,
         eval_every=max(1, total_steps // 4),  # Evaluate ~4 times during training
         use_amp=True,
         num_workers=0,  # MPS must be 0
@@ -624,9 +751,14 @@ def main():
         start_step=start_step,
         start_epoch=start_epoch,
         train_sampler=sampler,
+        batch_sampler=batch_sampler,
         resume_checkpoint=resume_checkpoint,
         restore_rng_on_resume=False,  # Old checkpoints may lack rng_state.pt
         max_steps=args.max_steps,  # P0 fix: actually limit training steps
+        # Acceptance runs must stop on the first non-finite loss.  Skipping a
+        # batch would make the effective benchmark mix and optimization state
+        # unauditable, especially for FLUX where this used to be enabled.
+        skip_nonfinite=False,
     )
 
     logger.info(f"Training complete! Result: {result}")

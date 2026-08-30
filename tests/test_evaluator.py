@@ -285,6 +285,57 @@ class TestEvaluateEdgeCases:
         metrics = ev.evaluate(dataloader, task="depth", max_batches=2)
         assert "AbsRel" in metrics
 
+    def test_skips_nan_generator_output_and_keeps_valid_batches(self):
+        from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
+        mapper = DepthRGBMapper()
+        depth = torch.rand(1, 1, 8, 8) * 5 + 0.5
+        rgb = mapper.depth_to_rgb(depth)
+
+        class FlakyModel:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def eval(self):
+                return self
+
+            def predict(self, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ValueError("generator output contains NaN or Inf values")
+                return {"rgb_output": rgb.clone()}
+
+        ev = VisionEvaluator(FlakyModel(), device="cpu", strict_nonfinite=False)
+        dataloader = [
+            {"image": torch.rand(1, 3, 8, 8), "target_rgb": rgb, "gt_depth": depth},
+            {"image": torch.rand(1, 3, 8, 8), "target_rgb": rgb, "gt_depth": depth},
+        ]
+        metrics = ev.evaluate(dataloader, task="depth")
+        assert metrics["skipped_samples"] == 1
+        assert metrics["valid_pixels"] > 0
+
+    def test_nonfinite_generator_output_fails_by_default(self):
+        class NaNModel:
+            def eval(self):
+                return self
+
+            def predict(self, **kwargs):
+                raise ValueError("generator output contains NaN or Inf values")
+
+        ev = VisionEvaluator(NaNModel(), device="cpu")
+        with pytest.raises(RuntimeError, match="Non-finite generator output"):
+            ev.evaluate(
+                [{"image": torch.rand(1, 3, 2, 2), "target_rgb": torch.rand(1, 3, 2, 2)}],
+                task="depth",
+            )
+
+    def test_nonfinite_direct_tensor_fails_by_default(self):
+        model = MockModelDirect(output_rgb=torch.full((1, 3, 8, 8), float("nan")))
+        ev = VisionEvaluator(model, device="cpu")
+        batch = {"image": torch.zeros(1, 3, 8, 8), "target_rgb": torch.zeros(1, 3, 8, 8)}
+        with pytest.raises(RuntimeError, match="Non-finite generator output"):
+            ev.evaluate([batch], task="depth")
+
     def test_unknown_task_raises(self):
         """Unknown task should raise ValueError."""
         model = MockModelWithPredict()
