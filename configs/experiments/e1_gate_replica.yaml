@@ -4,7 +4,7 @@
 # 1:1 复刻成功 standalone gate 的关键配置，验证「capacity ladder 负结果由
 # rank/分辨率不足导致」这一单变量假设。
 #
-# 背景证据（docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v120.md §1）：
+# 背景证据（docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md §1）：
 #   - capacity_8x200（rank 8, 128px）：train r = -0.087，过拟合失败
 #   - standalone gate（rank 64, 4-step 调度）：单样本 r = 0.8154
 #

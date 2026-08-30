@@ -161,7 +161,7 @@ failed the ordering-memory gate, so it was not combined with the adapter.
 
 ## References
 
-- `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v110.md`
+- `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md`
 - `docs/plans/2026-07-26-ssd-depth-quality-stage2-design.md`
 - `docs/adr/0002-depth-scalar-geometry-objective.md`
 - Diffusers `T2IAdapter` and `UNet2DConditionModel.down_intrablock_additional_residuals`
