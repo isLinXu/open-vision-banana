@@ -239,6 +239,9 @@ wandb/
 .benchmarks/
 .box-desens/
 
+# Experiment outputs (keep source scripts and human-readable reports)
+experiments/*_results.json
+
 # Workspace / orchestrator tooling
 .workbuddy/
 
