@@ -122,7 +122,7 @@ finite loss, discovered feature contract, checkpoint, and result JSON.
 
 **Files:**
 - Modify: `docs/adr/0003-use-frozen-ssd-features-for-depth-probe.md`
-- Modify: `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v110.md`
+- Modify: `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md` (current consolidated analysis)
 - Modify: `docs/plans/2026-07-26-ssd-depth-quality-stage2-design.md`
 
 **Step 1: Run four-image overfit**
@@ -139,4 +139,3 @@ most 0.05. Otherwise mark the SSD-1B depth mainline stopped.
 
 Write metrics, runtime, parameter count, feature shapes, and the next decision
 to the ADR and reports. Do not stage or commit unrelated dirty-worktree files.
-

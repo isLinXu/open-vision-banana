@@ -68,11 +68,10 @@
 **Files:**
 - Modify: `docs/adr/0004-match-vae-only-and-ssd-feature-ablation.md`
 - Modify: `docs/plans/2026-07-26-ssd-depth-quality-stage2-design.md`
-- Modify: `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v110.md`
+- Modify: `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md` (current consolidated analysis)
 
 **Steps:**
 1. Record feature contract, checksums, endpoint histories, deltas, runtime, and
    exact split sizes.
 2. State whether SSD intermediate features earn a larger validation run.
 3. Preserve all unrelated dirty-worktree changes and do not stage or commit.
-

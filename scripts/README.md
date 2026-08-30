@@ -56,7 +56,6 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 | `train_ddp_example.sh` | DDP example with sample config |
 | `train_fsdp.sh` | FSDP training launcher |
 | `run_experiments.sh` | Run experiment matrix |
-| `submit_batches.sh` | Submit batch jobs |
 | `build-release.sh` | Build release package |
 | `generate-icons.sh` | Generate app icons |
 

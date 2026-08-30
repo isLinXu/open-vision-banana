@@ -2,8 +2,8 @@
 
 > 分析日期：2026-08-17 · 审计基线：git HEAD `8ca08b3`（工作树干净）
 > 论文：*Image Generators are Generalist Vision Learners*（arXiv:2604.20329v3，Google Research，基座 Nano Banana Pro）
-> 前置文档：`paper_alignment_2604.20329v3.md`（算法对齐）、`reproducibility_assessment_2026-08-11.md`（复现性边界）、`OPEN_VISION_BANANA_DEEP_ANALYSIS_v120.md`（v1.2.0 工程分析）、`ROUTE_BOUNDARIES.md`（三路线契约）
-> 本版增量：① 纳入 08-13 ~ 08-17 SANA 路线的**生成式深度 gate 通过**这一关键新证据，修订 v1.2.0「RGB diffusion 路径仍失败」的结论；② 汇总四条路线的最新实测矩阵；③ 给出以「论文口径 benchmark 闭环」为目标的优化方案。
+> 前置文档：`paper_alignment_2604.20329v3.md`（算法对齐）、`reproducibility_assessment_2026-08-11.md`（复现性边界）、`ROUTE_BOUNDARIES.md`（三路线契约）
+> 本版增量：① 纳入 08-13 ~ 08-17 SANA 路线的**生成式深度 gate 通过**这一关键新证据，修订此前「RGB diffusion 路径仍失败」的结论；② 汇总四条路线的最新实测矩阵；③ 给出以「论文口径 benchmark 闭环」为目标的优化方案。
 
 ---
 

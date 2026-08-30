@@ -105,4 +105,4 @@ current diffusion/LoRA path.
 
 - `docs/plans/2026-07-27-viridis-scalar-geometry-gate-design.md`
 - `docs/adr/0001-depth-geometry-gate-spatial-supervision.md`
-- `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v110.md`
+- `docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md`
