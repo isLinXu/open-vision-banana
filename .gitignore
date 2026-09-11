@@ -317,3 +317,6 @@ vendor/
 # Dataset staging dirs (large, not source)
 tmp_downloads/
 PIDray/
+
+# Local development tools (not source)
+.tools/

@@ -162,10 +162,10 @@ checkpoints:
   sana-depth-relative-v1:
     repo_id: "open-vision-banana/sana-depth-relative-v1"
     revision: main
-    status: local
-    version: "0.1.0-local"
+    status: available
+    version: "1.0.0"
     description: >
-      SANA-600M relative-depth specialist LoRA (ckpt-3000_best).
+      SANA-600M relative-depth specialist LoRA (checkpoint-3000_best).
       Internal val Pearson 0.790 (n=128, 512px, 20 steps). This is
       relative ordering, not metric depth and not a paper NYU δ1 result.
     base_model: "Efficient-Large-Model/Sana_600M_512px_diffusers"

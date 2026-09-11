@@ -38,17 +38,23 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import logging
 import os
+import random
 import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from PIL import Image
+from PIL import Image, ImageFile
 from torch.utils.data import Dataset
+
+# Tolerate partially-downloaded / truncated PNGs in the SNVC manifest instead of
+# crashing the whole training run; unreadable images are resampled in __getitem__.
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # Use HF mirror for models
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -147,9 +153,9 @@ def parse_args() -> argparse.Namespace:
     # ── Data ──────────────────────────────────────────────────────────
     p.add_argument(
         "--data-dir",
-        required="data_dir" not in config_defaults,
+        required=False,
         default=config_defaults.get("data_dir"),
-        help="Path to a v3 dataset or the v5_full dataset root",
+        help="Path to a v3 dataset or the v5_full dataset root (not required with --tar-index)",
     )
     p.add_argument(
         "--tasks", nargs="+", default=config_defaults.get("tasks"), help="Subset of tasks to train (default: all)"
@@ -174,6 +180,28 @@ def parse_args() -> argparse.Namespace:
             "Explicit JSONL of input/target pairs. Required for the v5_full "
             "flat dataset to preserve annotation-backed pair semantics."
         ),
+    )
+    p.add_argument(
+        "--tar-index",
+        type=Path,
+        default=config_defaults.get("tar_index"),
+        help=(
+            "JSON index of tar.gz split volumes (built by build_tar_index_snvc50m.py). "
+            "When provided, images are read directly from the compressed tarballs "
+            "without full extraction."
+        ),
+    )
+    p.add_argument(
+        "--tar-root",
+        type=Path,
+        default=config_defaults.get("tar_root", "/media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M"),
+        help="Directory containing the split tar.gz volumes (used with --tar-index).",
+    )
+    p.add_argument(
+        "--tar-disk-cache",
+        type=Path,
+        default=config_defaults.get("tar_disk_cache"),
+        help="Optional disk cache directory for tar-extracted images.",
     )
     p.add_argument(
         "--generation-dir",
@@ -452,8 +480,10 @@ def encode_text_sana(
         truncation=True,
         return_tensors="pt",
     )
-    input_ids = tokenized.input_ids.to(device)
-    attention_mask = tokenized.attention_mask.to(device)
+    # Handle text encoder on CPU or GPU
+    text_device = next(text_encoder.parameters()).device
+    input_ids = tokenized.input_ids.to(text_device)
+    attention_mask = tokenized.attention_mask.to(text_device)
 
     with torch.no_grad():
         outputs = text_encoder(input_ids, attention_mask=attention_mask)
@@ -463,7 +493,7 @@ def encode_text_sana(
         else:
             encoder_hidden_states = outputs[0]
 
-    return encoder_hidden_states.to(dtype), attention_mask.to(dtype)
+    return encoder_hidden_states.to(device, dtype), attention_mask.to(device, dtype)
 
 
 def vae_encode_sana(
@@ -673,11 +703,17 @@ class ManifestVisionDataset(Dataset):
         split: str,
         tasks: set[str],
         max_samples: int | None = None,
+        data_root: Path | None = None,
     ) -> None:
         self.task = "unknown"
         self.dir_name = "manifest"
         self.resolution = resolution
         self.samples: list[dict[str, str]] = []
+        # When data_root is provided, resolve relative paths against it
+        # instead of the manifest file's parent directory.  This is needed
+        # for the SN-VC-50M manifest where paths are relative to the
+        # extracted data root, not the manifest location.
+        path_anchor = data_root.resolve() if data_root is not None else manifest_path
 
         with manifest_path.open(encoding="utf-8") as handle:
             for line_no, line in enumerate(handle, 1):
@@ -690,8 +726,8 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
-                image_path = resolve_manifest_path(row.get("input") or "", manifest_path)
-                target_path = resolve_manifest_path(row.get("target") or "", manifest_path)
+                image_path = resolve_manifest_path(row.get("input") or "", path_anchor)
+                target_path = resolve_manifest_path(row.get("target") or "", path_anchor)
                 if not image_path.is_file() or not target_path.is_file():
                     logger.warning(
                         "Skipping unavailable manifest pair at %s:%d", manifest_path, line_no
@@ -727,14 +763,16 @@ class ManifestVisionDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> dict:
+    def _load_sample(self, idx: int) -> dict:
         sample = self.samples[idx]
         with Image.open(sample["image_path"]) as image:
+            image.load()
             image = image.convert("RGB").resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
             input_tensor = torch.from_numpy(
                 np.asarray(image, dtype=np.float32) / 255.0
             ).permute(2, 0, 1)
         with Image.open(sample["target_path"]) as image:
+            image.load()
             target_resampling = (
                 Image.Resampling.NEAREST
                 if sample["task"] == "semantic"
@@ -756,6 +794,28 @@ class ManifestVisionDataset(Dataset):
             "task": sample["task"],
             "flow_source": "input",
         }
+
+    def __getitem__(self, idx: int) -> dict:
+        # Some SNVC pairs reference truncated / unreadable images. LOAD_TRUNCATED_IMAGES
+        # keeps most usable; if a sample still fails, resample a bounded number of times
+        # so a single bad file never aborts the run.
+        last_err = None
+        for attempt, cur in enumerate(self._candidate_indices(idx)):
+            try:
+                return self._load_sample(cur)
+            except Exception as err:  # noqa: BLE001 - any decode/IO error triggers retry
+                last_err = err
+                if attempt == 0:
+                    logger.warning("Skipping unreadable sample idx=%s (%s)", cur, err)
+        raise RuntimeError(f"All {4} candidate samples failed to load (last: {last_err})")
+
+    def _candidate_indices(self, idx: int):
+        yield idx
+        rng = random.Random(idx)
+        n = len(self.samples)
+        for _ in range(3):
+            yield rng.randrange(n) if n else idx
+
 
 
 def main():
@@ -828,6 +888,11 @@ def main():
         components.text_encoder.to(torch.float32)
         components.vae.to(torch.bfloat16)
 
+    # Clear GPU memory before applying LoRA to avoid OOM
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        gc.collect()
+
     backbone = components.unet  # transformer
     vae = components.vae
 
@@ -849,7 +914,7 @@ def main():
 
     # ── Build datasets ───────────────────────────────────────────────
     logger.info("Building datasets...")
-    data_root = Path(args.data_dir)
+    data_root = Path(args.data_dir) if args.data_dir else None
 
     # Determine which tasks to load
     all_tasks = [
@@ -869,7 +934,56 @@ def main():
     tasks_to_load = args.tasks if args.tasks else all_tasks
 
     generation_dataset = None
-    if args.pair_manifest is not None:
+    if args.tar_index is not None:
+        # ── Tar-direct-access mode: read from compressed tarballs ──────
+        from open_vision_banana.data.tar_dataset import TarArchiveDataset
+
+        tar_index_path = args.tar_index.expanduser().resolve()
+        tar_root = args.tar_root.expanduser().resolve()
+        if not tar_index_path.is_file():
+            logger.error("Tar index not found: %s", tar_index_path)
+            return
+        logger.info("Using tar-direct-access mode: %s", tar_index_path)
+
+        aliases = {"segmentation": "semantic", "seg": "semantic"}
+        manifest_tasks = {aliases.get(task, task) for task in tasks_to_load}
+        manifest_path = args.pair_manifest.expanduser().resolve() if args.pair_manifest else None
+
+        train_vision_datasets = [
+            TarArchiveDataset(
+                manifest_path=manifest_path,
+                tar_index_path=tar_index_path,
+                tar_root=tar_root,
+                resolution=args.resolution,
+                split="train",
+                tasks={task},
+                disk_cache_dir=args.tar_disk_cache,
+                max_samples=args.max_samples_per_task,
+            )
+            for task in sorted(manifest_tasks)
+        ]
+        train_vision_datasets = [ds for ds in train_vision_datasets if len(ds) > 0]
+
+        val_datasets = [
+            TarArchiveDataset(
+                manifest_path=manifest_path,
+                tar_index_path=tar_index_path,
+                tar_root=tar_root,
+                resolution=args.resolution,
+                split="val",
+                tasks={task},
+                disk_cache_dir=args.tar_disk_cache,
+            )
+            for task in sorted(manifest_tasks)
+        ]
+        val_datasets = [ds for ds in val_datasets if len(ds) > 0]
+        from torch.utils.data import ConcatDataset
+
+        val_dataset = ConcatDataset(val_datasets) if val_datasets else None
+        logger.info("Tar-direct-access: %d train samples, %d val samples",
+                    sum(len(ds) for ds in train_vision_datasets),
+                    sum(len(ds) for ds in val_datasets) if val_datasets else 0)
+    elif args.pair_manifest is not None:
         manifest_path = args.pair_manifest.expanduser().resolve()
         if not manifest_path.is_file():
             logger.error("Pair manifest not found: %s", manifest_path)
@@ -883,12 +997,13 @@ def main():
                 "train",
                 {task},
                 args.max_samples_per_task,
+                data_root=data_root,
             )
             for task in sorted(manifest_tasks)
         ]
         train_vision_datasets = [ds for ds in train_vision_datasets if len(ds) > 0]
         val_datasets = [
-            ManifestVisionDataset(manifest_path, args.resolution, "val", {task})
+            ManifestVisionDataset(manifest_path, args.resolution, "val", {task}, data_root=data_root)
             for task in sorted(manifest_tasks)
         ]
         val_datasets = [ds for ds in val_datasets if len(ds) > 0]
@@ -897,6 +1012,12 @@ def main():
         val_dataset = ConcatDataset(val_datasets) if val_datasets else None
         logger.info("Detected explicit v5 pair manifest: %s", manifest_path)
     else:
+        if data_root is None:
+            logger.error(
+                "--data-dir is required when not using --tar-index. "
+                "Provide either --data-dir or --tar-index."
+            )
+            return
         v3_split = load_v3_train_val_split(data_root)
         is_v3 = v3_split is not None or (data_root / "manifest.json").exists()
 
@@ -1140,6 +1261,8 @@ def main():
         "model_id": model_cfg.model_id,
         "data_dir": portable_project_path(data_root),
         "pair_manifest": portable_project_path(args.pair_manifest),
+        "tar_index": portable_project_path(args.tar_index) if hasattr(args, 'tar_index') else None,
+        "tar_root": portable_project_path(args.tar_root) if hasattr(args, 'tar_root') else None,
         "generation_dir": portable_project_path(args.generation_dir),
         "require_captioned_generation": bool(args.require_captioned_generation),
         "dataset_fingerprint": dataset_fingerprint,
@@ -1191,7 +1314,8 @@ def main():
         resume_path = Path(args.resume)
         if resume_path.is_file():
             logger.info(f"Resuming from {resume_path}")
-            ckpt = torch.load(str(resume_path), map_location=device)
+            # Load checkpoint to CPU first to avoid GPU OOM, then move to device
+            ckpt = torch.load(str(resume_path), map_location="cpu")
             peft_model.load_state_dict(ckpt.get("lora_state_dict", ckpt), strict=False)
             if args.resume_weights_only:
                 logger.info("  Loaded LoRA weights only; optimizer, scheduler, and step count reset")
@@ -1347,7 +1471,19 @@ def main():
                 flow_loss = per_sample_loss.mean()
 
                 if not args.no_min_snr:
-                    flow_loss = (per_sample_loss * flow_min_snr_weight(sigma, args.min_snr_gamma)).mean()
+                    sample_contrib = per_sample_loss * flow_min_snr_weight(sigma, args.min_snr_gamma)
+                    flow_loss = sample_contrib.mean()
+                else:
+                    sample_contrib = per_sample_loss
+
+                # Per-task loss accounting (observability only; does not change optimization).
+                batch_tasks = batch.get("task")
+                if batch_tasks is not None:
+                    task_loss_acc = train_metrics.setdefault("task_loss", {})
+                    for _t, _c in zip(batch_tasks, sample_contrib.detach().float().tolist()):
+                        _ent = task_loss_acc.setdefault(_t, [0.0, 0])
+                        _ent[0] += float(_c)
+                        _ent[1] += 1
 
             depth_aux_loss = flow_loss.new_zeros(())
             if args.depth_edge_aux_weight:
@@ -1415,11 +1551,16 @@ def main():
                 avg_depth_aux_loss = train_metrics["depth_edge_aux_loss"] / max(1, train_metrics["steps"])
                 last_avg_loss = avg_loss
                 lr = lr_scheduler.get_last_lr()[0]
+                # Per-task mean flow loss over this logging window (diagnostics).
+                task_loss_acc = train_metrics.get("task_loss", {})
+                task_str = " ".join(
+                    f"{t}={v[0] / max(1, v[1]):.4f}" for t, v in sorted(task_loss_acc.items())
+                )
                 logger.info(
                     f"  [step {global_step}/{args.steps}] "
                     f"loss={avg_loss:.4f} flow={avg_flow_loss:.4f} edge_aux={avg_depth_aux_loss:.4f} lr={lr:.2e} "
                     f"epoch={epoch} "
-                    f"latent_shape={list(target_latents.shape[1:])}"
+                    f"latent_shape={list(target_latents.shape[1:])} | task_loss: {task_str}"
                 )
                 train_metrics = {"loss": 0.0, "flow_loss": 0.0, "depth_edge_aux_loss": 0.0, "steps": 0}
 

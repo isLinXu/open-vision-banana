@@ -57,6 +57,7 @@ from .generation_builder import (
 from .manifest import fingerprint_records, read_jsonl, resolve_manifest_path
 from .mixed import HomogeneousMixedBatchSampler, MixedVisionDataset
 from .split import split_dataset, split_vision_datasets
+from .tar_dataset import TarArchiveDataset
 from .validation import ValidationReport, validate_vision_dataset
 
 __all__ = [
@@ -100,6 +101,7 @@ __all__ = [
     "load_prompts_file",
     "split_dataset",
     "split_vision_datasets",
+    "TarArchiveDataset",
     "ValidationReport",
     "validate_vision_dataset",
 ]

@@ -1,0 +1,80 @@
+# Open-Vision-Banana -- Sana_600M_512px training on v5_full dataset
+#
+# Trains depth + normal on the prepared v5_full dataset.
+#
+# Usage:
+#   export OPEN_VISION_BANANA_MODEL_PATH=/media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_600M_512px_diffusers
+#   python scripts/train_sana_512.py --config configs/sana_snvc50m.yaml
+
+# ── Model ─────────────────────────────────────────────────────────────────
+model:
+  name: sana-600m-512px
+  dtype: bfloat16
+
+# ── LoRA ──────────────────────────────────────────────────────────────────
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+
+# ── Data ──────────────────────────────────────────────────────────────────
+data:
+  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  pair_manifest: output/snvc_v5full_pairs/pairs_dn_valid.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  tasks:
+    - depth
+    - normal
+
+# ── Training ──────────────────────────────────────────────────────────────
+training:
+  steps: 20000
+  batch_size: 4
+  gradient_accumulation: 8
+  lr: 5.0e-5
+  weight_decay: 0.01
+  seed: 42
+  max_grad_norm: 1.0
+
+# ── Scheduler ─────────────────────────────────────────────────────────────
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+# ── Flow Matching ─────────────────────────────────────────────────────────
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+# ── Loss ──────────────────────────────────────────────────────────────────
+loss:
+  task_weights:
+    depth: 1.0
+    normal: 1.0
+
+# ── EMA ───────────────────────────────────────────────────────────────────
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup: 500
+
+# ── Checkpoint ────────────────────────────────────────────────────────────
+checkpoint:
+  output_dir: output/sana_v5full_dn
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+# ── Optimizer ─────────────────────────────────────────────────────────────
+optimizer:
+  type: adamw
+  beta1: 0.9
+  beta2: 0.999
+
+# ── Gradient Checkpointing ────────────────────────────────────────────────
+gradient_checkpointing: true

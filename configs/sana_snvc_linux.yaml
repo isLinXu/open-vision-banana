@@ -1,0 +1,82 @@
+# Open-Vision-Banana -- Sana_600M_512px reproduction on SNVC-50M v5_full
+#
+# Linux / RTX 4090 (CUDA) port of configs/sana_512_train.yaml.
+# One prompt-conditioned SANA LoRA learns depth / normal / structure as RGB
+# image->image generation (Vision-Banana style, img2img flow matching).
+#
+# Run from the repository root:
+#   python scripts/train_sana_512.py --config configs/sana_snvc_linux.yaml
+#
+# The pair manifest is produced by:
+#   python scripts/build_snvc_v5full_pairs.py \
+#       --root /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full \
+#       --output output/snvc_v5full_pairs/pairs_dns.jsonl
+
+model:
+  name: sana-600m-512px
+  model_id: Efficient-Large-Model/Sana_600M_512px_diffusers
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - linear
+    - proj_out
+    - conv_inverted
+    - conv_point
+
+data:
+  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  pair_manifest: output/snvc_v5full_pairs/pairs_dns.jsonl
+  resolution: 512
+  # All vision (no text-to-image replay dataset is bundled with this pack).
+  vision_ratio: 1.0
+  num_workers: 4
+  tasks:
+    - depth
+    - normal
+    - structure
+    # Feasible image->image tasks in this pack: depth, normal, structure.
+    # - structure = wildrgbd RGB frame -> black-background edge map (valid, 4700 prs).
+    # - segmentation is disabled: targets/segmentation are source photos/missing.
+    # - detection/recognition are text-output (point/bbox) tasks, not image->image.
+  task_weights: sqrt
+
+training:
+  steps: 10000
+  batch_size: 4
+  gradient_accumulation: 8
+  lr: 5.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+  warmup_steps: null
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/sana_snvc_v5full_dns
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+device: cuda
+resume: null

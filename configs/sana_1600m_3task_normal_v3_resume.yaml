@@ -1,0 +1,66 @@
+# Open-Vision-Banana -- Sana_1600M continued training from best checkpoint (step 5500)
+# Resume from best val_loss checkpoint, train additional 15000 steps (total 20500)
+
+model:
+  name: sana-1600m
+  model_id: /media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_1600M_512px_diffusers
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - linear
+    - proj_out
+    - conv_inverted
+    - conv_point
+
+data:
+  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  pair_manifest: output/snvc_v5full_pairs/pairs_5task_v3.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  num_workers: 4
+  tasks:
+    - depth
+    - normal
+    - seg
+  task_weights: sqrt
+
+training:
+  steps: 20000
+  batch_size: 1
+  gradient_accumulation: 32
+  lr: 3.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.02
+  warmup_steps: null
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/sana_1600m_v5full_3task_normal_v3
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+device: cuda
+resume: output/sana_1600m_v5full_3task_normal_v2/checkpoint-5500_best/lora.pt

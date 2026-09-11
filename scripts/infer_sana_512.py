@@ -111,6 +111,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-samples", type=int, default=3, help="Samples per task for visualization")
     p.add_argument("--num-inference-steps", type=int, default=20, help="Denoising steps")
     p.add_argument(
+        "--enhance-depth",
+        action="store_true",
+        help="Add a contrast-stretched, color-mapped Predicted panel for depth (display only; metrics still use the raw prediction).",
+    )
+    p.add_argument("--depth-cmap", default="turbo", help="Matplotlib colormap for --enhance-depth (e.g. turbo, viridis, plasma).")
+    p.add_argument("--depth-clip", type=float, default=2.0, help="Percentile clip for depth contrast stretch.")
+    p.add_argument(
         "--guidance-scale",
         type=float,
         default=1.0,
@@ -167,6 +174,22 @@ def tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
     return Image.fromarray(tensor.numpy())
 
 
+def enhance_depth_tensor(pred: torch.Tensor, clip: float = 2.0, cmap: str = "turbo") -> torch.Tensor:
+    """Return a [3, H, W] display tensor: luminance of the depth prediction,
+    percentile contrast-stretched then color-mapped. Display-only helper."""
+    import matplotlib
+
+    if pred.dim() == 4:
+        pred = pred[0]
+    g = pred.float().mean(dim=0)  # [H, W]
+    lo = torch.quantile(g.flatten(), clip / 100.0)
+    hi = torch.quantile(g.flatten(), 1.0 - clip / 100.0)
+    g = ((g - lo) / (hi - lo + 1e-6)).clamp(0.0, 1.0)
+    cmap_obj = matplotlib.colormaps.get_cmap(cmap)  # matplotlib>=3.7 API
+    colored = cmap_obj(g.cpu().numpy())[..., :3]  # [H, W, 3] float
+    return torch.from_numpy(colored).permute(2, 0, 1).float()
+
+
 def create_comparison_grid(
     input_img: torch.Tensor,
     predicted_img: torch.Tensor,
@@ -174,20 +197,26 @@ def create_comparison_grid(
     task_name: str,
     prompt: str,
     sample_idx: int,
+    enhanced_img: torch.Tensor | None = None,
 ) -> Image.Image:
-    """Create a side-by-side comparison: Input | Predicted | Target.
+    """Create a side-by-side comparison: Input | Predicted [| Pred enhanced] | Target.
 
-    Each image is [3, H, W] in [0, 1].
+    Each image is [3, H, W] in [0, 1]. A 4th panel is added when enhanced_img is given.
     """
-    pil_input = tensor_to_pil(input_img)
-    pil_pred = tensor_to_pil(predicted_img)
-    pil_target = tensor_to_pil(target_img)
+    panels = [
+        ("Input", tensor_to_pil(input_img), (200, 0, 0)),
+        ("Predicted", tensor_to_pil(predicted_img), (0, 150, 0)),
+    ]
+    if enhanced_img is not None:
+        panels.append(("Pred(enhanced)", tensor_to_pil(enhanced_img), (200, 120, 0)))
+    panels.append(("Target", tensor_to_pil(target_img), (0, 0, 200)))
 
-    w, h = pil_input.size
+    n = len(panels)
+    w, h = panels[0][1].size
     pad = 10
     label_h = 30
 
-    total_w = w * 3 + pad * 4
+    total_w = w * n + pad * (n + 1)
     total_h = h + label_h * 3 + pad * 2
 
     grid = Image.new("RGB", (total_w, total_h), (255, 255, 255))
@@ -197,23 +226,18 @@ def create_comparison_grid(
     draw = ImageDraw.Draw(grid)
 
     # Title
-    title = f"Task: {task_name} | Sample {sample_idx}"
-    draw.text((pad, 5), title, fill=(0, 0, 0))
+    draw.text((pad, 5), f"Task: {task_name} | Sample {sample_idx}", fill=(0, 0, 0))
 
     # Prompt (truncated)
     prompt_short = prompt[:120] + "..." if len(prompt) > 120 else prompt
     draw.text((pad, label_h + 5), f"Prompt: {prompt_short}", fill=(50, 50, 50))
 
-    # Labels for each column
+    # Panels with labels
     y_offset = label_h * 2 + pad
-    draw.text((pad, y_offset - label_h + 5), "Input", fill=(200, 0, 0))
-    draw.text((w + pad * 2, y_offset - label_h + 5), "Predicted", fill=(0, 150, 0))
-    draw.text((w * 2 + pad * 3, y_offset - label_h + 5), "Target", fill=(0, 0, 200))
-
-    # Paste images
-    grid.paste(pil_input, (pad, y_offset))
-    grid.paste(pil_pred, (w + pad * 2, y_offset))
-    grid.paste(pil_target, (w * 2 + pad * 3, y_offset))
+    for idx, (label, im, color) in enumerate(panels):
+        x = pad + idx * (w + pad)
+        draw.text((x, y_offset - label_h + 5), label, fill=color)
+        grid.paste(im, (x, y_offset))
 
     return grid
 
@@ -423,6 +447,11 @@ def run_visualization(args, peft_model, vae, components, model_cfg, val_datasets
                 "time_sec": elapsed,
             })
 
+            # Optional display-only enhancement for depth (metrics stay on raw pred).
+            enhanced = None
+            if args.enhance_depth and task_name == "depth":
+                enhanced = enhance_depth_tensor(pred_img, clip=args.depth_clip, cmap=args.depth_cmap)
+
             # Save comparison grid
             grid = create_comparison_grid(
                 input_for_display,
@@ -431,6 +460,7 @@ def run_visualization(args, peft_model, vae, components, model_cfg, val_datasets
                 task_name,
                 prompt,
                 i,
+                enhanced_img=enhanced,
             )
             grid_path = output_dir / f"{task_name}_{dir_name}_sample{i}.png"
             grid.save(str(grid_path))

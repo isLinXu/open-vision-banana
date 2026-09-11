@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-09-10
+
+### Changed (Pre-Open-Source Release)
+
+- **README rewrite**: Streamlined from 892 to ~340 lines. Rewrote project introduction with clear feature highlights. Added SANA-600M/1600M training and inference examples. Simplified dataset sections (removed verbose training dataset lists). Consolidated distributed training commands to reference `docs/quick-start.md`. Updated all code examples for consistency.
+- **Script archival**: Moved 241 temporary/experimental scripts to `scripts/archive/pre_opensource/`. Remaining 57 core scripts cover: training (`train.py`, `train_sana_512.py`), inference (`inference.py`, `infer_sana_512.py`), evaluation (`evaluate.py`, `eval_checkpoints.py`), data preparation (`prepare_hypersim.py`, `download_data.py`), and launch scripts.
+- **LoRA registry update**: `sana-depth-relative-v1` status changed from `local` to `available` (v1.0.0). Metrics documented: Pearson R=0.790, Spearman R=0.778, MAE=0.147.
+- **`.gitignore` update**: Added `.tools/` exclusion for local development tools.
+- **Version bump**: `__version__` updated to `0.5.0`.
+
+### Added
+
+- **`data/tar_dataset.py`**: TAR archive dataset reader for SNVC-50M compressed data.
+- **SANA configs**: `sana_1600m_3task.yaml`, `sana_1600m_5task.yaml`, `sana_snvc50m_3task.yaml`, `sana_snvc_linux_5task.yaml`.
+
 ## [0.4.2] — 2026-06-27
 
 ### Fixed (P1)
@@ -292,6 +307,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration system with YAML support.
 - Project scaffolding: pyproject.toml, README, LICENSE, tests.
 
+[0.5.0]: https://github.com/user/open-vision-banana/compare/v0.4.2...v0.5.0
+[0.4.2]: https://github.com/user/open-vision-banana/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/user/open-vision-banana/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/user/open-vision-banana/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/user/open-vision-banana/compare/v0.3.3...v0.3.4
