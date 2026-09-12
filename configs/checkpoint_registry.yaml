@@ -254,6 +254,30 @@ checkpoints:
       nyu_delta1_aligned_n32: 0.436
       indoor_specialist: sana-hypersim-metric-v1
 
+  sana-1600m-multitask-v1:
+    repo_id: "open-vision-banana/sana-1600m-multitask-v1"
+    revision: main
+    status: local
+    version: "1.0.0"
+    description: >
+      SANA-1600M multi-task LoRA merged into base model (depth + normal +
+      segmentation). Trained on SNVC-50M v5_full clean data for 10500 steps
+      with rsLoRA rank=32, alpha=64. Best val_loss=0.0325.
+    base_model: "Efficient-Large-Model/Sana_1600M_512px_diffusers"
+    lora_rank: 32
+    lora_alpha: 64
+    use_rslora: true
+    tasks:
+      - depth
+      - normal
+      - semantic
+    local_path: "output/sana_1600m_multitask_v1_merged"
+    training_data:
+      - SNVC-50M v5_full clean (depth + normal + segmentation targets)
+    metrics:
+      val_loss: 0.0325
+      training_steps: 10500
+
   # ── Published checkpoints (flip status to "available" after publishing) ──
   # Example template:
   #
