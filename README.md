@@ -384,7 +384,7 @@ Interactive Colab demo: [`notebooks/colab_demo.ipynb`](notebooks/colab_demo.ipyn
 open-vision-banana/
 ├── src/open_vision_banana/
 │   ├── core/                    # Core algorithms (no external deps)
-│   │   ├── depth_mapper.py      # Power transform + 6 colormaps
+│   │   ├── depth_mapper.py      # Power transform + 7 colormaps
 │   │   ├── adaptive_depth_mapper.py  # Adaptive quantization mapper
 │   │   ├── normal_mapper.py     # Linear normal ↔ RGB mapping
 │   │   ├── segmentation/        # 5-stage instance segmentation decoder
@@ -413,7 +413,7 @@ open-vision-banana/
 │   └── data/                    # Dataset loaders
 ├── configs/                     # Training & experiment configs
 ├── scripts/                     # Training, inference, evaluation scripts
-├── tests/                       # 467 tests
+├── tests/                       # 1000+ tests across 79 files
 ├── docker/                      # CPU/GPU Docker images
 └── notebooks/                   # Colab demo
 ```
