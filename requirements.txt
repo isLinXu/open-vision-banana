@@ -1,9 +1,11 @@
 # Open-Vision-Banana Dependencies
+# Aligned with pyproject.toml [inference,training] extras
 torch>=2.0.0
 diffusers>=0.30.0
-peft>=0.12.0
-transformers>=4.30.0
-accelerate>=0.20.0
+transformers>=4.40.0
+accelerate>=0.25.0
+peft>=0.10.0
 numpy>=1.24.0
 Pillow>=9.0.0
 h5py>=3.8.0
+safetensors>=0.4.0

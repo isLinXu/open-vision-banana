@@ -77,7 +77,7 @@ all = [
 ]
 
 [project.urls]
-Repository = "https://github.com/user/open-vision-banana"
+Repository = "https://github.com/isLinXu/open-vision-banana"
 
 [tool.setuptools.dynamic]
 version = {attr = "open_vision_banana.__version__"}
