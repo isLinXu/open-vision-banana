@@ -71,7 +71,7 @@ checkpoint:
   log_every: 50
 
 evaluation:
-  evaluator: scripts/eval_sana_unified.py
+  evaluator: scripts/archive/pre_opensource/eval_sana_unified.py
   split: val
   n_per_task: 8
   batch_size: 1

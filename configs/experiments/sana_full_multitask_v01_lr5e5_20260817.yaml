@@ -71,7 +71,7 @@ device: mps
 resume: null
 
 evaluation:
-  evaluator: scripts/eval_sana_unified.py
+  evaluator: scripts/archive/pre_opensource/eval_sana_unified.py
   split: val
   n_per_task: 32
   batch_size: 1

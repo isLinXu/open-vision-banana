@@ -44,7 +44,7 @@ env:
 #   PYTHONPATH=src python scripts/mps_train_sdxl_depth.py
 
 evaluation:
-  script: scripts/evaluate_v3_relative_depth.py
+  script: scripts/archive/pre_opensource/evaluate_v3_relative_depth.py
   note: 训练完成后对 ckpt_final 在相同 8 个 train 样本上评估，对照成功判据
 
 followups:
