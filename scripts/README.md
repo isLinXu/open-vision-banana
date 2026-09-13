@@ -2,67 +2,96 @@
 
 Active scripts for Open-Vision-Banana training, inference, evaluation, and utilities.
 
-## Core Scripts
+## Training
 
 | Script | Description |
 |--------|-------------|
-| `train.py` | Main training entry point (multi-backend support) |
+| `train.py` | Main training entry point (multi-backend: FLUX, SANA, SDXL, etc.) |
+| `train_sana_512.py` | SANA-600M/1600M 512px LoRA training |
 | `train_smoke.py` | CPU smoke test (1-2 epochs, synthetic data) |
-| `train_lora_mps.py` | MPS-specific LoRA training |
-| `inference.py` | Single-image inference |
-| `evaluate.py` | Model evaluation on benchmark datasets |
+| `train_and_visualize.py` | Training + inline visualization |
+| `merge_sana_lora.py` | Merge SANA LoRA adapter into base model |
+
+## Inference
+
+| Script | Description |
+|--------|-------------|
+| `inference.py` | Single-image / batch inference for all 10 vision tasks |
+| `infer_sana_512.py` | SANA-512 img2img inference with flow matching |
+| `infer_checkpoint_viz.py` | Checkpoint inference + visualization |
+| `demo.py` | Core algorithm demo (no GPU required) |
+
+## Evaluation
+
+| Script | Description |
+|--------|-------------|
+| `evaluate.py` | Basic evaluation on benchmark datasets |
+| `evaluate_model.py` | Full evaluation (DDP, resume, SOTA comparison) |
+| `evaluate_depth_standard.py` | Standard depth evaluation with colormap |
+| `evaluate_generation_preservation.py` | Generation preservation metrics (FID, CLIP) |
+| `evaluate_paper_benchmarks.py` | Paper benchmark preflight + evaluation |
+| `eval_checkpoints.py` | Batch evaluation across checkpoint series |
+| `qualitative_eval.py` | Qualitative visualization grids (depth/normal/seg) |
+| `qualitative_eval_robust.py` | Robust qualitative eval with retry mechanism |
+| `run_paper_judges.py` | Run Gemini/CLIP paper judges |
 | `benchmark.py` | Core algorithm benchmark (no GPU required) |
 | `benchmark_pipeline.py` | Full pipeline benchmark |
-| `export.py` | Model export (checkpoint → deployable format) |
-| `export_onnx.py` | ONNX export |
-| `demo.py` | Interactive demo |
-| `download_model.py` | Download base diffusion models from HuggingFace Hub (23 families, resume support) |
 
-## Data Pipeline
+## Data Preparation
 
 | Script | Description |
 |--------|-------------|
-| `download_flux_model.py` | Download FLUX.1 model weights |
-| `download_checkpoint.py` | Download pretrained checkpoints |
-| `download_data.py` | Download training datasets |
-| `download_datasets.py` | Download evaluation datasets |
-| `build_generation_dataset.py` | Build synthetic generation dataset |
-| `generate_synthetic_data.py` | Generate synthetic training data |
-| `distill_depth_pseudo_labels.py` | Distill depth pseudo-labels |
+| `prepare_hypersim.py` | Prepare Hypersim depth + normal dataset |
 | `prepare_depth_dataset.py` | Prepare depth estimation dataset |
-| `prepare_hypersim.py` | Prepare Hypersim dataset |
-| `evaluate_paper_benchmarks.py` | Preflight and evaluate decoded paper benchmarks |
-| `validate_data.py` | Validate dataset integrity |
+| `prepare_blendedmvs.py` | Prepare BlendedMVS dataset |
+| `prepare_cityscapes_19class.py` | Prepare Cityscapes 19-class segmentation |
+| `prepare_kitti_metric.py` | Prepare KITTI metric depth |
+| `prepare_synthetic_depth.py` | Prepare synthetic depth data |
+| `prepare_tartanair.py` | Prepare TartanAir dataset |
+| `build_generation_dataset.py` | Build synthetic generation dataset |
+| `download_data.py` | Download training datasets |
+| `download_all_datasets.py` | Download all datasets at once |
 | `validate_dataset.py` | Comprehensive dataset validation |
+
+## Model Download & Export
+
+| Script | Description |
+|--------|-------------|
+| `download_model.py` | Download base diffusion models (23 families) |
+| `download_all_models.py` | Download all model weights |
+| `download_checkpoint.py` | Download pretrained LoRA checkpoints |
+| `convert_sana_1600m_to_diffusers.py` | Convert SANA-1600M .pth to diffusers format |
+| `export.py` | RGB mapper ONNX export |
+| `export_onnx.py` | ONNX export (all mappers) |
+| `publish_to_hub.py` | Publish model to HuggingFace Hub |
 
 ## Utilities
 
 | Script | Description |
 |--------|-------------|
-| `monitor_training_mps.py` | Monitor MPS training (memory, temperature) |
-| `optimize_inference.py` | Inference optimization (quantization, compilation) |
-| `fix_segmentation.py` | Fix segmentation decoder issues |
-| `publish_to_hub.py` | Publish model to HuggingFace Hub |
+| `optimize_inference.py` | Inference optimization (quantization, offloading) |
 | `visualize_attention.py` | Attention map visualization |
-| `verify_training_mps.py` | Verify MPS training correctness |
-| `validate_multi_backbone_training.py` | Validate multi-backbone training paths |
+| `validate_training_config.py` | Validate training config files |
 
-## Shell Scripts
+## Shell Launch Scripts
 
 | Script | Description |
 |--------|-------------|
-| `launch_training_mps.sh` | Launch training on Apple Silicon MPS |
-| `train_ddp.sh` | Multi-GPU DDP training launcher |
-| `train_ddp_example.sh` | DDP example with sample config |
-| `train_fsdp.sh` | FSDP training launcher |
-| `run_experiments.sh` | Run experiment matrix |
-| `build-release.sh` | Build release package |
-| `generate-icons.sh` | Generate app icons |
+| `launch_training_mps.sh` | Apple Silicon MPS single-GPU |
+| `launch_h20_single.sh` | H20 single-GPU |
+| `launch_h20_ddp.sh` | H20 multi-GPU DDP |
+| `launch_h20_deepspeed.sh` | H20 DeepSpeed ZeRO |
+| `launch_h20_fsdp.sh` | H20 FSDP |
+| `launch_training_a100_80g.sh` | A100-80G single-GPU |
+| `launch_training_a100_80g_ddp.sh` | A100-80G multi-GPU DDP |
+| `launch_training_a100_80g_deepspeed.sh` | A100-80G DeepSpeed |
+| `launch_training_a100_80g_fsdp.sh` | A100-80G FSDP |
+| `train_a100_40g_deepspeed.sh` | A100-40G DeepSpeed (with offload) |
+| `train_ddp.sh` | Generic multi-GPU DDP launcher |
+| `train_fsdp.sh` | Generic FSDP launcher |
+| `unified_launch.sh` | Unified launcher (auto-detects hardware) |
 
 ## Archive
 
-Historical versions are in `archive/`:
-- `archive/v1_to_v3/` — v1-v3 training/eval/inference scripts (deprecated)
-- `archive/v4_to_v6/` — v4-v6 training scripts (deprecated)
-
-The latest training script is `train.py` (v7+), which supports all model backends via `model_registry`.
+Historical and archived scripts are in `archive/`:
+- `archive/pre_opensource/` — Pre-open-source experimental scripts (245 files)
