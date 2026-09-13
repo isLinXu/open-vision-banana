@@ -85,7 +85,7 @@ def create_app(model: VisionBanana):
         strength: float = 0.85
         seed: int | None = None
 
-    app = FastAPI(title="Open Vision Banana", version="0.4.2")
+    app = FastAPI(title="Open Vision Banana", version="0.5.0")
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

@@ -28,6 +28,7 @@ from .lr_finder import LRFinder
 from .trainer_interface import (
     AccelerateTrainer,
     DDPTrainer,
+    DeepSpeedTrainer,
     FSDPTrainer,
     NativeTrainer,
     TrainerInterface,
