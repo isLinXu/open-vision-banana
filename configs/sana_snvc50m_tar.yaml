@@ -33,7 +33,7 @@ data:
   # tar-direct-access mode: no data.dir needed
   pair_manifest: output/snvc50m_manifest/pairs_snvc50m.jsonl
   tar_index: output/snvc50m_manifest/tar_index_v3.json
-  tar_root: /media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M
+  tar_root: data/snvc50m
   resolution: 512
   vision_ratio: 1.0
   num_workers: 4

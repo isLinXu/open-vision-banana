@@ -3,7 +3,7 @@
 
 model:
   name: sana-1600m
-  model_id: /media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_1600M_512px_diffusers
+  model_id: Efficient-Large-Model/Sana_1600M_512px_diffusers
   dtype: bfloat16
   resolution: 512
 
@@ -18,7 +18,7 @@ lora:
     - conv_point
 
 data:
-  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  dir: data/snvc_train_full
   pair_manifest: output/snvc_v5full_pairs/pairs_5task_v3.jsonl
   resolution: 512
   vision_ratio: 1.0

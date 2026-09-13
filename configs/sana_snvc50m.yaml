@@ -3,7 +3,7 @@
 # Trains depth + normal on the prepared v5_full dataset.
 #
 # Usage:
-#   export OPEN_VISION_BANANA_MODEL_PATH=/media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_600M_512px_diffusers
+#   export OPEN_VISION_BANANA_MODEL_PATH=Efficient-Large-Model/Sana_600M_512px_diffusers
 #   python scripts/train_sana_512.py --config configs/sana_snvc50m.yaml
 
 # ── Model ─────────────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ lora:
 
 # ── Data ──────────────────────────────────────────────────────────────────
 data:
-  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  dir: data/snvc_train_full
   pair_manifest: output/snvc_v5full_pairs/pairs_dn_valid.jsonl
   resolution: 512
   vision_ratio: 1.0

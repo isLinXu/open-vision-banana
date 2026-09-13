@@ -9,7 +9,7 @@
 #
 # The pair manifest is produced by:
 #   python scripts/build_snvc_v5full_pairs.py \
-#       --root /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full \
+#       --root data/snvc_train_full \
 #       --output output/snvc_v5full_pairs/pairs_dns.jsonl
 
 model:
@@ -29,7 +29,7 @@ lora:
     - conv_point
 
 data:
-  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  dir: data/snvc_train_full
   pair_manifest: output/snvc_v5full_pairs/pairs_dns.jsonl
   resolution: 512
   # All vision (no text-to-image replay dataset is bundled with this pack).
