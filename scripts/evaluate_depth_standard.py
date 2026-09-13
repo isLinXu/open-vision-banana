@@ -44,7 +44,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.evaluation.depth import evaluate_depth
-from open_vision_banana.inference.generator import VisionGenerator
+from open_vision_banana.inference.generator import BaseGenerator
 
 
 def load_depth_eval_samples(
@@ -95,7 +95,7 @@ def evaluate_depth_model(
     """
     mapper = DepthRGBMapper(colormap=colormap)
 
-    generator = VisionGenerator(
+    generator = BaseGenerator(
         model_name=model_name,
         lora_path=lora_path,
         device=device,
