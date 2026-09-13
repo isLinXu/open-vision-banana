@@ -2,7 +2,7 @@
 
 > **适用硬件**: NVIDIA H20 (96GB) / A100-80GB / A100-40GB  
 > **更新日期**: 2026-07-08  
-> **配套版本**: v0.4.2+
+> **配套版本**: v0.5.0+
 
 ---
 
@@ -50,7 +50,7 @@ python -m pytest tests/test_model_registry.py -q
 python scripts/download_model.py --model flux-schnell
 
 # 方式 2: 使用环境变量传入 HF token
-HF_TOKEN=hf_xxx python scripts/download_flux_model.py
+HF_TOKEN=hf_xxx python scripts/download_model.py --model flux-schnell
 
 # 验证本地 cache 完整性
 python scripts/download_model.py --model flux-schnell --local-files-only
@@ -63,26 +63,22 @@ python scripts/download_model.py --model flux-schnell --local-files-only
 ```bash
 # 查看支持的数据集
 python scripts/download_data.py --list
-python scripts/download_datasets.py --list
 
-# 方式 1: 一键下载 + 自动划分 train/val（推荐）
-python scripts/download_train_val.py download \
-    --dataset nyu \
-    --output data/nyu \
-    --val-ratio 0.1 \
-    --seed 42 \
-    --resume
+# 方式 1: 下载指定数据集（推荐）
+python scripts/download_data.py \
+    --dataset hypersim-depth \
+    --output data/hypersim/ \
+    --train-split 0.9
 
 # 方式 2: 批量下载全部数据集
-python scripts/download_train_val.py download \
-    --dataset all \
-    --output data/ \
-    --val-ratio 0.1
+python scripts/download_data.py \
+    --all \
+    --output data/
 
 # 方式 3: Dry-run 预览（不实际下载）
-python scripts/download_train_val.py download \
-    --dataset diode \
-    --output data/diode \
+python scripts/download_data.py \
+    --dataset hypersim-depth \
+    --output data/hypersim/ \
     --dry-run
 ```
 
@@ -347,7 +343,7 @@ pip install -e ".[all]"
 python scripts/download_model.py --model flux-schnell
 
 # 3. 数据（已准备则跳过）
-python scripts/download_train_val.py download --dataset nyu --output data/nyu
+python scripts/download_data.py --dataset hypersim-depth --output data/hypersim/
 
 # 4. 训练（1 min 配置）
 # H20:
