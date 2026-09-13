@@ -176,7 +176,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source",
         type=Path,
-        default=Path("/Users/gatilin/MyWork/datasets/cityscapes"),
+        default=Path("data/cityscapes"),
         help="Cityscapes root with leftImg8bit/train and gtFine/train",
     )
     parser.add_argument(

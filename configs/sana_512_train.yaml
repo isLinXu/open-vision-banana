@@ -25,9 +25,9 @@ lora:
 
 data:
   # v5_full is flat; always use the annotation-backed pair manifest.
-  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  dir: data/snvc_train_v5_full
   pair_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
-  generation_dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_generation_5k
+  generation_dir: data/vb_generation_5k
   resolution: 512
   # Vision Banana style: 10% visual instruction tuning / 90% generation retention.
   vision_ratio: 0.1

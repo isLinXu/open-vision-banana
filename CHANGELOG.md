@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Hardcoded path cleanup**: Replaced all `/media/linxu/` and `/Users/gatilin/` paths with portable HF Hub IDs and relative paths across 30+ config files, 8 scripts, and 1 source module (`model_registry.py`).
+- **DeepSpeedTrainer export**: Added missing import in `training/__init__.py` (was in `__all__` but not imported).
+- **VisionGenerator reference**: Fixed non-existent class import in `evaluate_depth_standard.py` → `BaseGenerator`.
+- **Serving version sync**: Updated hardcoded version in `serving/fastapi_app.py` from 0.4.2 to 0.5.0.
+- **docs/quick-start.md**: Fixed 3 broken script references and version badge (v0.4.2 → v0.5.0).
+- **Colab notebook**: Replaced placeholder GitHub URL (`github.com/user/...`) with actual repo URL.
+- **Experiment configs**: Updated all archived script references to include `archive/pre_opensource/` prefix.
+
+### Changed
+
+- **README beautification**: Added badges, table of contents, centered header, improved visual hierarchy. Reduced from 438 to ~360 lines.
+- **scripts/README.md rewrite**: Updated to accurately reflect all 54 active scripts (was referencing 14 non-existent scripts).
+- **Script archival**: Moved 6 unrelated/duplicate scripts to `archive/pre_opensource/` (Crablet desktop scripts, macOS dev scripts).
+
 ## [0.5.0] — 2026-09-10
 
 ### Changed (Pre-Open-Source Release)

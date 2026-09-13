@@ -7,7 +7,7 @@
 model:
   name: "z-image"
   dtype: "bfloat16"
-  local_path: "/Users/gatilin/MyWork/models/ms_cache/models/models/Tongyi-MAI--Z-Image/snapshots/master"
+  local_path: "Tongyi-MAI/Z-Image"
 
 # LoRA 配置 (rsLoRA, higher rank for 6B model)
 lora:

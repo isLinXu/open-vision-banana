@@ -473,7 +473,7 @@ def _build_registry() -> None:
         "sana-1600m",
         lambda: ModelConfig(
             name="sana-1600m",
-            model_id="/media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_1600M_512px_diffusers",
+            model_id="Efficient-Large-Model/Sana_1600M_512px_diffusers",
             family="sana",
             backbone_type="transformer",
             num_text_encoders=1,

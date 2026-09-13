@@ -117,7 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description="Merge SANA LoRA into base model")
     parser.add_argument(
         "--base-model",
-        default="/media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_1600M_512px_diffusers",
+        default="Efficient-Large-Model/Sana_1600M_512px_diffusers",
         help="Path to base SANA diffusers model",
     )
     parser.add_argument(

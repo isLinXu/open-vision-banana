@@ -14,9 +14,9 @@ import torch
 from safetensors.torch import save_file
 
 # Paths
-PTH_PATH = Path("/media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_1600M_512px/checkpoints/Sana_1600M_512px.pth")
-TEMPLATE_PATH = Path("/media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_600M_512px_diffusers")
-OUTPUT_PATH = Path("/media/linxu/thinkHub/ckpts/Efficient-Large-Model/Sana_1600M_512px_diffusers")
+PTH_PATH = Path("ckpts/Sana_1600M_512px.pth")
+TEMPLATE_PATH = Path("Efficient-Large-Model/Sana_600M_512px_diffusers")
+OUTPUT_PATH = Path("output/Sana_1600M_512px_diffusers")
 
 
 def convert_transformer_config():

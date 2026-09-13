@@ -35,8 +35,8 @@ logging.basicConfig(
 logger = logging.getLogger("prepare_depth")
 
 # ─── Config ──────────────────────────────────────────────────────────────
-COCO_DIR = Path("/Users/gatilin/PycharmProjects/open-vision-banana/data/coco128/images")
-OUTPUT_DIR = Path("/Users/gatilin/PycharmProjects/open-vision-banana/data/vision_banana_depth")
+COCO_DIR = Path("data/coco128/images")
+OUTPUT_DIR = Path("data/vision_banana_depth")
 RESOLUTION = 256
 DEPTH_MODEL = "LiheYoung/depth-anything-small-hf"  # ~100MB, MPS-compatible
 SEED = 42

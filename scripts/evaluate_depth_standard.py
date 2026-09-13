@@ -249,7 +249,7 @@ def main():
     )
     parser.add_argument(
         "--data-dir", type=str,
-        default="/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v2",
+        default="data/vb_snvc_train_v2",
         help="Dataset directory with depth/ subdirectory",
     )
     parser.add_argument(

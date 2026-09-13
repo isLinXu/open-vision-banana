@@ -194,7 +194,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--tar-root",
         type=Path,
-        default=config_defaults.get("tar_root", "/media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M"),
+        default=config_defaults.get("tar_root", "data/snvc50m"),
         help="Directory containing the split tar.gz volumes (used with --tar-index).",
     )
     p.add_argument(

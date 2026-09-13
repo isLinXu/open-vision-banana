@@ -419,7 +419,7 @@ def run_inference(unet, vae, controlnet, scheduler, te1, te2, tok1, tok2,
 
 def _load_palette():
     """Load palette from v3 manifest."""
-    v3_root = Path("/Users/gatilin/MyWork/datasets/lllab-vision-banana-dataset/v3")
+    v3_root = Path("data/v3")
     manifest = json.loads((v3_root / "v3_manifest.json").read_text())
     palette = np.array(manifest["palette"]["semantic"], dtype=np.uint8)
     return palette
@@ -461,7 +461,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt-dir", type=str, default="output/v5_multitask")
     parser.add_argument("--v3-root", type=str,
-                       default="/Users/gatilin/MyWork/datasets/lllab-vision-banana-dataset/v3")
+                       default="data/v3")
     parser.add_argument("--select-best", action="store_true")
     parser.add_argument("--output-file", type=str, default="checkpoint_evaluation.json")
     args = parser.parse_args()

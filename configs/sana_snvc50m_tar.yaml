@@ -5,10 +5,10 @@
 #
 # Usage:
 #   # 1) Build tar index (if not done yet)
-#   /home/linxu/anaconda3/envs/py311/bin/python scripts/build_tar_index_snvc50m_v3.py
+#   python scripts/build_tar_index_snvc50m_v3.py
 #
 #   # 2) Build manifest from official JSONL annotations
-#   /home/linxu/anaconda3/envs/py311/bin/python scripts/build_snvc50m_manifest.py
+#   python scripts/build_snvc50m_manifest.py
 #
 #   # 3) Launch training
 #   python scripts/train_sana_512.py --config configs/sana_snvc50m_tar.yaml

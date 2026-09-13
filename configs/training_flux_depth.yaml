@@ -4,7 +4,7 @@
 # 数据集: data/vb_depth_pseudo_5k (5000 样本)
 
 model:
-  name: "/Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell"
+  name: "black-forest-labs/FLUX.1-schnell"
   dtype: "bfloat16"
 
 lora:

@@ -6,7 +6,7 @@
 # 3. Checkpoint 保存正常
 
 model:
-  name: "/Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell"
+  name: "black-forest-labs/FLUX.1-schnell"
   dtype: "bfloat16"
 
 lora:
