@@ -9,11 +9,11 @@
 # Expected time: ~2 minutes on MPS (256px, ~14M params)
 
 gate_depth:
-  script: scripts/train_tiny_vision_banana.py
+  script: scripts/archive/pre_opensource/train_tiny_vision_banana.py
   date: 2026-07-28
   command: >
-    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
-    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    PYTHONPATH=src python scripts/archive/pre_opensource/train_tiny_vision_banana.py
+    --data-dir data/vb_snvc_train_v3
     --tasks depth
     --num-samples 8
     --steps 500
@@ -34,10 +34,10 @@ gate_depth:
 # Purpose: Verify all 5 tasks can be memorized simultaneously.
 
 gate_multitask:
-  script: scripts/train_tiny_vision_banana.py
+  script: scripts/archive/pre_opensource/train_tiny_vision_banana.py
   command: >
-    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
-    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    PYTHONPATH=src python scripts/archive/pre_opensource/train_tiny_vision_banana.py
+    --data-dir data/vb_snvc_train_v3
     --tasks depth normal edge semantic generation
     --num-samples 8
     --steps 1000
@@ -56,10 +56,10 @@ gate_multitask:
 # Target: rgb_mae < 0.20, pearson > 0.60 (vs probe 0.13/0.77)
 
 full_depth:
-  script: scripts/train_tiny_vision_banana.py
+  script: scripts/archive/pre_opensource/train_tiny_vision_banana.py
   command: >
-    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
-    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    PYTHONPATH=src python scripts/archive/pre_opensource/train_tiny_vision_banana.py
+    --data-dir data/vb_snvc_train_v3
     --tasks depth
     --steps 3000
     --batch-size 4
@@ -76,10 +76,10 @@ full_depth:
 # Purpose: Train all 5 tasks jointly, evaluate per-task metrics.
 
 full_multitask:
-  script: scripts/train_tiny_vision_banana.py
+  script: scripts/archive/pre_opensource/train_tiny_vision_banana.py
   command: >
-    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
-    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    PYTHONPATH=src python scripts/archive/pre_opensource/train_tiny_vision_banana.py
+    --data-dir data/vb_snvc_train_v3
     --tasks depth normal edge semantic generation
     --steps 5000
     --batch-size 4
@@ -96,10 +96,10 @@ full_multitask:
 # Purpose: Test if base_width=16 is sufficient.
 
 ultra_tiny:
-  script: scripts/train_tiny_vision_banana.py
+  script: scripts/archive/pre_opensource/train_tiny_vision_banana.py
   command: >
-    PYTHONPATH=src python scripts/train_tiny_vision_banana.py
-    --data-dir /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3
+    PYTHONPATH=src python scripts/archive/pre_opensource/train_tiny_vision_banana.py
+    --data-dir data/vb_snvc_train_v3
     --tasks depth
     --steps 3000
     --batch-size 4

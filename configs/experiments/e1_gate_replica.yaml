@@ -19,7 +19,8 @@ experiment: e1_gate_replica
 date: 2026-07-27
 seed: 42
 
-script: scripts/mps_train_sdxl_depth.py
+# NOTE: This script has been archived. See scripts/archive/pre_opensource/
+script: scripts/archive/pre_opensource/mps_train_sdxl_depth.py
 
 env:
   VB_MODEL: segmind/SSD-1B

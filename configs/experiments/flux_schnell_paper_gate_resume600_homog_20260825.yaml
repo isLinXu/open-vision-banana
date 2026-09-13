@@ -4,7 +4,7 @@ experiment: flux_schnell_paper_gate_resume600_homog_20260825
 
 model:
   name: flux-schnell
-  local_path: /Users/gatilin/MyWork/models/ckpts/FLUX.1-schnell
+  local_path: data/
   dtype: bfloat16
   resolution: 512
   num_inference_steps: 4

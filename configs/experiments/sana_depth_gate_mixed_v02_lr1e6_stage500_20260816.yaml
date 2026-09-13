@@ -9,9 +9,9 @@ acceptance_at_32:
 model: {name: sana-600m-512px, dtype: float16, resolution: 512}
 lora: {rank: 16, alpha: 32, rs_lora: true}
 data:
-  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  dir: data/vb_snvc_train_v5_full
   pair_manifest: output/mar_vb_clean_pairs_v4/pairs.jsonl
-  generation_dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_generation_5k
+  generation_dir: data/vb_generation_5k
   resolution: 512
   vision_ratio: 0.1
   num_workers: 0

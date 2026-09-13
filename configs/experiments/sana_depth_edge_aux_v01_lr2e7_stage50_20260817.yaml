@@ -21,7 +21,7 @@ lora:
   rs_lora: true
 
 data:
-  dir: /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full
+  dir: data/vb_snvc_train_v5_full
   pair_manifest: output/sana_depth_edge_reweight_short_lr1e6_20260817/pairs_depth_edge_q75_x2.jsonl
   resolution: 512
   vision_ratio: 1.0
