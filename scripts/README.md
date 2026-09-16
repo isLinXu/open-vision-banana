@@ -28,6 +28,8 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 | Script | Description |
 |--------|-------------|
 | `evaluate.py` | Basic evaluation on benchmark datasets |
+| `eval_sana_1600m_multitask.py` | SANA-1600M multi-task evaluation (PSNR/SSIM with GT) |
+| `eval_quantitative_coco128.py` | Quantitative no-reference metrics + timing on COCO128 |
 | `evaluate_model.py` | Full evaluation (DDP, resume, SOTA comparison) |
 | `evaluate_depth_standard.py` | Standard depth evaluation with colormap |
 | `evaluate_generation_preservation.py` | Generation preservation metrics (FID, CLIP) |
