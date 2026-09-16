@@ -204,6 +204,22 @@ def parse_args() -> argparse.Namespace:
         help="Optional disk cache directory for tar-extracted images.",
     )
     p.add_argument(
+        "--tar-target-mode",
+        action="store_true",
+        default=config_defaults.get("tar_target_mode", False),
+        help=(
+            "Target-only training from tar volumes (no input RGB images). "
+            "Uses noise→target flow matching. Requires per-task tar indexes "
+            "built by scripts/build_task_tar_index.py."
+        ),
+    )
+    p.add_argument(
+        "--task-tar-index-dir",
+        type=Path,
+        default=config_defaults.get("task_tar_index_dir"),
+        help="Directory containing per-task tar indexes (tar_index_{depth,normal,seg}.json).",
+    )
+    p.add_argument(
         "--generation-dir",
         type=Path,
         default=config_defaults.get("generation_dir"),
@@ -404,6 +420,11 @@ def load_config_defaults(config_path: Path | None) -> dict[str, object]:
         "rslora": lora.get("rs_lora"),
         "data_dir": data.get("dir"),
         "pair_manifest": data.get("pair_manifest"),
+        "tar_index": data.get("tar_index"),
+        "tar_root": data.get("tar_root"),
+        "tar_disk_cache": data.get("tar_disk_cache"),
+        "tar_target_mode": data.get("tar_target_mode", False),
+        "task_tar_index_dir": data.get("task_tar_index_dir"),
         "generation_dir": data.get("generation_dir"),
         "require_captioned_generation": data.get("require_captioned_generation", False),
         "homogeneous_batches": data.get("homogeneous_batches", False),
@@ -934,7 +955,63 @@ def main():
     tasks_to_load = args.tasks if args.tasks else all_tasks
 
     generation_dataset = None
-    if args.tar_index is not None:
+    if args.tar_target_mode:
+        # ── Target-only mode: read ONLY targets from tar (no input RGB) ──
+        from open_vision_banana.data.tar_dataset import TarTargetDataset
+
+        tar_root = args.tar_root.expanduser().resolve()
+        task_index_dir = args.task_tar_index_dir
+        if task_index_dir is None:
+            # Default: same directory as tar_index
+            task_index_dir = args.tar_index.parent / "task_indexes" if args.tar_index else Path("output/snvc50m_manifest/task_indexes")
+        task_index_dir = task_index_dir.expanduser().resolve()
+
+        if not task_index_dir.is_dir():
+            logger.error("Task tar index directory not found: %s", task_index_dir)
+            logger.error("Run: python scripts/build_task_tar_index.py")
+            return
+
+        logger.info("Using tar-target-only mode: %s", task_index_dir)
+
+        # Map task names to index files
+        task_index_map = {
+            "depth": task_index_dir / "tar_index_depth.json",
+            "normal": task_index_dir / "tar_index_normal.json",
+            "seg": task_index_dir / "tar_index_seg.json",
+        }
+
+        # Filter to requested tasks
+        aliases = {"segmentation": "seg", "semantic": "seg"}
+        requested_tasks = set()
+        for t in tasks_to_load:
+            mapped = aliases.get(t, t)
+            if mapped in task_index_map:
+                requested_tasks.add(mapped)
+
+        train_vision_datasets = []
+        for task in sorted(requested_tasks):
+            idx_path = task_index_map[task]
+            if not idx_path.is_file():
+                logger.warning("Task index not found: %s (skipping %s)", idx_path, task)
+                continue
+            ds = TarTargetDataset(
+                tar_index_path=idx_path,
+                tar_root=tar_root,
+                task=task,
+                resolution=args.resolution,
+                disk_cache_dir=args.tar_disk_cache,
+                max_samples=args.max_samples_per_task,
+            )
+            if len(ds) > 0:
+                train_vision_datasets.append(ds)
+                logger.info("  %s: %d samples", task, len(ds))
+
+        # No val dataset in target-only mode (no split info in tar index)
+        val_dataset = None
+        logger.info("Tar-target-only: %d total train samples",
+                    sum(len(ds) for ds in train_vision_datasets))
+
+    elif args.tar_index is not None:
         # ── Tar-direct-access mode: read from compressed tarballs ──────
         from open_vision_banana.data.tar_dataset import TarArchiveDataset
 
@@ -1173,45 +1250,81 @@ def main():
     )
     logger.info(f"  Mixed dataset total: {len(mixed_ds)} samples")
 
+    # ── Override for tar-target-mode: check gzip index availability ──────
+    _use_sequential = False
+    if args.tar_target_mode:
+        gzip_index_path = Path("output/snvc50m_manifest/gzip_index/stream.gzidx")
+        if gzip_index_path.is_file():
+            logger.info("  Pre-built gzip index found → using random access mode")
+            _use_sequential = False  # Can use MixedVisionDataset with shuffle
+        else:
+            logger.info("  No gzip index → using sequential access mode")
+            _use_sequential = True
+            from open_vision_banana.data.tar_dataset import SequentialMultiTaskDataset
+            task_ds_map = {}
+            task_order = []
+            for ds in train_vision_datasets:
+                t = ds.task
+                task_ds_map[t] = ds
+                task_order.append(t)
+            mixed_ds = SequentialMultiTaskDataset(
+                task_datasets=task_ds_map,
+                task_order=task_order,
+            )
+            logger.info("  Using SequentialMultiTaskDataset (no shuffle, sequential gzip read)")
+
     # ── DataLoader ───────────────────────────────────────────────────
     from torch.utils.data import DataLoader
 
-    persistent = args.num_workers > 0
-
-    homogeneous_sampler = None
-    if args.homogeneous_batches and generation_dataset is not None:
-        num_batches = max(1, len(mixed_ds) // args.batch_size)
-        homogeneous_sampler = HomogeneousMixedBatchSampler(
-            num_batches=num_batches,
-            batch_size=args.batch_size,
-            vision_ratio=args.vision_ratio,
-            seed=args.seed,
-        )
-        train_loader = DataLoader(
-            mixed_ds,
-            batch_sampler=homogeneous_sampler,
-            num_workers=args.num_workers,
-            pin_memory=(device.type == "cuda"),
-            persistent_workers=persistent,
-            collate_fn=flexible_collate,
-        )
-        logger.info(
-            "  Homogeneous branch schedule: %d batches (%d vision / %d generation)",
-            num_batches,
-            round(num_batches * args.vision_ratio),
-            num_batches - round(num_batches * args.vision_ratio),
-        )
-    else:
+    # Sequential mode: no workers (shared gzip stream), no shuffle
+    if _use_sequential:
         train_loader = DataLoader(
             mixed_ds,
             batch_size=args.batch_size,
-            shuffle=True,
-            num_workers=args.num_workers,
-            pin_memory=(device.type == "cuda"),
+            shuffle=False,
+            num_workers=0,
+            pin_memory=False,
             drop_last=True,
-            persistent_workers=persistent,
             collate_fn=flexible_collate,
         )
+        logger.info("  Sequential DataLoader: num_workers=0, shuffle=False")
+    else:
+        persistent = args.num_workers > 0
+
+        homogeneous_sampler = None
+        if args.homogeneous_batches and generation_dataset is not None:
+            num_batches = max(1, len(mixed_ds) // args.batch_size)
+            homogeneous_sampler = HomogeneousMixedBatchSampler(
+                num_batches=num_batches,
+                batch_size=args.batch_size,
+                vision_ratio=args.vision_ratio,
+                seed=args.seed,
+            )
+            train_loader = DataLoader(
+                mixed_ds,
+                batch_sampler=homogeneous_sampler,
+                num_workers=args.num_workers,
+                pin_memory=(device.type == "cuda"),
+                persistent_workers=persistent,
+                collate_fn=flexible_collate,
+            )
+            logger.info(
+                "  Homogeneous branch schedule: %d batches (%d vision / %d generation)",
+                num_batches,
+                round(num_batches * args.vision_ratio),
+                num_batches - round(num_batches * args.vision_ratio),
+            )
+        else:
+            train_loader = DataLoader(
+                mixed_ds,
+                batch_size=args.batch_size,
+                shuffle=True,
+                num_workers=args.num_workers,
+                pin_memory=(device.type == "cuda"),
+                drop_last=True,
+                persistent_workers=persistent,
+                collate_fn=flexible_collate,
+            )
     val_loader = None
     if val_dataset is not None:
         val_loader = DataLoader(
@@ -1380,9 +1493,8 @@ def main():
                 prompts = [prompts]
 
             # Load images and targets
-            # image: [B, 3, H, W] in [-1, 1] (input image)
+            # image: [B, 3, H, W] in [-1, 1] (input image) — may be absent in target-only mode
             # target_rgb: [B, 3, H, W] in [0, 1] (target visualization)
-            input_images = batch["image"].to(device=device, dtype=model_dtype)
             target_rgb = batch["target_rgb"].to(device=device, dtype=model_dtype)
 
             # Sana expects images in [-1, 1] for VAE encode
@@ -1392,11 +1504,10 @@ def main():
             with torch.no_grad():
                 target_latents = vae_encode_sana(vae, target_images, device, model_dtype)
 
-                # Generation-preservation items provide an image only to keep
-                # the batch tensor schema uniform.  They still use noise as
-                # their flow source below.
+                # Input images may be absent (target-only mode) or unused (no-img2img-flow)
                 input_latents = None
-                if not args.no_img2img_flow:
+                if "image" in batch and not args.no_img2img_flow:
+                    input_images = batch["image"].to(device=device, dtype=model_dtype)
                     input_latents = vae_encode_sana(vae, input_images, device, model_dtype)
                     # Ensure same spatial dims
                     if input_latents.shape != target_latents.shape:

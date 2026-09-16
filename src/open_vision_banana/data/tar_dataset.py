@@ -156,40 +156,110 @@ class MultiFileReader(io.RawIOBase):
 # ── Indexed tar reader ─────────────────────────────────────────────────────
 
 
-class IndexedTarReader:
-    """Reads files from a split tar.gz archive using indexed_gzip for random access."""
+# ── Indexed tar reader (uses pre-built gzip index) ───────────────────────
 
-    def __init__(
-        self,
-        volumes: list[Path],
-        gzip_index_path: Path | None = None,
-    ) -> None:
+
+class IndexedTarReader:
+    """Read files from a split tar.gz archive using indexed_gzip with a pre-built index.
+
+    Requires a gzip seek index (``.gzidx`` file) produced by
+    ``scripts/build_gzip_index_snvc50m.py``.  With the index, random access
+    is O(1) – no sequential decompression needed.
+    """
+
+    def __init__(self, volumes: list[Path], gzip_index_path: Path) -> None:
         self.volumes = volumes
         self._raw = MultiFileReader(volumes)
         from indexed_gzip import IndexedGzipFile
 
-        if gzip_index_path and gzip_index_path.is_file():
-            logger.info("Loading gzip seek index from %s", gzip_index_path)
-            self._gz = IndexedGzipFile(
-                fileobj=self._raw,
-                spacing=4 * 1024 * 1024,
-            )
-            self._gz.import_index(str(gzip_index_path))
-        else:
-            logger.info("No gzip index found, will build during first access")
-            self._gz = IndexedGzipFile(
-                fileobj=self._raw,
-                spacing=4 * 1024 * 1024,
-            )
+        logger.info("Loading gzip seek index from %s", gzip_index_path)
+        self._gz = IndexedGzipFile(fileobj=self._raw, spacing=4 * 1024 * 1024)
+        self._gz.import_index(str(gzip_index_path))
+        logger.info("Gzip index loaded successfully")
 
     def read_at(self, offset: int, size: int) -> bytes:
-        """Read *size* bytes starting at decompressed *offset*."""
+        """Read *size* bytes at decompressed *offset* (random access)."""
         self._gz.seek(offset)
         return self._gz.read(size)
 
     def close(self) -> None:
         self._gz.close()
         self._raw.close()
+
+
+# ── Sequential gzip reader (no index needed) ─────────────────────────────
+
+
+class SequentialTarReader:
+    """Read files from a split tar.gz archive using sequential gzip reading.
+
+    Instead of indexed_gzip (which requires a full index build), this reader
+    decompresses sequentially through the gzip stream.  Files MUST be accessed
+    in ascending offset order for efficiency – the reader simply skips forward
+    through any intervening bytes.
+
+    Thread-safe: uses a lock so multiple DataLoader workers can share one
+    reader (though sequential access is most efficient with a single worker).
+    """
+
+    def __init__(self, volumes: list[Path]) -> None:
+        self._raw = MultiFileReader(volumes)
+        self._gz = gzip.GzipFile(fileobj=self._raw, mode="rb")
+        self._pos: int = 0  # current decompressed stream position
+        self._lock = __import__("threading").Lock()
+
+    def read_at(self, offset: int, size: int) -> bytes:
+        """Read *size* bytes at decompressed *offset* (sequential skip)."""
+        with self._lock:
+            if offset < self._pos:
+                # Cannot seek backward – would need to restart the stream.
+                # This should not happen if files are sorted by offset.
+                raise RuntimeError(
+                    f"SequentialTarReader: cannot go backward from "
+                    f"pos={self._pos} to offset={offset}. "
+                    f"Ensure files are sorted by offset."
+                )
+            skip = offset - self._pos
+            if skip > 0:
+                # Skip forward by reading and discarding
+                remaining = skip
+                while remaining > 0:
+                    chunk = min(remaining, 4 * 1024 * 1024)  # 4 MB
+                    data = self._gz.read(chunk)
+                    if not data:
+                        raise EOFError(
+                            f"Unexpected end of gzip stream at pos={self._pos}, "
+                            f"trying to skip to offset={offset}"
+                        )
+                    remaining -= len(data)
+                    self._pos += len(data)
+            # Now at the right position – read the file
+            buf = b""
+            remaining = size
+            while remaining > 0:
+                data = self._gz.read(min(remaining, 4 * 1024 * 1024))
+                if not data:
+                    raise EOFError(
+                        f"Unexpected end of gzip stream at pos={self._pos}, "
+                        f"reading {size} bytes"
+                    )
+                buf += data
+                self._pos += len(data)
+                remaining -= len(data)
+            return buf
+
+    def reset(self) -> None:
+        """Reset stream to the beginning (for new epoch)."""
+        with self._lock:
+            self._gz.close()
+            self._raw.seek(0)
+            self._gz = gzip.GzipFile(fileobj=self._raw, mode="rb")
+            self._pos = 0
+
+    def close(self) -> None:
+        with self._lock:
+            self._gz.close()
+            self._raw.close()
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────
@@ -280,8 +350,8 @@ class TarArchiveDataset(Dataset):
             len(self._volume_paths),
         )
 
-        # Create indexed tar reader (lazy - will be initialized on first access)
-        self._reader: IndexedTarReader | None = None
+        # Create sequential tar reader (lazy - will be initialized on first access)
+        self._reader: SequentialTarReader | None = None
 
         # Load manifest
         self.samples: list[dict] = []
@@ -299,9 +369,9 @@ class TarArchiveDataset(Dataset):
             split,
         )
 
-    def _get_reader(self) -> IndexedTarReader:
+    def _get_reader(self) -> SequentialTarReader:
         if self._reader is None:
-            self._reader = IndexedTarReader(self._volume_paths, self._gzip_index_path)
+            self._reader = SequentialTarReader(self._volume_paths)
         return self._reader
 
     def _load_manifest(self, manifest_path: Path) -> None:
@@ -453,3 +523,294 @@ class TarArchiveDataset(Dataset):
 
     def __del__(self) -> None:
         self.close()
+
+
+# ── Target-only dataset (no input RGB images needed) ─────────────────────
+
+
+class TarTargetDataset(Dataset):
+    """PyTorch Dataset that reads ONLY target images from tar.gz archives.
+
+    Unlike ``TarArchiveDataset`` which requires both input and target images
+    (for img2img flow matching), this dataset reads only target images and
+    trains with noise→target flow matching.  This is needed because the
+    SNVC-50M tar volumes contain only supervision targets (depth maps,
+    normal maps, segmentation masks) without the original RGB inputs.
+
+    The dataset is built from a *task-specific tar index* produced by
+    ``scripts/build_task_tar_index.py``, which already filters files by
+    task directory pattern.
+
+    Parameters
+    ----------
+    tar_index_path:
+        Path to a task-specific tar index JSON (contains ``task``, ``files``,
+        ``volumes`` keys).
+    tar_root:
+        Directory containing the split tar.gz volumes.
+    task:
+        Task name (``"depth"``, ``"normal"``, or ``"seg"``).
+    resolution:
+        Target image resolution.
+    inner_prefix:
+        Prefix inside the tar archive (e.g. ``"SenseNova-Vision-Corpus-50M"``).
+    disk_cache_dir:
+        Optional disk cache for extracted images.
+    max_samples:
+        Limit total number of samples.
+    seed:
+        Random seed for epoch-based shuffling.
+    """
+
+    DEFAULT_PROMPTS: dict[str, str] = {
+        "depth": (
+            "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map."
+        ),
+        "normal": (
+            "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry."
+        ),
+        "seg": (
+            "Generate a semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries."
+        ),
+    }
+
+    MASK_TASKS = {"seg"}
+
+    def __init__(
+        self,
+        tar_index_path: Path,
+        tar_root: Path,
+        task: str,
+        resolution: int = 512,
+        inner_prefix: str = "SenseNova-Vision-Corpus-50M",
+        disk_cache_dir: Path | None = None,
+        max_samples: int | None = None,
+        seed: int = 42,
+    ) -> None:
+        self.task = task
+        self.dir_name = f"tar_{task}"  # For logging compatibility
+        self.resolution = resolution
+        self.inner_prefix = inner_prefix
+        self.disk_cache_dir = disk_cache_dir
+        self.tar_root = tar_root
+        self.seed = seed
+        self.epoch = 0
+
+        # Load task-specific tar index
+        logger.info("Loading task tar index from %s", tar_index_path)
+        with tar_index_path.open(encoding="utf-8") as f:
+            idx = json.load(f)
+        self._file_index: dict[str, dict] = idx["files"]
+        self._volume_paths = [Path(v["path"]) for v in idx["volumes"]]
+        self._gzip_index_path = Path(idx["gzip_index"]) if idx.get("gzip_index") else None
+
+        # Build ordered file list (sorted by tar offset for sequential access)
+        self._file_list: list[tuple[str, int, int]] = sorted(
+            [(path, info["offset"], info["size"]) for path, info in self._file_index.items()],
+            key=lambda x: x[1],
+        )
+        if max_samples and len(self._file_list) > max_samples:
+            self._file_list = self._file_list[:max_samples]
+
+        # Lazy reader (will be initialized on first access)
+        self._reader: IndexedTarReader | SequentialTarReader | None = None
+
+        # Check for pre-built gzip index
+        self._gzip_index_path: Path | None = None
+        default_gzip_index = Path("output/snvc50m_manifest/gzip_index/stream.gzidx")
+        if default_gzip_index.is_file():
+            self._gzip_index_path = default_gzip_index
+            logger.info("Found pre-built gzip index: %s", default_gzip_index)
+
+        logger.info(
+            "TarTargetDataset [%s]: %d files across %d volumes (%s mode)",
+            task, len(self._file_list), len(self._volume_paths),
+            "indexed" if self._gzip_index_path else "sequential",
+        )
+
+    def _get_reader(self) -> IndexedTarReader | SequentialTarReader:
+        if self._reader is None:
+            if self._gzip_index_path and self._gzip_index_path.is_file():
+                self._reader = IndexedTarReader(self._volume_paths, self._gzip_index_path)
+            else:
+                self._reader = SequentialTarReader(self._volume_paths)
+        return self._reader
+
+    def _read_from_tar(self, tar_path: str) -> bytes | None:
+        info = self._file_index.get(tar_path)
+        if info is None:
+            return None
+        reader = self._get_reader()
+        try:
+            return reader.read_at(info["offset"], info["size"])
+        except Exception as e:
+            logger.warning("Failed to read %s: %s", tar_path, e)
+            return None
+
+    def _load_image_bytes(self, tar_path: str) -> bytes | None:
+        if self.disk_cache_dir:
+            cache_path = self.disk_cache_dir / tar_path.replace("/", os.sep)
+            if cache_path.is_file():
+                return cache_path.read_bytes()
+
+        data = self._read_from_tar(tar_path)
+
+        if data and self.disk_cache_dir:
+            cache_path = self.disk_cache_dir / tar_path.replace("/", os.sep)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_bytes(data)
+
+        return data
+
+    def _bytes_to_pil(self, data: bytes) -> Image.Image:
+        return Image.open(io.BytesIO(data)).convert("RGB")
+
+    def __len__(self) -> int:
+        return len(self._file_list)
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    def _load_sample(self, idx: int) -> dict[str, Any]:
+        tar_path, _offset, _size = self._file_list[idx]
+        task = self.task
+        prompt = self.DEFAULT_PROMPTS.get(task, f"Generate a {task} image.")
+
+        tgt_data = self._load_image_bytes(tar_path)
+        if tgt_data is None:
+            logger.warning("Cannot load target: %s (idx=%d)", tar_path, idx)
+            tgt_img = Image.new("RGB", (self.resolution, self.resolution), (0, 0, 0))
+        else:
+            tgt_img = self._bytes_to_pil(tgt_data)
+
+        target_resampling = (
+            Image.Resampling.NEAREST if task in self.MASK_TASKS else Image.Resampling.LANCZOS
+        )
+        tgt_img = tgt_img.convert("RGB").resize(
+            (self.resolution, self.resolution), target_resampling
+        )
+        target_tensor = torch.from_numpy(
+            np.asarray(tgt_img, dtype=np.float32) / 255.0
+        ).permute(2, 0, 1)
+
+        return {
+            "prompt": prompt,
+            "target_rgb": target_tensor,
+            "target_rgb_range": "0_1",
+            "task": task,
+            "flow_source": "noise",
+        }
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        last_err = None
+        for attempt in range(3):
+            try:
+                return self._load_sample(idx)
+            except Exception as e:
+                last_err = e
+                idx = (idx + 1) % len(self._file_list)
+        logger.error("Failed to load sample after 3 attempts: %s", last_err)
+        return {
+            "prompt": "Generate an image.",
+            "target_rgb": torch.zeros(3, self.resolution, self.resolution),
+            "target_rgb_range": "0_1",
+            "task": self.task,
+            "flow_source": "noise",
+        }
+
+    def close(self) -> None:
+        if self._reader is not None:
+            self._reader.close()
+            self._reader = None
+
+    def __del__(self) -> None:
+        self.close()
+
+
+__all__ = ["TarArchiveDataset", "TarTargetDataset", "SequentialMultiTaskDataset",
+           "IndexedTarReader", "SequentialTarReader", "MultiFileReader"]
+
+
+# ── Sequential multi-task dataset (no random access) ─────────────────────
+
+
+class SequentialMultiTaskDataset(Dataset):
+    """Dataset that wraps multiple ``TarTargetDataset`` instances and ensures
+    each task's gzip stream is accessed strictly sequentially.
+
+    Unlike ``MixedVisionDataset`` (which randomly samples sub-datasets), this
+    dataset cycles through tasks round-robin and advances each task's cursor
+    by one file per access.  This guarantees forward-only stream access for
+    the underlying ``SequentialTarReader``.
+
+    Shuffling is approximated by pre-shuffling each task's file list at init
+    time (subject to the constraint that files must still be accessed in
+    ascending offset order – so shuffling is limited to within-stream
+    reordering which is NOT possible with sequential access).
+
+    For true sequential access the file list MUST remain sorted by offset.
+    Shuffling is therefore NOT applied; the natural diversity of the tar
+    stream (which interleaves multiple source datasets) provides sufficient
+    variety for training.
+
+    Parameters
+    ----------
+    task_datasets:
+        Dict mapping task name → ``TarTargetDataset``.
+    task_order:
+        Order in which tasks are cycled (e.g. ``["depth", "normal", "seg"]``).
+    """
+
+    def __init__(
+        self,
+        task_datasets: dict[str, TarTargetDataset],
+        task_order: list[str] | None = None,
+    ) -> None:
+        self.task_datasets = task_datasets
+        self.task_order = task_order or list(task_datasets.keys())
+        self._cursors: dict[str, int] = {t: 0 for t in self.task_order}
+        self._total = sum(len(ds) for ds in task_datasets.values())
+
+        # Compute total steps (one full pass through all tasks)
+        self._step_count = 0
+
+        # For logging compatibility
+        self.dir_name = "sequential_multi_task"
+
+        logger.info(
+            "SequentialMultiTaskDataset: %d tasks, %d total samples, order=%s",
+            len(task_datasets), self._total, self.task_order,
+        )
+
+    def __len__(self) -> int:
+        return self._total
+
+    @property
+    def task(self) -> str:
+        """Return current task name (for logging compatibility)."""
+        return "multi"
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        # Find next task with remaining samples (round-robin)
+        for _ in range(len(self.task_order)):
+            task = self.task_order[self._step_count % len(self.task_order)]
+            self._step_count += 1
+            ds = self.task_datasets[task]
+            cursor = self._cursors[task]
+            if cursor < len(ds):
+                self._cursors[task] = cursor + 1
+                return ds[cursor]
+        # All tasks exhausted – should not happen within __len__
+        raise IndexError(f"All tasks exhausted (idx={idx})")
+
+    def set_epoch(self, epoch: int) -> None:
+        """Reset cursors for a new epoch and update sub-dataset epochs."""
+        for t in self.task_order:
+            self._cursors[t] = 0
+            self.task_datasets[t].set_epoch(epoch)
+        self._step_count = 0
+        logger.info("SequentialMultiTaskDataset: reset for epoch %d", epoch)
+
+    def close(self) -> None:
+        for ds in self.task_datasets.values():
+            ds.close()

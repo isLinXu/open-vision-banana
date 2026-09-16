@@ -1,16 +1,13 @@
 # Open-Vision-Banana -- Sana_600M_512px multi-task training on SNVC-50M
 #
-# Reads images directly from the compressed tar.gz split volumes (no extraction).
-# Requires a tar index built by scripts/build_tar_index_snvc50m_v3.py.
+# Target-only mode: reads ONLY target images (depth/normal/seg) from compressed
+# tar.gz volumes. Uses noise→target flow matching (no input RGB images needed).
 #
-# Usage:
-#   # 1) Build tar index (if not done yet)
-#   python scripts/build_tar_index_snvc50m_v3.py
+# Prerequisites:
+#   # 1) Build per-task tar indexes
+#   python scripts/build_task_tar_index.py
 #
-#   # 2) Build manifest from official JSONL annotations
-#   python scripts/build_snvc50m_manifest.py
-#
-#   # 3) Launch training
+#   # 2) Launch training
 #   python scripts/train_sana_512.py --config configs/sana_snvc50m_tar.yaml
 
 model:
@@ -30,9 +27,10 @@ lora:
     - conv_point
 
 data:
-  # tar-direct-access mode: no data.dir needed
-  pair_manifest: output/snvc50m_manifest/pairs_snvc50m.jsonl
+  # Target-only mode: read targets from tar, no input RGB images
+  tar_target_mode: true
   tar_index: output/snvc50m_manifest/tar_index_v3.json
+  task_tar_index_dir: output/snvc50m_manifest/task_indexes
   tar_root: data/snvc50m
   resolution: 512
   vision_ratio: 1.0
@@ -40,7 +38,7 @@ data:
   tasks:
     - depth
     - normal
-    - semantic
+    - seg
   task_weights: sqrt
 
 training:
@@ -58,7 +56,7 @@ scheduler:
   warmup_steps: null
 
 flow:
-  img2img_flow: true
+  img2img_flow: false  # noise→target (no input images in tar volumes)
   sigma: 0.0
   logit_normal_timesteps: true
   min_snr: true
@@ -71,7 +69,7 @@ ema:
   warmup_steps: 500
 
 checkpoint:
-  output_dir: output/sana_snvc50m_tar_3task
+  output_dir: output/sana_snvc50m_target_only_3task
   save_every: 1000
   eval_every: 500
   log_every: 50
