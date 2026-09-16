@@ -49,6 +49,11 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 | `prepare_synthetic_depth.py` | Prepare synthetic depth data |
 | `prepare_tartanair.py` | Prepare TartanAir dataset |
 | `build_generation_dataset.py` | Build synthetic generation dataset |
+| `build_gzip_index.py` | Pre-build gzip seek index for SNVC-50M tar stream |
+| `build_gzip_index_snvc50m.py` | Split tar.gz stream gzip index builder |
+| `build_task_tar_index.py` | Split full tar index into per-task indexes |
+| `build_volume_map.py` | Build file→volume mapping for SNVC-50M |
+| `build_volume_map_fast.py` | Fast volume mapping via ISIZE estimation |
 | `download_data.py` | Download training datasets |
 | `download_all_datasets.py` | Download all datasets at once |
 | `validate_dataset.py` | Comprehensive dataset validation |
