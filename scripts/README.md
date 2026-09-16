@@ -18,6 +18,8 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 |--------|-------------|
 | `inference.py` | Single-image / batch inference for all 10 vision tasks |
 | `infer_sana_512.py` | SANA-512 img2img inference with flow matching |
+| `infer_sana_1600m_multitask.py` | SANA-1600M multi-task img2img inference (depth/normal/semantic/edge) |
+| `infer_coco128.py` | COCO128 dataset multi-task inference validation |
 | `infer_checkpoint_viz.py` | Checkpoint inference + visualization |
 | `demo.py` | Core algorithm demo (no GPU required) |
 
