@@ -43,7 +43,7 @@ def _round_block(n: int) -> int:
 
 # ── Multi-file reader ─────────────────────────────────────────────────────
 
-
+                                                                        
 class MultiFileReader(io.RawIOBase):
     """Treat multiple files as a single virtual file for sequential reading."""
 
@@ -172,9 +172,15 @@ class IndexedTarReader:
         self._raw = MultiFileReader(volumes)
         from indexed_gzip import IndexedGzipFile
 
-        logger.info("Loading gzip seek index from %s", gzip_index_path)
-        self._gz = IndexedGzipFile(fileobj=self._raw, spacing=4 * 1024 * 1024)
-        self._gz.import_index(str(gzip_index_path))
+        abs_index = gzip_index_path.resolve()
+        logger.info("Loading gzip seek index from %s (resolved: %s, size: %d MB, %d volumes)",
+                    gzip_index_path, abs_index,
+                    abs_index.stat().st_size // (1024 * 1024) if abs_index.exists() else -1,
+                    len(volumes))
+        # Use default spacing (let indexed_gzip auto-detect from the imported index)
+        self._gz = IndexedGzipFile(fileobj=self._raw)
+        logger.info("IndexedGzipFile created, calling import_index...")
+        self._gz.import_index(str(abs_index))
         logger.info("Gzip index loaded successfully")
 
     def read_at(self, offset: int, size: int) -> bytes:
@@ -631,10 +637,25 @@ class TarTargetDataset(Dataset):
     def _get_reader(self) -> IndexedTarReader | SequentialTarReader:
         if self._reader is None:
             if self._gzip_index_path and self._gzip_index_path.is_file():
-                self._reader = IndexedTarReader(self._volume_paths, self._gzip_index_path)
+                # The pre-built gzip index was created from ALL volumes in tar_root.
+                # Use all volumes (not just self._volume_paths which may be a subset)
+                # so that the gzip stream matches the index.
+                all_volumes = self._get_all_volumes()
+                self._reader = IndexedTarReader(all_volumes, self._gzip_index_path)
             else:
                 self._reader = SequentialTarReader(self._volume_paths)
         return self._reader
+
+    def _get_all_volumes(self) -> list[Path]:
+        """Get all tar.gz volumes from tar_root (for gzip index compatibility)."""
+        if not self.tar_root:
+            logger.warning("_get_all_volumes: tar_root is None, using %d task volumes", len(self._volume_paths))
+            return self._volume_paths
+        all_vols = sorted(self.tar_root.glob("*.tar.gz*"))
+        logger.info("_get_all_volumes: tar_root=%s, found %d volumes", self.tar_root, len(all_vols))
+        if all_vols:
+            return all_vols
+        return self._volume_paths
 
     def _read_from_tar(self, tar_path: str) -> bytes | None:
         info = self._file_index.get(tar_path)
@@ -812,5 +833,105 @@ class SequentialMultiTaskDataset(Dataset):
         logger.info("SequentialMultiTaskDataset: reset for epoch %d", epoch)
 
     def close(self) -> None:
+        for ds in self.task_datasets.values():
+            ds.close()
+
+
+class StreamOrderedMultiTaskDataset(Dataset):
+    """Dataset that merges multiple TarTargetDatasets and accesses samples
+    in global stream-offset order for optimal HDD performance.
+
+    All tasks share the same underlying gzip stream (the concatenated tar.gz
+    volumes).  By sorting all samples across all tasks by their stream offset,
+    consecutive accesses are close together and the stream head only moves
+    forward.  This avoids the massive seek penalty of random access on HDD.
+
+    Parameters
+    ----------
+    task_datasets:
+        Dict mapping task name → TarTargetDataset.
+    shared_reader:
+        A shared IndexedTarReader or SequentialTarReader instance.
+        All tasks use this reader instead of creating their own.
+    """
+
+    def __init__(
+        self,
+        task_datasets: dict[str, TarTargetDataset],
+        shared_reader: IndexedTarReader | SequentialTarReader,
+    ) -> None:
+        self.task_datasets = task_datasets
+        self._shared_reader = shared_reader
+
+        # Collect all (task, tar_path, offset, size) tuples
+        self._samples: list[tuple[str, str, int, int]] = []
+        for task, ds in task_datasets.items():
+            for tar_path, info in ds._file_index.items():
+                self._samples.append((task, tar_path, info["offset"], info["size"]))
+
+        # Sort by stream offset for sequential access
+        self._samples.sort(key=lambda x: x[2])
+
+        # For logging compatibility
+        self.dir_name = "stream_ordered_multi_task"
+
+        logger.info(
+            "StreamOrderedMultiTaskDataset: %d tasks, %d total samples, "
+            "offset range [%d, %d]",
+            len(task_datasets), len(self._samples),
+            self._samples[0][2] if self._samples else 0,
+            self._samples[-1][2] if self._samples else 0,
+        )
+
+    def __len__(self) -> int:
+        return len(self._samples)
+
+    @property
+    def task(self) -> str:
+        return "multi"
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        task, tar_path, offset, size = self._samples[idx]
+        ds = self.task_datasets[task]
+
+        # Read target data using shared reader
+        try:
+            tgt_data = self._shared_reader.read_at(offset, size)
+        except Exception as e:
+            logger.warning("Failed to read %s at offset %d: %s", tar_path, offset, e)
+            tgt_data = None
+
+        if tgt_data is None:
+            tgt_img = Image.new("RGB", (ds.resolution, ds.resolution), (0, 0, 0))
+        else:
+            tgt_img = ds._bytes_to_pil(tgt_data)
+
+        prompt = ds.DEFAULT_PROMPTS.get(task, ("Generate an image.",))[0]
+        target_resampling = (
+            Image.Resampling.NEAREST if task in ds.MASK_TASKS else Image.Resampling.LANCZOS
+        )
+        tgt_img = tgt_img.convert("RGB").resize(
+            (ds.resolution, ds.resolution), target_resampling
+        )
+        target_tensor = torch.from_numpy(
+            np.asarray(tgt_img, dtype=np.float32) / 255.0
+        ).permute(2, 0, 1)
+
+        return {
+            "prompt": prompt,
+            "target_rgb": target_tensor,
+            "target_rgb_range": "0_1",
+            "task": task,
+            "flow_source": "noise",
+        }
+
+    def set_epoch(self, epoch: int) -> None:
+        """Reset for a new epoch (no-op for stream-ordered access)."""
+        logger.info("StreamOrderedMultiTaskDataset: epoch %d", epoch)
+
+    def close(self) -> None:
+        if self._shared_reader is not None:
+            self._shared_reader.close()
+            self._shared_reader = None
         for ds in self.task_datasets.values():
             ds.close()

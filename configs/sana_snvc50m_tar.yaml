@@ -31,7 +31,7 @@ data:
   tar_target_mode: true
   tar_index: output/snvc50m_manifest/tar_index_v3.json
   task_tar_index_dir: output/snvc50m_manifest/task_indexes
-  tar_root: data/snvc50m
+  tar_root: /media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M
   resolution: 512
   vision_ratio: 1.0
   num_workers: 4
@@ -43,8 +43,8 @@ data:
 
 training:
   steps: 20000
-  batch_size: 4
-  gradient_accumulation: 8
+  batch_size: 8
+  gradient_accumulation: 4
   lr: 5.0e-5
   max_grad_norm: 1.0
   seed: 42
@@ -76,3 +76,8 @@ checkpoint:
 
 device: cuda
 resume: null
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+  run_name: sana600m-snvc50m-target-3task

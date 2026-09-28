@@ -104,6 +104,7 @@ __all__ = [
     "TarArchiveDataset",
     "TarTargetDataset",
     "SequentialMultiTaskDataset",
+    "StreamOrderedMultiTaskDataset",
     "ValidationReport",
     "validate_vision_dataset",
 ]
