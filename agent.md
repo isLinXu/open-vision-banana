@@ -35,7 +35,7 @@ The paper demonstrates that **instruction-tuning a pre-trained image generator**
 | rsLoRA instruction tuning | ✅ Implemented | `src/open_vision_banana/training/` |
 | Flow matching (linear_flow + rectified-flow) | ✅ Implemented | `src/open_vision_banana/training/flow_matching.py` |
 | SANA-1600M multi-task training | ✅ Verified (legacy + unified) | `scripts/train_sana_512.py`, `scripts/train.py` |
-| FLUX-12B quantized training | ✅ Verified (legacy + unified) | `scripts/train_flux.py`, `scripts/train.py` |
+| FLUX.1-dev (12B) quantized training | ✅ Verified (legacy + unified) | `scripts/train_flux.py`, `scripts/train.py` |
 | 9:1 vision-to-language data mix | ⚠️ Code exists, not fully verified | `src/open_vision_banana/training/trainer.py` |
 | Paper benchmark reproduction | ❌ Not yet achieved | — |
 | Released checkpoints matching SOTA | ❌ Not available | — |
@@ -120,7 +120,7 @@ PYTHONPATH=src python scripts/train.py \
 Key config fields for SANA:
 - `model_name: "sana-1600m"` → uses SanaTransformer backbone + DC-AE VAE
 - `flow_type: "linear_flow"` + `flow_shift: 3.0`
-- `resolution: 512`, `batch_size: 4`, `gradient_accumulation_steps: 4`
+- `resolution: 512`, `batch_size: 4`, `gradient_accumulation: 4` (YAML field name; CLI: `--grad-accum`)
 - Tasks: depth + normal + semantic (3-task mixture)
 
 #### FLUX Training Example
@@ -131,7 +131,7 @@ PYTHONPATH=src python scripts/train.py \
 ```
 
 Key config fields for FLUX:
-- `model_name: "flux-12b"` → 12B transformer with 4-bit NF4 quantization
+- `model_name: "flux-dev"` → 12B transformer with 4-bit NF4 quantization
 - `quantize: "4bit"` → fits in 24GB VRAM
 - `flow_type: "rectified_flow"` (no flow_shift)
 - Latent packing: 2×2 patches → `[B, (H/2)*(W/2), C*4]`
@@ -177,14 +177,19 @@ PYTHONPATH=src python scripts/train_flux.py \
 
 ### 3.4 Training Output Structure
 
+Expected layout (created by `TrainingCallbacks.on_checkpoint`):
+
 ```
 output/<run_name>/
 ├── train.log                    # Training log
-├── checkpoint-step-{N}/         # Checkpoints
-│   ├── lora_weights/            # LoRA adapter weights
-│   ├── adapter_config.json      # PEFT config
-│   └── metadata.json            # Training metadata (step, loss, config)
-├── best/                        # Best model (by validation loss)
+├── checkpoint-step-{N}/         # Periodic checkpoints
+│   ├── lora.pt                  # LoRA weights + optimizer state + metadata
+│   ├── lora_adapter/            # PEFT-format adapter (save_pretrained)
+│   └── metadata.json            # step, val_loss, lora_rank/alpha, model_name
+├── checkpoint-step-{N}_best/    # Best model (by validation loss)
+│   ├── lora.pt
+│   ├── lora_adapter/
+│   └── metadata.json
 └── wandb/                       # W&B run directory (if --wandb)
 ```
 
@@ -193,8 +198,8 @@ output/<run_name>/
 | Config | Model | Tasks | Notes |
 |---|---|---|---|
 | `sana_1600m_3task_full_clean.yaml` | SANA-1600M | depth+normal+seg | Clean 3-task |
-| `sana_1600m_5task.yaml` | SANA-1600M | 5 tasks | Extended multi-task |
-| `flux_3task_full_clean.yaml` | FLUX-12B | depth+normal+seg | Quantized 4-bit |
+| `sana_1600m_5task.yaml` | SANA-1600M | depth+normal+seg | SNVC-50M dataset (named "5task" historically, 3 tasks active) |
+| `flux_3task_full_clean.yaml` | FLUX.1-dev (12B) | depth+normal+seg | Quantized 4-bit |
 | `sana_snvc50m_3task.yaml` | SANA-1600M | 3 tasks | SNVC-50M dataset |
 | `training_mps.yaml` | SANA | depth | MPS (Apple Silicon) |
 | `training_mps_multitask.yaml` | SANA | multi | MPS multi-task |
@@ -298,7 +303,7 @@ PYTHONPATH=src python scripts/evaluate.py \
   --data-path /path/to/cityscapes
 
 # Distributed evaluation (multi-GPU)
-torchrun --nproc_per_node=4 scripts/evaluate.py \
+PYTHONPATH=src torchrun --nproc_per_node=4 scripts/evaluate.py \
   --task depth --data-path /path/to/data --ddp
 
 # Quick smoke test (limit batches)
@@ -350,7 +355,7 @@ metrics = evaluator.evaluate(
 | `keypoint` | `coco-detection` | RGB + keypoint annotations |
 | `object_detection` | `coco-detection` | RGB + bbox annotations |
 | `depth_edge` | `depth` | RGB + depth maps |
-| `generation_preservation` | `depth` | RGB + generation metrics |
+| `generation_preservation` | `coco` | RGB + generation metrics |
 
 ---
 
@@ -405,14 +410,14 @@ The `model_registry.py` is the central abstraction for multi-model support.
 ### Supported Models
 | Alias | HF Path | Family | Size | Training Verified |
 |---|---|---|---|---|
-| `flux-12b` | `black-forest-labs/FLUX.1-dev` | flux | 12B | ✅ (3-task, 4-bit quant) |
+| `flux-dev` | `black-forest-labs/FLUX.1-dev` | flux | 12B | ✅ (3-task, 4-bit quant) |
 | `flux-schnell` | `black-forest-labs/FLUX.1-schnell` | flux | 12B | ⚠️ Registered, not trained |
 | `sana-1600m` | `Efficient-Large-Model/Sana_1600M_512px_diffusers` | sana | 1.6B | ✅ (3-task, 5-task) |
-| `sana-600m` | `Efficient-Large-Model/Sana_600M_512px` | sana | 600M | ⚠️ Registered, not trained |
-| `z-image` | `Tongyi-MAI/Z-Image-Turbo` | z-image | 6B | ⚠️ Registered, not trained |
+| `sana-600m` | `Efficient-Large-Model/SANA_600M_1024px_diffusers` | sana | 600M | ⚠️ Registered, not trained |
+| `z-image` | `Tongyi-MAI/Z-Image` | z-image | 6B | ⚠️ Registered, not trained |
 | `qwen-image` | `Qwen/Qwen-Image` | qwen-image | ~6B | ⚠️ Registered, not trained |
-| `lumina2` | `Alpha-VLLM/Lumina2` | lumina2 | ~3B | ⚠️ Registered, not trained |
-| `chroma` | `black-forest-labs/Chroma` | chroma | ~3B | ⚠️ Registered, not trained |
+| `lumina2` | `Alpha-VLLM/Lumina-Image-2.0` | lumina2 | ~3B | ⚠️ Registered, not trained |
+| `chroma` | `lodestones/Chroma1-HD` | chroma | ~3B | ⚠️ Registered, not trained |
 
 ### Key Registry Functions
 ```python
@@ -451,14 +456,15 @@ python scripts/build_snvc50m_manifest.py    # Build SNVC-50M manifest
 ## 9. Testing
 
 ```bash
-# Run all tests
+# Run all tests (tests/ is a flat directory — no subdirectories)
 pytest tests/
 
-# Run specific test category
-pytest tests/test_core/          # Core algorithm tests
-pytest tests/test_training/      # Training tests
-pytest tests/test_inference/     # Inference tests
-pytest tests/test_evaluation/    # Evaluation tests
+# Run tests by name pattern
+pytest tests/ -k "core"           # Core algorithm tests
+pytest tests/ -k "training"       # Training infrastructure tests
+pytest tests/ -k "inference"      # Inference tests
+pytest tests/ -k "evaluation"     # Evaluation tests
+pytest tests/ -k "model_registry" # Model registry tests
 
 # Run with coverage
 pytest tests/ --cov=src/open_vision_banana --cov-report=term-missing
