@@ -15,16 +15,22 @@ Provides:
 - LRFinder: Learning rate range test utility (Smith, 2015)
 """
 
+from .callbacks import TrainingCallbacks
 from .checkpoint import CheckpointManager
+from .config import TrainingConfig, build_arg_parser, load_config
 from .deepspeed_utils import (
     DEFAULT_DEEPSPEED_CONFIG,
     load_deepspeed_config,
     merge_training_into_config,
 )
 from .early_stopping import EarlyStopping
+from .flow_matching import FlowScheduler, pack_latents, unpack_latents
 from .fsdp_utils import FSDPWrapper
 from .logging import TrainingLogger, create_training_logger_from_config
+from .losses import TrainingLosses
 from .lr_finder import LRFinder
+from .model_backend import ModelBackend
+from .trainer import Trainer
 from .trainer_interface import (
     AccelerateTrainer,
     DDPTrainer,
@@ -38,6 +44,18 @@ from .tuner import InstructionTuner, VisionTaskDataset
 from .utils import DDPWrapper, EMAModel, VisionAugmentation
 
 __all__ = [
+    # Unified training framework
+    "Trainer",
+    "TrainingConfig",
+    "ModelBackend",
+    "FlowScheduler",
+    "TrainingLosses",
+    "TrainingCallbacks",
+    "build_arg_parser",
+    "load_config",
+    "pack_latents",
+    "unpack_latents",
+    # Legacy training infrastructure
     "InstructionTuner",
     "VisionTaskDataset",
     "EMAModel",
