@@ -46,6 +46,13 @@ from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.evaluation.depth import evaluate_depth
 from open_vision_banana.inference.generator import BaseGenerator
 
+# Load encoding contract for consistent prompt and decode
+try:
+    from open_vision_banana.evaluation.contract import load_encoding_contract
+    _CONTRACT = load_encoding_contract()
+except Exception:
+    _CONTRACT = None
+
 
 def load_depth_eval_samples(
     data_dir: Path, num_samples: int = 50
@@ -82,7 +89,7 @@ def evaluate_depth_model(
     lora_path: str | None,
     data_dir: str,
     num_samples: int = 50,
-    colormap: str = "cube_edge",
+    colormap: str = "turbo",
     model_name: str = "stabilityai/sdxl-base-1.0",
     device: str = "mps",
     strength: float = 0.85,
@@ -123,7 +130,11 @@ def evaluate_depth_model(
             image = Image.open(sample["image_path"]).convert("RGB")
 
             # Generate depth visualization via img2img
-            prompt = "depth estimation, depth map visualization"
+            # Use the canonical prompt from the encoding contract
+            if _CONTRACT is not None:
+                prompt = _CONTRACT.get_prompt("depth") or _CONTRACT.prompts.get("depth", "Generate a relative depth map.")
+            else:
+                prompt = "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map."
             result = generator.generate(
                 prompt=prompt,
                 image=image,
@@ -143,21 +154,29 @@ def evaluate_depth_model(
             ).float() / 255.0
             pred_rgb_tensor = pred_rgb_tensor.unsqueeze(0).to(device)
 
-            # Decode RGB → depth
-            pred_depth = mapper.rgb_to_depth(pred_rgb_tensor).squeeze(0)
+            # Decode RGB → depth using contract-specified colormap (spectral)
+            if _CONTRACT is not None and _CONTRACT.depth.colormap:
+                # Use contract colormap decode
+                pred_depth = _CONTRACT.depth.decode_rgb_to_depth(pred_rgb_tensor).squeeze(0)
+            else:
+                # Fallback: use mapper directly with default colormap
+                pred_depth = mapper.rgb_to_depth(pred_rgb_tensor).squeeze(0)
 
             # Load GT depth
             gt_path = Path(sample["depth_gt_path"])
             if gt_path.suffix == ".npy":
                 gt_depth = torch.from_numpy(np.load(str(gt_path)))
             else:
-                # Assume depth encoded in image — decode with same mapper
+                # Assume depth encoded in image — decode with same method
                 gt_img = Image.open(str(gt_path)).convert("RGB")
                 gt_rgb = torch.from_numpy(
                     np.array(gt_img).transpose(2, 0, 1)
                 ).float() / 255.0
                 gt_rgb = gt_rgb.unsqueeze(0).to(device)
-                gt_depth = mapper.rgb_to_depth(gt_rgb).squeeze(0)
+                if _CONTRACT is not None and _CONTRACT.depth.colormap:
+                    gt_depth = _CONTRACT.depth.decode_rgb_to_depth(gt_rgb).squeeze(0)
+                else:
+                    gt_depth = mapper.rgb_to_depth(gt_rgb).squeeze(0)
 
             # Ensure same spatial size
             if pred_depth.shape != gt_depth.shape:
@@ -257,8 +276,8 @@ def main():
         help="Number of samples to evaluate (>= 30 for statistical significance)",
     )
     parser.add_argument(
-        "--colormap", type=str, default="cube_edge",
-        choices=["cube_edge", "spectral", "turbo", "adaptive"],
+        "--colormap", type=str, default="turbo",
+        choices=["cube_edge", "turbo", "plasma", "inferno", "viridis", "grayscale", "rainbow"],
         help="Depth colormap used for encoding/decoding",
     )
     parser.add_argument(

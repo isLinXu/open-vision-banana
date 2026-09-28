@@ -44,19 +44,47 @@ logging.basicConfig(
 )
 logger = logging.getLogger("eval")
 
-MODEL_ID = "segmind/SSD-1B"
+MODEL_ID = "Efficient-Large-Model/Sana_1600M_512px_diffusers"
 RESOLUTION = 512
 VAE_SCALE = 8
 MAX_VAL_SAMPLES = 50  # limit for speed
+
+# Load encoding contract for consistent decode
+try:
+    from open_vision_banana.evaluation.contract import load_encoding_contract
+    _CONTRACT = load_encoding_contract()
+except Exception:
+    _CONTRACT = None
 
 
 # ─── Metrics ──────────────────────────────────────────────────────────────────
 
 def depth_metrics(pred: np.ndarray, target: np.ndarray) -> dict:
-    """Depth evaluation: δ1, δ2, δ3, AbsRel, RMSE."""
-    # Normalize both to [0, 1]
-    pred_norm = pred.astype(np.float64) / 255.0
-    target_norm = target.astype(np.float64) / 255.0
+    """Depth evaluation: δ1, δ2, δ3, AbsRel, RMSE.
+
+    Decodes RGB to normalized depth using DepthRGBMapper with the
+    contract-specified colormap (spectral).
+    """
+    from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
+    # Determine colormap from contract, default to turbo
+    colormap = "turbo"
+    lam = -3.0
+    c = 10.0 / 3.0
+    if _CONTRACT is not None and _CONTRACT.depth.colormap:
+        colormap = _CONTRACT.depth.colormap
+        lam = _CONTRACT.depth.power_lam
+        c = _CONTRACT.depth.power_c
+
+    mapper = DepthRGBMapper(colormap=colormap, lam=lam, c=c)
+
+    # Convert numpy RGB → torch tensor for mapper
+    pred_t = torch.from_numpy(pred.astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0)
+    target_t = torch.from_numpy(target.astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0)
+
+    with torch.no_grad():
+        pred_norm = mapper.rgb_to_normalized(pred_t).squeeze().numpy()
+        target_norm = mapper.rgb_to_normalized(target_t).squeeze().numpy()
 
     # Avoid division by zero
     mask = target_norm > 0.01
@@ -76,10 +104,21 @@ def depth_metrics(pred: np.ndarray, target: np.ndarray) -> dict:
 
 
 def normal_metrics(pred: np.ndarray, target: np.ndarray) -> dict:
-    """Normal evaluation: angular error in degrees."""
-    # Convert RGB to normals: n = (R/255*2-1, G/255*2-1, B/255*2-1)
-    pred_n = pred.astype(np.float64) / 127.5 - 1.0
-    target_n = target.astype(np.float64) / 127.5 - 1.0
+    """Normal evaluation: angular error in degrees.
+
+    Uses the standard NormalRGBMapper encoding:
+    R = (1-x)/2, G = (1+y)/2, B = (1+z)/2
+    """
+    # Convert RGB to normals using the standard encoding
+    pred_n = np.zeros_like(pred, dtype=np.float64)
+    target_n = np.zeros_like(target, dtype=np.float64)
+    # x = 1 - 2*R, y = 2*G - 1, z = 2*B - 1
+    pred_n[:, :, 0] = 1.0 - 2.0 * (pred[:, :, 0].astype(np.float64) / 255.0)
+    pred_n[:, :, 1] = 2.0 * (pred[:, :, 1].astype(np.float64) / 255.0) - 1.0
+    pred_n[:, :, 2] = 2.0 * (pred[:, :, 2].astype(np.float64) / 255.0) - 1.0
+    target_n[:, :, 0] = 1.0 - 2.0 * (target[:, :, 0].astype(np.float64) / 255.0)
+    target_n[:, :, 1] = 2.0 * (target[:, :, 1].astype(np.float64) / 255.0) - 1.0
+    target_n[:, :, 2] = 2.0 * (target[:, :, 2].astype(np.float64) / 255.0) - 1.0
 
     # Normalize
     pred_norm = pred_n / (np.linalg.norm(pred_n, axis=-1, keepdims=True) + 1e-8)
@@ -418,11 +457,23 @@ def run_inference(unet, vae, controlnet, scheduler, te1, te2, tok1, tok2,
 
 
 def _load_palette():
-    """Load palette from v3 manifest."""
+    """Load palette from encoding contract (ADE20K 150-class seed=42)."""
+    if _CONTRACT is not None:
+        try:
+            palette_dict = _CONTRACT.semantic.load_palette()
+            return np.array(list(palette_dict.values()), dtype=np.uint8)
+        except Exception as e:
+            logger.warning(f"Failed to load contract palette: {e}")
+    # Fallback: try v3 manifest
     v3_root = Path("data/v3")
-    manifest = json.loads((v3_root / "v3_manifest.json").read_text())
-    palette = np.array(manifest["palette"]["semantic"], dtype=np.uint8)
-    return palette
+    manifest = v3_root / "v3_manifest.json"
+    if manifest.exists():
+        data = json.loads(manifest.read_text())
+        return np.array(data["palette"]["semantic"], dtype=np.uint8)
+    # Last resort: hardcoded 19-class Cityscapes
+    logger.warning("No palette found — falling back to Cityscapes 19-class")
+    from open_vision_banana.task_prompts import CITYSCAPES_RGB_LEGEND
+    return np.array(list(CITYSCAPES_RGB_LEGEND.values()), dtype=np.uint8)
 
 
 # ─── Checkpoint Selection ─────────────────────────────────────────────────────

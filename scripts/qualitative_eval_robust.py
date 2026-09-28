@@ -24,6 +24,26 @@ from open_vision_banana.model_registry import (
 )
 from open_vision_banana.inference.sana_img2img import flow_matching_inference
 
+# Load encoding contract for consistent prompts
+try:
+    from open_vision_banana.evaluation.contract import load_encoding_contract
+    _CONTRACT = load_encoding_contract()
+except Exception:
+    _CONTRACT = None
+
+# Canonical prompts from training (ManifestVisionDataset.TASKS)
+_TASK_PROMPTS = {
+    "depth": "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
+    "normal": "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry.",
+    "seg": "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries.",
+}
+if _CONTRACT is not None:
+    for task, prompt in _CONTRACT.prompts.items():
+        if task == "semantic":
+            _TASK_PROMPTS["seg"] = prompt
+        elif task in _TASK_PROMPTS:
+            _TASK_PROMPTS[task] = prompt
+
 
 def tensor_to_pil(t: torch.Tensor) -> Image.Image:
     """Convert tensor to PIL Image. Handles both [0, 1] and [-1, 1] ranges."""
@@ -274,12 +294,13 @@ def main():
                 target_tensor = None
             
             # Inference with retry
+            prompt = _TASK_PROMPTS.get(task_name, f"Generate a {task_name} visualization of this image.")
             output_tensor, success = run_inference_with_retry(
                 peft_model,
                 components.vae,
                 components,
                 input_tensor,
-                f"Generate {task_name} map",
+                prompt,
                 device,
                 dtype,
                 args.num_inference_steps,
