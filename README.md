@@ -27,6 +27,7 @@
 - [Benchmarks](#benchmarks-from-paper)
 - [Evaluation & Export](#evaluation--export)
 - [Project Structure](#project-structure)
+- [Roadmap & TODO](#roadmap--todo)
 - [Citation](#citation)
 - [License](#license)
 
@@ -191,28 +192,49 @@ python scripts/infer_sana_512.py \
 
 > 📖 **GPU Training Guide**: See [`docs/quick-start.md`](docs/quick-start.md) for H20 / A100 / RTX quick-start with copy-paste commands.
 
-### Basic Training
+### Unified Training Framework
 
-```bash
-# Universal launcher (auto-detects GPU & mode)
-bash scripts/unified_launch.sh --config configs/unified_training_config.yaml
-
-# Override mode manually
-bash scripts/unified_launch.sh --mode ddp       --config configs/training_config.yaml
-bash scripts/unified_launch.sh --mode fsdp      --config configs/training_config.yaml
-bash scripts/unified_launch.sh --mode deepspeed --config configs/training_config.yaml
-```
-
-### SANA Training
+The project provides a **unified multi-model training framework** via `scripts/train.py`,
+supporting all registered models (SANA, FLUX, SD3, etc.) and multi-task training (depth, normal, segmentation, etc.).
 
 ```bash
 # SANA-1600M multi-task training
+PYTHONPATH=src python scripts/train.py \
+  --config configs/sana_1600m_3task_full_clean.yaml --wandb
+
+# FLUX.1-dev multi-task training
+PYTHONPATH=src python scripts/train.py \
+  --config configs/flux_3task_full_clean.yaml --wandb
+
+# Override any config parameter via CLI
+PYTHONPATH=src python scripts/train.py \
+  --config configs/sana_1600m_3task_full_clean.yaml \
+  --steps 10000 --lr 5e-5 --output-dir output/custom_run
+```
+
+The framework consists of modular components:
+
+| Module | File | Description |
+|--------|------|-------------|
+| `ModelBackend` | `training/model_backend.py` | Model abstraction (quantization, LoRA, packing, forward) |
+| `FlowScheduler` | `training/flow_matching.py` | Unified flow matching (SANA linear_flow + rectified-flow) |
+| `TrainingConfig` | `training/config.py` | YAML config + CLI overrides via dataclass |
+| `TrainingLosses` | `training/losses.py` | Flow MSE + Min-SNR + task weighting + aux losses |
+| `TrainingCallbacks` | `training/callbacks.py` | W&B logging + checkpoint + validation tracking |
+| `Trainer` | `training/trainer.py` | Core training loop assembling all modules |
+
+### Legacy Training Scripts
+
+Model-specific scripts are preserved for reference and backward compatibility:
+
+```bash
+# SANA training (legacy)
 PYTHONPATH=src python scripts/train_sana_512.py \
   --config configs/sana_1600m_3task.yaml
 
-# SANA with SNVC-50M dataset
-PYTHONPATH=src python scripts/train_sana_512.py \
-  --config configs/sana_snvc50m_3task.yaml
+# FLUX training (legacy)
+PYTHONPATH=src python scripts/train_flux.py \
+  --config configs/flux_3task_full_clean.yaml --wandb
 ```
 
 ### Hardware-specific Launch
@@ -223,8 +245,8 @@ PYTHONPATH=src python scripts/train_sana_512.py \
 | H20 ×8 | 96GB×8 | `bash scripts/launch_h20_ddp.sh` |
 | A100-80GB | 80GB | `bash scripts/launch_training_a100_80g.sh` |
 | A100-40GB | 40GB | `bash scripts/train_a100_40g_deepspeed.sh` |
-| RTX 4090 | 24GB | `bash scripts/unified_launch.sh --mode deepspeed` |
-| MPS (Apple) | Unified | `bash scripts/unified_launch.sh --mode mps` |
+| RTX 4090 | 24GB | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
+| MPS (Apple) | Unified | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
 
 ### Data Preparation
 
@@ -382,8 +404,14 @@ open-vision-banana/
 │   │   ├── prompt.py            # Task-specific prompt builder
 │   │   ├── decoder.py           # Visualization decoder
 │   │   └── optimization.py      # Inference optimization presets
-│   ├── training/                # LoRA instruction tuning
-│   │   ├── tuner.py             # InstructionTuner + VisionTaskDataset
+│   ├── training/                # Unified training framework
+│   │   ├── model_backend.py     # Multi-model abstraction (SANA/FLUX/SD3)
+│   │   ├── flow_matching.py     # Unified flow matching scheduler
+│   │   ├── config.py            # YAML config + CLI overrides
+│   │   ├── losses.py            # Flow MSE + Min-SNR + aux losses
+│   │   ├── callbacks.py         # W&B logging + checkpoint
+│   │   ├── trainer.py           # Core training loop
+│   │   ├── tuner.py             # Legacy InstructionTuner
 │   │   ├── trainer_interface.py # 5 backends (Native/DDP/FSDP/DeepSpeed/Accelerate)
 │   │   └── ...
 │   ├── evaluation/              # Metrics for all vision tasks
@@ -395,6 +423,31 @@ open-vision-banana/
 ├── docker/                      # CPU/GPU Docker images
 └── notebooks/                   # Colab demo
 ```
+
+---
+
+## Roadmap & TODO
+
+> This is an **unofficial, community-driven reimplementation**. We are transparent about what is done and what is not.
+
+### High Priority
+- [ ] Unified framework end-to-end verification (`scripts/train.py` + `Trainer` — needs full SANA/FLUX training runs)
+- [ ] Paper benchmark reproduction (Cityscapes, SA-Co/Gold, HyperSIM, etc.)
+- [ ] Public checkpoint release matching paper SOTA
+- [ ] 9:1 vision-to-language data mix verification
+
+### Medium Priority
+- [ ] Multi-model training verification (Z-Image, Qwen-Image, Lumina2, Chroma)
+- [ ] Additional vision task training (edge, flow, keypoint, object_detection, depth_edge)
+- [ ] Generation preservation measurement (FID/CLIP on COCO)
+- [ ] Export/serving integration with unified training framework
+
+### Low Priority
+- [ ] DDP/FSDP/DeepSpeed verification with unified `Trainer`
+- [ ] EMA verification in actual training runs
+- [ ] Legacy script deprecation (`train_sana_512.py`, `train_flux.py`)
+- [ ] Comprehensive test coverage for new unified training modules
+- [ ] Dataset preparation pipeline documentation
 
 ---
 
