@@ -19,8 +19,8 @@ lora:
     - conv_point
 
 data:
-  dir: data/snvc_train_full
-  pair_manifest: output/snvc_v5full_pairs/pairs_5task_v3_clean.jsonl
+  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  pair_manifest: output/snvc_v5full_pairs/pairs_3task_clean.jsonl
   resolution: 512
   vision_ratio: 1.0
   num_workers: 4
@@ -53,7 +53,8 @@ flow:
   cfg_dropout_rate: 0.1
 
 loss:
-  task_loss_weights: "depth=1.0,normal=1.0,semantic=1.5"
+  task_loss_weights: "depth=1.0,normal=2.0,semantic=1.5"
+  normal_angular_loss_weight: 0.3
 
 ema:
   enabled: true
@@ -65,6 +66,11 @@ checkpoint:
   save_every: 1000
   eval_every: 500
   log_every: 50
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+  run_name: sana1600m-3task-depth-normal-seg
 
 device: cuda
 resume: null

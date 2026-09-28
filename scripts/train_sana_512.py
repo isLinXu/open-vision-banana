@@ -52,6 +52,8 @@ import torch.nn.functional as F
 from PIL import Image, ImageFile
 from torch.utils.data import Dataset
 
+import wandb
+
 # Tolerate partially-downloaded / truncated PNGs in the SNVC manifest instead of
 # crashing the whole training run; unreadable images are resampled in __getitem__.
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -92,6 +94,10 @@ from open_vision_banana.training.sana_flow import (
 from open_vision_banana.training.sana_depth_aux import (
     depth_edge_endpoint_loss,
     depth_task_mask,
+)
+from open_vision_banana.training.normal_aux_loss import (
+    normal_angular_loss,
+    normal_task_mask,
 )
 from open_vision_banana.training.utils import EMAModel
 
@@ -343,6 +349,12 @@ def parse_args() -> argparse.Namespace:
         default=config_defaults.get("depth_edge_aux_sigma_floor", 0.10),
         help="Minimum flow sigma used to normalize endpoint reconstruction error.",
     )
+    p.add_argument(
+        "--normal-angular-loss-weight",
+        type=float,
+        default=config_defaults.get("normal_angular_loss_weight", 0.0),
+        help="Add surface-normal angular error loss for normal-task samples (0 disables).",
+    )
 
     # ── Evaluation & Saving ──────────────────────────────────────────
     p.add_argument("--output-dir", default=config_defaults.get("output_dir", "output/sana_512_vb"))
@@ -380,6 +392,26 @@ def parse_args() -> argparse.Namespace:
         "--task-loss-weights",
         default=config_defaults.get("task_loss_weights"),
         help="Optional per-task loss multipliers, e.g. semantic=2,structure=2.",
+    )
+
+    # ── Weights & Biases ──────────────────────────────────────────────
+    p.add_argument(
+        "--wandb",
+        action="store_true",
+        default=config_defaults.get("wandb", False),
+        help="Enable Weights & Biases logging.",
+    )
+    p.add_argument(
+        "--wandb-project",
+        type=str,
+        default=config_defaults.get("wandb_project", "open-vision-banana"),
+        help="W&B project name.",
+    )
+    p.add_argument(
+        "--wandb-run-name",
+        type=str,
+        default=config_defaults.get("wandb_run_name"),
+        help="W&B run name (auto-generated if omitted).",
     )
 
     return p.parse_args()
@@ -453,6 +485,7 @@ def load_config_defaults(config_path: Path | None) -> dict[str, object]:
         "depth_edge_aux_edge_weight": loss.get("depth_edge_aux_edge_weight"),
         "depth_edge_aux_edge_threshold": loss.get("depth_edge_aux_edge_threshold"),
         "depth_edge_aux_sigma_floor": loss.get("depth_edge_aux_sigma_floor"),
+        "normal_angular_loss_weight": loss.get("normal_angular_loss_weight"),
         "task_loss_weights": loss.get("task_loss_weights", training.get("task_loss_weights")),
         "output_dir": checkpoint.get("output_dir"),
         "save_every": checkpoint.get("save_every"),
@@ -462,6 +495,11 @@ def load_config_defaults(config_path: Path | None) -> dict[str, object]:
         "ema_warmup": ema.get("warmup_steps"),
         "device": raw.get("device"),
     }
+    # wandb section (top-level)
+    wandb_cfg = raw.get("wandb", {}) or {}
+    defaults["wandb"] = wandb_cfg.get("enabled", False)
+    defaults["wandb_project"] = wandb_cfg.get("project", "open-vision-banana")
+    defaults["wandb_run_name"] = wandb_cfg.get("run_name")
     return {name: value for name, value in defaults.items() if value is not None}
 
 
@@ -851,6 +889,8 @@ def main():
         raise ValueError("--depth-edge-aux-edge-threshold must be positive")
     if args.depth_edge_aux_sigma_floor <= 0:
         raise ValueError("--depth-edge-aux-sigma-floor must be positive")
+    if args.normal_angular_loss_weight < 0:
+        raise ValueError("--normal-angular-loss-weight must be non-negative")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -1252,11 +1292,28 @@ def main():
 
     # ── Override for tar-target-mode: check gzip index availability ──────
     _use_sequential = False
+    _use_stream_ordered = False
+    homogeneous_sampler = None
     if args.tar_target_mode:
         gzip_index_path = Path("output/snvc50m_manifest/gzip_index/stream.gzidx")
         if gzip_index_path.is_file():
-            logger.info("  Pre-built gzip index found → using random access mode")
-            _use_sequential = False  # Can use MixedVisionDataset with shuffle
+            logger.info("  Pre-built gzip index found → using stream-ordered access mode")
+            from open_vision_banana.data.tar_dataset import (
+                StreamOrderedMultiTaskDataset, IndexedTarReader,
+            )
+            # Create a shared reader with ALL volumes (needed for gzip index)
+            tar_root_path = args.tar_root.expanduser().resolve()
+            all_volumes = sorted(tar_root_path.glob("*.tar.gz*"))
+            logger.info("  Creating shared IndexedTarReader with %d volumes", len(all_volumes))
+            shared_reader = IndexedTarReader(all_volumes, gzip_index_path)
+            # Build task dataset map
+            task_ds_map = {}
+            for ds in train_vision_datasets:
+                task_ds_map[ds.task] = ds
+            # Create stream-ordered dataset
+            mixed_ds = StreamOrderedMultiTaskDataset(task_ds_map, shared_reader)
+            _use_stream_ordered = True
+            logger.info("  StreamOrderedMultiTaskDataset: %d samples", len(mixed_ds))
         else:
             logger.info("  No gzip index → using sequential access mode")
             _use_sequential = True
@@ -1288,8 +1345,23 @@ def main():
             collate_fn=flexible_collate,
         )
         logger.info("  Sequential DataLoader: num_workers=0, shuffle=False")
+    elif _use_stream_ordered:
+        # Stream-ordered mode: use num_workers=0, shuffle=False for sequential HDD access
+        train_loader = DataLoader(
+            mixed_ds,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=(device.type == "cuda"),
+            drop_last=True,
+            collate_fn=flexible_collate,
+        )
+        logger.info("  Stream-ordered DataLoader: num_workers=0, shuffle=False")
     else:
-        persistent = args.num_workers > 0
+        # Indexed mode: use num_workers=0 to avoid HDD I/O contention
+        # when multiple workers load the large gzip index simultaneously
+        persistent = False
+        logger.info("  Indexed DataLoader: num_workers=0 (HDD I/O optimization)")
 
         homogeneous_sampler = None
         if args.homogeneous_batches and generation_dataset is not None:
@@ -1303,9 +1375,8 @@ def main():
             train_loader = DataLoader(
                 mixed_ds,
                 batch_sampler=homogeneous_sampler,
-                num_workers=args.num_workers,
+                num_workers=0,
                 pin_memory=(device.type == "cuda"),
-                persistent_workers=persistent,
                 collate_fn=flexible_collate,
             )
             logger.info(
@@ -1319,10 +1390,9 @@ def main():
                 mixed_ds,
                 batch_size=args.batch_size,
                 shuffle=True,
-                num_workers=args.num_workers,
+                num_workers=0,
                 pin_memory=(device.type == "cuda"),
                 drop_last=True,
-                persistent_workers=persistent,
                 collate_fn=flexible_collate,
             )
     val_loader = None
@@ -1331,9 +1401,8 @@ def main():
             val_dataset,
             batch_size=min(args.batch_size, 4),
             shuffle=False,
-            num_workers=args.num_workers,
+            num_workers=0,
             pin_memory=(device.type == "cuda"),
-            persistent_workers=persistent,
             collate_fn=flexible_collate,
         )
 
@@ -1451,6 +1520,35 @@ def main():
                     logger.info("  Restored EMA shadow weights")
                 logger.info(f"  Resumed at step {global_step}, best_val_loss={best_val_loss:.4f}")
 
+    # ── Weights & Biases init ────────────────────────────────────────
+    if args.wandb:
+        wandb_run_name = args.wandb_run_name or f"sana1600m-3task-clean-{random.randint(1000, 9999)}"
+        wandb.init(
+            project=args.wandb_project,
+            name=wandb_run_name,
+            config={
+                "model": args.model_name,
+                "dtype": args.dtype,
+                "lora_rank": args.lora_rank,
+                "lora_alpha": args.lora_alpha,
+                "rslora": not args.no_rslora,
+                "steps": args.steps,
+                "batch_size": args.batch_size,
+                "grad_accum": args.grad_accum,
+                "lr": args.lr,
+                "scheduler": args.scheduler,
+                "warmup_ratio": args.warmup_ratio,
+                "resolution": args.resolution,
+                "depth_edge_aux_weight": args.depth_edge_aux_weight,
+                "normal_angular_loss_weight": args.normal_angular_loss_weight,
+                "task_loss_weights": args.task_loss_weights,
+                "ema_decay": args.ema_decay,
+                "output_dir": str(output_dir),
+            },
+            dir=str(output_dir),
+        )
+        logger.info(f"W&B run initialized: {wandb_run_name}")
+
     # ── Training loop ────────────────────────────────────────────────
     logger.info("Starting training...")
     model_dtype = next(peft_model.parameters()).dtype
@@ -1465,7 +1563,7 @@ def main():
     amp_dtype = torch.bfloat16 if device.type == "mps" else dtype
     scaler = torch.amp.GradScaler("cuda") if use_amp and dtype == torch.float16 else None
 
-    train_metrics = {"loss": 0.0, "flow_loss": 0.0, "depth_edge_aux_loss": 0.0, "steps": 0}
+    train_metrics = {"loss": 0.0, "flow_loss": 0.0, "depth_edge_aux_loss": 0.0, "normal_angular_aux_loss": 0.0, "steps": 0}
     last_avg_loss: float | None = None
     micro_step = 0
     optimizer.zero_grad(set_to_none=True)
@@ -1612,7 +1710,32 @@ def main():
                             gradient_weight=args.depth_edge_aux_gradient_weight,
                             sigma_floor=args.depth_edge_aux_sigma_floor,
                         )
-            total_loss = flow_loss.float() + args.depth_edge_aux_weight * depth_aux_loss
+
+            normal_aux_loss = flow_loss.new_zeros(())
+            if args.normal_angular_loss_weight:
+                normal_mask = normal_task_mask(batch.get("task"), batch_size, device)
+                if normal_mask.any():
+                    def _diff_decode(latents):
+                        dec_out = vae.decode(
+                            denormalize_vae_latents(latents, vae).to(dtype=vae.dtype)
+                        )
+                        if hasattr(dec_out, "sample"):
+                            return dec_out.sample
+                        return dec_out
+                    normal_aux_loss = normal_angular_loss(
+                        predicted_velocity[normal_mask],
+                        noisy_latents[normal_mask],
+                        target_latents[normal_mask],
+                        target_rgb[normal_mask],
+                        sigma[normal_mask],
+                        _diff_decode,
+                    )
+
+            total_loss = (
+                flow_loss.float()
+                + args.depth_edge_aux_weight * depth_aux_loss
+                + args.normal_angular_loss_weight * normal_aux_loss
+            )
             if not torch.isfinite(total_loss).all():
                 raise FloatingPointError(
                     f"Non-finite training loss at global_step={global_step}, "
@@ -1629,6 +1752,7 @@ def main():
             train_metrics["loss"] += total_loss.item()
             train_metrics["flow_loss"] += flow_loss.item()
             train_metrics["depth_edge_aux_loss"] += depth_aux_loss.item()
+            train_metrics["normal_angular_aux_loss"] += normal_aux_loss.item()
             train_metrics["steps"] += 1
 
             # ``global_step`` is an optimizer update, never a micro-batch.
@@ -1673,7 +1797,24 @@ def main():
                     f"epoch={epoch} "
                     f"latent_shape={list(target_latents.shape[1:])} | task_loss: {task_str}"
                 )
-                train_metrics = {"loss": 0.0, "flow_loss": 0.0, "depth_edge_aux_loss": 0.0, "steps": 0}
+                # W&B logging
+                if args.wandb:
+                    avg_normal_aux_loss = train_metrics.get("normal_angular_aux_loss", 0.0) / max(1, train_metrics["steps"])
+                    wandb.log(
+                        {
+                            "train/loss": avg_loss,
+                            "train/flow_loss": avg_flow_loss,
+                            "train/depth_edge_aux_loss": avg_depth_aux_loss,
+                            "train/normal_angular_aux_loss": avg_normal_aux_loss,
+                            "train/lr": lr,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
+                    # Per-task losses
+                    for t, v in sorted(task_loss_acc.items()):
+                        wandb.log({f"train/task_{t}_loss": v[0] / max(1, v[1])}, step=global_step)
+                train_metrics = {"loss": 0.0, "flow_loss": 0.0, "depth_edge_aux_loss": 0.0, "normal_angular_aux_loss": 0.0, "steps": 0}
 
             # ── Save checkpoint ──────────────────────────────────────
             if global_step % args.save_every == 0:
@@ -1709,6 +1850,10 @@ def main():
                 finally:
                     ema.restore_shadow(peft_model, ema_backup)
                 logger.info(f"  [val] step={global_step} val_loss={val_loss:.4f}")
+
+                # W&B validation logging
+                if args.wandb:
+                    wandb.log({"val/loss": val_loss}, step=global_step)
 
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
@@ -1747,6 +1892,10 @@ def main():
     logger.info(f"  Total steps: {global_step}")
     logger.info(f"  Best val_loss: {best_val_loss:.4f}")
     logger.info(f"  Checkpoints saved to: {output_dir}")
+
+    # Finish W&B run
+    if args.wandb:
+        wandb.finish()
 
 
 def save_checkpoint(
@@ -1937,7 +2086,32 @@ def validate(
                     gradient_weight=args.depth_edge_aux_gradient_weight,
                     sigma_floor=args.depth_edge_aux_sigma_floor,
                 )
-        loss = flow_loss.float() + args.depth_edge_aux_weight * depth_aux_loss
+
+        normal_aux_loss = flow_loss.new_zeros(())
+        if args.normal_angular_loss_weight:
+            normal_mask = normal_task_mask(batch.get("task"), batch_size, device)
+            if normal_mask.any():
+                def _diff_decode_val(latents):
+                    dec_out = vae.decode(
+                        denormalize_vae_latents(latents, vae).to(dtype=vae.dtype)
+                    )
+                    if hasattr(dec_out, "sample"):
+                        return dec_out.sample
+                    return dec_out
+                normal_aux_loss = normal_angular_loss(
+                    predicted_velocity[normal_mask],
+                    noisy_latents[normal_mask],
+                    target_latents[normal_mask],
+                    target_rgb[normal_mask],
+                    sigma[normal_mask],
+                    _diff_decode_val,
+                )
+
+        loss = (
+            flow_loss.float()
+            + args.depth_edge_aux_weight * depth_aux_loss
+            + args.normal_angular_loss_weight * normal_aux_loss
+        )
 
         if not torch.isfinite(loss).all():
             raise FloatingPointError(f"Non-finite validation loss at batch {i}")

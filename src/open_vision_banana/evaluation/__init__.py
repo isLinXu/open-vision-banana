@@ -45,6 +45,14 @@ from .keypoint import evaluate_keypoints
 from .normal import evaluate_normals
 from .object_detection import evaluate_object_detection
 from .referring import ReferringAccumulator, evaluate_referring
+from .contract import (
+    DepthContract,
+    EncodingContract,
+    NormalContract,
+    SemanticContract,
+    load_encoding_contract,
+)
+from .pipeline import EvalPipeline
 from .semantic import evaluate_semantic
 
 __all__ = [
@@ -75,4 +83,10 @@ __all__ = [
     "apply_depth_benchmark_protocol",
     "canonical_depth_dataset",
     "GeminiPaperJudge",
+    "EncodingContract",
+    "DepthContract",
+    "SemanticContract",
+    "NormalContract",
+    "load_encoding_contract",
+    "EvalPipeline",
 ]

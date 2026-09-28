@@ -1,0 +1,62 @@
+# Training-Evaluation Encoding Contract
+# =====================================
+# Auto-generated from audit of SNVC-50M training data (pairs_5task_v3_clean.jsonl).
+# This file is the SINGLE SOURCE OF TRUTH for how training targets are encoded.
+# All evaluation scripts MUST use these parameters for decoding.
+#
+# Audit date: 2026-09-10
+# Manifest: output/snvc_v5full_pairs/pairs_5task_v3_clean.jsonl
+# Task distribution: normal=11057, depth=6013, seg=4557
+
+depth:
+  # AUDIT RESULT: Training depth targets are encoded with the TURBO colormap.
+  # The Turbo colormap maps normalized depth [0, 1] → RGB using the Turbo LUT.
+  # Training pipeline loads these PNGs as RGB and encodes via DepthRGBMapper(colormap="turbo").
+  #
+  # Evaluation must decode with the same colormap + power transform:
+  #   normalized = DepthRGBMapper(colormap="turbo").rgb_to_normalized(rgb)
+  #   metric_depth = DepthRGBMapper.normalized_to_depth(normalized)
+  encoding: turbo
+  colormap: turbo
+  power_lam: -3.0
+  power_c: 3.333
+  decode_hint: "Decode with DepthRGBMapper(colormap='turbo', lam=-3.0, c=3.333). rgb_to_normalized() → [0,1] depth."
+
+semantic:
+  # Training uses pseudo labels from SegFormer (nvidia/segformer-b5-finetuned-ade-640-640).
+  # The pseudo labels are mapped to the ADE20K 150-class deterministic palette (seed=42).
+  # This is the same palette used by ADE20KDataset in datasets.py.
+  palette_source: ade20k_150_seed42
+  n_classes: 150
+  palette_path: configs/semantic_palette.json
+  # Prompt used during training (from ManifestVisionDataset.TASKS["seg"]):
+  prompt: "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries."
+
+normal:
+  # Standard normal RGB encoding (from NormalRGBMapper / ScanNetNormalDataset):
+  #   R = (1 - x) / 2   (x: right direction)
+  #   G = (1 + y) / 2   (y: up direction)
+  #   B = (1 + z) / 2   (z: toward camera)
+  # Camera-space normals: right-handed (+x right, +y up, +z toward camera)
+  encoding: standard_xyz_to_rgb
+  # Prompt used during training (from ManifestVisionDataset.TASKS["normal"]):
+  prompt: "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry."
+
+prompts:
+  # Canonical prompts from training (ManifestVisionDataset.TASKS)
+  # These MUST match the prompts used during evaluation for consistent conditioning.
+  depth: "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map."
+  normal: "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry."
+  semantic: "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries."
+  metric_depth: "Generate a metric depth visualization of this image."
+  cityscapes: "Generate a 19-class Cityscapes semantic segmentation mask. Use only the official Cityscapes trainId palette, with one solid class color per pixel and sharp object boundaries."
+  structure: "Generate a binary structural edge map. Use a black background and thin white edges aligned to visible scene boundaries."
+
+model:
+  # The actual model used for training
+  backbone: sana-1600m
+  model_id: Efficient-Large-Model/Sana_1600M_512px_diffusers
+  resolution: 512
+  lora_rank: 32
+  lora_alpha: 64
+  rs_lora: true
