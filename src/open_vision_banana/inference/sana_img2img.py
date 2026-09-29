@@ -17,7 +17,7 @@ from typing import Any
 import torch
 from PIL import Image
 
-from ..model_registry import ModelConfig, PipelineComponents
+from ..model_registry import ModelConfig, PipelineComponents, extract_vae_latents
 from ..training.sana_flow import (
     denormalize_vae_latents,
     native_sana_timestep,
@@ -136,25 +136,7 @@ def vae_encode_sana(
     """
     del device
     with torch.no_grad():
-        enc_out = vae.encode(images.to(dtype=vae.dtype))
-        if hasattr(enc_out, "latent_dist"):
-            latents = enc_out.latent_dist.mode()
-        elif hasattr(enc_out, "latent"):
-            latents = enc_out.latent
-        elif hasattr(enc_out, "sample"):
-            latents = enc_out.sample
-        elif isinstance(enc_out, torch.Tensor):
-            latents = enc_out
-        else:
-            for attr in ("latents", "encoded", "z"):
-                if hasattr(enc_out, attr):
-                    latents = getattr(enc_out, attr)
-                    break
-            else:
-                raise TypeError(
-                    f"VAE encode returned {type(enc_out).__name__} with no known "
-                    f"latent attribute. Available: {dir(enc_out)}"
-                )
+        latents = extract_vae_latents(vae.encode(images.to(dtype=vae.dtype)))
 
     return normalize_vae_latents(latents.to(dtype), vae)
 

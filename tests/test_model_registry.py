@@ -13,6 +13,7 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,6 +29,7 @@ from open_vision_banana.model_registry import (
     backbone_forward,
     build_added_cond_kwargs,
     encode_text,
+    extract_vae_latents,
     get_model_config,
     get_models_by_family,
     list_models,
@@ -313,6 +315,60 @@ class TestVaeHelpers:
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         assert isinstance(latents, torch.Tensor)
         assert torch.allclose(latents, torch.ones(1, 4, 32, 32))
+
+    def test_extract_vae_latents_known_outputs(self):
+        t = torch.ones(1, 4, 8, 8)
+        dist = SimpleNamespace(latent_dist=SimpleNamespace(mode=lambda: t))
+        assert extract_vae_latents(dist) is t
+        assert extract_vae_latents(t) is t
+        for attr in ("latent", "sample", "latents", "encoded", "z"):
+            assert extract_vae_latents(SimpleNamespace(**{attr: t})) is t
+
+    def test_extract_vae_latents_prefers_latent_over_sample(self):
+        a, b = torch.zeros(1), torch.ones(1)
+        assert extract_vae_latents(SimpleNamespace(latent=a, sample=b)) is a
+
+    def test_extract_vae_latents_unknown_output_raises(self):
+        with pytest.raises(TypeError, match="no known latent attribute"):
+            extract_vae_latents(SimpleNamespace(foo=1))
+
+    def test_vae_encode_encoder_output_latent(self):
+        """AutoencoderDC-style EncoderOutput exposes .latent (no .sample / .latent_dist)."""
+        vae = MagicMock()
+        vae.encode.return_value = MagicMock(spec=["latent"])
+        vae.encode.return_value.latent = torch.full((1, 4, 32, 32), 2.0)
+        vae.config = MagicMock(spec=["scaling_factor"])
+        vae.config.scaling_factor = 0.5
+        cfg = ModelConfig(name="t", model_id="t", family="sana", num_text_encoders=1, vae_has_latent_dist=False, vae_scaling_factor=None)
+        latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
+        assert torch.allclose(latents, torch.ones(1, 4, 32, 32))
+
+    def test_vae_encode_real_autoencoder_dc(self):
+        """Regression: SANA's real diffusers AutoencoderDC returns EncoderOutput(latent=...)."""
+        diffusers = pytest.importorskip("diffusers")
+        vae = diffusers.AutoencoderDC(
+            in_channels=3,
+            latent_channels=4,
+            attention_head_dim=8,
+            encoder_block_types="ResBlock",
+            decoder_block_types="ResBlock",
+            encoder_block_out_channels=(8, 16),
+            decoder_block_out_channels=(8, 16),
+            encoder_layers_per_block=(1, 1),
+            decoder_layers_per_block=(1, 1),
+            encoder_qkv_multiscales=((), ()),
+            decoder_qkv_multiscales=((), ()),
+            decoder_norm_types="rms_norm",
+            decoder_act_fns="silu",
+            scaling_factor=0.5,
+        ).eval()
+        cfg = get_model_config("sana-1600m")
+        images = torch.randn(1, 3, 16, 16)
+        with torch.no_grad():
+            expected = vae.encode(images).latent * vae.config.scaling_factor
+            latents = vae_encode(vae, images, cfg)
+        assert latents.shape == (1, 4, 8, 8)
+        assert torch.allclose(latents, expected)
 
     def test_vae_encode_with_shift(self):
         """Z-Image/FLUX VAE: latents = (encoded - shift) * scaling"""
