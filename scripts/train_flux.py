@@ -180,12 +180,29 @@ def auto_device() -> str:
 
 # ── Dataset ─────────────────────────────────────────────────────────────
 
-TASK_ALIASES = {"segmentation": "semantic", "seg": "semantic"}
+TASK_ALIASES = {
+    "segmentation": "semantic",
+    "seg": "semantic",
+    "detection": "object_detection",
+    "bbox": "object_detection",
+    "point": "keypoint",
+    "gcg": "referring",
+}
+
+# Tasks whose RGB targets are discrete colour codes (palette / outlines / dots);
+# their targets must be resized with NEAREST so colours are never blurred.
+DISCRETE_TARGET_TASKS = {"semantic", "object_detection", "keypoint", "referring", "structure", "edge", "depth_edge"}
 
 TASK_PROMPTS = {
     "depth": "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
     "normal": "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry.",
     "semantic": "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries.",
+    "structure": "Generate a binary structural edge map. Use a black background and thin white edges aligned to visible scene boundaries.",
+    "object_detection": "Generate an object detection map. Draw one thin colored rectangle per detected object on a black background, using one distinct solid color per object category and no other pixels.",
+    "keypoint": "Generate a keypoint map. Draw small solid colored dots at each detected landmark on a black background, using one distinct color per point category and no other pixels.",
+    "referring": "Generate a grounded segmentation mask. Highlight the referred region with a solid palette color on a black background and sharp object boundaries.",
+    "edge": "Generate an edge detection map. Draw thin white edges on a black background tracing the visible object boundaries of the input image, with no filled regions.",
+    "depth_edge": "Generate a depth-edge map. Draw thin white edges on a black background only at depth discontinuities, suppressing flat-region texture edges.",
 }
 
 
@@ -246,7 +263,7 @@ class ManifestVisionDataset(Dataset):
             img.load()
             img = img.convert("RGB").resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
             inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
-        resample = Image.Resampling.NEAREST if s["task"] == "semantic" else Image.Resampling.LANCZOS
+        resample = Image.Resampling.NEAREST if s["task"] in DISCRETE_TARGET_TASKS else Image.Resampling.LANCZOS
         with Image.open(s["target_path"]) as img:
             img.load()
             img = img.convert("RGB").resize((self.resolution, self.resolution), resample)
