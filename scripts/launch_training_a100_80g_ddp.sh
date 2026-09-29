@@ -31,6 +31,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/_gpus.sh"
 
 # ── Defaults ───────────────────────────────────────────────────────────
 CONFIG="${PROJECT_ROOT}/configs/training_a100_80g.yaml"
@@ -38,7 +39,7 @@ NNODES=${NNODES:-1}
 NODE_RANK=${NODE_RANK:-0}
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-29500}
-GPUS_PER_NODE=${GPUS_PER_NODE:-8}
+GPUS_PER_NODE=${GPUS_PER_NODE:-}  # empty: detect (see scripts/_gpus.sh)
 
 TRAIN_ARGS=()
 
@@ -81,11 +82,10 @@ EOF
 done
 
 # ── Auto-detect GPUs ───────────────────────────────────────────────────
-if command -v nvidia-smi &>/dev/null; then
-    DETECTED=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
-    if [[ "$DETECTED" -gt 0 ]]; then
-        GPUS_PER_NODE=$DETECTED
-    fi
+GPUS_PER_NODE=$(detect_gpus_per_node "$GPUS_PER_NODE")
+if [[ "$GPUS_PER_NODE" -eq 0 ]]; then
+    echo "[ERR] No GPUs detected; pass --gpus-per-node."
+    exit 1
 fi
 
 WORLD_SIZE=$((NNODES * GPUS_PER_NODE))

@@ -55,12 +55,14 @@ def main():
     config = load_config(config_path=args.config)
     config = apply_cli_overrides(config, args)
 
-    # Setup file logging
+    # Setup file logging (rank 0 only under torchrun, so ranks don't interleave train.log;
+    # same rule as DistContext.is_main, which does not exist yet at this point)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    fh = logging.FileHandler(output_dir / "train.log")
-    fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-    logging.getLogger().addHandler(fh)
+    if int(os.environ.get("RANK", "0")) == 0:
+        fh = logging.FileHandler(output_dir / "train.log")
+        fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        logging.getLogger().addHandler(fh)
 
     # Create and run trainer
     trainer = Trainer(config)

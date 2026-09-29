@@ -20,10 +20,17 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image, ImageFile
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler
 
 from .callbacks import TrainingCallbacks
 from .config import TrainingConfig
+from .distributed import (
+    all_reduce_gradients_,
+    barrier,
+    broadcast_parameters_,
+    cleanup,
+    init_distributed,
+)
 from .losses import TrainingLosses
 from .model_backend import ModelBackend
 from .optimization import SchedulerFactory
@@ -162,7 +169,10 @@ class Trainer:
 
     def __init__(self, config: TrainingConfig):
         self.config = config
+        self.dist = init_distributed()
         self.device = config.get_device()
+        if self.dist.enabled and self.device.type == "cuda":
+            self.device = torch.device("cuda", self.dist.local_rank)
         self.dtype = config.get_dtype()
 
         # Seed
@@ -180,10 +190,11 @@ class Trainer:
             "LoRA: rank=%d, alpha=%d, rsLoRA=%s", config.lora_rank, config.lora_alpha, config.rslora
         )
         logger.info(
-            "Steps: %d | LR: %s | eff_batch: %d",
+            "Steps: %d | LR: %s | eff_batch: %d (%d rank(s))",
             config.steps,
             config.lr,
-            config.batch_size * config.grad_accum,
+            config.batch_size * config.grad_accum * self.dist.world_size,
+            self.dist.world_size,
         )
         logger.info("Output: %s", config.output_dir)
 
@@ -199,6 +210,14 @@ class Trainer:
             lora_targets=config.lora_targets,
             enable_gradient_checkpointing=config.gradient_checkpointing,
         )
+        self.trainable_params = [p for p in self.backend.peft_model.parameters() if p.requires_grad]
+        broadcast_parameters_(self.trainable_params, self.dist)
+        if self.dist.enabled:
+            # Same seed above keeps LoRA init identical; from here on each rank needs its
+            # own noise / timestep / CFG-dropout draws, or every rank samples the same ones.
+            torch.manual_seed(config.seed + self.dist.rank)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(config.seed + self.dist.rank)
 
         # ── Losses ─────────────────────────────────────────────────────
         task_weights = config.parse_task_weights()
@@ -218,7 +237,7 @@ class Trainer:
         # ── Callbacks ──────────────────────────────────────────────────
         self.callbacks = TrainingCallbacks(
             output_dir=config.output_dir,
-            wandb_enabled=config.wandb,
+            wandb_enabled=config.wandb and self.dist.is_main,
             wandb_project=config.wandb_project,
             wandb_run_name=config.wandb_run_name,
             wandb_config={k: str(v) for k, v in config.__dict__.items() if not k.startswith("_")},
@@ -239,7 +258,7 @@ class Trainer:
 
         # ── Optimizer & Scheduler ──────────────────────────────────────
         self.optimizer = torch.optim.AdamW(
-            [p for p in self.backend.peft_model.parameters() if p.requires_grad],
+            self.trainable_params,
             lr=config.lr,
             weight_decay=0.01,
             betas=(0.9, 0.999),
@@ -296,10 +315,24 @@ class Trainer:
         train_ds = ConcatDataset(train_datasets) if len(train_datasets) > 1 else train_datasets[0]
         val_ds = ConcatDataset(val_datasets) if val_datasets else None
 
+        # Under torchrun each rank reads its own shard; set_epoch() in train() reshuffles it.
+        train_sampler = (
+            DistributedSampler(
+                train_ds,
+                num_replicas=self.dist.world_size,
+                rank=self.dist.rank,
+                shuffle=True,
+                seed=config.seed,
+                drop_last=True,
+            )
+            if self.dist.enabled
+            else None
+        )
         train_loader = DataLoader(
             train_ds,
             batch_size=config.batch_size,
-            shuffle=True,
+            shuffle=train_sampler is None,
+            sampler=train_sampler,
             num_workers=config.num_workers,
             collate_fn=_collate_fn,
             drop_last=True,
@@ -337,6 +370,7 @@ class Trainer:
         task_loss_acc: dict[str, list[float]] = {}
         global_step = 0
         micro_step = 0
+        data_pass = 0  # full passes over the train loader; seeds DistributedSampler shuffles
         self.optimizer.zero_grad(set_to_none=True)
 
         while global_step < total_steps:
@@ -344,6 +378,11 @@ class Trainer:
                 1, (len(self.train_loader) + config.grad_accum - 1) // config.grad_accum
             )
             epoch = global_step // updates_per_epoch
+            if isinstance(self.train_loader.sampler, DistributedSampler):
+                # not `epoch`: that lags the real pass count when grad_accum does not divide
+                # len(train_loader), which would replay the same shuffle.
+                self.train_loader.sampler.set_epoch(data_pass)
+            data_pass += 1
             peft_model.train()
 
             for batch in self.train_loader:
@@ -372,10 +411,8 @@ class Trainer:
                     continue
 
                 # ── Optimizer step ─────────────────────────────────────
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in peft_model.parameters() if p.requires_grad],
-                    config.max_grad_norm,
-                )
+                all_reduce_gradients_(self.trainable_params, self.dist)
+                torch.nn.utils.clip_grad_norm_(self.trainable_params, config.max_grad_norm)
                 self.optimizer.step()
                 self.lr_scheduler.step()
                 self.optimizer.zero_grad(set_to_none=True)
@@ -395,9 +432,10 @@ class Trainer:
                         )
                     }
                     lr = self.lr_scheduler.get_last_lr()[0]
-                    self.callbacks.on_log(
-                        global_step, total_steps, metrics, lr, epoch, task_loss_acc
-                    )
+                    if self.dist.is_main:
+                        self.callbacks.on_log(
+                            global_step, total_steps, metrics, lr, epoch, task_loss_acc
+                        )
                     train_metrics = {
                         "loss": 0.0,
                         "flow_loss": 0.0,
@@ -407,8 +445,10 @@ class Trainer:
                     }
                     task_loss_acc = {}
 
+                # Ranks hold identical weights, so rank 0 alone saves and validates;
+                # the others wait for it in the next step's gradient all-reduce.
                 # ── Checkpoint ─────────────────────────────────────────
-                if self.callbacks.should_checkpoint(global_step):
+                if self.dist.is_main and self.callbacks.should_checkpoint(global_step):
                     self.callbacks.on_checkpoint(
                         global_step,
                         peft_model,
@@ -421,7 +461,11 @@ class Trainer:
                     )
 
                 # ── Validation ─────────────────────────────────────────
-                if self.val_loader is not None and self.callbacks.should_validate(global_step):
+                if (
+                    self.dist.is_main
+                    and self.val_loader is not None
+                    and self.callbacks.should_validate(global_step)
+                ):
                     ema_backup = self.ema.apply_shadow(peft_model)
                     try:
                         val_loss = self.validate()
@@ -440,18 +484,21 @@ class Trainer:
                     )
 
         # ── Final save ─────────────────────────────────────────────────
-        self.callbacks.on_checkpoint(
-            global_step,
-            peft_model,
-            self.optimizer,
-            self.lr_scheduler,
-            ema=self.ema,
-            model_name=config.model_name,
-            lora_rank=config.lora_rank,
-            lora_alpha=config.lora_alpha,
-            suffix="_final",
-        )
-        self.callbacks.on_finish(global_step)
+        if self.dist.is_main:
+            self.callbacks.on_checkpoint(
+                global_step,
+                peft_model,
+                self.optimizer,
+                self.lr_scheduler,
+                ema=self.ema,
+                model_name=config.model_name,
+                lora_rank=config.lora_rank,
+                lora_alpha=config.lora_alpha,
+                suffix="_final",
+            )
+            self.callbacks.on_finish(global_step)
+        barrier(self.dist)  # keep the process group alive until rank 0 has saved
+        cleanup(self.dist)
 
     def _train_step(self, batch: dict, global_step: int) -> dict:
         """Execute a single training step (forward + loss)."""

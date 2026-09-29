@@ -28,6 +28,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/_gpus.sh"
 
 # ── Defaults ───────────────────────────────────────────────────────────
 MODE="auto"                       # auto | single | ddp | fsdp | ds | deepspeed
@@ -39,7 +40,7 @@ NNODES=${NNODES:-1}
 NODE_RANK=${NODE_RANK:-0}
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-29500}
-GPUS_PER_NODE=${GPUS_PER_NODE:-8}
+GPUS_PER_NODE=${GPUS_PER_NODE:-}  # empty: detect (see scripts/_gpus.sh)
 
 # ── Color output ───────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -93,11 +94,7 @@ check_env() {
 
 # ── GPU auto-detection ─────────────────────────────────────────────────
 detect_gpus() {
-    if command -v nvidia-smi &>/dev/null; then
-        GPUS_PER_NODE=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
-    else
-        GPUS_PER_NODE=$(python3 -c "import torch; print(torch.cuda.device_count())" 2>/dev/null || echo 0)
-    fi
+    GPUS_PER_NODE=$(detect_gpus_per_node "$GPUS_PER_NODE")
 
     if [[ "$GPUS_PER_NODE" -eq 0 ]]; then
         err "No GPUs detected"
