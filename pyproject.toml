@@ -45,6 +45,8 @@ training = [
     "accelerate>=0.25",
     "peft>=0.10",
     "wandb>=0.16",
+    # quantize: "4bit" (the FLUX.1-dev configs) loads through BitsAndBytesConfig.
+    "bitsandbytes>=0.43; platform_system != 'Darwin'",
 ]
 deepspeed = [
     "open-vision-banana[training]",

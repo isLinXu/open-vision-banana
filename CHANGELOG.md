@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **FLUX configs load 4-bit**: the FLUX.1-dev configs (`flux_3task_full_clean`, `flux_4task_dnss_30k`, `flux_6task_multitask_30k`, `flux_8task_multitask_30k`) now set `model.quantize: "4bit"`. Without it `scripts/train.py` loaded the 12B transformer unquantized, which does not fit the 24GB cards these configs target. `bitsandbytes`, which the 4-bit path needs, is now declared in the `training` extra and `requirements.txt` (not on macOS, where the MPS configs do not quantize).
 - **SANA VAE encode**: `vae_encode` now reads `EncoderOutput.latent` from SANA's `AutoencoderDC`; it previously fell back to a non-existent `.sample`, so SANA training through `scripts/train.py` crashed on the first step with `AttributeError`. Latent extraction is now a single `extract_vae_latents` helper shared by `vae_encode`, `vae_encode_sana` and `scripts/train_sana_512.py`.
 - **Hardcoded path cleanup**: Replaced all `/media/linxu/` and `/Users/gatilin/` paths with portable HF Hub IDs and relative paths across 30+ config files, 8 scripts, and 1 source module (`model_registry.py`).
 - **DeepSpeedTrainer export**: Added missing import in `training/__init__.py` (was in `__all__` but not imported).
