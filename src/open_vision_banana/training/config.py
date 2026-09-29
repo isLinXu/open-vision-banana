@@ -359,7 +359,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default=cfg.get("device"))
     p.add_argument("--resume", default=cfg.get("resume"))
 
+    # Distributed: data parallelism turns on by itself under torchrun (WORLD_SIZE > 1,
+    # see training/distributed.py). --ddp is accepted because the DDP launchers pass it.
+    p.add_argument("--ddp", action="store_true", help="accepted for launcher compatibility")
+    p.add_argument("--fsdp", "--deepspeed", nargs=0, action=_UnsupportedBackend)
+
     return p
+
+
+class _UnsupportedBackend(argparse.Action):
+    """Give the FSDP/DeepSpeed launchers a clear error instead of 'unrecognized arguments'."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser.error(
+            f"{option_string} is not supported by the unified Trainer; LoRA training is "
+            "data-parallel only. Launch with torchrun (e.g. "
+            "scripts/launch_training_a100_80g_ddp.sh)."
+        )
 
 
 def apply_cli_overrides(config: TrainingConfig, args: argparse.Namespace) -> TrainingConfig:

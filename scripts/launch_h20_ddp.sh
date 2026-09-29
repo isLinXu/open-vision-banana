@@ -23,11 +23,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/_gpus.sh"
 
 # ── Distributed Configuration ─────────────────────────────────────────
 NNODES=${NNODES:-1}
 NODE_RANK=${NODE_RANK:-0}
-GPUS_PER_NODE=${GPUS_PER_NODE:-8}
+GPUS_PER_NODE=${GPUS_PER_NODE:-}  # empty: detect (see scripts/_gpus.sh)
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-29500}
 
@@ -44,10 +45,6 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_IB_DISABLE="${NCCL_IB_DISABLE:-0}"
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-}"   # auto-detect if empty
-
-# CPU threading
-NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$(( NPROC / GPUS_PER_NODE ))}"
 
 # ── Parse script-specific arguments ───────────────────────────────────
 TRAIN_ARGS=()
@@ -71,7 +68,7 @@ H20 8x DDP Training Launch Script
 Options:
   --nodes N              Number of nodes (default: 1)
   --node-rank R          Rank of this node (default: 0)
-  --gpus-per-node G      GPUs per node (default: 8)
+  --gpus-per-node G      GPUs per node (default: auto-detect)
   --master-addr IP       Master node IP (default: 127.0.0.1)
   --master-port PORT     Master port (default: 29500)
 
@@ -87,12 +84,15 @@ EOF
 done
 
 # ── Auto-detect GPUs ──────────────────────────────────────────────────
-if command -v nvidia-smi &>/dev/null; then
-    DETECTED=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
-    if [[ "$DETECTED" -gt 0 && "$GPUS_PER_NODE" == "8" ]]; then
-        GPUS_PER_NODE=$DETECTED
-    fi
+GPUS_PER_NODE=$(detect_gpus_per_node "$GPUS_PER_NODE")
+if [[ "$GPUS_PER_NODE" -eq 0 ]]; then
+    echo "ERROR: No GPUs detected; pass --gpus-per-node."
+    exit 1
 fi
+
+# CPU threading
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$(( NPROC / GPUS_PER_NODE ))}"
 
 WORLD_SIZE=$((NNODES * GPUS_PER_NODE))
 
