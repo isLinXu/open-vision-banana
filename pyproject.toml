@@ -38,11 +38,12 @@ inference = [
     "transformers>=4.40",
     "accelerate>=0.25",
     "huggingface_hub>=0.20",
+    # T5 tokenizers (FLUX tokenizer_2, SD3 tokenizer_3) need sentencepiece + protobuf.
+    "sentencepiece>=0.1.99",
+    "protobuf>=3.20",
 ]
 training = [
-    "diffusers>=0.30",
-    "transformers>=4.40",
-    "accelerate>=0.25",
+    "open-vision-banana[inference]",
     "peft>=0.10",
     "wandb>=0.16",
 ]

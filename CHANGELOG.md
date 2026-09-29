@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **T5 tokenizer dependencies**: `sentencepiece` and `protobuf` are now declared in the `inference` extra and in `requirements.txt`, and the `training` extra now pulls in `[inference]` instead of repeating its packages. The T5 tokenizers (FLUX `tokenizer_2`, SD3 `tokenizer_3`) cannot be built without them, so a fresh `pip install -e ".[all]"` failed to load FLUX with "Cannot instantiate this tokenizer from a slow version".
 - **SANA VAE encode**: `vae_encode` now reads `EncoderOutput.latent` from SANA's `AutoencoderDC`; it previously fell back to a non-existent `.sample`, so SANA training through `scripts/train.py` crashed on the first step with `AttributeError`. Latent extraction is now a single `extract_vae_latents` helper shared by `vae_encode`, `vae_encode_sana` and `scripts/train_sana_512.py`.
 - **Hardcoded path cleanup**: Replaced all `/media/linxu/` and `/Users/gatilin/` paths with portable HF Hub IDs and relative paths across 30+ config files, 8 scripts, and 1 source module (`model_registry.py`).
 - **DeepSpeedTrainer export**: Added missing import in `training/__init__.py` (was in `__all__` but not imported).
