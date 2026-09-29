@@ -112,6 +112,8 @@ def load_config_defaults(config_path: Path | None) -> dict:
         "wandb": wandb_section.get("enabled", False),
         "wandb_project": wandb_section.get("project", "open-vision-banana"),
         "wandb_run_name": wandb_section.get("run_name"),
+        "resume": ckpt.get("resume"),
+        "resume_weights_only": ckpt.get("resume_weights_only", False),
     }
     return {k: v for k, v in d.items() if v is not None}
 
@@ -165,6 +167,11 @@ def parse_args():
     p.add_argument("--wandb", action="store_true", default=cfg.get("wandb", False))
     p.add_argument("--wandb-project", default=cfg.get("wandb_project", "open-vision-banana"))
     p.add_argument("--wandb-run-name", default=cfg.get("wandb_run_name"))
+    p.add_argument("--resume", default=cfg.get("resume"),
+                   help="Path to a checkpoint dir or lora.pt to resume training from")
+    p.add_argument("--resume-weights-only", action="store_true",
+                   default=cfg.get("resume_weights_only", False),
+                   help="Load only LoRA weights; reset optimizer, scheduler and step count")
     return p.parse_args()
 
 
@@ -191,7 +198,7 @@ TASK_ALIASES = {
 
 # Tasks whose RGB targets are discrete colour codes (palette / outlines / dots);
 # their targets must be resized with NEAREST so colours are never blurred.
-DISCRETE_TARGET_TASKS = {"semantic", "object_detection", "keypoint", "referring", "structure", "edge", "depth_edge"}
+DISCRETE_TARGET_TASKS = {"semantic", "object_detection", "keypoint", "referring", "structure", "edge", "depth_edge", "instance"}
 
 TASK_PROMPTS = {
     "depth": "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
@@ -203,6 +210,11 @@ TASK_PROMPTS = {
     "referring": "Generate a grounded segmentation mask. Highlight the referred region with a solid palette color on a black background and sharp object boundaries.",
     "edge": "Generate an edge detection map. Draw thin white edges on a black background tracing the visible object boundaries of the input image, with no filled regions.",
     "depth_edge": "Generate a depth-edge map. Draw thin white edges on a black background only at depth discontinuities, suppressing flat-region texture edges.",
+    "instance": "Generate an instance segmentation map. Color every object instance with one distinct solid palette color, so different instances of the same class get different colors, on a black background.",
+    "colorization": "Colorize this grayscale image. Produce realistic natural colors matching the input structure exactly.",
+    "super_resolution": "Restore this low-resolution blurred image. Reconstruct a sharp high-resolution version preserving all detail.",
+    "deblurring": "Remove motion and defocus blur. Reconstruct the sharp clear photo that matches the input layout exactly.",
+    "inpainting": "Complete the missing gray-masked regions. Reconstruct plausible natural content that seamlessly fills the holes.",
 }
 
 
@@ -584,6 +596,35 @@ def main():
     global_step = 0
     micro_step = 0
     optimizer.zero_grad(set_to_none=True)
+
+    # -- Resume from checkpoint (warm-start multi-task training) ----------
+    if args.resume:
+        resume_path = Path(args.resume)
+        if resume_path.is_dir():
+            resume_path = resume_path / "lora.pt"
+        if resume_path.is_file():
+            logger.info(f"Resuming from {resume_path}")
+            ckpt = torch.load(str(resume_path), map_location="cpu")
+            peft_model.load_state_dict(ckpt.get("lora_state_dict", ckpt), strict=False)
+            if args.resume_weights_only:
+                logger.info("  Loaded LoRA weights only; optimizer/scheduler/step reset")
+            else:
+                global_step = ckpt.get("step", 0)
+                best_val_loss = ckpt.get("best_val_loss", float("inf"))
+                if "optimizer_state_dict" in ckpt:
+                    optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+                if "scheduler_state_dict" in ckpt:
+                    lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+                ema_ckpt = ckpt.get("ema_state_dict")
+                if ema_ckpt and getattr(ema, "shadow_params", None):
+                    for _n, _t in ema_ckpt.items():
+                        if _n in ema.shadow_params:
+                            ema.shadow_params[_n] = _t.to(ema.shadow_params[_n].device)
+                    ema.step = ckpt.get("step", 0)
+                    logger.info("  Restored EMA shadow weights")
+                logger.info(f"  Resumed at step {global_step}, best_val_loss={best_val_loss:.4f}")
+        else:
+            logger.warning(f"Resume checkpoint not found: {resume_path}")
 
     while global_step < total_steps:
         updates_per_epoch = max(1, (len(train_loader) + args.grad_accum - 1) // args.grad_accum)
