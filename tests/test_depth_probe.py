@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
+from _paths import ARCHIVE_SCRIPTS
 from torch import nn
 
 from open_vision_banana.depth_probe_checkpoint import (
@@ -32,7 +33,7 @@ from open_vision_banana.training.depth_probe import (
 
 
 def load_probe_script():
-    script_path = Path(__file__).parents[1] / "scripts" / "overfit_frozen_depth_probe.py"
+    script_path = ARCHIVE_SCRIPTS / "overfit_frozen_depth_probe.py"
     spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -42,9 +43,7 @@ def load_probe_script():
 
 
 def load_feature_comparison_script():
-    script_path = (
-        Path(__file__).parents[1] / "scripts" / "compare_frozen_depth_features.py"
-    )
+    script_path = ARCHIVE_SCRIPTS / "compare_frozen_depth_features.py"
     spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -54,9 +53,9 @@ def load_feature_comparison_script():
 
 
 def load_production_refit_script():
-    script_path = (
-        Path(__file__).parents[1] / "scripts" / "train_frozen_depth_estimator.py"
-    )
+    # the script imports its sibling compare_frozen_depth_features by bare name
+    sys.path.insert(0, str(ARCHIVE_SCRIPTS))
+    script_path = ARCHIVE_SCRIPTS / "train_frozen_depth_estimator.py"
     spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -66,9 +65,8 @@ def load_production_refit_script():
 
 
 def load_probe_visualization_script():
-    script_path = (
-        Path(__file__).parents[1] / "scripts" / "visualize_frozen_depth_probe.py"
-    )
+    sys.path.insert(0, str(ARCHIVE_SCRIPTS))  # bare-name sibling imports, as above
+    script_path = ARCHIVE_SCRIPTS / "visualize_frozen_depth_probe.py"
     spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

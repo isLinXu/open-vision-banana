@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tests for archived scripts**: 19 test files still loaded scripts from `scripts/` after those scripts moved to `scripts/archive/pre_opensource/`, so `pytest tests/` hit 4 collection errors and dozens of `FileNotFoundError` / `ModuleNotFoundError` failures. The tests now load them through a shared `tests/_paths.ARCHIVE_SCRIPTS`. `test_generate_image_batch_importable` no longer passes silently when its script is missing.
+- **CI scripts restored from the archive**: `scripts/compare_benchmarks.py` (run by `.github/workflows/performance_regression.yml`) and `scripts/validate_multi_backbone_training.py` (run by the `multi-backbone-validate` job in `ci.yml`) were archived while CI still calls them, so both jobs could not run. They are back in `scripts/`, and `validate_multi_backbone_training.py` now checks that the backbones it validates are registered instead of asserting a registry size of 23 (there are 30 now).
 - **SANA VAE encode**: `vae_encode` now reads `EncoderOutput.latent` from SANA's `AutoencoderDC`; it previously fell back to a non-existent `.sample`, so SANA training through `scripts/train.py` crashed on the first step with `AttributeError`. Latent extraction is now a single `extract_vae_latents` helper shared by `vae_encode`, `vae_encode_sana` and `scripts/train_sana_512.py`.
 - **Hardcoded path cleanup**: Replaced all `/media/linxu/` and `/Users/gatilin/` paths with portable HF Hub IDs and relative paths across 30+ config files, 8 scripts, and 1 source module (`model_registry.py`).
 - **DeepSpeedTrainer export**: Added missing import in `training/__init__.py` (was in `__all__` but not imported).

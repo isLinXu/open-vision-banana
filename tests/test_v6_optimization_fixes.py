@@ -11,6 +11,7 @@ Covers:
 
 import pytest
 import torch
+from _paths import ARCHIVE_SCRIPTS
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.training.optimization import (
@@ -300,12 +301,9 @@ class TestBatchGenerationExists:
         # The function is in scripts/generate_synthetic_data.py
         # We can't import it directly as a module, but we can check the source
         # Instead, read the file and check the function exists
-        from pathlib import Path
-        script = Path(__file__).resolve().parent.parent / "scripts" / "generate_synthetic_data.py"
-        if script.exists():
-            content = script.read_text()
-            assert "def generate_image_batch(" in content
-            assert "def generate_image(" in content
+        content = (ARCHIVE_SCRIPTS / "generate_synthetic_data.py").read_text()
+        assert "def generate_image_batch(" in content
+        assert "def generate_image(" in content
 
 
 if __name__ == "__main__":

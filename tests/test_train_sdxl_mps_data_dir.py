@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 
 import pytest
 import torch
+from _paths import ARCHIVE_SCRIPTS
 
-SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "train_sdxl_mps.py"
+SCRIPT_PATH = ARCHIVE_SCRIPTS / "train_sdxl_mps.py"
 
 
 def _load_script_module():

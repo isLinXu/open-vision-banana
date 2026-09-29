@@ -8,13 +8,14 @@ from pathlib import Path
 
 import pytest
 import torch
+from _paths import ARCHIVE_SCRIPTS
 from PIL import Image
 from torch import nn
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.data.depth_encoding import relative_depth_prompt
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "quick_overfit_ssd_source_condition.py"
+SCRIPT = ARCHIVE_SCRIPTS / "quick_overfit_ssd_source_condition.py"
 
 
 def load_module():

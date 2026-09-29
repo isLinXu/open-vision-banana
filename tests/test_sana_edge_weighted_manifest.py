@@ -8,13 +8,14 @@ import sys
 from pathlib import Path
 
 import torch
+from _paths import ARCHIVE_SCRIPTS
 from PIL import Image
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 
 
 def _builder_module():
-    path = Path(__file__).parents[1] / "scripts" / "build_sana_depth_edge_weighted_manifest.py"
+    path = ARCHIVE_SCRIPTS / "build_sana_depth_edge_weighted_manifest.py"
     spec = importlib.util.spec_from_file_location("edge_weighted_manifest_test", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
