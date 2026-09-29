@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from _paths import ARCHIVE_SCRIPTS
 from PIL import Image
 
 
 def load_module():
-    path = Path(__file__).parents[1] / "scripts" / "audit_real_normal_datasets.py"
+    path = ARCHIVE_SCRIPTS / "audit_real_normal_datasets.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

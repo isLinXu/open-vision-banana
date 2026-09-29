@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
+from _paths import ARCHIVE_SCRIPTS
 from PIL import Image
 from safetensors import safe_open
 from safetensors.torch import load_file, save_file
@@ -972,7 +973,7 @@ def test_relative_depth_spearman_detects_reversed_order():
 def test_v3_evaluator_separates_raw_and_calibrated_metrics():
     import importlib.util
 
-    script_path = Path(__file__).parents[1] / "scripts" / "evaluate_v3_relative_depth.py"
+    script_path = ARCHIVE_SCRIPTS / "evaluate_v3_relative_depth.py"
     spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

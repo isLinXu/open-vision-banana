@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-import numpy as np
 import cv2
+import numpy as np
+from _paths import ARCHIVE_SCRIPTS
 
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(ARCHIVE_SCRIPTS))
+from build_sana_structure_binary_targets import build_binary_structure_map
 from eval_sana_structure_checkpoints import edge_counts, edge_scores, select_evenly_spaced_indices
 from infer_structure_binary import read_target_binary
-from build_sana_structure_binary_targets import build_binary_structure_map
 
 
 def test_identical_edges_have_perfect_scores() -> None:

@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 
 from open_vision_banana.data.manifest import fingerprint_records, resolve_manifest_path
-from scripts.normalize_dataset_manifests import normalize_dataset
+from scripts.archive.pre_opensource.normalize_dataset_manifests import normalize_dataset
 
 
 def test_resolve_manifest_path_uses_manifest_directory(tmp_path: Path) -> None:

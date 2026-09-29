@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
+from _paths import ARCHIVE_SCRIPTS
 
 
 def load_module():
-    path = Path(__file__).parents[1] / "scripts" / "infer_task_specialists.py"
+    path = ARCHIVE_SCRIPTS / "infer_task_specialists.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

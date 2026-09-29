@@ -7,10 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from _paths import ARCHIVE_SCRIPTS
 
 
 def load_audit_script():
-    path = Path(__file__).parents[1] / "scripts" / "audit_v3_multitask_dataset.py"
+    path = ARCHIVE_SCRIPTS / "audit_v3_multitask_dataset.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -20,7 +21,7 @@ def load_audit_script():
 
 
 def load_monitor_script():
-    path = Path(__file__).parents[1] / "scripts" / "monitor_multitask_checkpoints.py"
+    path = ARCHIVE_SCRIPTS / "monitor_multitask_checkpoints.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -71,7 +72,7 @@ def test_audit_rejects_overlap_and_missing_pairs(tmp_path: Path):
 
 
 def test_runner_builds_all_task_command_after_audit():
-    path = Path(__file__).parents[1] / "scripts" / "train_multitask_lora.py"
+    path = ARCHIVE_SCRIPTS / "train_multitask_lora.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -157,7 +158,7 @@ def test_checkpoint_monitor_always_resumes_paused_training():
 
 
 def test_runner_command_carries_schedule_and_validation_controls():
-    path = Path(__file__).parents[1] / "scripts" / "train_multitask_lora.py"
+    path = ARCHIVE_SCRIPTS / "train_multitask_lora.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -183,7 +184,7 @@ def test_runner_command_carries_schedule_and_validation_controls():
 
 
 def test_task_schedule_sampler_covers_each_task_first():
-    path = Path(__file__).parents[1] / "scripts" / "train_sdxl_mps.py"
+    path = ARCHIVE_SCRIPTS / "train_sdxl_mps.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

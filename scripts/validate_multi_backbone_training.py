@@ -310,7 +310,9 @@ def validate_registry_lazy():
     """Verify that registry uses lazy loading."""
     print("\n[0/4] Registry sanity check...")
     from open_vision_banana.model_registry import _REGISTRY_CACHE, _REGISTRY_FACTORIES
-    assert len(_REGISTRY_FACTORIES) == 23, f"Expected 23 factories, got {len(_REGISTRY_FACTORIES)}"
+    # The paths validated below; a fixed factory count broke whenever a model was added.
+    missing = {"sdxl", "sd3", "flux-schnell", "ssd-1b"} - set(_REGISTRY_FACTORIES)
+    assert not missing, f"Validated backbones not registered: {sorted(missing)}"
     # Only previously accessed models should be in cache
     print(f"  ✓ Factories registered: {len(_REGISTRY_FACTORIES)}")
     print(f"  ✓ Cached configs (after previous access): {len(_REGISTRY_CACHE)}")
