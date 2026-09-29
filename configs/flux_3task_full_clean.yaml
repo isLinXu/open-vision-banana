@@ -1,12 +1,13 @@
 # FLUX.1-dev 三任务训练配置 (Vision Banana 复现)
 # ================================================
-# 模型: FLUX.1-dev (12B transformer, 8-bit 量化加载)
+# 模型: FLUX.1-dev (12B transformer, 4-bit NF4 量化, T5 8-bit)
 # 数据: SenseNova-Vision-Corpus-50M 三任务子集 (depth + normal + seg)
 # 目标: RTX 4090 24GB 单卡 LoRA 微调
 
 model:
   name: "flux-dev"
   dtype: "bfloat16"
+  quantize: "4bit"  # scripts/train.py loads FLUX unquantized without this
   resolution: 512
 
 lora:
