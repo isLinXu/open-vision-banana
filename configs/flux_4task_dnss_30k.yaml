@@ -7,6 +7,7 @@
 model:
   name: "flux-dev"
   dtype: "bfloat16"
+  quantize: "4bit"  # scripts/train.py loads FLUX unquantized without this
   resolution: 512
 
 lora:

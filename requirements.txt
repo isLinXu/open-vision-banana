@@ -9,5 +9,4 @@ numpy>=1.24.0
 Pillow>=9.0.0
 h5py>=3.8.0
 safetensors>=0.4.0
-sentencepiece>=0.1.99
-protobuf>=3.20
+bitsandbytes>=0.43; platform_system != 'Darwin'
