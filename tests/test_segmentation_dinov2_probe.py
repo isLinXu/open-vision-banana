@@ -9,10 +9,11 @@ from pathlib import Path
 
 import pytest
 import torch
+from _paths import ARCHIVE_SCRIPTS
 
 
 def load_module():
-    scripts = Path(__file__).parents[1] / "scripts"
+    scripts = ARCHIVE_SCRIPTS
     sys.path.insert(0, str(scripts))
     path = scripts / "segmentation_dinov2_probe.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)

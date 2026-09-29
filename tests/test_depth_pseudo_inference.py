@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path
 
 import numpy as np
+from _paths import ARCHIVE_SCRIPTS
 from PIL import Image
 
 
 def load_script_module():
-    path = Path(__file__).parents[1] / "scripts" / "infer_depth_pseudo.py"
+    path = ARCHIVE_SCRIPTS / "infer_depth_pseudo.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

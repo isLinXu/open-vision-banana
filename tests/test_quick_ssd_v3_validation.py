@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch.nn as nn
+from _paths import ARCHIVE_SCRIPTS
 from PIL import Image
 
 from open_vision_banana.training.tuner import InstructionTuner, VisionTaskDataset
@@ -18,7 +19,7 @@ ROOT = Path(__file__).parents[1]
 
 
 def load_script(name: str):
-    path = ROOT / "scripts" / name
+    path = ARCHIVE_SCRIPTS / name
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

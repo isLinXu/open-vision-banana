@@ -40,6 +40,7 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 | `run_paper_judges.py` | Run Gemini/CLIP paper judges |
 | `benchmark.py` | Core algorithm benchmark (no GPU required) |
 | `benchmark_pipeline.py` | Full pipeline benchmark |
+| `compare_benchmarks.py` | Compare benchmark results against a baseline (performance regression CI) |
 
 ## Data Preparation
 
@@ -81,6 +82,7 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 | `optimize_inference.py` | Inference optimization (quantization, offloading) |
 | `visualize_attention.py` | Attention map visualization |
 | `validate_training_config.py` | Validate training config files |
+| `validate_multi_backbone_training.py` | Mock check of multi-backbone training paths (CI) |
 
 ## Shell Launch Scripts
 

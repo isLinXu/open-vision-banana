@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
 import torch
+from _paths import ARCHIVE_SCRIPTS
 
 
 def load_module():
-    path = Path(__file__).parents[1] / "scripts" / "audit_normal_targets.py"
+    path = ARCHIVE_SCRIPTS / "audit_normal_targets.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

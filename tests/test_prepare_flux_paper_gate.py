@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from scripts.prepare_flux_paper_gate_data import prepare_flux_paper_gate
+from scripts.archive.pre_opensource.prepare_flux_paper_gate_data import prepare_flux_paper_gate
 
 
 def _write_png(path: Path) -> None:
