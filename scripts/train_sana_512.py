@@ -76,6 +76,7 @@ from open_vision_banana.data.manifest import resolve_manifest_path
 from open_vision_banana.model_registry import (
     PipelineComponents,
     apply_lora,
+    extract_vae_latents,
     get_model_config,
     load_pipeline,
 )
@@ -570,27 +571,7 @@ def vae_encode_sana(
     DC-AE's encode() returns EncoderOutput(latent=...) — NOT latent_dist.
     """
     with torch.no_grad():
-        enc_out = vae.encode(images.to(dtype=vae.dtype))
-        # DC-AE returns EncoderOutput with .latent attribute
-        if hasattr(enc_out, "latent_dist"):
-            latents = enc_out.latent_dist.mode()
-        elif hasattr(enc_out, "latent"):
-            latents = enc_out.latent
-        elif hasattr(enc_out, "sample"):
-            latents = enc_out.sample
-        elif isinstance(enc_out, torch.Tensor):
-            latents = enc_out
-        else:
-            # Fallback: try common attribute names
-            for attr in ("latents", "encoded", "z"):
-                if hasattr(enc_out, attr):
-                    latents = getattr(enc_out, attr)
-                    break
-            else:
-                raise TypeError(
-                    f"VAE encode returned {type(enc_out).__name__} with no known "
-                    f"latent attribute. Available: {dir(enc_out)}"
-                )
+        latents = extract_vae_latents(vae.encode(images.to(dtype=vae.dtype)))
 
     return normalize_vae_latents(latents.to(dtype), vae)
 

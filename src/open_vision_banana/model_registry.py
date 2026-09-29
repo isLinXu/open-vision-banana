@@ -2518,6 +2518,26 @@ def unet_forward(
 # ─── VAE encode/decode helpers ─────────────────────────────────────────────
 
 
+def extract_vae_latents(enc_out: Any) -> torch.Tensor:
+    """Return the latent tensor from a ``vae.encode(...)`` result.
+
+    Handles ``AutoencoderKLOutput`` (``latent_dist``, mode taken), SANA's
+    ``AutoencoderDC`` ``EncoderOutput`` (``latent``), plain tensors, and a few
+    attribute names used by custom VAEs.
+    """
+    if hasattr(enc_out, "latent_dist"):
+        return enc_out.latent_dist.mode()
+    if isinstance(enc_out, torch.Tensor):
+        return enc_out
+    for attr in ("latent", "sample", "latents", "encoded", "z"):
+        if hasattr(enc_out, attr):
+            return getattr(enc_out, attr)
+    raise TypeError(
+        f"VAE encode returned {type(enc_out).__name__} with no known "
+        f"latent attribute. Available: {dir(enc_out)}"
+    )
+
+
 def vae_encode(
     vae: torch.nn.Module,
     images: torch.Tensor,
@@ -2526,7 +2546,8 @@ def vae_encode(
     """Encode images to latents with model-appropriate scaling.
 
     SD family: vae.encode(img).latent_dist.mode() * scaling_factor
-    SANA/AuraFlow: vae.encode(img).latent_dist.mode() (scaling applied at decode)
+    SANA (AutoencoderDC): vae.encode(img).latent * scaling_factor
+    AuraFlow: vae.encode(img).latent_dist.mode() (scaling applied at decode)
     Z-Image/Lumina2/Chroma: (vae.encode(img).latent_dist.mode() - shift) * scaling
     Qwen-Image: vae.encode(img).latent_dist.mode() * scaling
     FLUX.2: retrieve_latents(vae.encode(img)) then patchify
@@ -2537,9 +2558,7 @@ def vae_encode(
     if config.vae_has_latent_dist:
         latents = vae.encode(images).latent_dist.mode()
     else:
-        # Some custom VAEs (e.g. SANA's AutoencoderDC) may return sample directly
-        enc_out = vae.encode(images)
-        latents = enc_out.latent_dist.mode() if hasattr(enc_out, "latent_dist") else enc_out.sample
+        latents = extract_vae_latents(vae.encode(images))
 
     # Apply scaling (and shift for FLUX/Z-Image style VAEs)
     scaling = config.vae_scaling_factor

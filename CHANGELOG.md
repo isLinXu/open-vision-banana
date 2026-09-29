@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SANA VAE encode**: `vae_encode` now reads `EncoderOutput.latent` from SANA's `AutoencoderDC`; it previously fell back to a non-existent `.sample`, so SANA training through `scripts/train.py` crashed on the first step with `AttributeError`. Latent extraction is now a single `extract_vae_latents` helper shared by `vae_encode`, `vae_encode_sana` and `scripts/train_sana_512.py`.
 - **Hardcoded path cleanup**: Replaced all `/media/linxu/` and `/Users/gatilin/` paths with portable HF Hub IDs and relative paths across 30+ config files, 8 scripts, and 1 source module (`model_registry.py`).
 - **DeepSpeedTrainer export**: Added missing import in `training/__init__.py` (was in `__all__` but not imported).
 - **VisionGenerator reference**: Fixed non-existent class import in `evaluate_depth_standard.py` → `BaseGenerator`.
