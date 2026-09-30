@@ -355,7 +355,10 @@ def sample_rectified_flow_timesteps(batch_size, device, logit_normal=True):
 def mix_rectified_flow(z_0, noise, t, input_latents=None, use_img2img=True, flow_sigma=0.0):
     """Create noisy latents via rectified flow interpolation.
 
-    z_t = (1-t)*z_source + t*z_0,  v_target = z_0 - z_source
+    z_t = (1-t)*z_0 + t*z_source,  v_target = z_0 - z_source
+
+    t = 0 is the target z_0 and t = 1 the source (the opposite of FlowScheduler's
+    rectified-flow convention), so t is already SANA's sigma here.
     """
     t_expand = t.view(-1, *([1] * (z_0.dim() - 1)))
     if use_img2img and input_latents is not None:
@@ -746,12 +749,15 @@ def main():
                 _ent[1] += 1
 
             # ── Auxiliary losses ──────────────────────────────────────
+            # They rebuild the target endpoint as sample - sigma * v with SANA's
+            # v = source - target. mix_rectified_flow already weights the source by t,
+            # but its v = target - source, so only the velocity is negated here.
             depth_aux_loss = flow_loss.new_zeros(())
             if args.depth_edge_aux_weight:
                 depth_mask = depth_task_mask(batch.get("task"), batch_size, device)
                 if depth_mask.any():
                     depth_aux_loss = depth_edge_endpoint_loss(
-                        predicted[depth_mask], noisy_latents[depth_mask],
+                        -predicted[depth_mask], noisy_latents[depth_mask],
                         target_latents[depth_mask], target_rgb[depth_mask],
                         timesteps[depth_mask],
                         edge_threshold=args.depth_edge_aux_edge_threshold,
@@ -767,7 +773,7 @@ def main():
                     def _diff_decode(latents):
                         return flux_vae_decode(vae, latents, model_cfg)
                     normal_aux_loss = normal_angular_loss(
-                        predicted[normal_mask], noisy_latents[normal_mask],
+                        -predicted[normal_mask], noisy_latents[normal_mask],
                         target_latents[normal_mask], target_rgb[normal_mask],
                         timesteps[normal_mask], _diff_decode,
                     )

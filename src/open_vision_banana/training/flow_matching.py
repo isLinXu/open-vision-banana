@@ -110,6 +110,28 @@ class FlowScheduler:
         return noisy, velocity
 
     @staticmethod
+    def to_sana_sigma(family: str, timesteps: torch.Tensor) -> torch.Tensor:
+        """SANA's sigma (the source weight of the sample) for a family's flow timestep.
+
+        SANA: sample = sigma*source + (1-sigma)*target. Rectified flow:
+        (1-t)*source + t*target, i.e. sigma = 1 - t.
+        """
+        return timesteps if family == "sana" else 1.0 - timesteps
+
+    @staticmethod
+    def to_sana_frame(
+        family: str, timesteps: torch.Tensor, velocity: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Express a flow (t, v) pair in SANA's frame, for code written against it.
+
+        SANA's v = source - target, so the target endpoint is ``sample - sigma * v``.
+        Rectified flow's v = target - source is negated there; used as-is,
+        ``sample - t * v`` rebuilds the source.
+        """
+        sigma = FlowScheduler.to_sana_sigma(family, timesteps)
+        return sigma, velocity if family == "sana" else -velocity
+
+    @staticmethod
     def needs_latent_packing(family: str) -> bool:
         """Whether the model family requires 2x2 latent packing."""
         return family in _PACKING_FAMILIES
