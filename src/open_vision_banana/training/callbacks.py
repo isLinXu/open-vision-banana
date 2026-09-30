@@ -30,6 +30,7 @@ class TrainingCallbacks:
         log_every: int = 25,
         save_every: int = 500,
         eval_every: int = 250,
+        task_prompts: dict[str, str] | None = None,
     ):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -38,6 +39,9 @@ class TrainingCallbacks:
         self.save_every = save_every
         self.eval_every = eval_every
         self.best_val_loss = float("inf")
+        # Default instruction per task, stored with every checkpoint so inference
+        # can prompt the LoRA the way it was trained.
+        self.task_prompts = dict(task_prompts or {})
 
         # W&B initialization
         if wandb_enabled:
@@ -149,6 +153,8 @@ class TrainingCallbacks:
             "lora_alpha": lora_alpha,
             "model_name": model_name,
         }
+        if self.task_prompts:
+            meta["task_prompts"] = self.task_prompts
         (ckpt_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
         logger.info("  Saved checkpoint at step %d → %s", step, ckpt_dir)

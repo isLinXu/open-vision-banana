@@ -56,6 +56,23 @@ TASK_PROMPTS = {
 # ── Shared dataset ────────────────────────────────────────────────────────
 
 
+def uniform_task_prompts(dataset: Dataset) -> dict[str, str]:
+    """Return the prompt of each task whose training samples all share one prompt.
+
+    That prompt is what inference has to use for the task. Tasks with per-sample prompts
+    (e.g. a color legend per image) have no single prompt to record and are left out.
+    """
+    prompts: dict[str, set[str]] = {}
+    for part in getattr(dataset, "datasets", [dataset]):
+        for sample in part.samples:
+            prompts.setdefault(sample["task"], set()).add(sample["prompt"])
+    return {
+        task: next(iter(found))
+        for task, found in prompts.items()
+        if len(found) == 1 and next(iter(found))
+    }
+
+
 class ManifestVisionDataset(Dataset):
     """Load input/target pairs from a JSONL manifest for multi-task training.
 
@@ -255,6 +272,7 @@ class Trainer:
 
         # ── Datasets ───────────────────────────────────────────────────
         self.train_loader, self.val_loader = self._build_datasets()
+        self.callbacks.task_prompts = uniform_task_prompts(self.train_loader.dataset)
 
         # ── Optimizer & Scheduler ──────────────────────────────────────
         self.optimizer = torch.optim.AdamW(
