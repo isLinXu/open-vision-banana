@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 import torch
 
+from .flow_matching import FlowScheduler
 from .normal_aux_loss import normal_angular_loss, normal_task_mask
 from .sana_depth_aux import depth_edge_endpoint_loss, depth_task_mask
 from .sana_flow import flow_min_snr_weight
@@ -83,9 +84,10 @@ class TrainingLosses:
         )
         per_sample_loss = per_sample_loss * weights
 
-        # Min-SNR weighting
+        # Min-SNR weighting (flow_min_snr_weight takes SANA's sigma)
         if self.min_snr:
-            snw = flow_min_snr_weight(timesteps, self.min_snr_gamma)
+            sigma = FlowScheduler.to_sana_sigma(self.family, timesteps)
+            snw = flow_min_snr_weight(sigma, self.min_snr_gamma)
             flow_loss = (per_sample_loss * snw).mean()
         else:
             flow_loss = per_sample_loss.mean()
@@ -117,7 +119,7 @@ class TrainingLosses:
             noisy_latents: Noisy input latents [B, C, H, W].
             target_latents: Target latents [B, C, H, W].
             target_rgb: Ground-truth RGB [B, 3, H, W] in [0, 1].
-            timesteps: Flow timesteps [B].
+            timesteps: Flow timesteps [B] in this family's own frame.
             batch_tasks: Task label per sample.
             vae_decode_fn: Callable that decodes latents to images in [-1, 1].
             device: Device.
@@ -127,17 +129,24 @@ class TrainingLosses:
         """
         batch_size = predicted_velocity.shape[0]
 
+        def sana_frame(mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            # Both losses rebuild the target endpoint as sample - sigma * v (SANA's frame).
+            return FlowScheduler.to_sana_frame(
+                self.family, timesteps[mask], predicted_velocity[mask]
+            )
+
         # Depth edge auxiliary loss
         depth_aux_loss = predicted_velocity.new_zeros(())
         if self.depth_edge_aux_weight > 0:
             depth_mask = depth_task_mask(batch_tasks, batch_size, device)
             if depth_mask.any():
+                sigma, velocity = sana_frame(depth_mask)
                 depth_aux_loss = depth_edge_endpoint_loss(
-                    predicted_velocity[depth_mask],
+                    velocity,
                     noisy_latents[depth_mask],
                     target_latents[depth_mask],
                     target_rgb[depth_mask],
-                    timesteps[depth_mask],
+                    sigma,
                     edge_threshold=self.depth_edge_aux_edge_threshold,
                     edge_weight=self.depth_edge_aux_edge_weight,
                     gradient_weight=self.depth_edge_aux_gradient_weight,
@@ -149,12 +158,13 @@ class TrainingLosses:
         if self.normal_angular_loss_weight > 0:
             normal_mask = normal_task_mask(batch_tasks, batch_size, device)
             if normal_mask.any():
+                sigma, velocity = sana_frame(normal_mask)
                 normal_aux_loss = normal_angular_loss(
-                    predicted_velocity[normal_mask],
+                    velocity,
                     noisy_latents[normal_mask],
                     target_latents[normal_mask],
                     target_rgb[normal_mask],
-                    timesteps[normal_mask],
+                    sigma,
                     vae_decode_fn,
                 )
 
