@@ -41,6 +41,35 @@ from .flow_matching import (
 
 logger = logging.getLogger(__name__)
 
+# bitsandbytes (0.50+) logs "MatMul8bitLt: inputs will be cast from ... to float16" on
+# every LLM.int8 forward with non-fp16 inputs. The 8-bit T5 runs every training step,
+# so a FLUX run writes hundreds of thousands of identical lines per hour into train.log
+# and wandb. (Older releases used warnings.warn, which Python already shows once.)
+_BNB_INT8_LOGGER = "bitsandbytes.autograd._functions"
+_BNB_INT8_CAST_MSG = "MatMul8bitLt: inputs will be cast"
+
+
+class _CastWarningOnceFilter(logging.Filter):
+    """Let the first int8 cast warning through and drop its repeats; other records pass."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._seen = False
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not str(record.msg).startswith(_BNB_INT8_CAST_MSG):
+            return True
+        if self._seen:
+            return False
+        self._seen = True
+        return True
+
+
+def _log_bnb_int8_cast_warning_once() -> None:
+    bnb_logger = logging.getLogger(_BNB_INT8_LOGGER)
+    if not any(isinstance(f, _CastWarningOnceFilter) for f in bnb_logger.filters):
+        bnb_logger.addFilter(_CastWarningOnceFilter())
+
 
 class ModelBackend:
     """Unified model interface for training.
@@ -193,6 +222,7 @@ class ModelBackend:
             torch_dtype=self.dtype,
             quantization_config=t5_quant,
         )
+        _log_bnb_int8_cast_warning_once()
 
         # Full pipeline
         pipe = FluxPipeline.from_pretrained(
