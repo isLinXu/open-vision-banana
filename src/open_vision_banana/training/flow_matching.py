@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import torch
 
+from .optimization import sample_timesteps_logit_normal
+
 # Families that use rectified-flow parameterization (t=0 → source, t=1 → target)
 _RECTIFIED_FLOW_FAMILIES = frozenset(
     {
@@ -56,20 +58,16 @@ class FlowScheduler:
         Returns:
             timesteps: (batch_size,) tensor in [0, 1]
         """
-        if family == "sana":
-            if logit_normal:
-                u = torch.sigmoid(torch.randn(batch_size, device=device))
-            else:
-                u = torch.rand(batch_size, device=device)
-            # Apply flow shift (SANA convention)
-            sigma = flow_shift * u / (1.0 + (flow_shift - 1.0) * u)
-            return sigma.float()
-
-        # Rectified flow families (FLUX, SD3, Chroma, etc.)
+        # One draw for every family: a separately written copy for rectified flow once
+        # drifted to sigmoid(uniform), which only reaches [0.5, 0.731].
         if logit_normal:
+            u = sample_timesteps_logit_normal(batch_size, device)
+        else:
             u = torch.rand(batch_size, device=device)
-            return torch.sigmoid(u)
-        return torch.rand(batch_size, device=device)
+        if family == "sana":
+            # Apply flow shift (SANA convention)
+            u = flow_shift * u / (1.0 + (flow_shift - 1.0) * u)
+        return u
 
     @staticmethod
     def create_noisy_latents(
