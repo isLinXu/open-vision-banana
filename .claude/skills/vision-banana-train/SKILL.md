@@ -341,8 +341,9 @@ After training completes, evaluate the best checkpoint.
 ```bash
 # SANA multi-task visualization
 PYTHONPATH=src python scripts/infer_sana_512.py \
-  --image <test_image> --task multi \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt \
+  --data-dir <dataset_dir> --pair-manifest <pairs.jsonl> \
+  --checkpoint output/<run_name>/checkpoint-step-{N}_best/lora.pt \
+  --model-name sana-1600m --lora-rank 32 --lora-alpha 64 \
   --output-dir output/eval_<run_name>/
 ```
 

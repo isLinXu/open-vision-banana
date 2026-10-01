@@ -248,10 +248,12 @@ PYTHONPATH=src python scripts/inference.py \
   --lora-path registry:vision-banana \
   --cpu-offload --vae-slicing
 
-# SANA multi-task inference
+# SANA multi-task visualization on a manifest's val split (input / target / prediction)
 PYTHONPATH=src python scripts/infer_sana_512.py \
-  --image input.jpg --task multi \
-  --lora-path path/to/multitask_lora --steps 20
+  --data-dir /path/to/dataset --pair-manifest /path/to/pairs.jsonl \
+  --checkpoint path/to/checkpoint/lora.pt \
+  --model-name sana-1600m --lora-rank 32 --lora-alpha 64 \
+  --num-inference-steps 20 --output-dir output/infer_sana
 ```
 
 ### 4.3 Supported Tasks for Inference
