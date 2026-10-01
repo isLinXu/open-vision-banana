@@ -649,7 +649,17 @@ class Trainer:
 
     @torch.no_grad()
     def validate(self) -> float:
-        """Run validation and return average loss."""
+        """Run validation and return average loss.
+
+        Every call draws the same noise and timesteps, so losses are comparable across
+        evaluations and best-checkpoint selection does not depend on the draw. The training
+        RNG stream is left as it was.
+        """
+        with torch.random.fork_rng(devices=range(torch.cuda.device_count())):
+            torch.manual_seed(self.config.seed)
+            return self._validate()
+
+    def _validate(self) -> float:
         peft_model = self.backend.peft_model
         peft_model.eval()
 
@@ -680,7 +690,8 @@ class Trainer:
                 batch_size,
                 img2img_flow=self.config.img2img_flow,
                 flow_sigma=self.config.flow_sigma,
-                logit_normal=True,
+                logit_normal=self.config.logit_normal,
+                flow_shift=self.config.flow_shift,
             )
 
             # Text encoding
