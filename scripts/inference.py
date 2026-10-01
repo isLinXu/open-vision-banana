@@ -61,6 +61,9 @@ def parse_args():
                         help="Referring expression (required for --task referring)")
     parser.add_argument("--object-name", type=str, default="objects",
                         help="Object category for instance segmentation")
+    parser.add_argument("--prompt", type=str, default=None,
+                        help="Instruction prompt to use instead of the default for --task "
+                             "(e.g. the prompt a LoRA was trained with)")
     parser.add_argument("--class-map", type=str, default=None,
                         help="JSON class-color map for semantic segmentation")
     return parser.parse_args()
@@ -211,6 +214,8 @@ def main():
         predict_kwargs["expression"] = args.expression
     if args.object_name:
         predict_kwargs["object_name"] = args.object_name
+    if args.prompt:
+        predict_kwargs["prompt"] = args.prompt
 
     for img_path in image_paths:
         logger.info("Processing %s (%s)", img_path.name, args.task)

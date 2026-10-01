@@ -9,6 +9,7 @@ Supports three LoRA source formats:
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -196,6 +197,38 @@ def resolve_lora_path(
         token=token,
     )
     return str(local)
+
+
+def read_training_prompts(lora_path: str | Path | None) -> dict[str, str]:
+    """Return the per-task prompts a local LoRA checkpoint was trained with.
+
+    The unified trainer records them as ``task_prompts`` in the checkpoint's
+    ``metadata.json``. ``lora_path`` may be the checkpoint directory or its
+    ``lora_adapter`` subdirectory. Returns ``{}`` for remote specs and for checkpoints
+    without the record.
+    """
+    if lora_path is None or not is_local_path(str(lora_path)):
+        return {}
+    directory = Path(lora_path)
+    if directory.is_file():
+        directory = directory.parent
+    # The trainer writes metadata.json next to lora.pt, one level above lora_adapter/.
+    candidates = [directory]
+    if directory.name.startswith("lora_adapter"):
+        candidates.append(directory.parent)
+    for candidate in candidates:
+        meta_path = candidate / "metadata.json"
+        if not meta_path.is_file():
+            continue
+        try:
+            prompts = json.loads(meta_path.read_text(encoding="utf-8")).get("task_prompts")
+        except (OSError, ValueError, AttributeError):
+            logger.warning("Could not read task prompts from %s", meta_path)
+            return {}
+        if isinstance(prompts, dict):
+            return {str(task): str(prompt) for task, prompt in prompts.items() if prompt}
+        return {}
+    return {}
 
 
 def peft_adapter_state_to_diffusers(

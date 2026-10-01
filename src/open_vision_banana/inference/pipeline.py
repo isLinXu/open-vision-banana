@@ -31,6 +31,7 @@ import torch
 
 from ..core.rgb_mapper import RGBMapper
 from ..core.segmentation import InstanceDecodingConfig
+from .checkpoint import read_training_prompts
 from .decoder import VisualizationDecoder
 from .generator import BaseGenerator
 from .optimization import InferenceOptions
@@ -68,8 +69,11 @@ class VisionBanana:
         instance_grouping_mode: str = "seed",
         instance_adaptive_color_tolerance: bool = False,
         instance_decoding_config: InstanceDecodingConfig | None = None,
+        training_prompts: dict[str, str] | None = None,
     ) -> None:
         self.generator = base_generator
+        # Prompts the loaded LoRA was trained with; they win over PromptBuilder's.
+        self.training_prompts = dict(training_prompts or {})
         conditioning = getattr(base_generator, "source_conditioning_config", None)
         depth_colormap = "cube_edge"
         if conditioning is not None and conditioning.target_colormap != "unknown":
@@ -134,6 +138,7 @@ class VisionBanana:
             instance_grouping_mode=instance_grouping_mode,
             instance_adaptive_color_tolerance=instance_adaptive_color_tolerance,
             instance_decoding_config=instance_decoding_config,
+            training_prompts=read_training_prompts(lora_path),
         )
 
     @torch.no_grad()
@@ -454,6 +459,11 @@ class VisionBanana:
         expression: str | None = None,
     ) -> str:
         """Build instruction prompt for the specified task."""
+        # The prompt the loaded LoRA was trained with wins over PromptBuilder's default;
+        # an explicit class_color_map asks for that legend instead.
+        if task in self.training_prompts and class_color_map is None:
+            return self.training_prompts[task]
+
         if task == "semantic":
             if class_color_map is None:
                 raise ValueError("class_color_map required for semantic segmentation")
