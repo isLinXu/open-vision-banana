@@ -350,9 +350,11 @@ class ModelBackend:
         latents = registry_vae_encode(self.vae, images, self.model_config)
         return latents.to(self.dtype)
 
-    @torch.no_grad()
     def decode_latents(self, latents: torch.Tensor) -> torch.Tensor:
         """VAE decode latents to images.
+
+        Keeps the graph: the normal angular aux loss backpropagates through the (frozen)
+        VAE to the latents. Callers that only want images should run under no_grad.
 
         Returns:
             Images in [-1, 1].
