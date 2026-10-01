@@ -272,7 +272,71 @@ class Trainer:
             scheduler_type=config.scheduler,
         )
 
+        # ── Resume ─────────────────────────────────────────────────────
+        self.start_step = self._resume(config.resume) if config.resume else 0
+
         logger.info("Setup complete. Starting training...")
+
+    def _resume(self, resume: str) -> int:
+        """Restore training state from a checkpoint; return the step to continue from.
+
+        ``resume`` is a checkpoint directory or its ``lora.pt``. Every rank loads it, so
+        ranks stay identical. With ``resume_weights_only`` only the LoRA weights are taken
+        (the EMA shadow restarts from them) and training begins at step 0.
+        """
+        path = Path(resume)
+        if path.is_dir():
+            path = path / "lora.pt"
+        if not path.is_file():
+            raise FileNotFoundError(f"Resume checkpoint not found: {path}")
+        ckpt = torch.load(str(path), map_location="cpu")
+        lora_state = ckpt.get("lora_state_dict", ckpt)
+
+        params = {n: p for n, p in self.backend.peft_model.named_parameters() if p.requires_grad}
+        missing = sorted(params.keys() - lora_state.keys())
+        unexpected = sorted(lora_state.keys() - params.keys())
+        reshaped = sorted(
+            n for n in params.keys() & lora_state.keys() if lora_state[n].shape != params[n].shape
+        )
+        if missing or unexpected or reshaped:
+            raise ValueError(
+                f"{path} does not match this run's LoRA (model / rank / target modules): "
+                f"{len(missing)} missing, e.g. {missing[:2]}; "
+                f"{len(unexpected)} unexpected, e.g. {unexpected[:2]}; "
+                f"{len(reshaped)} with another shape, e.g. {reshaped[:2]}"
+            )
+        with torch.no_grad():
+            for name, param in params.items():
+                param.copy_(lora_state[name])
+        # The shadow was cloned from the fresh LoRA init; start it from the loaded weights
+        # so a checkpoint without (or with a partial) EMA does not average towards the init.
+        for name, shadow in self.ema.shadow_params.items():
+            shadow.copy_(params[name].data)
+
+        if self.config.resume_weights_only:
+            logger.info("Loaded LoRA weights from %s; optimizer, schedule and step reset", path)
+            return 0
+
+        step = int(ckpt.get("step", 0))
+        if "optimizer_state_dict" in ckpt:
+            self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        if "scheduler_state_dict" in ckpt:
+            self.lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        for name, tensor in (ckpt.get("ema_state_dict") or {}).items():
+            if name in self.ema.shadow_params:
+                self.ema.shadow_params[name].copy_(tensor)
+        self.ema.step = step
+        # RNG state is not checkpointed. Without a new seed the resumed run would replay
+        # the shuffles, noise and timesteps of the run's first steps.
+        seed = self.config.seed + self.dist.rank + step
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        best = ckpt.get("best_val_loss")
+        if best is not None:
+            self.callbacks.best_val_loss = best
+        logger.info("Resumed from %s at step %d (best val_loss=%s)", path, step, best)
+        return step
 
     def _build_datasets(self) -> tuple[DataLoader, DataLoader | None]:
         """Build train and val data loaders from manifest."""
@@ -368,9 +432,11 @@ class Trainer:
             "steps": 0,
         }
         task_loss_acc: dict[str, list[float]] = {}
-        global_step = 0
+        global_step = self.start_step
         micro_step = 0
-        data_pass = 0  # full passes over the train loader; seeds DistributedSampler shuffles
+        # full passes over the train loader; seeds DistributedSampler shuffles. A resumed
+        # run continues the count (from the start of the pass it stopped in).
+        data_pass = global_step * config.grad_accum // max(1, len(self.train_loader))
         self.optimizer.zero_grad(set_to_none=True)
 
         while global_step < total_steps:
