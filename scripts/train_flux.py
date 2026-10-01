@@ -43,7 +43,7 @@ from open_vision_banana.model_registry import (
     vae_decode,
 )
 from open_vision_banana.inference.prompt import PromptBuilder
-from open_vision_banana.training.optimization import SchedulerFactory
+from open_vision_banana.training.optimization import SchedulerFactory, sample_timesteps_logit_normal
 from open_vision_banana.training.sana_flow import flow_min_snr_weight
 from open_vision_banana.training.sana_depth_aux import depth_edge_endpoint_loss, depth_task_mask
 from open_vision_banana.training.normal_aux_loss import normal_angular_loss, normal_task_mask
@@ -348,11 +348,8 @@ def flux_vae_decode(vae, latents, config):
 def sample_rectified_flow_timesteps(batch_size, device, logit_normal=True):
     """Sample timesteps for rectified flow matching."""
     if logit_normal:
-        u = torch.rand(batch_size, device=device)
-        t = torch.sigmoid(u)
-    else:
-        t = torch.rand(batch_size, device=device)
-    return t
+        return sample_timesteps_logit_normal(batch_size, device)
+    return torch.rand(batch_size, device=device)
 
 
 def mix_rectified_flow(z_0, noise, t, input_latents=None, use_img2img=True, flow_sigma=0.0):
