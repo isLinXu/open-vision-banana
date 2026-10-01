@@ -96,7 +96,8 @@ class TrainingConfig:
 
     # ── Device ─────────────────────────────────────────────────────────
     device: str | None = None  # auto-detect if None
-    resume: str | None = None
+    resume: str | None = None  # checkpoint dir or its lora.pt
+    resume_weights_only: bool = False  # LoRA only; fresh optimizer, schedule, step
 
     # ── Task weights string (for YAML parsing) ─────────────────────────
     _task_weights_str: str | None = None
@@ -200,7 +201,9 @@ def _load_yaml_config(config_path: Path | None) -> dict:
         "wandb_project": wandb_section.get("project", "open-vision-banana"),
         "wandb_run_name": wandb_section.get("run_name"),
         "device": raw.get("device"),
-        "resume": raw.get("resume"),
+        "resume": raw.get("resume") or ckpt.get("resume"),
+        "resume_weights_only": raw.get("resume_weights_only")
+        or ckpt.get("resume_weights_only", False),
     }
 
     # Handle task_loss_weights (can be string or dict)
@@ -357,7 +360,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     # Device
     p.add_argument("--device", default=cfg.get("device"))
-    p.add_argument("--resume", default=cfg.get("resume"))
+    p.add_argument("--resume", default=cfg.get("resume"), help="Checkpoint dir or lora.pt")
+    p.add_argument(
+        "--resume-weights-only",
+        action="store_true",
+        default=cfg.get("resume_weights_only", False),
+        help="Load only the LoRA weights from --resume; reset optimizer, scheduler, step.",
+    )
 
     # Distributed: data parallelism turns on by itself under torchrun (WORLD_SIZE > 1,
     # see training/distributed.py). --ddp is accepted because the DDP launchers pass it.
@@ -434,6 +443,7 @@ def apply_cli_overrides(config: TrainingConfig, args: argparse.Namespace) -> Tra
         "wandb_run_name": "wandb_run_name",
         "device": "device",
         "resume": "resume",
+        "resume_weights_only": "resume_weights_only",
     }
 
     for arg_name, config_name in override_map.items():

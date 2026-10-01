@@ -38,6 +38,7 @@ from .flow_matching import (
     prepare_latent_image_ids,
     unpack_latents,
 )
+from .sana_flow import native_sana_timestep
 
 logger = logging.getLogger(__name__)
 
@@ -350,9 +351,11 @@ class ModelBackend:
         latents = registry_vae_encode(self.vae, images, self.model_config)
         return latents.to(self.dtype)
 
-    @torch.no_grad()
     def decode_latents(self, latents: torch.Tensor) -> torch.Tensor:
         """VAE decode latents to images.
+
+        Keeps the graph: the normal angular aux loss backpropagates through the (frozen)
+        VAE to the latents. Callers that only want images should run under no_grad.
 
         Returns:
             Images in [-1, 1].
@@ -396,7 +399,7 @@ class ModelBackend:
         # Build forward kwargs
         fwd_kwargs: dict[str, Any] = {
             "latents": latents,
-            "timesteps": timesteps,
+            "timesteps": self.model_timesteps(timesteps, batch_size),
             "encoder_hidden_states": text_cond["encoder_hidden_states"],
             "config": self.model_config,
         }
@@ -442,6 +445,24 @@ class ModelBackend:
             predicted = unpack_latents(predicted, latent_h, latent_w)
 
         return predicted
+
+    def model_timesteps(self, timesteps: torch.Tensor, batch_size: int) -> torch.Tensor:
+        """Convert flow time in [0, 1] to what the backbone's timestep embedding expects.
+
+        SANA's transformer takes scheduler timesteps: sigma * num_train_timesteps, times
+        its ``timestep_scale``. SanaPipeline, scripts/train_sana_512.py and the inference
+        sampler all pass that; sigma itself tells the model it is always at t ~ 0, and the
+        resulting LoRA does not work with them. FLUX's transformer takes [0, 1] as is.
+        The conversion lives here, not in backbone_forward, whose other callers already
+        pass scheduler timesteps.
+        """
+        if self.family != "sana":
+            return timesteps
+        scheduler_config = getattr(getattr(self.components, "scheduler", None), "config", None)
+        num_train_timesteps = float(getattr(scheduler_config, "num_train_timesteps", 1000))
+        # float32 first: in bf16 the product is only exact to 4 above 512.
+        scheduler_timesteps = timesteps.float() * num_train_timesteps
+        return native_sana_timestep(scheduler_timesteps, batch_size, self.peft_model)
 
     def _peft_forward(self, latents, timesteps, fwd_kwargs) -> torch.Tensor:
         """Run forward through peft_model with proper argument passing."""
