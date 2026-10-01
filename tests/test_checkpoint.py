@@ -46,11 +46,29 @@ class TestCheckpointRegistry:
         assert is_registry_placeholder("vision-banana")
         assert not is_registry_placeholder("sana-depth-relative-v1")
 
-    def test_local_registry_alias_resolves_without_hub(self):
-        resolved = resolve_lora_path("registry:sana-depth-relative-v1")
-        assert resolved is not None
-        assert Path(resolved).is_dir()
-        assert (Path(resolved) / "adapter_config.json").is_file()
+    @patch("open_vision_banana.inference.checkpoint.download_lora_from_hub")
+    def test_local_registry_alias_resolves_without_hub(self, mock_download, tmp_path: Path):
+        # A registry of its own: the shipped sana-depth-relative-v1 entry points at an
+        # untracked output/ directory that only exists on the machine that trained it.
+        registry = tmp_path / "configs" / "checkpoint_registry.yaml"
+        registry.parent.mkdir()
+        registry.write_text(
+            "checkpoints:\n"
+            "  local-adapter:\n"
+            "    repo_id: org/local-adapter\n"
+            "    status: placeholder\n"
+            "    local_path: output/run/lora_adapter\n",
+            encoding="utf-8",
+        )
+        adapter = tmp_path / "output" / "run" / "lora_adapter"
+        adapter.mkdir(parents=True)
+        (adapter / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+        resolved = resolve_lora_path("registry:local-adapter", registry_path=registry)
+
+        assert resolved == str(adapter.resolve())
+        assert not is_registry_placeholder("local-adapter", registry_path=registry)
+        mock_download.assert_not_called()
 
 
 class TestResolveLoraPath:
