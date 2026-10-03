@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "analysis_date": "2026-10-03",
+  "purpose": "Selection metadata only; not executable profiles. Uploaded metrics are not local reproductions.",
+  "candidate_scope": {
+    "repositories": 115,
+    "metric_records": 209,
+    "rechecked_candidates": 7
+  },
+  "base_model_revision_verified": false,
+  "metric_units": {
+    "depth_absrel": "training target units unverified",
+    "normal_mean_angle": "degrees",
+    "semantic_miou": "uploaded aggregation unverified"
+  },
+  "candidates": [
+    {
+      "id": "fix_best3_s1",
+      "repo_id": "khazic/ovb-fix_best3_s1",
+      "revision": "54d4d2086153e85e7c32ce61ed82a1df6cdc7657",
+      "checkpoint_subdir": "ckpt/checkpoint-30000_final",
+      "weights": "ema",
+      "base_model_id": "Efficient-Large-Model/Sana_1600M_512px_diffusers",
+      "lora_rank": 32,
+      "lora_alpha": 64,
+      "use_rslora": true,
+      "num_steps": 20,
+      "training_step": 30000,
+      "metrics": {
+        "depth": {
+          "absrel": 0.3988039265138602,
+          "n": 319
+        },
+        "normal": {
+          "mean_angle": 18.96333583023237,
+          "n": 276
+        },
+        "semantic": {
+          "miou": 0.25573530715088577,
+          "n": 241
+        }
+      },
+      "evidence_url": "https://huggingface.co/khazic/ovb-fix_best3_s1/blob/54d4d2086153e85e7c32ce61ed82a1df6cdc7657/eval/checkpoint-30000_final_ema/metrics.json",
+      "protocol_status": "reported_native_sana_unverified",
+      "selection_role": "primary_native_reported",
+      "inference_contract_verified": false,
+      "runtime_cost_verified": false
+    },
+    {
+      "id": "fix_best3_s42",
+      "repo_id": "khazic/ovb-fix_best3_s42",
+      "revision": "62d83320920dc6e2a807e74dd54c923d68b89458",
+      "checkpoint_subdir": "ckpt/checkpoint-30000_final",
+      "weights": "ema",
+      "base_model_id": "Efficient-Large-Model/Sana_1600M_512px_diffusers",
+      "lora_rank": 32,
+      "lora_alpha": 64,
+      "use_rslora": true,
+      "num_steps": 20,
+      "training_step": 30000,
+      "metrics": {
+        "depth": {
+          "absrel": 0.395370986861495,
+          "n": 319
+        },
+        "normal": {
+          "mean_angle": 19.010307631630827,
+          "n": 276
+        },
+        "semantic": {
+          "miou": 0.2510561145848028,
+          "n": 241
+        }
+      },
+      "evidence_url": "https://huggingface.co/khazic/ovb-fix_best3_s42/blob/62d83320920dc6e2a807e74dd54c923d68b89458/eval/checkpoint-30000_final_ema/metrics.json",
+      "protocol_status": "reported_native_sana_unverified",
+      "selection_role": "native_seed_control",
+      "inference_contract_verified": false,
+      "runtime_cost_verified": false
+    },
+    {
+      "id": "fix_no_minsnr",
+      "repo_id": "khazic/ovb-fix_no_minsnr",
+      "revision": "811604b19e8c58f64349f1f8c11891cddcb684a5",
+      "checkpoint_subdir": "ckpt/checkpoint-30000_final",
+      "weights": "ema",
+      "base_model_id": "Efficient-Large-Model/Sana_1600M_512px_diffusers",
+      "lora_rank": 32,
+      "lora_alpha": 64,
+      "use_rslora": true,
+      "num_steps": 20,
+      "training_step": 30000,
+      "metrics": {
+        "depth": {
+          "absrel": 0.48660755908367775,
+          "n": 319
+        },
+        "normal": {
+          "mean_angle": 20.682319732679836,
+          "n": 276
+        },
+        "semantic": {
+          "miou": 0.21616205528642737,
+          "n": 241
+        }
+      },
+      "evidence_url": "https://huggingface.co/khazic/ovb-fix_no_minsnr/blob/811604b19e8c58f64349f1f8c11891cddcb684a5/eval/checkpoint-30000_final_ema/metrics.json",
+      "protocol_status": "reported_native_sana_unverified",
+      "selection_role": "native_single_factor_control",
+      "inference_contract_verified": false,
+      "runtime_cost_verified": false
+    },
+    {
+      "id": "best3_rank64",
+      "repo_id": "khazic/ovb-best3_rank64",
+      "revision": "4ac1c28bd54b090ce16ca113233c11f5db059ab5",
+      "checkpoint_subdir": "ckpt/checkpoint-27000_best",
+      "weights": "ema",
+      "base_model_id": "Efficient-Large-Model/Sana_1600M_512px_diffusers",
+      "lora_rank": 64,
+      "lora_alpha": 128,
+      "use_rslora": true,
+      "num_steps": 20,
+      "training_step": 27000,
+      "metrics": {
+        "depth": {
+          "absrel": 0.38975257589992685,
+          "n": 319
+        },
+        "normal": {
+          "mean_angle": 18.536942798158396,
+          "n": 276
+        },
+        "semantic": {
+          "miou": 0.26303228894322433,
+          "n": 241
+        }
+      },
+      "evidence_url": "https://huggingface.co/khazic/ovb-best3_rank64/blob/4ac1c28bd54b090ce16ca113233c11f5db059ab5/eval/checkpoint-27000_best_ema/metrics.json",
+      "protocol_status": "reported_legacy_sana_unverified",
+      "selection_role": "legacy_highest_reported_segmentation",
+      "inference_contract_verified": false,
+      "runtime_cost_verified": false
+    },
+    {
+      "id": "no_minsnr",
+      "repo_id": "khazic/ovb-no_minsnr",
+      "revision": "a852b6933b80c6ca1c67192b2ca24ccde9d168c7",
+      "checkpoint_subdir": "ckpt/checkpoint-30000_final",
+      "weights": "ema",
+      "base_model_id": "Efficient-Large-Model/Sana_1600M_512px_diffusers",
+      "lora_rank": 32,
+      "lora_alpha": 64,
+      "use_rslora": true,
+      "num_steps": 20,
+      "training_step": 30000,
+      "metrics": {
+        "depth": {
+          "absrel": 0.5195951089846864,
+          "n": 319
+        },
+        "normal": {
+          "mean_angle": 21.01378950347071,
+          "n": 276
+        },
+        "semantic": {
+          "miou": 0.20864996556197485,
+          "n": 241
+        }
+      },
+      "evidence_url": "https://huggingface.co/khazic/ovb-no_minsnr/blob/a852b6933b80c6ca1c67192b2ca24ccde9d168c7/eval/checkpoint-30000_final_ema/metrics.json",
+      "protocol_status": "reported_legacy_sana_unverified",
+      "selection_role": "previously_verified_weight_control",
+      "inference_contract_verified": false,
+      "runtime_cost_verified": false
+    },
+    {
+      "id": "flux3_ctrl_seg_nominsnr_15k",
+      "repo_id": "khazic/ovb-flux3_ctrl_seg_nominsnr_15k",
+      "revision": "c3f22d98b2398f839e8071c1abb817bbe992b8e1",
+      "checkpoint_subdir": "ckpt/checkpoint-15000_final",
+      "weights": "ema",
+      "base_model_id": "black-forest-labs/FLUX.1-dev",
+      "lora_rank": 32,
+      "lora_alpha": 64,
+      "use_rslora": true,
+      "num_steps": 20,
+      "training_step": 15000,
+      "metrics": {
+        "semantic": {
+          "miou": 0.1871475980595578,
+          "n": 241
+        }
+      },
+      "evidence_url": "https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k/blob/c3f22d98b2398f839e8071c1abb817bbe992b8e1/eval/checkpoint-15000_final_ema/metrics.json",
+      "protocol_status": "reported_flux_source_to_target_unverified",
+      "selection_role": "flux_segmentation_only_control",
+      "inference_contract_verified": false,
+      "runtime_cost_verified": false
+    },
+    {
+      "id": "flux3_nominsnr_15k",
+      "repo_id": "khazic/ovb-flux3_nominsnr_15k",
+      "revision": "6223c7b5ce774688d41855c826db4f500a72232a",
+      "checkpoint_subdir": "ckpt/checkpoint-15000_final",
+      "weights": "ema",
+      "base_model_id": "black-forest-labs/FLUX.1-dev",
+      "lora_rank": 32,
+      "lora_alpha": 64,
+      "use_rslora": true,
+      "num_steps": 20,
+      "training_step": 15000,
+      "metrics": {
+        "depth": {
+          "absrel": 1.1953463490153182,
+          "n": 319
+        },
+        "normal": {
+          "mean_angle": 22.506788205409396,
+          "n": 276
+        },
+        "semantic": {
+          "miou": 0.16537775976512395,
+          "n": 241
+        }
+      },
+      "evidence_url": "https://huggingface.co/khazic/ovb-flux3_nominsnr_15k/blob/6223c7b5ce774688d41855c826db4f500a72232a/eval/checkpoint-15000_final_ema/metrics.json",
+      "protocol_status": "reported_flux_source_to_target_unverified",
+      "selection_role": "flux_three_task_control",
+      "inference_contract_verified": false,
+      "runtime_cost_verified": false
+    }
+  ],
+  "selected": "fix_best3_s1"
+}

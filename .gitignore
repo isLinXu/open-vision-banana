@@ -320,3 +320,6 @@ PIDray/
 
 # Local development tools (not source)
 .tools/
+
+# Benchmark generated predictions, figures and local profiles
+/benchmark-output/

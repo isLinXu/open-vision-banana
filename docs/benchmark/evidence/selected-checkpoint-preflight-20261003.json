@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "analysis_date": "2026-10-03",
+  "status": "selected EMA checkpoint prepared and independently verified",
+  "repository_baseline_commit": "b490e2d3c91d5909de1ef9c9416768ec364ab884",
+  "tool": "python -m scripts.benchmark.checkpoints",
+  "tool_source_sha256_at_verification": "975ef1f31efa3cb82a818904cb117118e340cf9e81cbbedeb1a3cc8f9c6c678b",
+  "source": {
+    "repo_id": "khazic/ovb-fix_best3_s1",
+    "revision": "54d4d2086153e85e7c32ce61ed82a1df6cdc7657",
+    "checkpoint_subdir": "ckpt/checkpoint-30000_final",
+    "training_step": 30000,
+    "manifest_sha256": "e7ec3fcce2caa529b3c23e67a4b380e18f8d99930f7b6e36154bf0dfa65d8084",
+    "files": [
+      {
+        "remote_path": "ckpt/checkpoint-30000_final/metadata.json",
+        "size": 146,
+        "sha256": "79ea5d40e8453cd553226430cdf3af09b6f52d60ec16c72524ddcbeb1ede7e7f"
+      },
+      {
+        "remote_path": "ckpt/checkpoint-30000_final/lora_adapter/adapter_config.json",
+        "size": 1235,
+        "sha256": "826259296db21cb89ecc640604c3cf567fd2eb8532c3022161d18da45fcf0310"
+      },
+      {
+        "remote_path": "ckpt/checkpoint-30000_final/lora_adapter/adapter_model.safetensors",
+        "size": 56786576,
+        "sha256": "4524c4080ea572b27f6e3002f81ecb43f16e943fa5408ce5c4aec227f5473733"
+      },
+      {
+        "remote_path": "ckpt/checkpoint-30000_final/lora.pt",
+        "size": 227210617,
+        "sha256": "713b27bd834da16ec896ab647a5d34216c2d82fa524de0e50516d948ccfb0053"
+      }
+    ]
+  },
+  "ema_export": {
+    "weights_variant": "ema",
+    "size_bytes": 56786552,
+    "adapter_sha256": "6317a9a78c4df187677e3e6ffdce356adfb94a83998798c59610deb7695f12e4",
+    "adapter_config_sha256": "826259296db21cb89ecc640604c3cf567fd2eb8532c3022161d18da45fcf0310",
+    "architecture": "SanaTransformer2DModel",
+    "base_model_id": "Efficient-Large-Model/Sana_1600M_512px_diffusers",
+    "lora_rank": 32,
+    "lora_alpha": 64,
+    "use_rslora": true,
+    "adapter_tensor_count": 84,
+    "lora_parameter_count": 14193664,
+    "validated_lora_pairs": 42
+  },
+  "independent_checks": {
+    "export_matches_checkpoint_ema_exactly": true,
+    "source_adapter_matches_checkpoint_online_exactly": true,
+    "matching_ema_online_keys_and_shapes": true,
+    "ema_tensors_differing_from_online": 84,
+    "online_ema_max_abs_difference": 0.002657294273376465,
+    "export_all_finite": true,
+    "checkpoint_loaded_with_weights_only": true,
+    "cuda_initialized_in_verifier": false
+  },
+  "runtime": {
+    "python": "3.12.14",
+    "torch": "2.14.1+cpu",
+    "device": "CPU verification only"
+  },
+  "limits": {
+    "base_weights_downloaded": false,
+    "base_architecture_shape_verified": false,
+    "training_base_revision_verified": false,
+    "inference_contract_verified": false,
+    "generator_load_verified": false,
+    "trained_model_inference_performed": false,
+    "task_quality_reproduced": false,
+    "laptop_full_pipeline_cost_measured": false
+  },
+  "cached_rerun": {
+    "allow_download": false,
+    "exit_code": 0,
+    "same_prepared_record_sha256": true,
+    "same_ema_adapter_sha256": true
+  }
+}

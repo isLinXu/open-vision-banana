@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "name": "flickr-components",
+  "description": "Use --dataset-root and --checkpoint lraspp-voc21=PATH. No pixel GT: qualitative and cost only.",
+  "device": "cpu",
+  "seed": 42,
+  "dataset": {
+    "kind": "images", "root": ".",
+    "include": ["1000092795.jpg", "1001773457.jpg", "10010052.jpg", "1001633352.jpg", "1000366164.jpg", "100197432.jpg"],
+    "max_samples": 6
+  },
+  "models": [
+    {"id": "tiny-random", "backend": "tiny", "weights_variant": "random", "options": {"seed": 42}},
+    {"id": "lraspp-voc21", "backend": "torchvision_lraspp", "weights_variant": "pretrained",
+     "options": {"dtype": "float32", "trusted_checkpoint": false,
+       "expected_sha256": "d234d4eae9d55d5f76de18b77cf0dc62c66fe5c5482758209d00f950c92bb280"}}
+  ],
+  "sizes": [{"id": "s64", "max_edge": 64, "alignment": 8}, {"id": "s128", "max_edge": 128, "alignment": 8}, {"id": "s256", "max_edge": 256, "alignment": 8}],
+  "tasks": ["semantic"],
+  "timing": {"warmup": 2, "repeats": 5, "cpu_threads": 1},
+  "output": {"visualizations": true, "raw_predictions": true}
+}

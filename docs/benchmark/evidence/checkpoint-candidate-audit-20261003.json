@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "analysis_date": "2026-10-03",
+  "scope": {
+    "repositories_in_inventory": 115,
+    "metric_records_in_inventory": 209,
+    "candidate_repositories_rechecked": 7,
+    "method": "Anonymous HTTPS metadata; pinned revisions; no base-weight download"
+  },
+  "metrics_and_ranks": "../../../scripts/benchmark/configs/checkpoint-candidates.json",
+  "limits": [
+    "Server hardware and actual evaluation source unavailable.",
+    "Reported native-SANA and legacy time conventions are separate comparison groups.",
+    "Weights/metadata verification does not certify inference or local deployment cost."
+  ],
+  "candidates": [
+    {
+      "id": "fix_best3_s1",
+      "repo_id": "khazic/ovb-fix_best3_s1",
+      "revision": "54d4d2086153e85e7c32ce61ed82a1df6cdc7657",
+      "source_urls": {
+        "metrics": "https://huggingface.co/khazic/ovb-fix_best3_s1/resolve/54d4d2086153e85e7c32ce61ed82a1df6cdc7657/eval/checkpoint-30000_final_ema/metrics.json",
+        "metadata": "https://huggingface.co/khazic/ovb-fix_best3_s1/resolve/54d4d2086153e85e7c32ce61ed82a1df6cdc7657/ckpt/checkpoint-30000_final/metadata.json",
+        "adapter_config": "https://huggingface.co/khazic/ovb-fix_best3_s1/resolve/54d4d2086153e85e7c32ce61ed82a1df6cdc7657/ckpt/checkpoint-30000_final/lora_adapter/adapter_config.json"
+      },
+      "online_adapter_sha256": "4524c4080ea572b27f6e3002f81ecb43f16e943fa5408ce5c4aec227f5473733",
+      "checkpoint_container_sha256": "713b27bd834da16ec896ab647a5d34216c2d82fa524de0e50516d948ccfb0053"
+    },
+    {
+      "id": "fix_best3_s42",
+      "repo_id": "khazic/ovb-fix_best3_s42",
+      "revision": "62d83320920dc6e2a807e74dd54c923d68b89458",
+      "source_urls": {
+        "metrics": "https://huggingface.co/khazic/ovb-fix_best3_s42/resolve/62d83320920dc6e2a807e74dd54c923d68b89458/eval/checkpoint-30000_final_ema/metrics.json",
+        "metadata": "https://huggingface.co/khazic/ovb-fix_best3_s42/resolve/62d83320920dc6e2a807e74dd54c923d68b89458/ckpt/checkpoint-30000_final/metadata.json",
+        "adapter_config": "https://huggingface.co/khazic/ovb-fix_best3_s42/resolve/62d83320920dc6e2a807e74dd54c923d68b89458/ckpt/checkpoint-30000_final/lora_adapter/adapter_config.json"
+      },
+      "online_adapter_sha256": "1e0e52e4244b86d2214f76244f43e2f4e366e0d225325f398ce356d67660216c",
+      "checkpoint_container_sha256": "75a46c753335b3d998c86bb39bd727b17c8fcb69f6473d25ec03f2757e244e17"
+    },
+    {
+      "id": "fix_no_minsnr",
+      "repo_id": "khazic/ovb-fix_no_minsnr",
+      "revision": "811604b19e8c58f64349f1f8c11891cddcb684a5",
+      "source_urls": {
+        "metrics": "https://huggingface.co/khazic/ovb-fix_no_minsnr/resolve/811604b19e8c58f64349f1f8c11891cddcb684a5/eval/checkpoint-30000_final_ema/metrics.json",
+        "metadata": "https://huggingface.co/khazic/ovb-fix_no_minsnr/resolve/811604b19e8c58f64349f1f8c11891cddcb684a5/ckpt/checkpoint-30000_final/metadata.json",
+        "adapter_config": "https://huggingface.co/khazic/ovb-fix_no_minsnr/resolve/811604b19e8c58f64349f1f8c11891cddcb684a5/ckpt/checkpoint-30000_final/lora_adapter/adapter_config.json"
+      },
+      "online_adapter_sha256": "c1acfc7b7c2e1bde5c3b82e6bae1a5b006c9a3fe21d902e054df0999582d9094",
+      "checkpoint_container_sha256": "5395d250c1510a820d98027e21e5d21adfd226bcffe90d74443457740a1c7214"
+    },
+    {
+      "id": "best3_rank64",
+      "repo_id": "khazic/ovb-best3_rank64",
+      "revision": "4ac1c28bd54b090ce16ca113233c11f5db059ab5",
+      "source_urls": {
+        "metrics": "https://huggingface.co/khazic/ovb-best3_rank64/resolve/4ac1c28bd54b090ce16ca113233c11f5db059ab5/eval/checkpoint-27000_best_ema/metrics.json",
+        "metadata": "https://huggingface.co/khazic/ovb-best3_rank64/resolve/4ac1c28bd54b090ce16ca113233c11f5db059ab5/ckpt/checkpoint-27000_best/metadata.json",
+        "adapter_config": "https://huggingface.co/khazic/ovb-best3_rank64/resolve/4ac1c28bd54b090ce16ca113233c11f5db059ab5/ckpt/checkpoint-27000_best/lora_adapter/adapter_config.json"
+      },
+      "online_adapter_sha256": "75c0b9bf6a3f37e27ab1e6b797087a0f3b58180f5bff973a5680e576ab7474c6",
+      "checkpoint_container_sha256": "1ee1e62e7f33c7bf5c7b25967604e84ec6f0c8eb24c4789bc0b0c379dc91cc84"
+    },
+    {
+      "id": "no_minsnr",
+      "repo_id": "khazic/ovb-no_minsnr",
+      "revision": "a852b6933b80c6ca1c67192b2ca24ccde9d168c7",
+      "source_urls": {
+        "metrics": "https://huggingface.co/khazic/ovb-no_minsnr/resolve/a852b6933b80c6ca1c67192b2ca24ccde9d168c7/eval/checkpoint-30000_final_ema/metrics.json",
+        "metadata": "https://huggingface.co/khazic/ovb-no_minsnr/resolve/a852b6933b80c6ca1c67192b2ca24ccde9d168c7/ckpt/checkpoint-30000_final/metadata.json",
+        "adapter_config": "https://huggingface.co/khazic/ovb-no_minsnr/resolve/a852b6933b80c6ca1c67192b2ca24ccde9d168c7/ckpt/checkpoint-30000_final/lora_adapter/adapter_config.json"
+      },
+      "online_adapter_sha256": "66f8d060347b8a06a1150110954fe0d51a5f49923647e737627487d06532ba22",
+      "checkpoint_container_sha256": "ea79366713dbca6caab02e0ed50383d2edfa299d276c017b227e8b3a8b861256"
+    },
+    {
+      "id": "flux3_ctrl_seg_nominsnr_15k",
+      "repo_id": "khazic/ovb-flux3_ctrl_seg_nominsnr_15k",
+      "revision": "c3f22d98b2398f839e8071c1abb817bbe992b8e1",
+      "source_urls": {
+        "metrics": "https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k/resolve/c3f22d98b2398f839e8071c1abb817bbe992b8e1/eval/checkpoint-15000_final_ema/metrics.json",
+        "metadata": "https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k/resolve/c3f22d98b2398f839e8071c1abb817bbe992b8e1/ckpt/checkpoint-15000_final/metadata.json",
+        "adapter_config": "https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k/resolve/c3f22d98b2398f839e8071c1abb817bbe992b8e1/ckpt/checkpoint-15000_final/lora_adapter/adapter_config.json"
+      },
+      "online_adapter_sha256": "11599ec2d635f3e15183c016b5bf51fe6bf3eee223ea49bfbfa65eb43699f045",
+      "checkpoint_container_sha256": "2294ca66f5a377116067562a66c26d583e5cb3eadf430075e6a68a8080f2892a"
+    },
+    {
+      "id": "flux3_nominsnr_15k",
+      "repo_id": "khazic/ovb-flux3_nominsnr_15k",
+      "revision": "6223c7b5ce774688d41855c826db4f500a72232a",
+      "source_urls": {
+        "metrics": "https://huggingface.co/khazic/ovb-flux3_nominsnr_15k/resolve/6223c7b5ce774688d41855c826db4f500a72232a/eval/checkpoint-15000_final_ema/metrics.json",
+        "metadata": "https://huggingface.co/khazic/ovb-flux3_nominsnr_15k/resolve/6223c7b5ce774688d41855c826db4f500a72232a/ckpt/checkpoint-15000_final/metadata.json",
+        "adapter_config": "https://huggingface.co/khazic/ovb-flux3_nominsnr_15k/resolve/6223c7b5ce774688d41855c826db4f500a72232a/ckpt/checkpoint-15000_final/lora_adapter/adapter_config.json"
+      },
+      "online_adapter_sha256": "d0f974b361c03af43179b1eb8a67263a2392e673683c106e4c0d664db27e30d0",
+      "checkpoint_container_sha256": "45ff59e2380ec0b86ee075f9bd6df6dc05cb9e2b25ad8fd665688221a315a0e0"
+    }
+  ],
+  "actual_weight_verification": {
+    "selected_candidate": "fix_best3_s1",
+    "evidence": "selected-checkpoint-preflight-20261003.json",
+    "previous_candidate": "no_minsnr",
+    "previous_ema_tensor_count": 84,
+    "previous_matching_lora_pairs": 42,
+    "previous_source_adapter_equals_online": true,
+    "previous_ema_differs_from_online": true,
+    "full_pipeline_inference_verified": false
+  }
+}

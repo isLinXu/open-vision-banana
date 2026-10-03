@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "name": "sana-contract-template",
+  "description": "Blocked template. Selection metadata is not sufficient to certify the exact server inference contract.",
+  "device": "cpu",
+  "seed": 42,
+  "dataset": {"kind": "synthetic", "synthetic_count": 1, "max_samples": 1},
+  "models": [{"id": "fix-best3-s1-ema", "backend": "vision_banana", "weights_variant": "ema",
+    "base_model_id": "Efficient-Large-Model/Sana_1600M_512px_diffusers",
+    "revision": "54d4d2086153e85e7c32ce61ed82a1df6cdc7657",
+    "options": {"inference_contract_verified": false,
+      "model_time_convention": "native_sana", "num_inference_steps": 20,
+      "dtype": "float32", "task_prompts": {}, "encoding_contract": {}}}],
+  "sizes": [{"id": "s256", "max_edge": 256, "alignment": 32}, {"id": "s512", "max_edge": 512, "alignment": 32}],
+  "tasks": ["semantic", "depth", "normal"],
+  "timing": {"warmup": 1, "repeats": 3, "cpu_threads": 1},
+  "output": {"visualizations": true, "raw_predictions": true}
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "synthetic-components",
+  "description": "Random minimal Tiny validates plumbing, latency and artifact output; no model accuracy claim.",
+  "device": "cpu",
+  "seed": 42,
+  "dataset": {"kind": "synthetic", "synthetic_count": 2, "max_samples": 2},
+  "models": [{"id": "tiny-random", "backend": "tiny", "weights_variant": "random", "options": {"seed": 42}}],
+  "sizes": [{"id": "s32", "max_edge": 32, "alignment": 8}, {"id": "s64", "max_edge": 64, "alignment": 8}],
+  "tasks": ["semantic", "depth", "normal"],
+  "timing": {"warmup": 1, "repeats": 3, "cpu_threads": 1},
+  "output": {"visualizations": true, "raw_predictions": true}
+}

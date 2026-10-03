@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "analysis_date": "2026-10-03",
+  "baseline_commit": "b490e2d3c91d5909de1ef9c9416768ec364ab884",
+  "runtime": {
+    "python": "3.7.15",
+    "platform": "Windows-10-10.0.26100-SP0",
+    "torch": "1.12.0+cu116",
+    "device": "cuda",
+    "cuda": {
+      "name": "NVIDIA GeForce RTX 3060 Laptop GPU",
+      "total_memory_bytes": 6441926656,
+      "torch_cuda": "11.6",
+      "cudnn": 8302
+    },
+    "cpu_threads": 1,
+    "allow_legacy": true
+  },
+  "automated_tests_at_measurement": {
+    "passed": 71,
+    "skipped": 1,
+    "skip_reason": "Windows symlink privilege"
+  },
+  "protocol": {
+    "task": "semantic",
+    "batch_size": 1,
+    "warmup": 2,
+    "repeats": 5,
+    "latency_scope": "Synchronized prediction; paired decode measured once per image; excludes resize, metrics and file I/O",
+    "memory_scope": "PyTorch allocator only; excludes driver/CUDA context and host RAM",
+    "clock_and_temperature_controlled": false
+  },
+  "models": {
+    "tiny-random": {
+      "weights": "random",
+      "parameters": 42492,
+      "quality_claim": false
+    },
+    "lraspp-voc21": {
+      "weights": "official pretrained VOC21",
+      "parameters": 3221538,
+      "weight_sha256": "d234d4eae9d55d5f76de18b77cf0dc62c66fe5c5482758209d00f950c92bb280"
+    }
+  },
+  "flickr": {
+    "jobs": 36,
+    "images": 6,
+    "has_pixel_ground_truth": false,
+    "groups": [
+      {
+        "model": "tiny-random",
+        "size": "s64",
+        "samples": 6,
+        "predict_measurements": 30,
+        "predict_p50_ms": 3.141650000000329,
+        "predict_p95_ms": 5.147114999999535,
+        "decode_p50_ms": 2.104350000000199,
+        "paired_predict_decode_p50_ms": 5.238100000000578,
+        "predict_peak_allocated_bytes": 2263040,
+        "predict_decode_peak_allocated_bytes": 2268160
+      },
+      {
+        "model": "tiny-random",
+        "size": "s128",
+        "samples": 6,
+        "predict_measurements": 30,
+        "predict_p50_ms": 2.744400000000091,
+        "predict_p95_ms": 3.3718300000003865,
+        "decode_p50_ms": 0.929900000000039,
+        "paired_predict_decode_p50_ms": 3.592600000000168,
+        "predict_peak_allocated_bytes": 8382464,
+        "predict_decode_peak_allocated_bytes": 8498176
+      },
+      {
+        "model": "tiny-random",
+        "size": "s256",
+        "samples": 6,
+        "predict_measurements": 30,
+        "predict_p50_ms": 3.4829000000002885,
+        "predict_p95_ms": 3.91461500000001,
+        "decode_p50_ms": 2.9482000000000674,
+        "paired_predict_decode_p50_ms": 6.496999999999975,
+        "predict_peak_allocated_bytes": 32860160,
+        "predict_decode_peak_allocated_bytes": 33418240
+      },
+      {
+        "model": "lraspp-voc21",
+        "size": "s64",
+        "samples": 6,
+        "predict_measurements": 30,
+        "predict_p50_ms": 7.346450000000004,
+        "predict_p95_ms": 12.262699999999693,
+        "decode_p50_ms": 0.34749999999927894,
+        "paired_predict_decode_p50_ms": 7.373800000000763,
+        "predict_peak_allocated_bytes": 14134272,
+        "predict_decode_peak_allocated_bytes": 14134272
+      },
+      {
+        "model": "lraspp-voc21",
+        "size": "s128",
+        "samples": 6,
+        "predict_measurements": 30,
+        "predict_p50_ms": 9.599699999999878,
+        "predict_p95_ms": 11.22335999999935,
+        "decode_p50_ms": 0.46549999999978553,
+        "paired_predict_decode_p50_ms": 10.627149999999475,
+        "predict_peak_allocated_bytes": 16054272,
+        "predict_decode_peak_allocated_bytes": 16054272
+      },
+      {
+        "model": "lraspp-voc21",
+        "size": "s256",
+        "samples": 6,
+        "predict_measurements": 30,
+        "predict_p50_ms": 10.93329999999959,
+        "predict_p95_ms": 12.028405000000394,
+        "decode_p50_ms": 0.3766500000006445,
+        "paired_predict_decode_p50_ms": 11.205850000000517,
+        "predict_peak_allocated_bytes": 25012224,
+        "predict_decode_peak_allocated_bytes": 25012224
+      }
+    ],
+    "image_sha256": {
+      "1000092795": "b012c7e966f6550874ccb85ef9602d483aa89b8623dff9ffcdb0faab8f2ca9ab",
+      "1000366164": "637cdd4d1da34aa480b157e5c4ade184f4e9190078c71622457664f72efa4293",
+      "10010052": "d02c7d039812d6792d3598b8b66fd9dc9d18537ccb0c97c5d408cc3679011058",
+      "1001633352": "e3acd0f05260fcc823cb2c52ef56ddca44fe6bf38227411d8c631c2db02eed90",
+      "1001773457": "b9229f9a913dbfab1486a540cd33a9fb6b877b016c0549cc02e475c8bc648bc7",
+      "100197432": "48cdffe85bad543b472a7b87f909f2f85ad4be17d1126e3c9c5a845b885ecd38"
+    }
+  },
+  "raw_report_sha256": "be23654e4eaf7ec2fef24ad162c1400a0d38dfa42f84ee8a048ff99e5776ba22",
+  "harness_sha256_at_measurement": {
+    "scripts/benchmark/backends.py": "9d34ad72ff9b707df9cf9be0fe6a01c7863b55050d9a53109614a6beceb28129",
+    "scripts/benchmark/runner.py": "44a5b6d00118dbb07797381e162fd12d465ddcd9991c317115c6ca743b153ea6",
+    "scripts/benchmark/tasks.py": "1e629fc6e8eaff8983a0b03ac87986be047846e154fe87c224ae5176027415fe"
+  },
+  "scope_limits": [
+    "SANA/FLUX full inference not executed",
+    "published quality metrics not locally reproduced",
+    "driver/context VRAM excluded",
+    "batch=1 and six images only",
+    "paired predict/decode has one measurement per image; no I/O",
+    "CPU synthetic and earlier GPU component runs use recorded earlier harness hashes"
+  ]
+}
