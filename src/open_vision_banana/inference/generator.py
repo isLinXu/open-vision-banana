@@ -102,6 +102,51 @@ def _pil_to_tensor(img: Image.Image, device: str, dtype: torch.dtype) -> torch.T
     return arr.to(device=device, dtype=dtype)
 
 
+def resolve_hunyuan_image3_source(model_source: str) -> str:
+    """Return a local HunyuanImage-3.0-Instruct directory whose name has no '.'.
+
+    The official loader cannot import remote code from a directory name that
+    contains a dot, including the Hub id ``tencent/HunyuanImage-3.0-Instruct``.
+    A local directory is used as given. A Hub id is snapshotted under a
+    dot-free cache folder.
+    """
+    import os
+
+    path = Path(model_source)
+    if path.is_dir():
+        if "." in path.name:
+            raise ValueError(
+                f"HunyuanImage-3.0-Instruct directory name {path.name!r} contains '.'. "
+                "Rename it, for example HunyuanImage-3-Instruct."
+            )
+        return str(path)
+    safe = model_source.replace("/", "--").replace(".", "-")
+    cache_root = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
+    local_dir = cache_root / "open-vision-banana" / safe
+    from huggingface_hub import snapshot_download
+
+    snapshot_download(repo_id=model_source, local_dir=str(local_dir))
+    return str(local_dir)
+
+
+def load_hunyuan_image3_instruct(model_source: str, dtype: torch.dtype):
+    """Load HunyuanImage-3.0-Instruct the way its model card specifies."""
+    source = resolve_hunyuan_image3_source(model_source)
+    from transformers import AutoModelForCausalLM
+
+    model = AutoModelForCausalLM.from_pretrained(
+        source,
+        attn_implementation="sdpa",
+        trust_remote_code=True,
+        torch_dtype=dtype,
+        device_map="auto",
+        moe_impl="eager",
+        moe_drop_tokens=True,
+    )
+    model.load_tokenizer(source)
+    return model
+
+
 class BaseGenerator:
     """FLUX.1 base generation wrapper with LoRA support.
 
@@ -199,6 +244,17 @@ class BaseGenerator:
             f"Loading {pipe_class_name} ({family}) from {self.model_name!r} …"
         )
 
+        if pipe_class_name == "HunyuanImage3Instruct":
+            if self.lora_path is not None:
+                raise ValueError(
+                    "HunyuanImage-3.0-Instruct loads the official checkpoint as-is. "
+                    "A LoRA path is not applied."
+                )
+            model_source = resolve_pretrained_source(self.model_config, self.model_name)
+            self._t2i_pipe = load_hunyuan_image3_instruct(model_source, self.dtype)
+            logger.info(f"{pipe_class_name} loaded successfully (family={family})")
+            return
+
         # Lazy-import the correct pipeline class
         import importlib
         try:
@@ -217,6 +273,10 @@ class BaseGenerator:
         }
         if Path(model_source).is_dir():
             pipe_kwargs["local_files_only"] = True
+            fp16_transformer = Path(model_source) / "transformer" / "diffusion_pytorch_model.fp16.safetensors"
+            default_transformer = Path(model_source) / "transformer" / "diffusion_pytorch_model.safetensors"
+            if fp16_transformer.is_file() and not default_transformer.is_file():
+                pipe_kwargs["variant"] = "fp16"
         pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
         if family == "sdxl" and hasattr(pipe, "scheduler"):
             # SSD-1B/SDXL LoRA training uses epsilon prediction. Keep the base
@@ -637,6 +697,17 @@ class BaseGenerator:
                 guidance_scale=guidance_scale,
                 seed=seed,
             )
+        if image is not None and (
+            getattr(self.model_config, "instruction_editing", False)
+            or getattr(self.model_config, "in_context_conditioning", False)
+        ):
+            return self._generate_instruction_edit(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                seed=seed,
+            )
         if image is not None and family == "flux":
             return self._generate_flux_img2img(
                 prompt=prompt,
@@ -745,6 +816,198 @@ class BaseGenerator:
             max_length=max_length,
             guidance_scale=cfg,
         )
+
+    @torch.no_grad()
+    def _generate_instruction_edit(
+        self,
+        *,
+        prompt: str | list[str],
+        image: torch.Tensor | Image.Image,
+        num_inference_steps: int,
+        guidance_scale: float,
+        seed: int | None,
+    ) -> torch.Tensor:
+        """Image+prompt editing through the model's official pipeline.
+
+        FLUX.1 Kontext keeps its in-context call (``_auto_resize=False``). Other
+        editors pass only arguments that pipeline declares: Qwen-Image-Edit uses
+        ``true_cfg_scale`` plus a blank negative prompt, and pipelines without
+        ``height``/``width`` (LongCat-Image-Edit) are not given them.
+        """
+        if self.model_config.pipeline_class == "FluxKontextPipeline":
+            return self._generate_kontext(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                seed=seed,
+            )
+        if self.model_config.pipeline_class == "HunyuanImage3Instruct":
+            return self._generate_hunyuan_image3_instruct(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=num_inference_steps,
+                seed=seed,
+            )
+        pipe = self._t2i_pipe
+        if pipe is None:
+            raise RuntimeError("Instruction-editing pipeline is not loaded")
+        import inspect
+
+        default_steps = int(getattr(self.model_config, "default_num_inference_steps", 28) or 28)
+        steps = default_steps if num_inference_steps <= 1 else num_inference_steps
+        guidance = (
+            guidance_scale if guidance_scale > 0 else float(self.model_config.default_guidance_scale)
+        )
+        parameters = inspect.signature(pipe.__call__).parameters
+        explicit = {
+            name
+            for name, parameter in parameters.items()
+            if parameter.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            )
+        }
+        pil_images = self._to_pil_list(image)
+        prompts = [prompt] * len(pil_images) if isinstance(prompt, str) else list(prompt)
+        if len(prompts) != len(pil_images):
+            raise ValueError(f"{len(prompts)} prompts for {len(pil_images)} images")
+        outputs = []
+        for index, (pil, text) in enumerate(zip(pil_images, prompts, strict=True)):
+            width, height = pil.size
+            if "images" in explicit and "image" not in explicit:
+                call = {"images": [pil], "prompt": text}
+            else:
+                call = {"image": pil, "prompt": text}
+            if "num_inference_steps" in explicit:
+                call["num_inference_steps"] = steps
+            if "height" in explicit:
+                call["height"] = max(16, height // 16 * 16)
+            if "width" in explicit:
+                call["width"] = max(16, width // 16 * 16)
+            if "true_cfg_scale" in explicit:
+                call["true_cfg_scale"] = guidance
+                if "negative_prompt" in explicit:
+                    call["negative_prompt"] = " "
+            elif "guidance_scale" in explicit:
+                call["guidance_scale"] = guidance
+            if seed is not None and "generator" in explicit:
+                call["generator"] = torch.Generator(device=self.device).manual_seed(seed + index)
+            result = pipe(**call)
+            tensor = self._output_to_tensor(result)
+            if tensor.shape[-2:] != (height, width):
+                tensor = torch.nn.functional.interpolate(
+                    tensor, size=(height, width), mode="bilinear", align_corners=False
+                )
+            outputs.append(tensor)
+        return torch.cat(outputs, dim=0).clamp(0, 1)
+
+    @torch.no_grad()
+    def _generate_hunyuan_image3_instruct(
+        self,
+        *,
+        prompt: str | list[str],
+        image: torch.Tensor | Image.Image,
+        num_inference_steps: int,
+        seed: int | None,
+    ) -> torch.Tensor:
+        """HunyuanImage-3.0-Instruct editing via ``generate_image``.
+
+        One source image is written to a temporary PNG because the published
+        call passes file paths. ``infer_align_image_size`` keeps the edit on
+        the input raster; the tensor is resized back if the sample differs.
+        """
+        import tempfile
+
+        model = self._t2i_pipe
+        if model is None or not hasattr(model, "generate_image"):
+            raise RuntimeError("HunyuanImage-3.0-Instruct is not loaded")
+        default_steps = int(getattr(self.model_config, "default_num_inference_steps", 50) or 50)
+        steps = default_steps if num_inference_steps <= 1 else num_inference_steps
+        pil_images = self._to_pil_list(image)
+        prompts = [prompt] * len(pil_images) if isinstance(prompt, str) else list(prompt)
+        if len(prompts) != len(pil_images):
+            raise ValueError(f"{len(prompts)} prompts for {len(pil_images)} images")
+        outputs = []
+        for index, (pil, text) in enumerate(zip(pil_images, prompts, strict=True)):
+            width, height = pil.size
+            with tempfile.TemporaryDirectory(prefix="hunyuan-image3-") as tmp:
+                image_path = Path(tmp) / "source.png"
+                pil.save(image_path)
+                _cot, samples = model.generate_image(
+                    prompt=text,
+                    image=[str(image_path)],
+                    seed=None if seed is None else seed + index,
+                    image_size="auto",
+                    use_system_prompt="en_unified",
+                    bot_task="think_recaption",
+                    infer_align_image_size=True,
+                    diff_infer_steps=steps,
+                    verbose=0,
+                )
+                edited = samples[0]
+                if isinstance(edited, Image.Image):
+                    edited = edited.convert("RGB").copy()
+                else:
+                    edited = Image.open(edited).convert("RGB")
+            tensor = self._output_to_tensor(type("_Out", (), {"images": [edited]})())
+            if tensor.shape[-2:] != (height, width):
+                tensor = torch.nn.functional.interpolate(
+                    tensor, size=(height, width), mode="bilinear", align_corners=False
+                )
+            outputs.append(tensor)
+        return torch.cat(outputs, dim=0).clamp(0, 1)
+
+    @torch.no_grad()
+    def _generate_kontext(
+        self,
+        *,
+        prompt: str | list[str],
+        image: torch.Tensor | Image.Image,
+        num_inference_steps: int,
+        guidance_scale: float,
+        seed: int | None,
+    ) -> torch.Tensor:
+        """Kontext-style editing inference: source image as in-context tokens, noise start.
+
+        Uses the official ``FluxKontextPipeline`` call, whose conventions (context
+        tokens with position-id axis 0 = 1, sigma 1 -> 0, target tokens only) are
+        exactly what ``ModelBackend.forward(context_latents=...)`` trains. Output
+        keeps the input raster size so decoders/evaluators stay aligned.
+        """
+        pipe = self._t2i_pipe
+        if pipe is None:
+            raise RuntimeError("Kontext pipeline is not loaded")
+        default_steps = int(getattr(self.model_config, "default_num_inference_steps", 28) or 28)
+        steps = default_steps if num_inference_steps <= 1 else num_inference_steps
+        guidance = guidance_scale if guidance_scale > 0 else float(self.model_config.default_guidance_scale)
+        pil_images = self._to_pil_list(image)
+        prompts = [prompt] * len(pil_images) if isinstance(prompt, str) else list(prompt)
+        if len(prompts) != len(pil_images):
+            raise ValueError(f"{len(prompts)} prompts for {len(pil_images)} images")
+        outputs = []
+        for index, (pil, text) in enumerate(zip(pil_images, prompts, strict=True)):
+            width, height = pil.size
+            generator = None
+            if seed is not None:
+                generator = torch.Generator(device=self.device).manual_seed(seed + index)
+            result = pipe(
+                image=pil,
+                prompt=text,
+                height=max(16, height // 16 * 16),
+                width=max(16, width // 16 * 16),
+                num_inference_steps=steps,
+                guidance_scale=guidance,
+                generator=generator,
+                _auto_resize=False,
+            )
+            tensor = self._output_to_tensor(result)
+            if tensor.shape[-2:] != (height, width):
+                tensor = torch.nn.functional.interpolate(
+                    tensor, size=(height, width), mode="bilinear", align_corners=False
+                )
+            outputs.append(tensor)
+        return torch.cat(outputs, dim=0).clamp(0, 1)
 
     @torch.no_grad()
     def _generate_flux_img2img(

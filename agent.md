@@ -12,7 +12,7 @@
 **PDF**: `paper/Image Generators are Generalist Vision Learners.pdf`
 
 ### Core Thesis
-The paper demonstrates that **instruction-tuning a pre-trained image generator** on a mixture of its original training data + vision task data (parameterized as RGB images) yields a model that achieves SOTA zero-shot transfer on segmentation, depth, and normal estimation — while preserving 90%+ generation capability.
+The paper demonstrates that **instruction-tuning a pre-trained image generator** on a mixture of its original training data + vision task data (parameterized as RGB images) yields a model that, per the paper, achieves SOTA zero-shot transfer on segmentation, depth, and normal estimation while retaining its generation capability (human win rates 53.5% GenAI-Bench / 47.8% ImgEdit vs NBP; the "90%+" figure is a project shorthand, not a number from the paper).
 
 ### Disclaimer: Unofficial Implementation
 **This is an unofficial, community-driven open-source reimplementation.** It is NOT affiliated with, endorsed by, or verified by the original paper authors. The paper's official code (if any) is separate from this repository.
@@ -43,7 +43,7 @@ The paper demonstrates that **instruction-tuning a pre-trained image generator**
 ### What Is NOT Done (Honest Boundaries)
 - **No paper-matching benchmark results**: The paper reports SOTA on Cityscapes (mIoU 69.9), SA-Co/Gold (cgF1 47.5), etc. This repo has NOT reproduced these numbers.
 - **Not all 10 vision tasks are equally verified**: Depth, normal, and semantic segmentation have the most testing. Tasks like optical flow, keypoint detection, and object detection have mapper code but limited end-to-end training verification.
-- **Not all registered models are verified**: FLUX and SANA have been trained. Z-Image, Qwen-Image, Lumina2, Chroma are registered in `model_registry.py` but have NOT been trained end-to-end.
+- **Not all registered models are verified**: FLUX and SANA have been trained. Z-Image, Qwen-Image, Lumina2, Chroma are registered in `model_registry.py` but have NOT been trained end-to-end. Instruction editors (`qwen-image-edit`, `qwen-image-edit-2509`, `longcat-image-edit`, `flux2-klein`, `joyimage-edit`, `joyimage-edit-plus`, `instruct-pix2pix`, `sdxl-instruct-pix2pix`, `hunyuan-image3-instruct`, `hunyuan-image3-instruct-distil`, and `flux-kontext`) have a training forward. The diffusers editors have been executed on the official transformer and UNet classes built at tiny width. HunyuanImage-3.0-Instruct builds its token batch with `prepare_model_inputs` and calls the published forward; a full fine-tune of that 80B checkpoint has not been run. Qwen and Joy still receive the text embeddings the trainer already encoded; `encode_text` does not insert their vision-language image tokens. `hunyuan-image` remains the HunyuanImage 2.1 text-to-image pipeline.
 - **Export/serving modules**: Code exists in `src/open_vision_banana/export/` and `src/open_vision_banana/serving/` but integration with the new unified training framework has not been verified.
 - **Generation preservation**: The paper claims 90%+ generation capability is preserved. This has NOT been measured in this repo.
 

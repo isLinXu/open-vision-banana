@@ -68,6 +68,7 @@ Before doing anything, use a **single `AskUserQuestion` call that asks all three
    - **SANA-1600M** (recommended, 1.6B params, fits 24GB VRAM) → `sana-1600m`
    - **FLUX.1-dev** (12B params, requires 4-bit quantization for 24GB) → `flux-dev`
    - **Other registered models** (z-image, qwen-image, lumina2, chroma) → registered but NOT training-verified
+   - **Instruction editors** `flux-kontext`, `qwen-image-edit`, `qwen-image-edit-2509`, `longcat-image-edit`, `flux2-klein`, `joyimage-edit`, `joyimage-edit-plus`, `instruct-pix2pix`, `sdxl-instruct-pix2pix`, `hunyuan-image3-instruct`, `hunyuan-image3-instruct-distil` have a training forward. The diffusers ones execute on the official classes at tiny width. HunyuanImage-3.0-Instruct calls `prepare_model_inputs` and the published forward; a full fine-tune of that 80B checkpoint has not been run. Qwen and Joy text encoding does not insert vision-language image tokens. `hunyuan-image` is text-to-image.
 
 3. **Vision tasks** — which tasks to train on:
    - **3-task mixture** (depth + normal + segmentation) — recommended default

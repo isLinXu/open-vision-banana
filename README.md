@@ -9,7 +9,7 @@
 [![Tests](https://img.shields.io/badge/tests-1000+-green.svg)](tests/)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.20329-b31b1b.svg)](https://arxiv.org/abs/2604.20329)
 
-*Open-source implementation of the Vision Banana paradigm — achieving SOTA zero-shot transfer on segmentation, depth, and normal estimation through image generation.*
+*Unofficial open-source implementation of the Vision Banana paradigm (RGB-parameterized vision tasks via image generation). The paper reports SOTA zero-shot transfer; this repo has not yet reproduced those results — see [Status](#benchmarks-from-paper).*
 
 </div>
 
@@ -37,7 +37,7 @@
 
 Vision Banana demonstrates that **state-of-the-art visual understanding can emerge from image generation pretraining**. By instruction-tuning diffusion models on a mixture of their original training data alongside vision task data, we obtain models that achieve strong zero-shot transfer on segmentation, depth estimation, and surface normal estimation — all through the lens of image generation.
 
-> **Key insight**: All vision tasks are parameterized as RGB images, enabling seamless integration with generative models while preserving 90%+ generation capability.
+> **Key insight**: All vision tasks are parameterized as RGB images, enabling seamless integration with generative models while (per the paper) retaining the base model's generation capability. Generation retention has not been measured in this repo.
 
 **Highlights:**
 - 🎨 **Unified RGB paradigm** — All 10 vision tasks encoded as RGB, decoded back to structured outputs
@@ -169,6 +169,8 @@ result = model.predict(image=input_image, task="depth")
 | SANA-1600M | sana | 1600M | Apache-2.0 | ~16GB |
 | Lumina2 | lumina2 | ~3B | Apache-2.0 | ~16GB |
 | Chroma | chroma | ~3B | MIT | ~16GB |
+
+Instruction-editing checkpoints (source image + prompt) are registered as `flux-kontext`, `qwen-image-edit`, `qwen-image-edit-2509`, `longcat-image-edit`, `flux2-klein`, `joyimage-edit`, `joyimage-edit-plus`, `instruct-pix2pix`, `sdxl-instruct-pix2pix`, `hunyuan-image3-instruct`, and `hunyuan-image3-instruct-distil`. The registered `hunyuan-image` entry stays the HunyuanImage 2.1 text-to-image pipeline. Each editor has a training forward that matches its official conditioning. The diffusers editors have been executed on their official transformer and UNet classes at tiny width. HunyuanImage-3.0-Instruct builds tokens with `prepare_model_inputs` and calls the published `forward` with the noised target in `images` and the source in `cond_vae_images`; its checkpoint directory name cannot contain a dot. A full fine-tune of that 80B checkpoint has not been run. Qwen and Joy still receive the trainer's text embeddings; that encoding does not insert their vision-language image tokens.
 
 ### CLI Inference
 
@@ -312,21 +314,24 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 - LoRA rank=16~64, alpha=32~128 with rsLoRA scaling (α/√r)
 - 9:1 visual-to-language data mixing ratio
 - Only 0.5%-1% of total parameters trained
-- Preserves 90%+ generation capability
+- Aims to preserve generation capability (not yet measured here; the paper reports human win rates of 53.5% / 47.8% vs the base model)
 - Supports 18+ model families via unified registry
 
 ---
 
 ## Benchmarks (from paper)
 
+> These are the **paper's** numbers (Nano Banana Pro base, undisclosed in-house data). This repository has **not** reproduced them; see `docs/plans/2026-08-31-acceptance-stage-progress.md` for the current local status.
+
 | Task | Benchmark | Metric | Vision Banana | Previous SOTA |
 |------|-----------|:------:|:-------------:|:-------------:|
 | Semantic Seg | Cityscapes | mIoU | **69.9** | 65.2 (SAM 3) |
 | Instance Seg | SA-Co/Gold | cgF1 | **47.5** | 24.6 (OWLv2) |
-| Referring Seg | RefCOCOg | cIoU | **73.8** | 67.7 (LocHeads) |
-| Referring Seg | ReasonSeg | gIoU | **79.3** | 77.0 (SAM3+GPT) |
+| Referring Seg | RefCOCOg | cIoU | **73.8** | 73.4 (SAM 3 + Gemini 2.5 Pro) |
+| Referring Seg | ReasonSeg | gIoU | **79.3** | 77.0 (SAM 3 + Gemini 2.5 Pro) |
 | Depth | 6-dataset avg | δ1↑ | **0.882** | 0.823 (UniK3D) |
-| Normal | Indoor avg | mean°↓ | **15.05** | 15.72 (Lotus-2) |
+| Depth | 4-dataset avg (NYU/ETH3D/DIODE/KITTI) | δ1↑ | **0.929** | 0.918 (Depth Anything 3) |
+| Normal | 4-dataset avg | mean°↓ | **18.928** | 19.642 (Lotus-2) |
 
 ---
 

@@ -11,6 +11,7 @@ Trainer class can work with any registered model.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,15 @@ from ..model_registry import (
 )
 from ..model_registry import (
     vae_encode as registry_vae_encode,
+)
+from .edit_forward import (
+    channel_concat_edit_forward,
+    edit_latent_layout,
+    flux2_edit_forward,
+    hunyuan_edit_forward,
+    joy_edit_forward,
+    longcat_edit_forward,
+    qwen_edit_forward,
 )
 from .flow_matching import (
     FlowScheduler,
@@ -70,6 +80,23 @@ def _log_bnb_int8_cast_warning_once() -> None:
     bnb_logger = logging.getLogger(_BNB_INT8_LOGGER)
     if not any(isinstance(f, _CastWarningOnceFilter) for f in bnb_logger.filters):
         bnb_logger.addFilter(_CastWarningOnceFilter())
+
+
+def _tensors_to_pils(images: torch.Tensor):
+    """Convert a [-1, 1] image batch into one PIL image per sample."""
+    from PIL import Image
+
+    pixels = ((images.detach().float().cpu() + 1.0) * 127.5).clamp(0, 255).to(torch.uint8)
+    return [Image.fromarray(pixels[index].permute(1, 2, 0).numpy()) for index in range(pixels.shape[0])]
+
+
+def reject_unimplemented_instruction_edit(model_config) -> None:
+    """Refuse an instruction editor that has no training forward."""
+    if getattr(model_config, "instruction_editing", False) and edit_latent_layout(model_config) is None:
+        raise ValueError(
+            f"{model_config.name} is an instruction-editing model without a training forward. "
+            f"Inference uses {model_config.pipeline_class}."
+        )
 
 
 class ModelBackend:
@@ -114,9 +141,15 @@ class ModelBackend:
         self.model_name = model_name
         self.quantize = quantize
 
-        # Resolve model config
-        self.model_config = resolve_model_config(model_name)
+        # Registry configs are shared; keep backend overrides and mutable fields local.
+        self.model_config = deepcopy(resolve_model_config(model_name))
+        if lora_targets is not None:
+            self.model_config.lora_target_modules = list(lora_targets)
         self.family = self.model_config.family
+        reject_unimplemented_instruction_edit(self.model_config)
+        if edit_latent_layout(self.model_config) == "hunyuan":
+            self._load_hunyuan_instruct()
+            return
 
         logger.info(
             "Loading model '%s' (family=%s, backbone=%s) on %s @ %s",
@@ -163,9 +196,33 @@ class ModelBackend:
             f"{total:,}",
             100 * trainable / total,
         )
+        logger.info(
+            "Trainable parameter names: %s",
+            [name for name, parameter in self.peft_model.named_parameters() if parameter.requires_grad],
+        )
 
         # Flow scheduler
         self.flow_scheduler = FlowScheduler()
+
+    def _load_hunyuan_instruct(self) -> None:
+        """Load HunyuanImage-3.0-Instruct for its published ``forward``.
+
+        The checkpoint is an 80B mixture-of-experts causal model. This path does
+        not wrap it in a diffusion LoRA; the training forward is
+        ``hunyuan_edit_forward``.
+        """
+        from ..inference.generator import load_hunyuan_image3_instruct
+        from ..model_registry import resolve_pretrained_source
+
+        source = resolve_pretrained_source(self.model_config, self.model_name)
+        model = load_hunyuan_image3_instruct(source, self.dtype)
+        self.peft_model = model
+        self.backbone = model
+        self.vae = getattr(model, "vae", None)
+        self.components = None
+        self.pipe = None
+        self.flow_scheduler = FlowScheduler()
+        logger.info("Loaded HunyuanImage-3.0-Instruct for the edit training forward")
 
     def _load_quantized(self, quantize: str) -> None:
         """Load pipeline with quantization for large models."""
@@ -198,7 +255,8 @@ class ModelBackend:
 
     def _load_flux_quantized(self, model_path: str) -> None:
         """Load FLUX with 4-bit transformer + 8-bit T5 for 24GB VRAM."""
-        from diffusers import FluxPipeline, FluxTransformer2DModel
+        import diffusers
+        from diffusers import FluxTransformer2DModel
         from transformers import BitsAndBytesConfig, T5EncoderModel
 
         # 4-bit transformer
@@ -225,8 +283,14 @@ class ModelBackend:
         )
         _log_bnb_int8_cast_warning_once()
 
-        # Full pipeline
-        pipe = FluxPipeline.from_pretrained(
+        # Kontext's model_index names FluxKontextPipeline. Loading it as
+        # FluxPipeline rejects the repo. Training still uses ModelBackend.forward
+        # with context latents; the pipeline class only has to assemble weights.
+        pipeline_name = getattr(self.model_config, "pipeline_class", "FluxPipeline")
+        pipeline_cls = getattr(diffusers, pipeline_name, None)
+        if pipeline_cls is None:
+            raise ImportError(f"diffusers has no pipeline class {pipeline_name}")
+        pipe = pipeline_cls.from_pretrained(
             model_path,
             transformer=transformer,
             text_encoder_2=text_encoder_2,
@@ -288,6 +352,11 @@ class ModelBackend:
         """
         if self.family == "flux" and self.pipe is not None:
             return self._flux_encode_text(prompts, device, dtype)
+        if edit_latent_layout(self.model_config) == "hunyuan":
+            raise ValueError(
+                "HunyuanImage-3.0-Instruct text encoding needs the source image. "
+                "Use encode_hunyuan_edit(prompts, images)."
+            )
 
         # Use model_registry's unified encode_text
         hidden_states, second = registry_encode_text(self.components, prompts, device, dtype)
@@ -336,6 +405,38 @@ class ModelBackend:
             "text_ids": text_ids.to(device=device, dtype=dtype) if text_ids is not None else None,
         }
 
+    def encode_hunyuan_edit(self, prompts: list[str], images: torch.Tensor) -> dict[str, Any]:
+        """Build the token batch HunyuanImage-3.0-Instruct.forward expects.
+
+        ``images`` is [B, 3, H, W] in [-1, 1]. Each sample is one reference image.
+        """
+        model = self.peft_model
+        if not hasattr(model, "prepare_model_inputs"):
+            raise RuntimeError(
+                "HunyuanImage-3.0-Instruct is not loaded; its prepare_model_inputs is missing"
+            )
+        prepared = model.prepare_model_inputs(
+            prompt=list(prompts),
+            image=[[pil] for pil in _tensors_to_pils(images)],
+            mode="gen_image",
+            bot_task="image",
+            image_size="auto",
+            device=self.device,
+        )
+        token_ids = prepared["input_ids"]
+        return {
+            "encoder_hidden_states": token_ids,
+            "hunyuan_inputs": {
+                "input_ids": token_ids,
+                "attention_mask": prepared.get("attention_mask"),
+                "rope_image_info": prepared.get("rope_image_info"),
+                "image_mask": prepared["image_mask"],
+                "timesteps_index": prepared["timesteps_index"],
+                "cond_vae_image_mask": prepared["cond_vae_image_mask"],
+                "cond_timesteps_index": prepared["cond_timesteps_index"],
+            },
+        }
+
     # ── VAE encode/decode ──────────────────────────────────────────────────
 
     @torch.no_grad()
@@ -348,6 +449,9 @@ class ModelBackend:
         Returns:
             Latents in model-appropriate scale.
         """
+        if edit_latent_layout(self.model_config) == "hunyuan" and hasattr(self.peft_model, "vae_encode"):
+            _timestep, latents = self.peft_model.vae_encode(images)
+            return latents.to(self.dtype)
         latents = registry_vae_encode(self.vae, images, self.model_config)
         return latents.to(self.dtype)
 
@@ -371,6 +475,7 @@ class ModelBackend:
         text_cond: dict[str, Any],
         batch_size: int,
         guidance: float | None = None,
+        context_latents: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Unified forward that handles packing, position IDs, guidance.
 
@@ -380,11 +485,34 @@ class ModelBackend:
             text_cond: Dict from encode_text().
             batch_size: Batch size.
             guidance: Guidance scale (for models that need it).
+            context_latents: Clean source-image latents [B, C, H, W] for
+                in-context (Kontext-style) conditioning. Only valid when
+                ``model_config.in_context_conditioning`` is set. The tokens are
+                appended after the target tokens with position-id axis 0 = 1
+                (target tokens use 0), and only the target tokens' prediction
+                is returned.
 
         Returns:
-            Predicted velocity [B, C, H, W].
+            Predicted velocity [B, C, H, W] in this repo's flow frame.
         """
+        reject_unimplemented_instruction_edit(self.model_config)
+        layout = edit_latent_layout(self.model_config)
+        if layout not in (None, "kontext"):
+            if context_latents is None:
+                raise ValueError(
+                    f"{self.model_name} training forward needs the source image as context_latents"
+                )
+            return self._forward_edit(
+                latents, timesteps, text_cond, guidance, context_latents, layout
+            )
         latent_h, latent_w = latents.shape[-2], latents.shape[-1]
+        in_context = context_latents is not None
+        if in_context and not (self.model_config.in_context_conditioning and self.family == "flux"):
+            raise ValueError(
+                f"context_latents given but model '{self.model_name}' does not use "
+                "in-context conditioning (needs a Kontext-style flux model)"
+            )
+        n_target_tokens = (latent_h // 2) * (latent_w // 2)
 
         # Handle latent packing for FLUX/HiDream
         if FlowScheduler.needs_latent_packing(self.family):
@@ -393,13 +521,28 @@ class ModelBackend:
             img_ids = prepare_latent_image_ids(
                 batch_size, packed_h, packed_w, self.device, self.dtype
             )
+            if in_context:
+                context_tokens = pack_latents(context_latents.to(latents.dtype), batch_size)
+                context_ids = prepare_latent_image_ids(
+                    batch_size,
+                    context_latents.shape[-2] // 2,
+                    context_latents.shape[-1] // 2,
+                    self.device,
+                    self.dtype,
+                )
+                context_ids[:, 0] = 1  # axis 0 marks "this token belongs to the conditioning image"
+                latents = torch.cat([latents, context_tokens], dim=1)
+                img_ids = torch.cat([img_ids, context_ids], dim=0)
         else:
             img_ids = None
 
         # Build forward kwargs
         fwd_kwargs: dict[str, Any] = {
             "latents": latents,
-            "timesteps": self.model_timesteps(timesteps, batch_size),
+            # FLUX's native timestep is sigma (1 = pure noise). This repo's flow
+            # time t runs 0 (source=noise) -> 1 (target), so in-context mode feeds
+            # 1 - t and flips the output sign below to stay in the repo's frame.
+            "timesteps": self.model_timesteps(1.0 - timesteps if in_context else timesteps, batch_size),
             "encoder_hidden_states": text_cond["encoder_hidden_states"],
             "config": self.model_config,
         }
@@ -408,6 +551,8 @@ class ModelBackend:
         if FlowScheduler.needs_guidance(self.family):
             if guidance is not None:
                 fwd_kwargs["guidance"] = guidance
+            elif in_context:
+                fwd_kwargs["guidance"] = float(self.model_config.default_guidance_scale)
             elif self.family == "flux":
                 fwd_kwargs["guidance"] = 50.0  # FLUX default guidance
 
@@ -440,11 +585,52 @@ class ModelBackend:
         # Run forward through peft_model (so LoRA adapters participate)
         predicted = self._peft_forward(latents, timesteps, fwd_kwargs)
 
+        if in_context:
+            # Drop the context tokens' outputs; native v = noise - target is the
+            # negative of this repo's v = target - source (source = noise).
+            predicted = -predicted[:, :n_target_tokens]
+
         # Unpack output if packed
         if FlowScheduler.needs_latent_packing(self.family) and predicted.dim() == 3:
             predicted = unpack_latents(predicted, latent_h, latent_w)
 
         return predicted
+
+    def _forward_edit(
+        self,
+        latents: torch.Tensor,
+        timesteps: torch.Tensor,
+        text_cond: dict[str, Any],
+        guidance: float | None,
+        context_latents: torch.Tensor,
+        layout: str,
+    ) -> torch.Tensor:
+        context_latents = context_latents.to(dtype=latents.dtype)
+        if layout == "qwen_packed":
+            return qwen_edit_forward(
+                self.peft_model, latents, context_latents, timesteps, text_cond, guidance
+            )
+        if layout == "longcat_packed":
+            return longcat_edit_forward(
+                self.peft_model, latents, context_latents, timesteps, text_cond
+            )
+        if layout == "flux2_packed":
+            return flux2_edit_forward(
+                self.peft_model, latents, context_latents, timesteps, text_cond
+            )
+        if layout == "joy_slots":
+            return joy_edit_forward(
+                self.peft_model, latents, context_latents, timesteps, text_cond
+            )
+        if layout == "channel_concat":
+            return channel_concat_edit_forward(
+                self.peft_model, latents, context_latents, timesteps, text_cond, self.model_config
+            )
+        if layout == "hunyuan":
+            return hunyuan_edit_forward(
+                self.peft_model, latents, context_latents, timesteps, text_cond
+            )
+        raise ValueError(f"No training forward for edit layout {layout}")
 
     def model_timesteps(self, timesteps: torch.Tensor, batch_size: int) -> torch.Tensor:
         """Convert flow time in [0, 1] to what the backbone's timestep embedding expects.
@@ -576,7 +762,7 @@ class ModelBackend:
         batch_size: int,
     ) -> dict[str, Any]:
         """Apply classifier-free guidance dropout to text conditioning."""
-        if cfg_dropout_rate <= 0:
+        if cfg_dropout_rate <= 0 or "hunyuan_inputs" in text_cond:
             return text_cond
 
         drop_mask = torch.rand(batch_size, device=self.device) < cfg_dropout_rate
