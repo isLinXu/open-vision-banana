@@ -40,7 +40,8 @@ def train_and_save(trainer: Trainer, steps: int = 3):
         trainer.ema.update(model)
     trainer.callbacks.best_val_loss = 0.25
     return trainer.callbacks.on_checkpoint(
-        steps, model, trainer.optimizer, trainer.lr_scheduler, ema=trainer.ema
+        steps, model, trainer.optimizer, trainer.lr_scheduler, ema=trainer.ema,
+        selection_protocol=trainer._selection_protocol(),
     )
 
 
@@ -168,3 +169,50 @@ def test_cli_resume_flags_override():
     config = apply_cli_overrides(TrainingConfig(), args)
     assert config.resume == "ckpt"
     assert config.resume_weights_only is True
+
+
+def test_training_without_ema(tmp_path):
+    trainer = make_trainer(tmp_path, seed=0, steps=1, grad_accum=1, ema_enabled=False)
+    trainer.ema = None
+    trainer.start_step = 0
+    trainer.trainable_params = list(trainer.backend.peft_model.parameters())
+    trainer.train_loader = DataLoader(list(range(2)), batch_size=1)
+    trainer.val_loader = None
+    trainer._train_step = lambda batch, step: {
+        "loss": trainer.backend.peft_model(torch.ones(1, 4)).sum(),
+        "total_loss": 0.0, "flow_loss": 0.0, "depth_aux": 0.0, "normal_aux": 0.0,
+    }
+    trainer.train()
+    checkpoint = torch.load(trainer.callbacks.output_dir / "checkpoint-1_final/lora.pt")
+    assert "ema_state_dict" not in checkpoint
+
+
+def test_changed_validation_protocol_resets_best_score(tmp_path):
+    source = make_trainer(tmp_path, seed=0)
+    path = train_and_save(source)
+    source_payload = torch.load(path / "lora.pt")
+    source_payload["selection_protocol"] = "old_crop_loss"
+    torch.save(source_payload, path / "lora.pt")
+    resumed = make_trainer(tmp_path, seed=1)
+    resumed._resume(str(path))
+    assert resumed.callbacks.best_val_loss == float("inf")
+
+
+def test_missing_manifest_fails_before_model_loading(tmp_path, monkeypatch):
+    import open_vision_banana.training.trainer as module
+
+    called = []
+    monkeypatch.setattr(module, "ModelBackend", lambda **kwargs: called.append(kwargs))
+    config = TrainingConfig(pair_manifest=str(tmp_path / "missing.jsonl"), device="cpu")
+    with pytest.raises(FileNotFoundError):
+        Trainer(config)
+    assert not called
+
+
+def test_validation_protocol_changes_with_manifest_content(tmp_path):
+    manifest = tmp_path / "pairs.jsonl"
+    manifest.write_text("first")
+    trainer = make_trainer(tmp_path, seed=0, pair_manifest=str(manifest))
+    first = trainer._selection_protocol()
+    manifest.write_text("second")
+    assert trainer._selection_protocol() != first

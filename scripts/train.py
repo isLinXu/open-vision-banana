@@ -21,6 +21,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -34,15 +35,20 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 def main():
     from open_vision_banana.training.config import (
-        apply_cli_overrides,
         build_arg_parser,
         load_config,
     )
-    from open_vision_banana.training.trainer import Trainer
 
     # Parse args and load config
     parser = build_arg_parser()
     args = parser.parse_args()
+    try:
+        config = load_config(args)
+    except (ValueError, TypeError, OSError) as exc:
+        parser.error(str(exc))
+    if args.print_effective_config:
+        print(json.dumps(config.to_dict(), indent=2, sort_keys=True, allow_nan=False))
+        return
 
     # Setup logging
     logging.basicConfig(
@@ -50,10 +56,6 @@ def main():
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[logging.StreamHandler()],
     )
-
-    # Load config from YAML, then apply CLI overrides
-    config = load_config(config_path=args.config)
-    config = apply_cli_overrides(config, args)
 
     # Setup file logging (rank 0 only under torchrun, so ranks don't interleave train.log;
     # same rule as DistContext.is_main, which does not exist yet at this point)
@@ -65,6 +67,8 @@ def main():
         logging.getLogger().addHandler(fh)
 
     # Create and run trainer
+    from open_vision_banana.training.trainer import Trainer
+
     trainer = Trainer(config)
     trainer.train()
 
