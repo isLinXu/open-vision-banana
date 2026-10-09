@@ -73,6 +73,7 @@ def test_quantized_flux_loader_installs_filter(bnb_logger, monkeypatch):
     backend.device = torch.device("cpu")
     backend.dtype = torch.bfloat16
     backend.model_config = MagicMock()
+    backend.model_config.pipeline_class = "FluxPipeline"
     backend._load_flux_quantized("/unused")
 
     assert any(isinstance(f, _CastWarningOnceFilter) for f in bnb_logger.filters)

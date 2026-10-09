@@ -1,0 +1,73 @@
+# Minimal depth gate on a native instruction-editing base (FLUX.1 Kontext).
+#
+# Question this run answers: are the earlier negative depth results (SANA /
+# FLUX.1-schnell, Pearson ~ 0) caused by the *conditioning paradigm* (a
+# text-to-image backbone bridged from source latent to target latent) rather
+# than by data scale or LoRA capacity? Kontext receives the source image as
+# in-context tokens and generates the RGB depth visualization from pure noise,
+# the closest open analogue of how Nano Banana Pro is used in the paper.
+#
+# Held fixed vs the earlier SANA depth gate: Hypersim metric-depth data (Eq. 1
+# power transform + cube-edge colormap), NYU Eigen + 10 m protocol, depth-only,
+# no generation mix, min-SNR + logit-normal timesteps, cfg dropout 0.1.
+# Deliberately different: the base model / conditioning paradigm (the variable
+# under test) and, as a consequence of the 12B scale, lr 5e-5 and rank 32.
+# Do NOT add other tasks before the gate in scripts/run_kontext_depth_gate.sh
+# passes (pre-registered thresholds live in evaluation/gates.py).
+#
+# Needs a CUDA GPU (>= 24 GB with 4-bit transformer). Non-commercial license.
+experiment: flux_kontext_depth_gate
+
+model:
+  name: flux-kontext
+  dtype: bfloat16
+  quantize: 4bit
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+
+data:
+  dir: data/hypersim_depth_512
+  pair_manifest: data/hypersim_depth_512/pairs.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  num_workers: 4
+  tasks: [depth]
+
+training:
+  steps: 3000
+  batch_size: 1
+  gradient_accumulation: 8
+  lr: 5.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+flow:
+  # Ignored for in-context models (the source is context tokens, generation
+  # starts from noise); kept explicit so the intent is visible.
+  img2img_flow: false
+  sigma: 0.0
+  logit_normal_timesteps: true
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  decay: 0.9999
+  warmup_steps: 100
+
+checkpoint:
+  output_dir: output/flux_kontext_depth_gate
+  save_every: 250
+  eval_every: 250
+  log_every: 25
+
+device: cuda

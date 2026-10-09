@@ -11,16 +11,16 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import random
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image, ImageFile
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
 
 from .callbacks import TrainingCallbacks
 from .config import TrainingConfig
@@ -34,6 +34,7 @@ from .distributed import (
 from .losses import TrainingLosses
 from .model_backend import ModelBackend
 from .optimization import SchedulerFactory
+from .sampling import TaskWeightedSampler
 from .utils import EMAModel
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -43,7 +44,13 @@ logger = logging.getLogger(__name__)
 
 # ── Task aliases and default prompts ──────────────────────────────────────
 
-TASK_ALIASES = {"segmentation": "semantic", "seg": "semantic"}
+TASK_ALIASES = {
+    "segmentation": "semantic",
+    "seg": "semantic",
+    # Hypersim/KITTI manifests label cube-edge metric targets as metric_depth.
+    # They train as depth and keep the prompt stored on each row.
+    "metric_depth": "depth",
+}
 
 TASK_PROMPTS = {
     "depth": "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
@@ -108,7 +115,9 @@ class ManifestVisionDataset(Dataset):
                 img_path = resolve_manifest_path(row.get("input", ""), path_anchor)
                 tgt_path = resolve_manifest_path(row.get("target", ""), path_anchor)
                 if not img_path.is_file() or not tgt_path.is_file():
-                    continue
+                    raise FileNotFoundError(
+                        f"{manifest_path}:{_line_no}: missing input/target: {img_path}, {tgt_path}"
+                    )
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
@@ -128,22 +137,10 @@ class ManifestVisionDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> dict:
-        last_err = None
-        for attempt, cur in enumerate(self._candidates(idx)):
-            try:
-                return self._load(cur)
-            except Exception as e:
-                last_err = e
-                if attempt == 0:
-                    logger.warning("Skipping unreadable sample idx=%s (%s)", cur, e)
-        raise RuntimeError(f"All candidates failed (last: {last_err})")
-
-    def _candidates(self, idx: int):
-        yield idx
-        rng = random.Random(idx)
-        n = len(self.samples)
-        for _ in range(3):
-            yield rng.randrange(n) if n else idx
+        try:
+            return self._load(idx)
+        except Exception as exc:
+            raise RuntimeError(f"Unreadable manifest sample idx={idx}: {self.samples[idx]}") from exc
 
     def _load(self, idx: int) -> dict:
         s = self.samples[idx]
@@ -185,6 +182,7 @@ class Trainer:
     """
 
     def __init__(self, config: TrainingConfig):
+        config.validate()
         self.config = config
         self.dist = init_distributed()
         self.device = config.get_device()
@@ -214,6 +212,9 @@ class Trainer:
             self.dist.world_size,
         )
         logger.info("Output: %s", config.output_dir)
+
+        # Data errors must fail before downloading/loading a large backbone.
+        self.train_loader, self.val_loader = self._build_datasets()
 
         # ── Model backend ──────────────────────────────────────────────
         self.backend = ModelBackend(
@@ -268,11 +269,33 @@ class Trainer:
             self.backend.peft_model,
             decay=config.ema_decay,
             warmup_steps=config.ema_warmup,
-        )
+        ) if config.ema_enabled else None
 
         # ── Datasets ───────────────────────────────────────────────────
-        self.train_loader, self.val_loader = self._build_datasets()
         self.callbacks.task_prompts = uniform_task_prompts(self.train_loader.dataset)
+        effective = config.to_dict()
+        effective["task_sample_counts"] = {
+            ds.samples[0]["task"]: len(ds)
+            for ds in getattr(self.train_loader.dataset, "datasets", [self.train_loader.dataset])
+        }
+        effective["trainable_parameter_names"] = [
+            n for n, p in self.backend.peft_model.named_parameters() if p.requires_grad
+        ]
+        effective["sampling_rank"] = self.dist.rank
+        effective["sampling_world_size"] = self.dist.world_size
+        effective["sampling_probabilities"] = getattr(
+            self.train_loader.sampler, "task_probabilities", {
+                t: n / sum(effective["task_sample_counts"].values())
+                for t, n in effective["task_sample_counts"].items()
+            }
+        )
+        effective["sampling_with_replacement"] = isinstance(
+            self.train_loader.sampler, TaskWeightedSampler
+        )
+        if self.dist.is_main:
+            (self.callbacks.output_dir / "effective_config.json").write_text(
+                json.dumps(effective, indent=2), encoding="utf-8"
+            )
 
         # ── Optimizer & Scheduler ──────────────────────────────────────
         self.optimizer = torch.optim.AdamW(
@@ -282,7 +305,8 @@ class Trainer:
             betas=(0.9, 0.999),
         )
         total_steps = config.steps
-        warmup_steps = config.warmup_steps or int(total_steps * config.warmup_ratio)
+        warmup_steps = (config.warmup_steps if config.warmup_steps is not None
+                        else int(total_steps * config.warmup_ratio))
         self.lr_scheduler = SchedulerFactory.create(
             self.optimizer,
             total_steps=total_steps,
@@ -328,7 +352,7 @@ class Trainer:
                 param.copy_(lora_state[name])
         # The shadow was cloned from the fresh LoRA init; start it from the loaded weights
         # so a checkpoint without (or with a partial) EMA does not average towards the init.
-        for name, shadow in self.ema.shadow_params.items():
+        for name, shadow in (self.ema.shadow_params if self.ema else {}).items():
             shadow.copy_(params[name].data)
 
         if self.config.resume_weights_only:
@@ -341,9 +365,10 @@ class Trainer:
         if "scheduler_state_dict" in ckpt:
             self.lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
         for name, tensor in (ckpt.get("ema_state_dict") or {}).items():
-            if name in self.ema.shadow_params:
+            if self.ema and name in self.ema.shadow_params:
                 self.ema.shadow_params[name].copy_(tensor)
-        self.ema.step = step
+        if self.ema:
+            self.ema.step = step
         # RNG state is not checkpointed. Without a new seed the resumed run would replay
         # the shuffles, noise and timesteps of the run's first steps.
         seed = self.config.seed + self.dist.rank + step
@@ -351,10 +376,28 @@ class Trainer:
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         best = ckpt.get("best_val_loss")
-        if best is not None:
+        if best is not None and ckpt.get("selection_protocol") == self._selection_protocol():
             self.callbacks.best_val_loss = best
+        elif best is not None:
+            logger.warning("Reset best score: saved validation protocol differs from current run")
         logger.info("Resumed from %s at step %d (best val_loss=%s)", path, step, best)
         return step
+
+    def _selection_protocol(self) -> str:
+        source = "ema" if self.ema is not None else "online"
+        # Loss settings and data must agree before a saved best score is comparable.
+        settings = self.config.to_dict()
+        if self.config.pair_manifest and Path(self.config.pair_manifest).is_file():
+            settings["manifest_sha256"] = hashlib.sha256(
+                Path(self.config.pair_manifest).read_bytes()
+            ).hexdigest()
+        for key in ("steps", "output_dir", "resume", "resume_weights_only", "lr",
+                    "save_every", "log_every", "eval_every", "wandb", "wandb_run_name"):
+            settings.pop(key, None)
+        fingerprint = hashlib.sha256(
+            json.dumps(settings, sort_keys=True).encode()
+        ).hexdigest()[:16]
+        return f"macro_flow_loss_v1:{source}:{fingerprint}"
 
     def _build_datasets(self) -> tuple[DataLoader, DataLoader | None]:
         """Build train and val data loaders from manifest."""
@@ -386,7 +429,10 @@ class Trainer:
             )
             for t in sorted(tasks_to_load)
         ]
-        train_datasets = [ds for ds in train_datasets if len(ds) > 0]
+        empty_tasks = [t for t, ds in zip(sorted(tasks_to_load), train_datasets, strict=True)
+                       if len(ds) == 0]
+        if empty_tasks:
+            raise ValueError(f"Requested training tasks have no samples: {empty_tasks}")
 
         val_datasets = [
             ManifestVisionDataset(manifest_path, config.resolution, "val", {t}, data_root=data_root)
@@ -396,6 +442,8 @@ class Trainer:
 
         train_ds = ConcatDataset(train_datasets) if len(train_datasets) > 1 else train_datasets[0]
         val_ds = ConcatDataset(val_datasets) if val_datasets else None
+        if val_datasets and len(val_datasets) != len(tasks_to_load):
+            raise ValueError("Validation must cover every requested training task")
 
         # Under torchrun each rank reads its own shard; set_epoch() in train() reshuffles it.
         train_sampler = (
@@ -410,6 +458,23 @@ class Trainer:
             if self.dist.enabled
             else None
         )
+        if config.task_sampling != "proportional" or config.task_sampling_weights:
+            groups = {}
+            offset = 0
+            for task, ds in zip(sorted(tasks_to_load), train_datasets, strict=True):
+                groups[task] = list(range(offset, offset + len(ds)))
+                offset += len(ds)
+            sampling_weights = {}
+            for task, weight in config.task_sampling_weights.items():
+                canonical = TASK_ALIASES.get(task, task)
+                if canonical in sampling_weights:
+                    raise ValueError(f"Duplicate sampling task alias: {canonical}")
+                sampling_weights[canonical] = weight
+            train_sampler = TaskWeightedSampler(
+                groups, strategy=config.task_sampling, weights=sampling_weights,
+                seed=config.seed, rank=self.dist.rank, world_size=self.dist.world_size,
+            )
+            logger.info("Task sampling probabilities: %s", train_sampler.task_probabilities)
         train_loader = DataLoader(
             train_ds,
             batch_size=config.batch_size,
@@ -419,6 +484,8 @@ class Trainer:
             collate_fn=_collate_fn,
             drop_last=True,
         )
+        if not len(train_loader):
+            raise ValueError("Training loader is empty after rank sharding and drop_last")
         val_loader = None
         if val_ds is not None:
             val_loader = DataLoader(
@@ -450,6 +517,7 @@ class Trainer:
             "steps": 0,
         }
         task_loss_acc: dict[str, list[float]] = {}
+        task_sample_counts: dict[str, int] = {}
         global_step = self.start_step
         micro_step = 0
         # full passes over the train loader; seeds DistributedSampler shuffles. A resumed
@@ -462,7 +530,7 @@ class Trainer:
                 1, (len(self.train_loader) + config.grad_accum - 1) // config.grad_accum
             )
             epoch = global_step // updates_per_epoch
-            if isinstance(self.train_loader.sampler, DistributedSampler):
+            if hasattr(self.train_loader.sampler, "set_epoch"):
                 # not `epoch`: that lags the real pass count when grad_accum does not divide
                 # len(train_loader), which would replay the same shuffle.
                 self.train_loader.sampler.set_epoch(data_pass)
@@ -472,6 +540,8 @@ class Trainer:
             for batch in self.train_loader:
                 if global_step >= total_steps:
                     break
+                for task in batch.get("task", []) if isinstance(batch, dict) else []:
+                    task_sample_counts[task] = task_sample_counts.get(task, 0) + 1
 
                 # ── Forward ────────────────────────────────────────────
                 loss_dict = self._train_step(batch, global_step)
@@ -500,7 +570,8 @@ class Trainer:
                 self.optimizer.step()
                 self.lr_scheduler.step()
                 self.optimizer.zero_grad(set_to_none=True)
-                self.ema.update(peft_model)
+                if self.ema is not None:
+                    self.ema.update(peft_model)
                 global_step += 1
 
                 # ── Logging ────────────────────────────────────────────
@@ -517,6 +588,12 @@ class Trainer:
                     }
                     lr = self.lr_scheduler.get_last_lr()[0]
                     if self.dist.is_main:
+                        metrics.update({f"sample_count/{t}": n for t, n in task_sample_counts.items()})
+                        count = sum(task_sample_counts.values())
+                        metrics.update({
+                            f"sample_ratio/{t}": n / count
+                            for t, n in task_sample_counts.items()
+                        })
                         self.callbacks.on_log(
                             global_step, total_steps, metrics, lr, epoch, task_loss_acc
                         )
@@ -528,6 +605,7 @@ class Trainer:
                         "steps": 0,
                     }
                     task_loss_acc = {}
+                    task_sample_counts = {}
 
                 # Ranks hold identical weights, so rank 0 alone saves and validates;
                 # the others wait for it in the next step's gradient all-reduce.
@@ -542,6 +620,7 @@ class Trainer:
                         model_name=config.model_name,
                         lora_rank=config.lora_rank,
                         lora_alpha=config.lora_alpha,
+                        selection_protocol=self._selection_protocol(),
                     )
 
                 # ── Validation ─────────────────────────────────────────
@@ -550,11 +629,12 @@ class Trainer:
                     and self.val_loader is not None
                     and self.callbacks.should_validate(global_step)
                 ):
-                    ema_backup = self.ema.apply_shadow(peft_model)
+                    ema_backup = self.ema.apply_shadow(peft_model) if self.ema else None
                     try:
                         val_loss = self.validate()
                     finally:
-                        self.ema.restore_shadow(peft_model, ema_backup)
+                        if self.ema:
+                            self.ema.restore_shadow(peft_model, ema_backup)
                     self.callbacks.on_validate(
                         global_step,
                         val_loss,
@@ -565,7 +645,9 @@ class Trainer:
                         model_name=config.model_name,
                         lora_rank=config.lora_rank,
                         lora_alpha=config.lora_alpha,
+                        selection_protocol=self._selection_protocol(),
                     )
+                    logger.info("Validation details: %s", self.validation_metrics)
 
         # ── Final save ─────────────────────────────────────────────────
         if self.dist.is_main:
@@ -579,10 +661,29 @@ class Trainer:
                 lora_rank=config.lora_rank,
                 lora_alpha=config.lora_alpha,
                 suffix="_final",
+                selection_protocol=self._selection_protocol(),
             )
             self.callbacks.on_finish(global_step)
         barrier(self.dist)  # keep the process group alive until rank 0 has saved
         cleanup(self.dist)
+
+    def _in_context_conditioning(self) -> bool:
+        """Whether the backbone takes the source image as in-context tokens (Kontext-style)."""
+        return self._edit_layout() == "kontext"
+
+    def _encode_edit_text(self, prompts, images):
+        if self._edit_layout() == "hunyuan":
+            return self.backend.encode_hunyuan_edit(prompts, images)
+        return self.backend.encode_text(prompts, self.device, self.dtype)
+
+    def _edit_layout(self) -> str | None:
+        """Source-image layout of the training forward, or None for a text-to-image backbone."""
+        from .edit_forward import edit_latent_layout
+
+        model_config = getattr(self.backend, "model_config", None)
+        if model_config is None:
+            return None
+        return edit_latent_layout(model_config)
 
     def _train_step(self, batch: dict, global_step: int) -> dict:
         """Execute a single training step (forward + loss)."""
@@ -602,11 +703,13 @@ class Trainer:
                 input_latents = F.adaptive_avg_pool2d(input_latents, target_latents.shape[-2:])
 
         # ── Flow matching ──────────────────────────────────────────────
+        edit_layout = self._edit_layout()
         flow_batch = self.backend.prepare_flow_batch(
             target_latents,
             input_latents,
             batch_size,
-            img2img_flow=config.img2img_flow,
+            # Editors see the source as conditioning and generate the target from noise.
+            img2img_flow=config.img2img_flow and edit_layout is None,
             flow_sigma=config.flow_sigma,
             logit_normal=config.logit_normal,
             flow_shift=config.flow_shift,
@@ -617,7 +720,7 @@ class Trainer:
 
         # ── Text encoding ──────────────────────────────────────────────
         with torch.no_grad():
-            text_cond = self.backend.encode_text(prompts, self.device, self.dtype)
+            text_cond = self._encode_edit_text(prompts, input_images)
             text_cond = self.backend.apply_cfg_dropout(
                 text_cond, config.cfg_dropout_rate, batch_size
             )
@@ -628,6 +731,8 @@ class Trainer:
             timesteps,
             text_cond,
             batch_size,
+            # Only passed for editors so text-to-image backends are called exactly as before.
+            **({"context_latents": input_latents} if edit_layout else {}),
         )
 
         # ── Loss computation ───────────────────────────────────────────
@@ -673,21 +778,59 @@ class Trainer:
         evaluations and best-checkpoint selection does not depend on the draw. The training
         RNG stream is left as it was.
         """
-        with torch.random.fork_rng(devices=range(torch.cuda.device_count())):
-            torch.manual_seed(self.config.seed)
-            return self._validate()
+        model = self.backend.peft_model
+        was_training = model.training
+        try:
+            with torch.random.fork_rng(devices=range(torch.cuda.device_count())):
+                torch.manual_seed(self.config.seed)
+                return self._validate()
+        finally:
+            model.train(was_training)
+
+    def _validation_batches(self):
+        """Deterministic per-task sample budget, independent of concatenation order."""
+        counts = {}
+        budget = getattr(self.config, "val_max_samples_per_task", 40)
+        loader = self.val_loader
+        if isinstance(loader, DataLoader):
+            dataset = loader.dataset
+            indices = []
+            offset = 0
+            for part in getattr(dataset, "datasets", [dataset]):
+                if not hasattr(part, "samples"):
+                    raise ValueError("Validation dataset needs task metadata for bounded reads")
+                for index, sample in enumerate(part.samples):
+                    task = sample["task"]
+                    if counts.get(task, 0) < budget:
+                        indices.append(offset + index)
+                        counts[task] = counts.get(task, 0) + 1
+                offset += len(part)
+            loader = DataLoader(
+                Subset(dataset, indices), batch_size=loader.batch_size,
+                shuffle=False, num_workers=0, collate_fn=loader.collate_fn,
+            )
+            counts = {}
+        for batch in loader:
+            tasks = batch.get("task", ["depth"] * len(batch["prompt"]))
+            for task in sorted(set(tasks)):
+                available = budget - counts.get(task, 0)
+                indices = [i for i, t in enumerate(tasks) if t == task][:max(0, available)]
+                if not indices:
+                    continue
+                counts[task] = counts.get(task, 0) + len(indices)
+                yield {
+                    key: value[indices] if isinstance(value, torch.Tensor)
+                    else [value[i] for i in indices]
+                    for key, value in batch.items()
+                }
 
     def _validate(self) -> float:
         peft_model = self.backend.peft_model
         peft_model.eval()
 
-        total_loss = 0.0
-        n_batches = 0
-        max_val_batches = 20
-
-        for i, batch in enumerate(self.val_loader):
-            if i >= max_val_batches:
-                break
+        totals = {}
+        counts = {}
+        for batch in self._validation_batches():
 
             prompts = batch["prompt"]
             batch_size = len(prompts)
@@ -702,18 +845,19 @@ class Trainer:
                 input_latents = F.adaptive_avg_pool2d(input_latents, target_latents.shape[-2:])
 
             # Flow matching
+            edit_layout = self._edit_layout()
             flow_batch = self.backend.prepare_flow_batch(
                 target_latents,
                 input_latents,
                 batch_size,
-                img2img_flow=self.config.img2img_flow,
+                img2img_flow=self.config.img2img_flow and edit_layout is None,
                 flow_sigma=self.config.flow_sigma,
                 logit_normal=self.config.logit_normal,
                 flow_shift=self.config.flow_shift,
             )
 
             # Text encoding
-            text_cond = self.backend.encode_text(prompts, self.device, self.dtype)
+            text_cond = self._encode_edit_text(prompts, input_images)
 
             # Forward
             predicted = self.backend.forward(
@@ -721,6 +865,7 @@ class Trainer:
                 flow_batch["timesteps"],
                 text_cond,
                 batch_size,
+                **({"context_latents": input_latents} if edit_layout else {}),
             )
 
             # Loss
@@ -732,8 +877,17 @@ class Trainer:
                 batch_tasks,
                 self.device,
             )
-            total_loss += flow_loss.item()
-            n_batches += 1
+            if not torch.isfinite(flow_loss):
+                raise FloatingPointError("Non-finite validation flow loss")
+            task = batch_tasks[0]
+            totals[task] = totals.get(task, 0.0) + flow_loss.item() * batch_size
+            counts[task] = counts.get(task, 0) + batch_size
 
-        peft_model.train()
-        return total_loss / max(1, n_batches)
+        if not counts:
+            raise ValueError("Validation has no samples")
+        per_task = {task: totals[task] / counts[task] for task in counts}
+        self.validation_metrics = {
+            "per_task": per_task, "sample_counts": counts,
+            "protocol": "macro_flow_loss_v1",
+        }
+        return sum(per_task.values()) / len(per_task)

@@ -40,9 +40,19 @@ SEMANTIC_GENERIC_PROMPT = (
 SEMANTIC_TASK_NAMES = frozenset({"semantic", "segmentation"})
 
 
-def normalize_task_prompt(task: str | None, prompt: str) -> str:
-    """Return the canonical prompt for tasks with a fixed conditioning contract."""
+def normalize_task_prompt(task: str | None, prompt: str, *, keep_custom: bool = False) -> str:
+    """Return the canonical prompt for tasks with a fixed conditioning contract.
+
+    By default every semantic prompt is replaced by the fixed Cityscapes legend so
+    training, inference and evaluation share one contract. Datasets whose targets
+    are painted with a per-sample color mapping (open-vocabulary data from
+    ``scripts/build_openvocab_semantic_manifest.py``) must keep their own prompt,
+    otherwise prompt and target contradict each other; they pass ``keep_custom=True``.
+    An empty prompt always falls back to the canonical one.
+    """
     if task in SEMANTIC_TASK_NAMES:
+        if keep_custom and prompt and prompt.strip():
+            return prompt
         return SEMANTIC_SEGMENTATION_PROMPT
     return prompt
 

@@ -121,6 +121,18 @@ class ModelConfig:
     # Whether VAE encode returns latent_dist (False for some custom VAEs)
     vae_has_latent_dist: bool = True
 
+    # Native instruction-editing conditioning (FLUX.1 Kontext style): the source
+    # image's latent tokens are appended to the sequence as in-context tokens
+    # and the target is generated from pure noise. This is the closest open
+    # analogue of how Nano Banana Pro receives the input image. When False the
+    # model is a text-to-image backbone and the source can only be injected by
+    # the img2img-flow bridge (source latent -> target latent).
+    in_context_conditioning: bool = False
+
+    # Official image+prompt edit model. Inference calls that model's own editor.
+    # The training forward for each pipeline class lives in training/edit_forward.py.
+    instruction_editing: bool = False
+
     # Description
     description: str = ""
 
@@ -242,6 +254,31 @@ def _build_registry() -> None:
     )
 
     _register_model(
+        "sdxl-instruct-pix2pix",
+        lambda: ModelConfig(
+            name="sdxl-instruct-pix2pix",
+            model_id="diffusers/sdxl-instructpix2pix-768",
+            family="sdxl",
+            backbone_type="unet",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=True,
+            cross_attention_dim=2048,
+            vae_scaling_factor=0.18215,
+            memory_budget_gb=7.0,
+            pipeline_class="StableDiffusionXLInstructPix2PixPipeline",
+            default_resolution=768,
+            default_guidance_scale=5.0,
+            default_num_inference_steps=100,
+            instruction_editing=True,
+            description=(
+                "SDXL InstructPix2Pix — instruction editing via "
+                "StableDiffusionXLInstructPix2PixPipeline. image_guidance_scale stays at "
+                "the pipeline default (1.5). The training forward concatenates the source channels."
+            ),
+        ),
+    )
+
+    _register_model(
         "sdxl-turbo",
         lambda: ModelConfig(
             name="sdxl-turbo",
@@ -294,6 +331,48 @@ def _build_registry() -> None:
                 "to_out.0_context",
             ],
             description="FLUX.1-dev (12B transformer) — state-of-the-art, needs ≥24GB VRAM",
+        ),
+    )
+
+    _register_model(
+        "flux-kontext",
+        lambda: ModelConfig(
+            name="flux-kontext",
+            model_id="black-forest-labs/FLUX.1-Kontext-dev",
+            family="flux",
+            backbone_type="transformer",
+            num_text_encoders=2,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=3072,
+            vae_scaling_factor=0.3611,
+            vae_downsample_factor=16,
+            memory_budget_gb=24.0,
+            pipeline_class="FluxKontextPipeline",
+            default_resolution=512,
+            default_guidance_scale=2.5,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            in_context_conditioning=True,
+            instruction_editing=True,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
+                "to_q_context",
+                "to_k_context",
+                "to_v_context",
+                "to_out.0_context",
+            ],
+            description=(
+                "FLUX.1-Kontext-dev (12B) — native instruction-editing model: source image "
+                "enters as in-context tokens. Closest open analogue of an image+prompt->image "
+                "base like Nano Banana Pro. Non-commercial license."
+            ),
         ),
     )
 
@@ -368,6 +447,90 @@ def _build_registry() -> None:
             needs_attention_mask=True,
             vae_has_latent_dist=False,
             description="Qwen-Image — text rendering, CFG, Apache-2.0",
+        ),
+    )
+
+    _register_model(
+        "qwen-image-edit",
+        lambda: ModelConfig(
+            name="qwen-image-edit",
+            model_id="Qwen/Qwen-Image-Edit",
+            family="qwen-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=40.0,
+            pipeline_class="QwenImageEditPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "proj_out",
+                "img_in",
+                "txt_in",
+            ],
+            needs_guidance_in_forward=True,
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description=(
+                "Qwen-Image-Edit — instruction editing via QwenImageEditPipeline. "
+                "The source image enters the Qwen2.5-VL prompt and the packed VAE tokens. "
+                "The training forward packs those tokens. Apache-2.0."
+            ),
+        ),
+    )
+
+    _register_model(
+        "qwen-image-edit-2509",
+        lambda: ModelConfig(
+            name="qwen-image-edit-2509",
+            model_id="Qwen/Qwen-Image-Edit-2509",
+            family="qwen-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=40.0,
+            pipeline_class="QwenImageEditPlusPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=40,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "proj_out",
+                "img_in",
+                "txt_in",
+            ],
+            needs_guidance_in_forward=True,
+            needs_attention_mask=True,
+            vae_has_latent_dist=False,
+            description=(
+                "Qwen-Image-Edit-2509 — multi-image instruction editing via "
+                "QwenImageEditPlusPipeline. A single source image is the one-image case. "
+                "The training forward packs those tokens. Apache-2.0."
+            ),
         ),
     )
 
@@ -609,6 +772,52 @@ def _build_registry() -> None:
             needs_position_ids=True,
             vae_has_latent_dist=True,
             description="FLUX.2-dev — Black Forest Labs, next-gen DiT",
+        ),
+    )
+
+    _register_model(
+        "flux2-klein",
+        lambda: ModelConfig(
+            name="flux2-klein",
+            model_id="black-forest-labs/FLUX.2-klein-base-4B",
+            family="flux2",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=3072,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=16.0,
+            pipeline_class="Flux2KleinPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out",
+                "to_add_out",
+                "to_qkv_mlp_proj",
+                "x_embedder",
+                "context_embedder",
+                "proj_out",
+                "linear",
+                "linear_in",
+                "linear_out",
+            ],
+            needs_guidance_in_forward=True,
+            needs_position_ids=True,
+            vae_has_latent_dist=True,
+            description=(
+                "FLUX.2 [klein] base 4B — instruction editing via Flux2KleinPipeline "
+                "(image + prompt). The same class also loads "
+                "black-forest-labs/FLUX.2-klein-base-9B. The training forward flattens "
+                "the source as reference tokens. Apache-2.0."
+            ),
         ),
     )
 
@@ -950,6 +1159,61 @@ def _build_registry() -> None:
     )
 
     _register_model(
+        "hunyuan-image3-instruct",
+        lambda: ModelConfig(
+            name="hunyuan-image3-instruct",
+            model_id="tencent/HunyuanImage-3.0-Instruct",
+            family="hunyuan-image3",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=80.0,
+            pipeline_class="HunyuanImage3Instruct",
+            default_resolution=1024,
+            default_guidance_scale=1.0,
+            default_num_inference_steps=50,
+            instruction_editing=True,
+            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            description=(
+                "HunyuanImage-3.0-Instruct — image editing via transformers "
+                "generate_image (think_recaption, up to 3 reference images, 50 steps). "
+                "The checkpoint directory name cannot contain '.'. The training step calls "
+                "prepare_model_inputs and the published forward. A full fine-tune of the "
+                "80B MoE (13B activated) has not been run."
+            ),
+        ),
+    )
+
+    _register_model(
+        "hunyuan-image3-instruct-distil",
+        lambda: ModelConfig(
+            name="hunyuan-image3-instruct-distil",
+            model_id="tencent/HunyuanImage-3.0-Instruct-Distil",
+            family="hunyuan-image3",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=80.0,
+            pipeline_class="HunyuanImage3Instruct",
+            default_resolution=1024,
+            default_guidance_scale=1.0,
+            default_num_inference_steps=8,
+            instruction_editing=True,
+            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            description=(
+                "HunyuanImage-3.0-Instruct-Distil — same generate_image editor with "
+                "8 sampling steps. Same training step as the base Instruct checkpoint."
+            ),
+        ),
+    )
+
+    _register_model(
         "sana-sprint",
         lambda: ModelConfig(
             name="sana-sprint",
@@ -1018,6 +1282,143 @@ def _build_registry() -> None:
             needs_position_ids=True,
             vae_has_latent_dist=True,
             description="LongCat-Image — Meituan, Qwen2.5-VL encoder, Apache-2.0",
+        ),
+    )
+
+    _register_model(
+        "longcat-image-edit",
+        lambda: ModelConfig(
+            name="longcat-image-edit",
+            model_id="meituan-longcat/LongCat-Image-Edit",
+            family="longcat-image",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=2048,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=16.0,
+            pipeline_class="LongCatImageEditPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.5,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            text_encoder_max_length=512,
+            instruction_editing=True,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "proj_in",
+                "proj_out",
+                "linear_1",
+                "linear_2",
+                "txt_in",
+                "img_in",
+            ],
+            needs_attention_mask=False,
+            needs_guidance_in_forward=True,
+            needs_position_ids=True,
+            vae_has_latent_dist=True,
+            description=(
+                "LongCat-Image-Edit — instruction editing via LongCatImageEditPipeline. "
+                "The training forward packs the source as modality 2. Apache-2.0."
+            ),
+        ),
+    )
+
+    _register_model(
+        "joyimage-edit",
+        lambda: ModelConfig(
+            name="joyimage-edit",
+            model_id="jdopensource/JoyAI-Image-Edit-Diffusers",
+            family="joyimage",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=24.0,
+            pipeline_class="JoyImageEditPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=40,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            lora_target_modules=[
+                "img_attn_qkv",
+                "img_attn_proj",
+                "txt_attn_qkv",
+                "txt_attn_proj",
+                "img_in",
+            ],
+            description=(
+                "JoyAI-Image-Edit — instruction editing via JoyImageEditPipeline "
+                "(40 steps, guidance 4.0). The training forward uses the two image slots."
+            ),
+        ),
+    )
+
+    _register_model(
+        "joyimage-edit-plus",
+        lambda: ModelConfig(
+            name="joyimage-edit-plus",
+            model_id="jdopensource/JoyAI-Image-Edit-Plus-Diffusers",
+            family="joyimage",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=24.0,
+            pipeline_class="JoyImageEditPlusPipeline",
+            default_resolution=1024,
+            default_guidance_scale=4.0,
+            default_num_inference_steps=30,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            lora_target_modules=[
+                "img_attn_qkv",
+                "img_attn_proj",
+                "txt_attn_qkv",
+                "txt_attn_proj",
+                "img_in",
+            ],
+            description=(
+                "JoyAI-Image-Edit-Plus — multi-image instruction editing via "
+                "JoyImageEditPlusPipeline. A single source image is passed as a "
+                "one-element images list. The training forward uses the two image slots."
+            ),
+        ),
+    )
+
+    _register_model(
+        "instruct-pix2pix",
+        lambda: ModelConfig(
+            name="instruct-pix2pix",
+            model_id="timbrooks/instruct-pix2pix",
+            family="sd15",
+            backbone_type="unet",
+            num_text_encoders=1,
+            cross_attention_dim=768,
+            vae_scaling_factor=0.18215,
+            memory_budget_gb=4.0,
+            pipeline_class="StableDiffusionInstructPix2PixPipeline",
+            default_resolution=512,
+            default_guidance_scale=7.5,
+            default_num_inference_steps=100,
+            instruction_editing=True,
+            description=(
+                "InstructPix2Pix — instruction editing via "
+                "StableDiffusionInstructPix2PixPipeline. image_guidance_scale stays at "
+                "the pipeline default (1.5). The training forward concatenates the source channels."
+            ),
         ),
     )
 
@@ -1368,6 +1769,15 @@ def _auto_detect_family(model_path: str) -> ModelConfig | None:
     # Map pipeline class names to registry entries
     _class_to_name = {
         "FluxPipeline": "flux-schnell",
+        "FluxKontextPipeline": "flux-kontext",
+        "Flux2KleinPipeline": "flux2-klein",
+        "QwenImageEditPipeline": "qwen-image-edit",
+        "QwenImageEditPlusPipeline": "qwen-image-edit-2509",
+        "LongCatImageEditPipeline": "longcat-image-edit",
+        "JoyImageEditPipeline": "joyimage-edit",
+        "JoyImageEditPlusPipeline": "joyimage-edit-plus",
+        "StableDiffusionInstructPix2PixPipeline": "instruct-pix2pix",
+        "StableDiffusionXLInstructPix2PixPipeline": "sdxl-instruct-pix2pix",
         "StableDiffusionXLPipeline": "sdxl",
         "StableDiffusionPipeline": "sd15",
         "QwenImagePipeline": "qwen-image",
@@ -1471,7 +1881,16 @@ def load_pipeline(
         "StableDiffusionXLPipeline": "diffusers",
         "StableDiffusionPipeline": "diffusers",
         "FluxPipeline": "diffusers",
+        "FluxKontextPipeline": "diffusers",
+        "Flux2KleinPipeline": "diffusers",
         "QwenImagePipeline": "diffusers",
+        "QwenImageEditPipeline": "diffusers",
+        "QwenImageEditPlusPipeline": "diffusers",
+        "LongCatImageEditPipeline": "diffusers",
+        "JoyImageEditPipeline": "diffusers",
+        "JoyImageEditPlusPipeline": "diffusers",
+        "StableDiffusionInstructPix2PixPipeline": "diffusers",
+        "StableDiffusionXLInstructPix2PixPipeline": "diffusers",
         "ZImagePipeline": "diffusers",
         "SanaPipeline": "diffusers",
         "Lumina2Pipeline": "diffusers",
@@ -1499,16 +1918,26 @@ def load_pipeline(
         import importlib
 
         mod = importlib.import_module(_pipeline_imports[cls_name])
-        PipeClass = getattr(mod, cls_name)
+        PipeClass = getattr(mod, cls_name, None)
+        if PipeClass is None:
+            raise ImportError(
+                f"diffusers has no pipeline class {cls_name}. "
+                "Qwen-Image-Edit, LongCat-Image-Edit and FLUX.2 Klein need a recent diffusers."
+            )
     else:
         raise ValueError(f"Unknown pipeline class: {cls_name}")
 
     model_source = resolve_pretrained_source(config)
+    pipe_kwargs: dict = {"torch_dtype": dtype}
+    source_dir = Path(model_source)
+    if source_dir.is_dir():
+        pipe_kwargs["local_files_only"] = True
+        fp16_transformer = source_dir / "transformer" / "diffusion_pytorch_model.fp16.safetensors"
+        default_transformer = source_dir / "transformer" / "diffusion_pytorch_model.safetensors"
+        if fp16_transformer.is_file() and not default_transformer.is_file():
+            pipe_kwargs["variant"] = "fp16"
 
-    pipe = PipeClass.from_pretrained(
-        model_source,
-        torch_dtype=dtype,
-    )
+    pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
 
     # Extract backbone (unet for SD family, transformer for DiT models)
     if config.backbone_type == "transformer":

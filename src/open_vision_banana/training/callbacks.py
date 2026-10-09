@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -115,12 +116,23 @@ class TrainingCallbacks:
         lora_rank: int = 32,
         lora_alpha: int = 64,
         suffix: str = "",
+        selection_protocol: str | None = None,
     ) -> Path:
-        """Save a training checkpoint."""
+        """Save online resume state; ``_best`` adapters use validated EMA weights.
+
+        Best exports are strict: any save failure propagates to the caller.
+        """
         ckpt_dir = self.output_dir / f"checkpoint-{step}{suffix}"
         ckpt_dir.mkdir(parents=True, exist_ok=True)
+        is_best = suffix == "_best"
+        has_ema = ema is not None and bool(getattr(ema, "shadow_params", None))
+        adapter_source = "ema" if is_best and has_ema else "online"
+        validation_source = ("ema" if has_ema else "online") if val_loss is not None else None
+        if is_best and selection_protocol is None:
+            selection_protocol = f"{validation_source}_validation_loss"
+        saved_best_loss = val_loss if is_best else self.best_val_loss
 
-        # Save LoRA weights
+        # Resume weights and optimizer state always belong to the online model.
         lora_state = {
             n: p.data.cpu().clone() for n, p in peft_model.named_parameters() if p.requires_grad
         }
@@ -128,30 +140,49 @@ class TrainingCallbacks:
             "lora_state_dict": lora_state,
             "step": step,
             "val_loss": val_loss,
-            "best_val_loss": self.best_val_loss,
+            "best_val_loss": saved_best_loss,
+            "selection_protocol": selection_protocol,
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
         }
 
-        if ema is not None and getattr(ema, "shadow_params", None):
+        if has_ema:
             ckpt["ema_state_dict"] = {n: t.cpu().clone() for n, t in ema.shadow_params.items()}
 
         torch.save(ckpt, str(ckpt_dir / "lora.pt"))
 
         # Save LoRA adapter in PEFT format
+        backup = None
         try:
+            if adapter_source == "ema":
+                # Back up before applying so even a partially failed swap is reversible.
+                backup = {
+                    n: p.detach().clone()
+                    for n, p in peft_model.named_parameters()
+                    if n in ema.shadow_params
+                }
+                ema.apply_shadow(peft_model)
             peft_model.save_pretrained(str(ckpt_dir / "lora_adapter"))
         except Exception as e:
+            if is_best:
+                raise
             logger.warning("Could not save LoRA adapter: %s", e)
+        finally:
+            if backup is not None:
+                ema.restore_shadow(peft_model, backup)
 
         # Save metadata
         meta = {
             "step": step,
             "val_loss": val_loss,
-            "best_val_loss": self.best_val_loss,
+            "best_val_loss": saved_best_loss,
             "lora_rank": lora_rank,
             "lora_alpha": lora_alpha,
             "model_name": model_name,
+            "checkpoint_weight_source": "online",
+            "adapter_weight_source": adapter_source,
+            "validation_weight_source": validation_source,
+            "selection_protocol": selection_protocol,
         }
         if self.task_prompts:
             meta["task_prompts"] = self.task_prompts
@@ -171,8 +202,12 @@ class TrainingCallbacks:
         model_name: str = "",
         lora_rank: int = 32,
         lora_alpha: int = 64,
+        selection_protocol: str | None = None,
     ) -> bool:
-        """Handle validation results. Returns True if new best."""
+        """Handle an EMA validation loss (online when EMA is absent).
+
+        Returns True only after a new best checkpoint is saved successfully.
+        """
         logger.info("  [val] step=%d val_loss=%.4f", step, val_loss)
 
         if self.wandb_enabled:
@@ -180,9 +215,8 @@ class TrainingCallbacks:
 
             wandb.log({"val/loss": val_loss}, step=step)
 
-        is_best = val_loss < self.best_val_loss
+        is_best = math.isfinite(val_loss) and val_loss < self.best_val_loss
         if is_best:
-            self.best_val_loss = val_loss
             self.on_checkpoint(
                 step,
                 peft_model,
@@ -194,7 +228,9 @@ class TrainingCallbacks:
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 suffix="_best",
+                selection_protocol=selection_protocol,
             )
+            self.best_val_loss = val_loss
             logger.info("  New best val_loss=%.4f", val_loss)
 
         return is_best

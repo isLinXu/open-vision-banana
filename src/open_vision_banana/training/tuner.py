@@ -101,10 +101,15 @@ class VisionTaskDataset(_Dataset):
         data_path: str | None = None,
         resolution: int = 512,
         task: str | None = None,
+        keep_semantic_prompts: bool = False,
     ) -> None:
+        """``keep_semantic_prompts=True`` keeps per-sample semantic prompts from
+        ``prompts/*.txt`` instead of forcing the fixed Cityscapes legend (needed
+        for open-vocabulary data with per-sample color mappings)."""
         self.samples: list[dict] = []
         self.resolution = resolution
         self.task = task
+        self.keep_semantic_prompts = keep_semantic_prompts
         if data_path is not None:
             self._load_data(data_path)
 
@@ -174,7 +179,7 @@ class VisionTaskDataset(_Dataset):
                 text = prompt_path.read_text(encoding="utf-8").strip()
                 if text:
                     prompt = text
-            prompt = normalize_task_prompt(self.task, prompt)
+            prompt = normalize_task_prompt(self.task, prompt, keep_custom=self.keep_semantic_prompts)
             self.samples.append(
                 {
                     "image_path": str(img_path),

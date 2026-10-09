@@ -1,0 +1,68 @@
+# Depth-only SANA-1600M on Hypersim metric metres.
+#
+# Targets are cube-edge RGB from the paper power transform (λ=-3, c=10/3).
+# Each manifest row keeps the metric prompt, which the trainer records and
+# inference reads back. This is the paper depth encoding, not the relative
+# grayscale targets used by the October 3-task runs.
+experiment: sana_1600m_hypersim_metric_depth
+
+model:
+  name: sana-1600m
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - linear
+    - proj_out
+    - conv_inverted
+    - conv_point
+
+data:
+  dir: data/hypersim_depth_512
+  pair_manifest: data/hypersim_depth_512/pairs.jsonl
+  resolution: 512
+  vision_ratio: 1.0
+  num_workers: 2
+  tasks:
+    - depth
+
+training:
+  steps: 3000
+  batch_size: 1
+  gradient_accumulation: 8
+  lr: 5.0e-5
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: true
+  min_snr_gamma: 5.0
+  cfg_dropout_rate: 0.1
+
+ema:
+  decay: 0.9999
+  warmup_steps: 100
+
+checkpoint:
+  output_dir: output/sana_1600m_hypersim_metric_depth
+  save_every: 500
+  eval_every: 500
+  log_every: 25
+
+wandb:
+  enabled: false
+
+device: cuda

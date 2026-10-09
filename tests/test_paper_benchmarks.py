@@ -335,3 +335,29 @@ def test_resolve_inference_steps_uses_sana_training_schedule() -> None:
     assert resolve_inference_steps("sana-600m-512px", 1) == 20
     assert resolve_inference_steps("sana-600m-512px", 20) == 20
     assert resolve_inference_steps("black-forest-labs/FLUX.1-schnell", 1) == 1
+
+
+def test_nyu_protocol_uses_eigen_crop_on_native_frame() -> None:
+    gt = torch.ones(1, 1, 480, 640)
+    _, _, mask = apply_depth_benchmark_protocol("nyu", gt.clone(), gt)
+    # Eigen crop: rows 45:471, cols 41:601.
+    assert int(mask.sum()) == (471 - 45) * (601 - 41)
+    assert bool(mask[0, 0, 45, 41]) and not bool(mask[0, 0, 44, 41])
+    assert bool(mask[0, 0, 470, 600]) and not bool(mask[0, 0, 471, 600])
+
+
+def test_nyu_eigen_crop_is_fractional_on_resized_canvas() -> None:
+    gt = torch.ones(1, 1, 512, 512)
+    _, _, mask = apply_depth_benchmark_protocol("nyu_depth", gt.clone(), gt)
+    rows = mask[0, 0].any(dim=1).nonzero().flatten()
+    # Top of the image is kept (Eigen crop starts at ~9% of the height), unlike
+    # the KITTI Garg crop which discards the top ~41%.
+    assert int(rows.min()) < 0.15 * 512
+    assert int(rows.max()) > 0.95 * 512
+
+
+def test_kitti_garg_crop_applies_on_resized_canvas() -> None:
+    gt = torch.ones(1, 1, 512, 512) * 10.0
+    _, _, mask = apply_depth_benchmark_protocol("kitti", gt.clone(), gt)
+    rows = mask[0, 0].any(dim=1).nonzero().flatten()
+    assert int(rows.min()) >= int(0.40 * 512)

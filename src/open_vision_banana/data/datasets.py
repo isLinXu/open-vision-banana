@@ -28,7 +28,7 @@ from ..task_prompts import (
 from .benchmark_io import (
     find_matching_file,
     load_eth3d_depth,
-    load_normal,
+    load_normal_map,
     load_scalar,
     resize_normal,
     resize_scalar,
@@ -79,6 +79,68 @@ def _fill_polygon(mask: np.ndarray, pts: np.ndarray) -> None:
             x_end = min(int(np.floor(intersections[k + 1])), w - 1)
             if x_start <= x_end:
                 mask[y, x_start : x_end + 1] = 1
+
+
+def _init_native_normal(dataset: object, native_gt: bool) -> None:
+    setattr(dataset, "native_gt", bool(native_gt))
+
+
+def _pack_normal_sample(dataset, normal: torch.Tensor, valid: torch.Tensor) -> dict:
+    """Resize a native normal map to the model canvas, keeping native GT on request."""
+    native: dict = {}
+    if getattr(dataset, "native_gt", False):
+        native = {
+            "gt_normal_native": torch.where(valid.unsqueeze(0), normal, torch.zeros_like(normal)),
+            "valid_mask_native": valid,
+        }
+    resized = resize_normal(normal, dataset.resolution)
+    valid_resized = resize_scalar(valid.float().unsqueeze(0), dataset.resolution).squeeze(0) > 0.5
+    resized = torch.where(valid_resized.unsqueeze(0), resized, torch.zeros_like(resized))
+    target_rgb = dataset.normal_mapper.normal_to_rgb(resized.unsqueeze(0)).squeeze(0)
+    return {
+        "prompt": PromptBuilder.build_normal_prompt(),
+        "target_rgb": target_rgb,
+        "gt_normal": resized,
+        "valid_mask": valid_resized,
+        **native,
+    }
+
+
+def _color_to_normal_path(path: Path) -> Path:
+    """Map a ScanNet color frame to its normal frame.
+
+    Directory components are rewritten only when the component itself is
+    ``color`` / ``colors``. The filename may contain ``color`` as a substring
+    (``scene_0_color.png``). Parent paths that merely contain those letters
+    are left alone.
+    """
+    parts: list[str] = []
+    for index, part in enumerate(path.parts):
+        if index == len(path.parts) - 1:
+            parts.append(part.replace("color", "normal"))
+        elif part == "color":
+            parts.append("normal")
+        elif part == "colors":
+            parts.append("normals")
+        else:
+            parts.append(part)
+    return Path(*parts)
+
+
+def _nyu_depth_dir(parent: Path) -> Path | None:
+    """Accept ``depths/`` and the ``depth/`` name used by the NYU test export."""
+    for name in ("depths", "depth"):
+        candidate = parent / name
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _load_normal_mask(mask_path: Path | None, height: int, width: int) -> torch.Tensor | None:
+    if mask_path is None:
+        return None
+    mask = torch.from_numpy(np.load(mask_path)).reshape(height, width)
+    return mask.bool()
 
 
 class BaseVisionDataset(Dataset):
@@ -218,42 +280,72 @@ class HypersimDepthDataset(BaseVisionDataset):
 
 
 class ScanNetNormalDataset(BaseVisionDataset):
-    """ScanNet dataset for surface normal estimation."""
+    """ScanNet surface-normal adapter.
+
+    The official ScanNet release is reconstructed meshes, not per-frame normal
+    maps. This adapter reads an already-rendered camera-space normal directory:
+
+    * ``images/`` + ``normals/`` (optionally under ``<split>/``), or
+    * a ``color`` path whose sibling is obtained by replacing ``color`` with
+      ``normal`` (``.png`` / ``.npy``).
+
+    PNG maps must already use the paper frame. Normals are not derived from depth.
+    """
 
     TASK_TYPE = "normal"
 
-    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+    def __init__(self, root_dir, split="train", resolution=512, native_gt=False, **kwargs) -> None:
         self.normal_mapper = NormalRGBMapper()
+        _init_native_normal(self, native_gt)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
         if not self.root_dir.exists():
             logger.warning(f"ScanNet directory not found: {self.root_dir}")
             return
+        paired = self._scan_image_normal_dirs()
+        if paired:
+            self.samples.extend(paired)
+            return
         for img_path in sorted(self.root_dir.rglob("*color*")):
-            normal_path = Path(str(img_path).replace("color", "normal"))
-            if normal_path.exists():
+            if not img_path.is_file() or img_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+                continue
+            normal_path = _color_to_normal_path(img_path)
+            if not normal_path.is_file():
+                for suffix in (".png", ".npy"):
+                    candidate = normal_path.with_suffix(suffix)
+                    if candidate.is_file():
+                        normal_path = candidate
+                        break
+            if normal_path.is_file() and normal_path.resolve() != img_path.resolve():
                 self.samples.append({"image": img_path, "target": normal_path})
+
+    def _scan_image_normal_dirs(self) -> list[dict]:
+        layouts = (
+            (self.root_dir / self.split / "images", self.root_dir / self.split / "normals"),
+            (self.root_dir / "images" / self.split, self.root_dir / "normals" / self.split),
+            (self.root_dir / "images", self.root_dir / "normals"),
+        )
+        for image_dir, normal_dir in layouts:
+            if not image_dir.is_dir() or not normal_dir.is_dir():
+                continue
+            pairs = []
+            for image_path in sorted(image_dir.rglob("*")):
+                if image_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+                    continue
+                normal_path = find_matching_file(normal_dir, image_path.stem, (".npy", ".png"))
+                if normal_path is not None:
+                    pairs.append({"image": image_path, "target": normal_path})
+            if pairs:
+                return pairs
+        return []
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
-        image = self._load_image(sample["image"])
-
-        normal_img = Image.open(sample["target"]).convert("RGB")
-        if normal_img.size != (self.resolution, self.resolution):
-            normal_img = normal_img.resize(
-                (self.resolution, self.resolution), Image.Resampling.LANCZOS
-            )
-        target_rgb = _pil_to_tensor(normal_img).float() / 255.0
-        gt_normal = self.normal_mapper.rgb_to_normal(target_rgb.unsqueeze(0)).squeeze(0)
-
-        prompt = PromptBuilder.build_normal_prompt()
+        normal, valid = load_normal_map(sample["target"])
         return {
-            "prompt": prompt,
-            "image": image,
-            "target_rgb": target_rgb,
-            "gt_normal": gt_normal,
-            "valid_mask": torch.isfinite(gt_normal).all(dim=0),
+            "image": self._load_image(sample["image"]),
+            **_pack_normal_sample(self, normal, valid),
         }
 
 
@@ -402,49 +494,77 @@ class RefCOCOgDataset(BaseVisionDataset):
     Expected directory layout::
 
         root_dir/
-          images/          ← COCO images (*.jpg)
-          refs(g).p        ← RefCOCOg annotation pickle
-          instances.json   ← COCO instances annotation (optional, for RLE masks)
+          images/                 ← COCO images, or images/train2014, images/val2014
+          refs(umd).p             ← paper split (preferred when protocol="umd")
+          refs(g).p               ← Google split, used when the UMD file is absent
+          instances.json          ← COCO instances; required for a real cIoU
 
-    Each sample returns a binary white-on-black mask: the referred region is
-    rendered solid white (1.0) and the rest is black (0.0).  If a segmentation
-    annotation is available (via ``instances.json``) it is used directly;
-    otherwise a filled bounding-box is used as a coarse substitute.
+    Each referring sentence is its own sample (standard cIoU counts every
+    expression). Refs that record a ``split`` are kept only when it matches
+    ``split``; refs with no split field are kept, so small fixtures still load.
+    Masks come from polygon or RLE segmentation. A missing mask is black and is
+    not a paper cIoU — samples whose annotation has no segmentation are omitted
+    when ``instances.json`` is present. Bounding boxes are never used as the
+    ground-truth region.
     """
 
     TASK_TYPE = "referring"
 
-    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+    def __init__(
+        self,
+        root_dir,
+        split="train",
+        resolution=512,
+        native_gt=False,
+        protocol="umd",
+        **kwargs,
+    ) -> None:
+        if protocol not in {"umd", "google"}:
+            raise ValueError(f"protocol must be 'umd' or 'google', got {protocol!r}")
+        self.native_gt = bool(native_gt)
+        self.protocol = protocol
         super().__init__(root_dir, split, resolution, **kwargs)
+
+    def _annotation_file(self) -> Path | None:
+        names = (
+            ("refs(umd).p", "refs(g).p", "refs(google).p")
+            if self.protocol == "umd"
+            else ("refs(g).p", "refs(google).p", "refs(umd).p")
+        )
+        for name in names:
+            path = self.root_dir / name
+            if path.is_file():
+                return path
+        return None
 
     def _scan(self) -> None:
         if not self.root_dir.exists():
             logger.warning(f"RefCOCOg directory not found: {self.root_dir}")
             return
 
-        ann_file = self.root_dir / "refs(g).p"
-        if not ann_file.exists():
-            logger.warning(f"RefCOCOg annotation not found: {ann_file}")
+        ann_file = self._annotation_file()
+        if ann_file is None:
+            logger.warning(f"RefCOCOg annotation not found under {self.root_dir}")
             return
+        self._ann_file = ann_file
 
-        # Load COCO instances for mask decoding (optional)
         instances_file = self.root_dir / "instances.json"
-        self._coco = None
+        self._image_hw: dict[int, tuple[int, int]] = {}
+        self._ann_lookup: dict[int, dict] = {}
         if instances_file.exists():
             try:
                 import json
 
                 with open(instances_file) as f:
                     coco_data = json.load(f)
-                # Build ann_id → annotation lookup
-                self._ann_lookup: dict[int, dict] = {
-                    ann["id"]: ann for ann in coco_data.get("annotations", [])
-                }
+                self._ann_lookup = {ann["id"]: ann for ann in coco_data.get("annotations", [])}
+                for image in coco_data.get("images", []):
+                    if "height" in image and "width" in image:
+                        self._image_hw[int(image["id"])] = (int(image["height"]), int(image["width"]))
             except Exception as e:
                 logger.warning(f"Failed to load COCO instances: {e}")
                 self._ann_lookup = {}
-        else:
-            self._ann_lookup = {}
+        require_mask = bool(self._ann_lookup)
 
         try:
             import pickle
@@ -453,136 +573,214 @@ class RefCOCOgDataset(BaseVisionDataset):
                 refs = pickle.load(f)
 
             for ref in refs:
+                ref_split = ref.get("split")
+                if ref_split is not None and str(ref_split) != self.split:
+                    continue
                 image_id = ref.get("image_id", "")
                 ann_id = ref.get("ann_id")
-                expressions = ref.get("sentences", [ref.get("sent", "")])
+                if require_mask and (ann_id not in self._ann_lookup or not self._ann_lookup[ann_id].get("segmentation")):
+                    continue
+                expressions = self._expressions(ref)
                 if not expressions:
                     continue
-
-                # Pick the first expression
-                expr = expressions[0] if isinstance(expressions, list) else expressions
-                if isinstance(expr, dict):
-                    expr = expr.get("sent", "")
-
-                # Locate image file
-                img_path = self.root_dir / "images" / f"{image_id}.jpg"
-                if not img_path.exists():
-                    # Try zero-padded COCO naming
-                    img_path = self.root_dir / "images" / f"COCO_train2014_{image_id:012d}.jpg"
-                    if not img_path.exists():
-                        continue
-
-                self.samples.append(
-                    {
-                        "image": img_path,
-                        "expression": str(expr),
-                        "ann_id": ann_id,
-                    }
-                )
+                img_path = self._find_image(image_id, ref.get("file_name"))
+                if img_path is None:
+                    continue
+                for expr in expressions:
+                    self.samples.append(
+                        {
+                            "image": img_path,
+                            "expression": expr,
+                            "ann_id": ann_id,
+                            "image_id": image_id,
+                        }
+                    )
 
         except Exception as e:
             logger.warning(f"Failed to load RefCOCOg annotations: {e}")
+
+    @staticmethod
+    def _expressions(ref: dict) -> list[str]:
+        raw = ref.get("sentences", [ref.get("sent", "")])
+        if isinstance(raw, str):
+            raw = [raw]
+        texts: list[str] = []
+        for expr in raw:
+            if isinstance(expr, dict):
+                expr = expr.get("raw") or expr.get("sent") or ""
+            text = str(expr).strip()
+            if text:
+                texts.append(text)
+        return texts
+
+    def _find_image(self, image_id, file_name: str | None) -> Path | None:
+        names: list[str] = []
+        if file_name:
+            names.append(Path(file_name).name)
+        names.append(f"{image_id}.jpg")
+        try:
+            number = int(image_id)
+        except (TypeError, ValueError):
+            number = None
+        if number is not None:
+            names.extend(
+                [
+                    f"COCO_train2014_{number:012d}.jpg",
+                    f"COCO_val2014_{number:012d}.jpg",
+                    f"{number:012d}.jpg",
+                ]
+            )
+        folders = (
+            self.root_dir / "images",
+            self.root_dir / "images" / "train2014",
+            self.root_dir / "images" / "val2014",
+            self.root_dir,
+        )
+        for folder in folders:
+            for name in names:
+                path = folder / name
+                if path.is_file():
+                    return path
+        return None
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
         expression = sample["expression"]
-
-        # Try to decode the segmentation mask from COCO annotation
-        target_rgb = self._load_mask(sample.get("ann_id"))
-
-        prompt = PromptBuilder.build_referring_prompt(expression)
-        return {
-            "prompt": prompt,
+        native = self._decode_mask(sample.get("ann_id"), sample.get("image_id"))
+        if native is None:
+            target_rgb = torch.zeros(3, self.resolution, self.resolution)
+            gt_mask = torch.zeros(self.resolution, self.resolution, dtype=torch.bool)
+        else:
+            mask = torch.from_numpy(np.ascontiguousarray(native)).float().view(1, 1, *native.shape)
+            resized = (
+                torch.nn.functional.interpolate(mask, size=(self.resolution, self.resolution), mode="nearest")
+                .squeeze(0)
+                .squeeze(0)
+            )
+            gt_mask = resized > 0.5
+            target_rgb = gt_mask.float().unsqueeze(0).expand(3, -1, -1).clone()
+        item = {
+            "prompt": PromptBuilder.build_referring_prompt(expression),
             "image": image,
             "target_rgb": target_rgb,
+            "gt_mask": gt_mask,
             "expression": expression,
         }
+        if self.native_gt and native is not None:
+            item["gt_mask_native"] = torch.from_numpy(np.ascontiguousarray(native)).bool()
+        elif self.native_gt:
+            item["gt_mask_native"] = gt_mask
+        return item
 
     def _load_mask(self, ann_id: int | None) -> torch.Tensor:
         """Decode segmentation mask for a COCO annotation.
 
-        Returns a [3, H, W] tensor in [0, 1] where:
-        - White (1, 1, 1) = referred region
-        - Black (0, 0, 0) = background
-
-        Falls back to an all-black mask if the annotation is unavailable.
+        Returns a [3, H, W] tensor in [0, 1] where white is the referred
+        region. An unavailable annotation is all black. Bounding boxes are
+        not painted as the region.
         """
-        target_rgb = torch.zeros(3, self.resolution, self.resolution)
+        native = self._decode_mask(ann_id, None)
+        if native is None:
+            return torch.zeros(3, self.resolution, self.resolution)
+        mask = torch.from_numpy(np.ascontiguousarray(native)).float().view(1, 1, *native.shape)
+        resized = (
+            torch.nn.functional.interpolate(mask, size=(self.resolution, self.resolution), mode="nearest")
+            .squeeze(0)
+            .squeeze(0)
+        )
+        return resized.unsqueeze(0).expand(3, -1, -1).clone()
 
+    def _decode_mask(self, ann_id: int | None, image_id) -> np.ndarray | None:
         if ann_id is None or ann_id not in getattr(self, "_ann_lookup", {}):
-            return target_rgb
-
+            return None
         ann = self._ann_lookup[ann_id]
         seg = ann.get("segmentation")
-        if seg is None:
-            return target_rgb
-
+        if not seg:
+            return None
         try:
-            import numpy as np
-
-            # Determine original image size from the annotation bbox
-            bbox = ann.get("bbox", [0, 0, self.resolution, self.resolution])
-            img_w = ann.get("width", int(bbox[0] + bbox[2]) + 1)
-            img_h = ann.get("height", int(bbox[1] + bbox[3]) + 1)
-
-            mask = np.zeros((img_h, img_w), dtype=np.uint8)
-
+            height, width = self._mask_hw(ann, image_id, seg)
             if isinstance(seg, list):
-                # Polygon format
-                # Prefer cv2.fillPoly (fast); fall back to pure-numpy scanline
-                # fill so that cv2 remains an optional dependency.
+                mask = np.zeros((height, width), dtype=np.uint8)
                 try:
-                    import cv2  # optional
+                    import cv2
 
                     for poly in seg:
                         pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
                         cv2.fillPoly(mask, [pts.astype(np.int32)], 1)
                 except ImportError:
-                    # Pure-numpy scanline polygon fill (no extra dependencies)
                     for poly in seg:
                         pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
                         _fill_polygon(mask, pts)
-            elif isinstance(seg, dict):
-                # RLE format (requires pycocotools or manual decode)
+                return mask
+            if isinstance(seg, dict):
                 try:
                     from pycocotools import mask as coco_mask
 
-                    mask = coco_mask.decode(seg)
+                    decoded = coco_mask.decode(seg)
+                    if decoded.ndim == 3:
+                        decoded = decoded[..., 0]
+                    return np.ascontiguousarray(decoded)
                 except ImportError:
-                    # Manual RLE decode (uncompressed)
                     counts = seg.get("counts", [])
-                    size = seg.get("size", [img_h, img_w])
-                    if isinstance(counts, list):
-                        flat = np.zeros(size[0] * size[1], dtype=np.uint8)
-                        idx = 0
-                        val = 0
-                        for c in counts:
-                            flat[idx : idx + c] = val
-                            idx += c
-                            val = 1 - val
-                        mask = flat.reshape(size[0], size[1])
-
-            # Resize to model resolution
-            mask_tensor = torch.from_numpy(mask).float().unsqueeze(0).unsqueeze(0)
-            mask_resized = (
-                torch.nn.functional.interpolate(
-                    mask_tensor, size=(self.resolution, self.resolution), mode="nearest"
-                )
-                .squeeze(0)
-                .squeeze(0)
-            )
-
-            # Binary white/black encoding
-            target_rgb = mask_resized.unsqueeze(0).expand(3, -1, -1).clone()
-
+                    size = seg.get("size", [height, width])
+                    if not isinstance(counts, list):
+                        return None
+                    flat = np.zeros(int(size[0]) * int(size[1]), dtype=np.uint8)
+                    idx = 0
+                    val = 0
+                    for count in counts:
+                        flat[idx : idx + int(count)] = val
+                        idx += int(count)
+                        val = 1 - val
+                    # COCO uncompressed RLE is column-major; size is [height, width].
+                    return flat.reshape((int(size[0]), int(size[1])), order="F")
         except Exception as e:
             logger.debug(f"Mask decode failed for ann_id={ann_id}: {e}")
+        return None
 
-        return target_rgb
+    def _mask_hw(self, ann: dict, image_id, seg) -> tuple[int, int]:
+        if isinstance(seg, dict) and isinstance(seg.get("size"), (list, tuple)) and len(seg["size"]) == 2:
+            return int(seg["size"][0]), int(seg["size"][1])
+        lookup_id = image_id if image_id is not None else ann.get("image_id")
+        try:
+            keyed = int(lookup_id)
+        except (TypeError, ValueError):
+            keyed = None
+        if keyed is not None and keyed in getattr(self, "_image_hw", {}):
+            return self._image_hw[keyed]
+        if "height" in ann and "width" in ann:
+            return int(ann["height"]), int(ann["width"])
+        bbox = ann.get("bbox", [0, 0, self.resolution, self.resolution])
+        return int(bbox[1] + bbox[3]) + 1, int(bbox[0] + bbox[2]) + 1
 
 
-class NYUDepthDataset(BaseVisionDataset):
+class _NativeGTMixin:
+    """Optional unresized ground truth for native-resolution benchmark scoring.
+
+    With ``native_gt=True`` a depth dataset additionally returns
+    ``gt_depth_native`` ``[1, H, W]`` and ``valid_mask_native`` ``[H, W]`` at the
+    original resolution, using the same validity rule as the resized tensors.
+    ``VisionEvaluator.evaluate(native_resolution=True)`` consumes them.
+    """
+
+    native_gt: bool = False
+
+    def _init_native(self, native_gt: bool) -> None:
+        self.native_gt = bool(native_gt)
+
+    def _native_fields(self, depth: torch.Tensor, valid: torch.Tensor | None = None) -> dict:
+        if not self.native_gt:
+            return {}
+        if valid is None:
+            valid = torch.isfinite(depth) & (depth > 0)
+        return {
+            "gt_depth_native": torch.where(valid, depth, torch.zeros_like(depth)),
+            "valid_mask_native": valid.squeeze(0),
+        }
+
+
+class NYUDepthDataset(_NativeGTMixin, BaseVisionDataset):
     """NYU Depth v2 dataset for indoor metric depth estimation.
 
     The official NYU Depth v2 dataset contains 1449 RGB-D pairs with dense
@@ -601,8 +799,12 @@ class NYUDepthDataset(BaseVisionDataset):
     OFFICIAL_TRAIN_COUNT = 795
     OFFICIAL_TEST_COUNT = 654
 
-    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+    def __init__(self, root_dir, split="train", resolution=512, native_gt=False, **kwargs) -> None:
+        """``native_gt=True`` additionally returns the unresized depth and
+        validity mask (``gt_depth_native`` / ``valid_mask_native``) so the
+        evaluator can score at the original resolution."""
         self.depth_mapper = DepthRGBMapper()
+        self._init_native(native_gt)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -615,19 +817,25 @@ class NYUDepthDataset(BaseVisionDataset):
             self.samples.extend({"image": path, "target": path, "format": "nyu_h5"} for path in h5_paths)
             return
         # Prefer an explicit official split layout.  The extracted NYU test
-        # archive is flat (images/ + depths/) and must never be reused as train.
+        # archive is flat (images/ + depths/ or depth/) and must never be reused as train.
         split_root = self.root_dir / self.split
-        if (split_root / "images").is_dir() and (split_root / "depths").is_dir():
+        split_depth = _nyu_depth_dir(split_root)
+        nested_depth = None
+        for _name in ("depths", "depth"):
+            _candidate = self.root_dir / _name / self.split
+            if _candidate.is_dir():
+                nested_depth = _candidate
+                break
+        flat_depth = _nyu_depth_dir(self.root_dir)
+        if (split_root / "images").is_dir() and split_depth is not None:
             img_dir = split_root / "images"
-            depth_dir = split_root / "depths"
+            depth_dir = split_depth
             allowed_names: set[str] | None = None
-        elif (self.root_dir / "images" / self.split).is_dir() and (
-            self.root_dir / "depths" / self.split
-        ).is_dir():
+        elif (self.root_dir / "images" / self.split).is_dir() and nested_depth is not None:
             img_dir = self.root_dir / "images" / self.split
-            depth_dir = self.root_dir / "depths" / self.split
+            depth_dir = nested_depth
             allowed_names = None
-        elif (self.root_dir / "images").is_dir() and (self.root_dir / "depths").is_dir():
+        elif (self.root_dir / "images").is_dir() and flat_depth is not None:
             if self.split not in {"test", "val"}:
                 logger.warning(
                     "NYU flat layout has no official train split; refusing to use "
@@ -637,7 +845,7 @@ class NYUDepthDataset(BaseVisionDataset):
                 )
                 return
             img_dir = self.root_dir / "images"
-            depth_dir = self.root_dir / "depths"
+            depth_dir = flat_depth
             allowed_names = self._read_split_index()
             if allowed_names is None:
                 image_count = sum(
@@ -712,6 +920,7 @@ class NYUDepthDataset(BaseVisionDataset):
                 align_corners=False,
             ).squeeze(0) * 2.0 - 1.0
             depth = torch.from_numpy(np.asarray(depth_array, dtype=np.float32)).unsqueeze(0)
+            native = self._native_fields(depth)
             depth = torch.nn.functional.interpolate(
                 depth.unsqueeze(0),
                 size=(self.resolution, self.resolution),
@@ -726,6 +935,7 @@ class NYUDepthDataset(BaseVisionDataset):
                 "target_rgb": target_rgb,
                 "gt_depth": depth,
                 "valid_mask": valid_mask.squeeze(0),
+                **native,
             }
         image = self._load_image(sample["image"])
 
@@ -739,6 +949,7 @@ class NYUDepthDataset(BaseVisionDataset):
             if depth.max() > 1.0:
                 depth = depth / 1000.0  # uint16 mm to meters
 
+        native = self._native_fields(depth)
         depth = torch.nn.functional.interpolate(
             depth.unsqueeze(0),
             size=(self.resolution, self.resolution),
@@ -755,35 +966,55 @@ class NYUDepthDataset(BaseVisionDataset):
             "target_rgb": target_rgb,
             "gt_depth": depth,
             "valid_mask": valid_mask.squeeze(0),
+            **native,
         }
 
 
-class DIODEDataset(BaseVisionDataset):
+
+class DIODEDataset(_NativeGTMixin, BaseVisionDataset):
     """DIODE dataset for indoor/outdoor metric depth estimation.
 
     DIODE is the first public dataset with dense indoor and outdoor depth
     ground truth. Train split: 16,886 images. Val split: 3,325 images.
 
-    Expected directory structure::
+    Official layout (what the DIODE download produces)::
 
         root_dir/
-          train/
-            indoor/ or outdoor/
-              scenes/
-                */  (scene folders)
-                  *_rgb.png
-                  *_depth.npy
-                  *_depth_mask.npy  (optional, valid mask)
           val/
-            ... same structure
+            indoors/   (or outdoor/)
+              scene_00019/scan_00183/
+                00019_00183_indoors_000_010.png        ← RGB
+                00019_00183_indoors_000_010_depth.npy  ← float32 [H, W, 1], metres
+                00019_00183_indoors_000_010_depth_mask.npy ← [H, W], 1 = valid
 
-    Depth values are in meters (float32 .npy).
+    The earlier ``*_rgb.png`` / ``*_depth.npy`` naming is still accepted.
+
+    ``scene_type`` restricts to ``"indoors"`` or ``"outdoor"`` scenes. The paper
+    evaluates **DIODE-Indoor**, so benchmark runs pass ``scene_type="indoors"``.
     """
 
     TASK_TYPE = "depth"
+    _SCENE_ALIASES = {
+        "indoors": {"indoors", "indoor"},
+        "indoor": {"indoors", "indoor"},
+        "outdoor": {"outdoor", "outdoors"},
+        "outdoors": {"outdoor", "outdoors"},
+    }
 
-    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+    def __init__(
+        self,
+        root_dir,
+        split="train",
+        resolution=512,
+        native_gt=False,
+        scene_type: str | None = None,
+        **kwargs,
+    ) -> None:
+        if scene_type is not None and scene_type.lower() not in self._SCENE_ALIASES:
+            raise ValueError(f"scene_type must be one of {sorted(self._SCENE_ALIASES)}, got {scene_type!r}")
         self.depth_mapper = DepthRGBMapper()
+        self._init_native(native_gt)
+        self.scene_type = scene_type.lower() if scene_type else None
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -791,17 +1022,23 @@ class DIODEDataset(BaseVisionDataset):
         if not split_dir.exists():
             logger.warning(f"DIODE split directory not found: {split_dir}")
             return
-        for rgb_path in sorted(split_dir.rglob("*_rgb.png")):
-            depth_path = Path(str(rgb_path).replace("_rgb.png", "_depth.npy"))
-            if depth_path.exists():
-                mask_path = Path(str(rgb_path).replace("_rgb.png", "_depth_mask.npy"))
-                self.samples.append(
-                    {
-                        "image": rgb_path,
-                        "target": depth_path,
-                        "mask": mask_path if mask_path.exists() else None,
-                    }
-                )
+        wanted = self._SCENE_ALIASES[self.scene_type] if self.scene_type else None
+        for rgb_path in sorted(split_dir.rglob("*.png")):
+            stem = rgb_path.name[: -len(".png")]
+            base = stem[: -len("_rgb")] if stem.endswith("_rgb") else stem
+            depth_path = rgb_path.with_name(f"{base}_depth.npy")
+            if not depth_path.exists():
+                continue
+            if wanted is not None and not (wanted & {part.lower() for part in rgb_path.relative_to(split_dir).parts}):
+                continue
+            mask_path = rgb_path.with_name(f"{base}_depth_mask.npy")
+            self.samples.append(
+                {
+                    "image": rgb_path,
+                    "target": depth_path,
+                    "mask": mask_path if mask_path.exists() else None,
+                }
+            )
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -809,8 +1046,13 @@ class DIODEDataset(BaseVisionDataset):
 
         import numpy as np
 
-        depth = np.load(sample["target"])
-        depth = torch.from_numpy(depth).float().unsqueeze(0)
+        depth = load_scalar(sample["target"])  # [1, H, W]; DIODE stores [H, W, 1]
+        native_valid = (depth >= 0) & torch.isfinite(depth)
+        native_mask = None
+        if sample.get("mask") is not None:
+            native_mask = torch.from_numpy(np.load(sample["mask"])).bool().reshape(1, *depth.shape[-2:])
+            native_valid &= native_mask
+        native = self._native_fields(depth, native_valid)
 
         depth = torch.nn.functional.interpolate(
             depth.unsqueeze(0),
@@ -818,13 +1060,12 @@ class DIODEDataset(BaseVisionDataset):
             mode="nearest",
         ).squeeze(0)
 
-        # Mask invalid depth (DIODE uses -1 for invalid)
+        # Mask invalid depth (DIODE uses 0 / mask for invalid)
         valid_mask = (depth >= 0) & torch.isfinite(depth)
-        if sample.get("mask") is not None:
-            mask = torch.from_numpy(np.load(sample["mask"])).bool().unsqueeze(0)
+        if native_mask is not None:
             mask = (
                 torch.nn.functional.interpolate(
-                    mask.unsqueeze(0).float(),
+                    native_mask.unsqueeze(0).float(),
                     size=(self.resolution, self.resolution),
                     mode="nearest",
                 )
@@ -842,6 +1083,7 @@ class DIODEDataset(BaseVisionDataset):
             "target_rgb": target_rgb,
             "gt_depth": depth,
             "valid_mask": valid_mask.squeeze(0),
+            **native,
         }
 
 
@@ -872,12 +1114,13 @@ class IBimsDepthDataset(NYUDepthDataset):
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
-        depth = resize_scalar(
-            load_scalar(
-                sample["target"], scale=0.001 if sample["target"].suffix == ".png" else 1.0
-            ),
-            self.resolution,
+        native_depth = load_scalar(
+            sample["target"], scale=0.001 if sample["target"].suffix == ".png" else 1.0
         )
+        native = self._native_fields(
+            native_depth, torch.isfinite(native_depth) & (native_depth > 0) & (native_depth < 100)
+        )
+        depth = resize_scalar(native_depth, self.resolution)
         valid_mask = torch.isfinite(depth) & (depth > 0) & (depth < 100)
         depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
         target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
@@ -887,17 +1130,24 @@ class IBimsDepthDataset(NYUDepthDataset):
             "target_rgb": target_rgb,
             "gt_depth": depth,
             "valid_mask": valid_mask.squeeze(0),
+            **native,
         }
 
 
 class NYUNormalDataset(BaseVisionDataset):
-    """NYU surface-normal benchmark adapter."""
+    """NYU surface-normal benchmark adapter.
+
+    Official NYU Depth v2 H5 files contain RGB and depth only. This adapter
+    reads a community ``normals/`` directory of camera-space maps (``.npy``
+    vectors or paper-encoded PNG). It does not derive normals from depth.
+    """
 
     TASK_TYPE = "normal"
     OFFICIAL_TEST_COUNT = 654
 
-    def __init__(self, root_dir, split="val", resolution=512, **kwargs) -> None:
+    def __init__(self, root_dir, split="val", resolution=512, native_gt=False, **kwargs) -> None:
         self.normal_mapper = NormalRGBMapper()
+        _init_native_normal(self, native_gt)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -972,25 +1222,49 @@ class NYUNormalDataset(BaseVisionDataset):
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
-        image = self._load_image(sample["image"])
-        normal = resize_normal(load_normal(sample["target"]), self.resolution)
-        target_rgb = self.normal_mapper.normal_to_rgb(normal.unsqueeze(0)).squeeze(0)
+        normal, valid = load_normal_map(sample["target"])
         return {
-            "prompt": PromptBuilder.build_normal_prompt(),
-            "image": image,
-            "target_rgb": target_rgb,
-            "gt_normal": normal,
-            "valid_mask": torch.isfinite(normal).all(dim=0),
+            "image": self._load_image(sample["image"]),
+            **_pack_normal_sample(self, normal, valid),
         }
 
 
 class DIODENormalDataset(BaseVisionDataset):
-    """DIODE surface-normal benchmark adapter."""
+    """DIODE surface-normal benchmark adapter.
+
+    Official files sit next to the RGB frame::
+
+        <stem>.png
+        <stem>_normal.npy          ← float32 [H, W, 3], camera space
+        <stem>_depth_mask.npy      ← optional, 1 = valid (also accepts _normal_mask)
+
+    ``scene_type="indoors"`` keeps DIODE-Indoor, matching the depth benchmark.
+    Zero-length normal vectors are invalid. Normals are not derived from depth.
+    """
 
     TASK_TYPE = "normal"
+    _SCENE_ALIASES = {
+        "indoors": {"indoors", "indoor"},
+        "indoor": {"indoors", "indoor"},
+        "outdoor": {"outdoor", "outdoors"},
+        "outdoors": {"outdoor", "outdoors"},
+    }
+    _SKIP_SUFFIXES = ("_depth", "_normal", "_mask", "_depth_mask", "_normal_mask")
 
-    def __init__(self, root_dir, split="val", resolution=512, **kwargs) -> None:
+    def __init__(
+        self,
+        root_dir,
+        split="val",
+        resolution=512,
+        native_gt=False,
+        scene_type: str | None = None,
+        **kwargs,
+    ) -> None:
+        if scene_type is not None and scene_type.lower() not in self._SCENE_ALIASES:
+            raise ValueError(f"scene_type must be one of {sorted(self._SCENE_ALIASES)}, got {scene_type!r}")
         self.normal_mapper = NormalRGBMapper()
+        _init_native_normal(self, native_gt)
+        self.scene_type = scene_type.lower() if scene_type else None
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -998,40 +1272,53 @@ class DIODENormalDataset(BaseVisionDataset):
         if not split_dir.is_dir():
             logger.warning("DIODE normal split directory not found: %s", split_dir)
             return
+        wanted = self._SCENE_ALIASES[self.scene_type] if self.scene_type else None
         for image_path in sorted(split_dir.rglob("*")):
             if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
                 continue
             stem = image_path.stem
-            if stem.endswith("_depth") or stem.endswith("_normal"):
+            if stem.endswith(self._SKIP_SUFFIXES):
                 continue
-            rgb_stem = stem[:-4] if stem.endswith("_rgb") else stem
-            normal_path = find_matching_file(
-                image_path.parent,
-                f"{rgb_stem}_normal",
-                (".npy", ".png"),
-            )
-            if normal_path is None:
-                normal_path = find_matching_file(image_path.parent, rgb_stem, (".npy",))
-            if normal_path is None or normal_path.resolve() == image_path.resolve():
+            base = stem[:-4] if stem.endswith("_rgb") else stem
+            normal_path = image_path.with_name(f"{base}_normal.npy")
+            if not normal_path.is_file():
+                normal_path = image_path.with_name(f"{base}_normal.png")
+            if not normal_path.is_file():
+                alt = find_matching_file(image_path.parent, base, (".npy",))
+                if alt is None or alt.resolve() == image_path.resolve():
+                    continue
+                normal_path = alt
+            if wanted is not None and not (wanted & {part.lower() for part in image_path.relative_to(split_dir).parts}):
                 continue
-            self.samples.append({"image": image_path, "target": normal_path})
+            mask_path = None
+            for name in (f"{base}_normal_mask.npy", f"{base}_depth_mask.npy"):
+                candidate = image_path.with_name(name)
+                if candidate.is_file():
+                    mask_path = candidate
+                    break
+            self.samples.append({"image": image_path, "target": normal_path, "mask": mask_path})
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
-        image = self._load_image(sample["image"])
-        normal = resize_normal(load_normal(sample["target"]), self.resolution)
-        target_rgb = self.normal_mapper.normal_to_rgb(normal.unsqueeze(0)).squeeze(0)
+        normal, valid = load_normal_map(sample["target"])
+        mask = _load_normal_mask(sample.get("mask"), normal.shape[-2], normal.shape[-1])
+        if mask is not None:
+            valid = valid & mask
+            normal = torch.where(valid.unsqueeze(0), normal, torch.zeros_like(normal))
         return {
-            "prompt": PromptBuilder.build_normal_prompt(),
-            "image": image,
-            "target_rgb": target_rgb,
-            "gt_normal": normal,
-            "valid_mask": torch.isfinite(normal).all(dim=0),
+            "image": self._load_image(sample["image"]),
+            **_pack_normal_sample(self, normal, valid),
         }
 
 
 class VirtualKITTINormalDataset(DIODENormalDataset):
-    """Virtual KITTI 2 surface-normal benchmark adapter."""
+    """Virtual KITTI 2 surface-normal adapter.
+
+    VKITTI2 does not ship surface normals. This pairs each ``rgb/`` frame with
+    a sibling ``normal/`` or ``normals/`` map that is already in the paper's
+    camera frame (``.npy`` vectors or paper-encoded PNG). It does not derive
+    normals from depth.
+    """
 
     def _scan(self) -> None:
         for rgb_dir in sorted(self.root_dir.rglob("rgb")):
@@ -1215,7 +1502,7 @@ class BlendedMVSDepthDataset(BaseVisionDataset):
         return self._tag_task({"prompt": prompt, "image": image, "target_rgb": target_rgb})
 
 
-class KITTIDataset(BaseVisionDataset):
+class KITTIDataset(_NativeGTMixin, BaseVisionDataset):
     """KITTI dataset for autonomous driving depth estimation.
 
     KITTI provides 23,488 training and 1,000 test images with sparse LiDAR
@@ -1236,8 +1523,9 @@ class KITTIDataset(BaseVisionDataset):
 
     TASK_TYPE = "depth"
 
-    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+    def __init__(self, root_dir, split="train", resolution=512, native_gt=False, **kwargs) -> None:
         self.depth_mapper = DepthRGBMapper()
+        self._init_native(native_gt)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -1294,6 +1582,7 @@ class KITTIDataset(BaseVisionDataset):
             if depth.max() > 1.0:
                 depth = depth / 256.0  # KITTI depth PNG scaling
 
+        native = self._native_fields(depth, depth > 0.0)
         depth = torch.nn.functional.interpolate(
             depth.unsqueeze(0),
             size=(self.resolution, self.resolution),
@@ -1312,6 +1601,7 @@ class KITTIDataset(BaseVisionDataset):
             "target_rgb": target_rgb,
             "gt_depth": depth,
             "valid_mask": valid_mask.squeeze(0),
+            **native,
         }
 
 
@@ -1508,7 +1798,7 @@ class SintelFlowDataset(BaseVisionDataset):
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
 
-class ETH3DDataset(BaseVisionDataset):
+class ETH3DDataset(_NativeGTMixin, BaseVisionDataset):
     """ETH3D dataset for high-accuracy depth estimation.
 
     ETH3D provides 10 indoor/outdoor scenes with high-precision laser
@@ -1534,8 +1824,9 @@ class ETH3DDataset(BaseVisionDataset):
 
     TASK_TYPE = "depth"
 
-    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+    def __init__(self, root_dir, split="train", resolution=512, native_gt=False, **kwargs) -> None:
         self.depth_mapper = DepthRGBMapper()
+        self._init_native(native_gt)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -1596,6 +1887,7 @@ class ETH3DDataset(BaseVisionDataset):
 
         depth = self._load_depth(Path(sample["target"]))
 
+        native = self._native_fields(depth, (depth > 0.0) & (depth < 100.0))
         depth = torch.nn.functional.interpolate(
             depth.unsqueeze(0),
             size=(self.resolution, self.resolution),
@@ -1613,6 +1905,7 @@ class ETH3DDataset(BaseVisionDataset):
             "target_rgb": target_rgb,
             "gt_depth": depth,
             "valid_mask": valid_mask.squeeze(0),
+            **native,
         }
 
 
@@ -2729,6 +3022,7 @@ class V3FlatDataset(Dataset):
         task_label: str | None = None,
         resolution: int = 512,
         split_filter: tuple[set[str], str] | None = None,
+        keep_semantic_prompts: bool = False,
     ) -> None:
         """Args:
         task_dir: Path to the task directory (e.g. ``.../vb_snvc_train_v3/depth``).
@@ -2738,7 +3032,11 @@ class V3FlatDataset(Dataset):
         split_filter: Optional ``(filenames_set, split_name)`` tuple.
             When provided, only samples whose image filename appears in
             ``filenames_set`` are loaded. ``split_name`` is used for logging.
+        keep_semantic_prompts: Keep per-sample semantic prompts from
+            ``prompts/*.txt`` instead of forcing the fixed Cityscapes legend
+            (for open-vocabulary data with per-sample color mappings).
         """
+        self.keep_semantic_prompts = keep_semantic_prompts
         self.task_dir = Path(task_dir)
         self.dir_name = self.task_dir.name
         self.task = task_label or self.DIR_TO_TASK.get(self.dir_name, self.dir_name)
@@ -2802,7 +3100,7 @@ class V3FlatDataset(Dataset):
                 text = prompt_path.read_text(encoding="utf-8").strip()
                 if text:
                     prompt = text
-            prompt = normalize_task_prompt(self.task, prompt)
+            prompt = normalize_task_prompt(self.task, prompt, keep_custom=self.keep_semantic_prompts)
 
             self.samples.append(
                 {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from open_vision_banana.training.config import TrainingConfig
@@ -74,3 +75,76 @@ def test_validation_loss_is_repeatable_and_leaves_training_rng_alone():
     assert first == second  # same noise and timesteps at every evaluation
     torch.manual_seed(123)
     torch.testing.assert_close(after_first, torch.rand(3))  # as if validate() never drew
+
+
+def test_validation_covers_late_tasks_and_macro_averages():
+    trainer, _ = make_trainer()
+    depth = trainer.val_loader[0]
+    normal = dict(depth, task=["normal"] * B)
+    trainer.val_loader = [depth] * 25 + [normal]
+    trainer.losses.compute_flow_loss = lambda pred, target, t, tasks, device: (
+        torch.tensor(1.0 if tasks[0] == "depth" else 3.0), None, None
+    )
+    assert trainer.validate() == 2.0
+    assert trainer.validation_metrics["sample_counts"] == {"depth": 40, "normal": 2}
+
+
+def test_validation_restores_mode_and_rejects_nonfinite():
+    trainer, _ = make_trainer()
+    trainer.backend.peft_model.eval()
+    trainer.validate()
+    assert not trainer.backend.peft_model.training
+    trainer.backend.peft_model.train()
+    trainer.losses.compute_flow_loss = lambda *a: (torch.tensor(float("nan")), None, None)
+    with pytest.raises(FloatingPointError):
+        trainer.validate()
+    assert trainer.backend.peft_model.training
+
+
+def test_empty_validation_is_not_zero_loss():
+    trainer, _ = make_trainer()
+    trainer.val_loader = []
+    with pytest.raises(ValueError):
+        trainer.validate()
+
+
+def test_macro_loss_weights_samples_not_batches():
+    trainer, _ = make_trainer()
+    batch = trainer.val_loader[0]
+    tail = {k: v[:1] for k, v in batch.items()}
+    trainer.val_loader = [batch, tail]
+    trainer.losses.compute_flow_loss = lambda pred, target, t, tasks, device: (
+        torch.tensor(2.0 if len(tasks) == 2 else 8.0), None, None
+    )
+    assert trainer.validate() == 4.0
+
+
+def test_validation_budget_is_configurable():
+    trainer, calls = make_trainer(val_max_samples_per_task=3)
+    trainer.validate()
+    assert len(calls) == 2
+    assert trainer.validation_metrics["sample_counts"] == {"depth": 3}
+
+
+def test_validation_subset_does_not_read_discarded_samples():
+    from torch.utils.data import DataLoader, Dataset
+
+    from open_vision_banana.training.trainer import _collate_fn
+
+    trainer, _ = make_trainer(val_max_samples_per_task=2)
+    example = trainer.val_loader[0]
+    reads = []
+
+    class RecordedDataset(Dataset):
+        samples = [{"task": "depth"}] * 100
+
+        def __len__(self):
+            return 100
+
+        def __getitem__(self, index):
+            reads.append(index)
+            return {k: v[0] for k, v in example.items()}
+
+    trainer.val_loader = DataLoader(RecordedDataset(), batch_size=2, collate_fn=_collate_fn)
+    trainer.validate()
+    assert reads == [0, 1]

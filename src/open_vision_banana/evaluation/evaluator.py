@@ -34,6 +34,24 @@ from .benchmark import (
     apply_depth_benchmark_protocol,
 )
 from .depth import evaluate_depth
+
+
+def decode_depth_rgb(
+    rgb: torch.Tensor,
+    mapper: DepthRGBMapper,
+    *,
+    invert: bool = False,
+) -> torch.Tensor:
+    """RGB → metres. ``invert`` treats bright pixels as near (1 − normalized)."""
+    normalized = mapper.rgb_to_normalized(rgb)
+    if invert:
+        normalized = 1.0 - normalized
+    return mapper.normalized_to_depth(normalized)
+
+
+def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
+    """Unitless closer=brighter map in (0, 1], before any metric calibration."""
+    return (1.0 - rgb.mean(dim=1, keepdim=True)).clamp(1e-3, 1.0)
 from .edge import evaluate_edge
 from .flow import evaluate_flow
 from .generation_preservation import evaluate_generation_preservation
@@ -57,6 +75,18 @@ def _batch_bool(value: Any, index: int, default: bool) -> bool:
     if isinstance(value, (list, tuple)):
         return bool(value[min(index, len(value) - 1)])
     return bool(value)
+
+
+def _referring_expression(explicit: Any, batched: Any) -> Any:
+    """One expression per sample. Collate turns a string field into a list."""
+    value = explicit if explicit else batched
+    if isinstance(value, (list, tuple)):
+        if len(value) != 1:
+            raise ValueError(
+                "Referring evaluation scores one expression per sample; use batch_size=1."
+            )
+        return value[0]
+    return value
 
 
 class VisionEvaluator:
@@ -169,6 +199,10 @@ class VisionEvaluator:
         strength: float = 0.85,
         seed: int | None = None,
         dataset_name: str | None = None,
+        native_resolution: bool = False,
+        depth_colormap: str = "cube_edge",
+        invert_depth: bool = False,
+        report_relative_luminance: bool = False,
     ) -> dict[str, Any]:
         """Run evaluation on a dataset.
 
@@ -194,6 +228,12 @@ class VisionEvaluator:
             expression: Forwarded to predict() for referring segmentation.
             num_inference_steps: Diffusion steps forwarded to predict().
             strength: img2img noise strength forwarded to predict().
+            native_resolution: Score at the unresized ground truth.
+                Depth uses ``gt_depth_native`` / ``valid_mask_native``.
+                Normals use ``gt_normal_native`` (bilinear upsample, then
+                re-normalize). Referring uses ``gt_mask_native`` (nearest).
+                Batches must share one native size (use batch_size=1 for
+                mixed-size datasets).
 
         Returns:
             Dictionary of metric name → value (averaged over all batches).
@@ -214,7 +254,12 @@ class VisionEvaluator:
         referring_accumulator = ReferringAccumulator() if task == "referring" else None
 
         # Pre-instantiate shared decoders once (not per batch)
-        depth_mapper = DepthRGBMapper() if task in ("depth", "depth_edge") else None
+        depth_mapper = (
+            DepthRGBMapper(colormap=depth_colormap) if task in ("depth", "depth_edge") else None
+        )
+        relative_accumulator = (
+            DepthAccumulator() if task == "depth" and report_relative_luminance else None
+        )
         normal_mapper = NormalRGBMapper() if task == "normal" else None
         seg_decoder = SegmentationDecoder() if task in ("semantic", "instance") else None
 
@@ -233,7 +278,7 @@ class VisionEvaluator:
                     task=task,
                     class_color_map=class_color_map or batch.get("class_color_map"),
                     object_name=object_name,
-                    expression=expression or batch.get("expression"),
+                    expression=_referring_expression(expression, batch.get("expression")),
                     num_inference_steps=num_inference_steps,
                     strength=strength,
                     seed=None if seed is None else seed + batch_idx,
@@ -253,13 +298,30 @@ class VisionEvaluator:
             # ── Decode & compute metrics ──────────────────────────────────
             metrics: dict[str, Any]
             if task == "depth":
-                pred_depth = depth_mapper.rgb_to_depth(pred_rgb)
+                pred_depth = decode_depth_rgb(pred_rgb, depth_mapper, invert=invert_depth)
+                if relative_accumulator is not None:
+                    relative_depth = relative_luminance_depth(pred_rgb)
                 gt_depth = batch.get("gt_depth")
                 if gt_depth is None:
                     gt_depth = depth_mapper.rgb_to_depth(target_rgb)
                 else:
                     gt_depth = gt_depth.to(self.device)
                 valid_mask = batch.get("valid_mask")
+                if native_resolution:
+                    if "gt_depth_native" not in batch:
+                        raise ValueError(
+                            "native_resolution=True needs a dataset that returns "
+                            "'gt_depth_native' (e.g. NYUDepthDataset(native_gt=True))"
+                        )
+                    gt_depth = batch["gt_depth_native"].to(self.device)
+                    valid_mask = batch["valid_mask_native"].to(self.device)
+                    if pred_depth.shape[-2:] != gt_depth.shape[-2:]:
+                        pred_depth = torch.nn.functional.interpolate(
+                            pred_depth,
+                            size=gt_depth.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False,
+                        )
                 if valid_mask is not None:
                     valid_mask = valid_mask.to(self.device)
                 pred_depth, gt_depth, valid_mask = apply_depth_benchmark_protocol(
@@ -267,6 +329,17 @@ class VisionEvaluator:
                 )
                 if depth_accumulator is not None:
                     depth_accumulator.update(pred_depth, gt_depth, valid_mask)
+                if relative_accumulator is not None:
+                    relative_depth = torch.nn.functional.interpolate(
+                        relative_depth,
+                        size=gt_depth.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    relative_depth, relative_gt, relative_mask = apply_depth_benchmark_protocol(
+                        dataset_name or "", relative_depth, gt_depth, valid_mask
+                    )
+                    relative_accumulator.update(relative_depth, relative_gt, relative_mask)
                 metrics = evaluate_depth(pred_depth, gt_depth, valid_mask)
 
             elif task == "normal":
@@ -277,9 +350,27 @@ class VisionEvaluator:
                 else:
                     gt_normal = gt_normal.to(self.device)
                 valid_mask = batch.get("valid_mask")
+                if native_resolution:
+                    if "gt_normal_native" not in batch:
+                        raise ValueError(
+                            "native_resolution=True needs a dataset that returns "
+                            "'gt_normal_native' (e.g. NYUNormalDataset(native_gt=True))"
+                        )
+                    gt_normal = batch["gt_normal_native"].to(self.device)
+                    valid_mask = batch["valid_mask_native"].to(self.device)
+                    if pred_normal.shape[-2:] != gt_normal.shape[-2:]:
+                        pred_normal = torch.nn.functional.interpolate(
+                            pred_normal,
+                            size=gt_normal.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False,
+                        )
+                        pred_normal = torch.nn.functional.normalize(pred_normal, dim=1, eps=1e-8)
+                if valid_mask is not None:
+                    valid_mask = valid_mask.to(self.device)
                 if normal_accumulator is not None:
                     normal_accumulator.update(pred_normal, gt_normal, valid_mask)
-                metrics = evaluate_normals(pred_normal, gt_normal)
+                metrics = evaluate_normals(pred_normal, gt_normal, valid_mask)
 
             elif task == "semantic":
                 cmap = class_color_map or batch.get("class_color_map")
@@ -331,7 +422,28 @@ class VisionEvaluator:
 
             elif task == "referring":
                 pred_mask = pred_rgb.mean(dim=1) > 0.5
-                gt_mask = target_rgb.mean(dim=1) > 0.5
+                if native_resolution:
+                    if "gt_mask_native" not in batch:
+                        raise ValueError(
+                            "native_resolution=True needs a dataset that returns "
+                            "'gt_mask_native' (RefCOCOgDataset(native_gt=True))"
+                        )
+                    gt_mask = batch["gt_mask_native"].to(self.device).bool()
+                elif "gt_mask" in batch:
+                    gt_mask = batch["gt_mask"].to(self.device).bool()
+                else:
+                    gt_mask = target_rgb.mean(dim=1) > 0.5
+                if gt_mask.dim() == 4 and gt_mask.shape[1] == 1:
+                    gt_mask = gt_mask.squeeze(1)
+                if pred_mask.shape[-2:] != gt_mask.shape[-2:]:
+                    pred_mask = (
+                        torch.nn.functional.interpolate(
+                            pred_mask.unsqueeze(1).float(),
+                            size=gt_mask.shape[-2:],
+                            mode="nearest",
+                        ).squeeze(1)
+                        > 0.5
+                    )
                 if referring_accumulator is not None:
                     referring_accumulator.update(pred_mask, gt_mask)
                 metrics = evaluate_referring(pred_mask, gt_mask)
@@ -449,6 +561,11 @@ class VisionEvaluator:
         if task == "depth" and depth_accumulator is not None:
             metrics = depth_accumulator.compute()
             metrics["skipped_samples"] = skipped_samples
+            if relative_accumulator is not None:
+                relative_metrics = relative_accumulator.compute()
+                metrics["relative_delta_1.25"] = relative_metrics["delta_1.25"]
+                metrics["relative_delta_1.25_aligned"] = relative_metrics["delta_1.25_aligned"]
+                metrics["relative_AbsRel_aligned"] = relative_metrics["AbsRel_aligned"]
             return metrics
         if task == "normal" and normal_accumulator is not None:
             return normal_accumulator.compute()

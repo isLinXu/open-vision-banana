@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-from dataclasses import dataclass, field, fields
+import math
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
+from typing import get_type_hints
 
 import torch
 
@@ -44,6 +46,9 @@ class TrainingConfig:
     num_workers: int = 0
     vision_ratio: float = 1.0
     max_samples_per_task: int | None = None
+    val_max_samples_per_task: int = 40
+    task_sampling: str = "proportional"
+    task_sampling_weights: dict[str, float] = field(default_factory=dict)
 
     # ── Training ───────────────────────────────────────────────────────
     steps: int = 5000
@@ -88,6 +93,7 @@ class TrainingConfig:
     # ── EMA ────────────────────────────────────────────────────────────
     ema_decay: float = 0.9999
     ema_warmup: int = 500
+    ema_enabled: bool = True
 
     # ── W&B ────────────────────────────────────────────────────────────
     wandb: bool = False
@@ -98,9 +104,6 @@ class TrainingConfig:
     device: str | None = None  # auto-detect if None
     resume: str | None = None  # checkpoint dir or its lora.pt
     resume_weights_only: bool = False  # LoRA only; fresh optimizer, schedule, step
-
-    # ── Task weights string (for YAML parsing) ─────────────────────────
-    _task_weights_str: str | None = None
 
     def get_dtype(self) -> torch.dtype:
         """Convert dtype string to torch.dtype."""
@@ -117,267 +120,251 @@ class TrainingConfig:
         return torch.device("cpu")
 
     def parse_task_weights(self) -> dict[str, float]:
-        """Parse task weights from string format 'depth=1.0,normal=2.0' or return dict."""
-        if isinstance(self.task_loss_weights, dict) and self.task_loss_weights:
-            return self.task_loss_weights
-        if self._task_weights_str:
-            result = {}
-            for pair in self._task_weights_str.split(","):
-                pair = pair.strip()
-                if "=" in pair:
-                    k, v = pair.split("=", 1)
-                    result[k.strip()] = float(v.strip())
-            return result
-        return {"depth": 1.0, "normal": 1.0, "semantic": 1.0}
+        """Return normalized loss weights, independent of sampling weights."""
+        return _parse_weights(self.task_loss_weights, "task_loss_weights")
+
+    def validate(self) -> None:
+        """Normalize and reject invalid effective values before loading a model."""
+        hints = get_type_hints(type(self))
+        for f in fields(self):
+            value = getattr(self, f.name)
+            hint = hints[f.name]
+            if hint is bool and not isinstance(value, bool):
+                raise ValueError(f"{f.name} must be a boolean")
+            if (hint is int or (hint == int | None and value is not None)) and type(value) is not int:
+                raise ValueError(f"{f.name} must be an integer")
+            if hint is float:
+                if isinstance(value, bool):
+                    raise ValueError(f"{f.name} must be a finite number")
+                try:
+                    value = float(value)
+                except (ValueError, TypeError) as exc:
+                    raise ValueError(f"{f.name} must be a finite number") from exc
+                if not math.isfinite(value):
+                    raise ValueError(f"{f.name} must be a finite number")
+                setattr(self, f.name, value)
+            if hint in (str, str | None):
+                if value is None and hint == str | None:
+                    continue
+                if isinstance(value, Path):
+                    value = str(value)
+                    setattr(self, f.name, value)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"{f.name} must be a non-empty string")
+
+        for name in ("tasks", "lora_targets"):
+            value = getattr(self, name)
+            if name == "lora_targets" and value is None:
+                continue
+            if not isinstance(value, list) or not value or any(
+                not isinstance(v, str) or not v.strip() for v in value
+            ) or len(set(value)) != len(value):
+                raise ValueError(f"{name} must be a non-empty list of unique strings")
+        self.task_loss_weights = self.parse_task_weights()
+        self.task_sampling_weights = _parse_weights(
+            self.task_sampling_weights, "task_sampling_weights", allow_empty=True
+        )
+        for name in ("resolution", "lora_rank", "lora_alpha", "steps", "batch_size", "grad_accum",
+                     "save_every", "eval_every", "log_every", "val_max_samples_per_task"):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        for name in ("num_workers", "ema_warmup", "seed"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        for name in ("warmup_steps", "max_samples_per_task"):
+            value = getattr(self, name)
+            if value is not None and value < (1 if name == "max_samples_per_task" else 0):
+                raise ValueError(f"{name} is out of range")
+        for name in ("lr", "max_grad_norm", "flow_shift", "min_snr_gamma", "depth_edge_aux_sigma_floor"):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        for name in ("flow_sigma", "depth_edge_aux_weight", "depth_edge_aux_gradient_weight",
+                     "depth_edge_aux_edge_weight", "depth_edge_aux_edge_threshold",
+                     "normal_angular_loss_weight"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        for name in ("warmup_ratio", "cfg_dropout_rate"):
+            if not 0 <= getattr(self, name) < 1:
+                raise ValueError(f"{name} must be in [0, 1)")
+        if not 0 < self.ema_decay < 1:
+            raise ValueError("ema_decay must be in (0, 1)")
+        if self.vision_ratio != 1.0:
+            raise ValueError("vision_ratio must be 1.0: generation mixing is not implemented")
+        if self.tar_index is not None:
+            raise ValueError("tar_index is not implemented by the unified Trainer; use pair_manifest")
+        if self.task_sampling not in {"proportional", "uniform", "sqrt"}:
+            raise ValueError("task_sampling must be proportional, uniform, or sqrt")
+        if self.dtype not in {"float32", "float16", "bfloat16"}:
+            raise ValueError("dtype must be float32, float16, or bfloat16")
+        if self.quantize not in {None, "4bit", "8bit"}:
+            raise ValueError("quantize must be null, 4bit, or 8bit")
+        if self.scheduler not in {"cosine", "cosine_restarts", "polynomial", "constant", "one_cycle"}:
+            raise ValueError(
+                "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
+            )
+
+    def to_dict(self) -> dict:
+        """Return the validated, JSON-compatible effective configuration."""
+        self.validate()
+        return asdict(self)
 
 
-def _load_yaml_config(config_path: Path | None) -> dict:
-    """Load YAML config and flatten to a single dict."""
+def _parse_weights(value, name: str, *, allow_empty: bool = False) -> dict[str, float]:
+    if isinstance(value, str):
+        parsed = {}
+        for pair in value.split(","):
+            if pair.count("=") != 1:
+                raise ValueError(f"{name}: expected task=weight pairs")
+            key, weight = (part.strip() for part in pair.split("="))
+            if key in parsed:
+                raise ValueError(f"{name}: duplicate task {key}")
+            parsed[key] = weight
+        value = parsed
+    if not isinstance(value, dict) or (not value and not allow_empty):
+        raise ValueError(f"{name} must be a non-empty weight mapping")
+    result = {}
+    for key, weight in value.items():
+        if not isinstance(key, str) or not key.strip() or isinstance(weight, bool):
+            raise ValueError(f"{name}: invalid task or weight")
+        try:
+            weight = float(weight)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"{name}: invalid weight for {key}") from exc
+        if not math.isfinite(weight) or weight <= 0:
+            raise ValueError(f"{name}: weights must be finite and positive")
+        result[key] = weight
+    return result
+
+
+# Only these aliases are accepted; unsupported historical schemas fail explicitly.
+_YAML_SECTIONS = {
+    "model": {"name": "model_name", "dtype": "dtype", "resolution": "resolution", "quantize": "quantize"},
+    "lora": {"rank": "lora_rank", "alpha": "lora_alpha", "rs_lora": "rslora", "target_modules": "lora_targets"},
+    "data": {"dir": "data_dir", "pair_manifest": "pair_manifest", "tar_index": "tar_index",
+             "tasks": "tasks", "num_workers": "num_workers", "vision_ratio": "vision_ratio",
+             "max_samples_per_task": "max_samples_per_task", "resolution": "resolution",
+             "task_sampling": "task_sampling", "task_sampling_weights": "task_sampling_weights",
+             "task_weights": "task_sampling_weights"},
+    "training": {"steps": "steps", "batch_size": "batch_size", "gradient_accumulation": "grad_accum",
+                 "lr": "lr", "max_grad_norm": "max_grad_norm", "seed": "seed",
+                 "gradient_checkpointing": "gradient_checkpointing"},
+    "scheduler": {"type": "scheduler", "warmup_ratio": "warmup_ratio", "warmup_steps": "warmup_steps"},
+    "validation": {"max_samples_per_task": "val_max_samples_per_task"},
+    "flow": {"img2img_flow": "img2img_flow", "sigma": "flow_sigma",
+             "logit_normal_timesteps": "logit_normal", "shift": "flow_shift", "min_snr": "min_snr",
+             "min_snr_gamma": "min_snr_gamma", "cfg_dropout_rate": "cfg_dropout_rate"},
+    "loss": {name: name for name in ("task_loss_weights", "depth_edge_aux_weight",
+             "depth_edge_aux_gradient_weight", "depth_edge_aux_edge_weight", "depth_edge_aux_edge_threshold",
+             "depth_edge_aux_sigma_floor", "normal_angular_loss_weight")},
+    "checkpoint": {name: name for name in ("output_dir", "save_every", "eval_every", "log_every",
+                   "resume", "resume_weights_only")},
+    "ema": {"enabled": "ema_enabled", "decay": "ema_decay", "warmup_steps": "ema_warmup"},
+    "wandb": {"enabled": "wandb", "project": "wandb_project", "run_name": "wandb_run_name"},
+}
+
+
+def _load_yaml_config(config_path: str | Path | None) -> dict:
     if config_path is None:
         return {}
-    if not config_path.is_file():
-        raise FileNotFoundError(f"Config not found: {config_path}")
     import yaml
 
-    with config_path.open(encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+    with Path(config_path).open(encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("config must be a mapping")
+    top_fields = {"device", "resume", "resume_weights_only"}
+    unknown = set(raw) - set(_YAML_SECTIONS) - top_fields - {"experiment"}
+    if unknown:
+        raise ValueError(f"Unknown configuration fields: {sorted(unknown, key=str)}")
+    result = {}
+    for section, aliases in _YAML_SECTIONS.items():
+        values = raw.get(section, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"{section} must be a mapping")
+        # model_id is accepted only as a redundant registry assertion, never ignored.
+        if section == "model" and "model_id" in values:
+            from ..model_registry import resolve_model_config
 
-    model = raw.get("model", {}) or {}
-    lora = raw.get("lora", {}) or {}
-    data = raw.get("data", {}) or {}
-    training = raw.get("training", {}) or {}
-    scheduler = raw.get("scheduler", {}) or {}
-    flow = raw.get("flow", {}) or {}
-    loss = raw.get("loss", {}) or {}
-    ckpt = raw.get("checkpoint", {}) or {}
-    ema = raw.get("ema", {}) or {}
-    wandb_section = raw.get("wandb", {}) or {}
-
-    d = {
-        "model_name": model.get("name", "sana-1600m"),
-        "dtype": model.get("dtype", "bfloat16"),
-        "resolution": data.get("resolution", model.get("resolution", 512)),
-        "quantize": model.get("quantize"),
-        "lora_rank": lora.get("rank", 32),
-        "lora_alpha": lora.get("alpha", 64),
-        "rslora": lora.get("rs_lora", True),
-        "lora_targets": lora.get("target_modules"),
-        "data_dir": data.get("dir"),
-        "pair_manifest": data.get("pair_manifest"),
-        "tar_index": data.get("tar_index"),
-        "num_workers": data.get("num_workers", 0),
-        "tasks": data.get("tasks"),
-        "vision_ratio": data.get("vision_ratio", 1.0),
-        "steps": training.get("steps", 5000),
-        "batch_size": training.get("batch_size", 1),
-        "grad_accum": training.get("gradient_accumulation", 4),
-        "lr": training.get("lr", 3e-5),
-        "max_grad_norm": training.get("max_grad_norm", 1.0),
-        "seed": training.get("seed", 42),
-        "gradient_checkpointing": training.get("gradient_checkpointing", True),
-        "scheduler": scheduler.get("type", "cosine"),
-        "warmup_ratio": scheduler.get("warmup_ratio", 0.05),
-        "warmup_steps": scheduler.get("warmup_steps"),
-        "img2img_flow": flow.get("img2img_flow", True),
-        "flow_sigma": flow.get("sigma", 0.0),
-        "logit_normal": flow.get("logit_normal_timesteps", True),
-        "flow_shift": flow.get("shift", 1.0),
-        "min_snr": flow.get("min_snr", True),
-        "min_snr_gamma": flow.get("min_snr_gamma", 5.0),
-        "cfg_dropout_rate": flow.get("cfg_dropout_rate", 0.1),
-        "depth_edge_aux_weight": loss.get("depth_edge_aux_weight", 0.0),
-        "depth_edge_aux_gradient_weight": loss.get("depth_edge_aux_gradient_weight", 0.25),
-        "depth_edge_aux_edge_weight": loss.get("depth_edge_aux_edge_weight", 2.0),
-        "depth_edge_aux_edge_threshold": loss.get("depth_edge_aux_edge_threshold", 0.025),
-        "depth_edge_aux_sigma_floor": loss.get("depth_edge_aux_sigma_floor", 0.10),
-        "normal_angular_loss_weight": loss.get("normal_angular_loss_weight", 0.0),
-        "output_dir": ckpt.get("output_dir", "output/training"),
-        "save_every": ckpt.get("save_every", 500),
-        "eval_every": ckpt.get("eval_every", 250),
-        "log_every": ckpt.get("log_every", 25),
-        "ema_decay": ema.get("decay", 0.9999),
-        "ema_warmup": ema.get("warmup_steps", 500),
-        "wandb": wandb_section.get("enabled", False),
-        "wandb_project": wandb_section.get("project", "open-vision-banana"),
-        "wandb_run_name": wandb_section.get("run_name"),
-        "device": raw.get("device"),
-        "resume": raw.get("resume") or ckpt.get("resume"),
-        "resume_weights_only": raw.get("resume_weights_only")
-        or ckpt.get("resume_weights_only", False),
-    }
-
-    # Handle task_loss_weights (can be string or dict)
-    task_weights = loss.get("task_loss_weights")
-    if isinstance(task_weights, str):
-        d["_task_weights_str"] = task_weights
-    elif isinstance(task_weights, dict):
-        d["task_loss_weights"] = task_weights
-
-    return {k: v for k, v in d.items() if v is not None}
-
-
-def load_config(
-    args: argparse.Namespace | None = None, config_path: Path | None = None
-) -> TrainingConfig:
-    """Load config from YAML file with optional CLI overrides."""
-    # Determine config path
-    if args is not None and hasattr(args, "config") and args.config is not None:
-        config_path = args.config
-
-    # Load YAML defaults
-    yaml_dict = _load_yaml_config(config_path)
-
-    # Apply CLI overrides
-    if args is not None:
-        args_dict = vars(args)
-        for key, value in args_dict.items():
-            if key == "config":
+            expected = resolve_model_config(values.get("name", "sana-1600m")).model_id
+            if values["model_id"] != expected:
+                raise ValueError("model.model_id overrides are not implemented; use model.name")
+        # Zero dropout is a redundant historical declaration; other values are unsupported.
+        if section == "lora" and "dropout" in values and values["dropout"] != 0.0:
+            raise ValueError("lora.dropout is not implemented")
+        extras = {"model_id"} if section == "model" else {"dropout"} if section == "lora" else set()
+        unknown = set(values) - set(aliases) - extras
+        if unknown:
+            raise ValueError("Unknown configuration fields: " + ", ".join(
+                f"{section}.{key}" for key in sorted(unknown, key=str)
+            ))
+        for key, value in values.items():
+            if key in extras:
                 continue
-            if value is not None:
-                # Convert CLI arg names to config names
-                config_key = key.replace("-", "_")
-                yaml_dict[config_key] = value
-
-    # Build TrainingConfig
-    config = TrainingConfig()
-    for f in fields(config):
-        if f.name.startswith("_"):
+            target = aliases[key]
+            if target in {"resume", "resume_weights_only"} and (
+                value is None or (target == "resume" and isinstance(value, str) and not value.strip())
+            ):
+                continue
+            if section == "data" and key == "task_weights" and isinstance(value, str):
+                target = "task_sampling"
+            if target in result and result[target] != value:
+                raise ValueError(f"Configuration conflict for {section}.{key} ({target})")
+            result[target] = value
+    for name in top_fields:
+        if name not in raw:
             continue
-        if f.name in yaml_dict:
-            setattr(config, f.name, yaml_dict[f.name])
+        value = raw[name]
+        if name in {"resume", "resume_weights_only"}:
+            if value is None or (name == "resume" and isinstance(value, str) and not value.strip()):
+                continue
+            if name in result and (
+                result[name] != value or type(result[name]) is not type(value)
+            ):
+                raise ValueError(f"Configuration conflict between {name} and checkpoint.{name}")
+        result[name] = value
+    return result
 
-    # Handle private fields
-    if "_task_weights_str" in yaml_dict:
-        config._task_weights_str = yaml_dict["_task_weights_str"]
-        config.task_loss_weights = config.parse_task_weights()
 
+def load_config(args: argparse.Namespace | None = None, config_path: str | Path | None = None) -> TrainingConfig:
+    """Merge defaults < YAML < explicit CLI, then validate the effective values."""
+    if args is not None and getattr(args, "config", None) is not None:
+        config_path = args.config
+    config = TrainingConfig(**_load_yaml_config(config_path))
+    if args is not None:
+        return apply_cli_overrides(config, args)
+    config.validate()
     return config
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    """Build unified argparse parser from TrainingConfig."""
-    config_parser = argparse.ArgumentParser(add_help=False)
-    config_parser.add_argument("--config", type=Path)
-    config_args, _ = config_parser.parse_known_args()
-
-    cfg = _load_yaml_config(config_args.config)
-
-    p = argparse.ArgumentParser(
-        description="Unified Vision Banana training script",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    p.add_argument("--config", type=Path, default=config_args.config)
-
-    # Model
-    p.add_argument("--model-name", default=cfg.get("model_name", "sana-1600m"))
-    p.add_argument("--dtype", default=cfg.get("dtype", "bfloat16"))
-    p.add_argument("--resolution", type=int, default=cfg.get("resolution", 512))
-    p.add_argument("--quantize", default=cfg.get("quantize"), choices=[None, "4bit", "8bit"])
-
-    # LoRA
-    p.add_argument("--lora-rank", type=int, default=cfg.get("lora_rank", 32))
-    p.add_argument("--lora-alpha", type=int, default=cfg.get("lora_alpha", 64))
-    p.add_argument("--no-rslora", action="store_true", default=not cfg.get("rslora", True))
-
-    # Data
-    p.add_argument("--data-dir", default=cfg.get("data_dir"))
-    p.add_argument("--pair-manifest", type=Path, default=cfg.get("pair_manifest"))
-    p.add_argument("--tar-index", type=Path, default=cfg.get("tar_index"))
-    p.add_argument("--tasks", nargs="+", default=cfg.get("tasks"))
-    p.add_argument("--num-workers", type=int, default=cfg.get("num_workers", 0))
-    p.add_argument("--vision-ratio", type=float, default=cfg.get("vision_ratio", 1.0))
-    p.add_argument("--max-samples-per-task", type=int, default=None)
-
-    # Training
-    p.add_argument("--steps", type=int, default=cfg.get("steps", 5000))
-    p.add_argument("--batch-size", type=int, default=cfg.get("batch_size", 1))
-    p.add_argument("--grad-accum", type=int, default=cfg.get("grad_accum", 4))
-    p.add_argument("--lr", type=float, default=cfg.get("lr", 3e-5))
-    p.add_argument("--max-grad-norm", type=float, default=cfg.get("max_grad_norm", 1.0))
-    p.add_argument("--seed", type=int, default=cfg.get("seed", 42))
-
-    # Scheduler
-    p.add_argument("--scheduler", default=cfg.get("scheduler", "cosine"))
-    p.add_argument("--warmup-ratio", type=float, default=cfg.get("warmup_ratio", 0.05))
-
-    # Flow
-    p.add_argument(
-        "--no-img2img-flow", action="store_true", default=not cfg.get("img2img_flow", True)
-    )
-    p.add_argument("--flow-sigma", type=float, default=cfg.get("flow_sigma", 0.0))
-    p.add_argument(
-        "--no-logit-normal", action="store_true", default=not cfg.get("logit_normal", True)
-    )
-    p.add_argument("--flow-shift", type=float, default=cfg.get("flow_shift", 1.0))
-    p.add_argument("--no-min-snr", action="store_true", default=not cfg.get("min_snr", True))
-    p.add_argument("--min-snr-gamma", type=float, default=cfg.get("min_snr_gamma", 5.0))
-    p.add_argument("--cfg-dropout-rate", type=float, default=cfg.get("cfg_dropout_rate", 0.1))
-
-    # Loss
-    p.add_argument(
-        "--depth-edge-aux-weight", type=float, default=cfg.get("depth_edge_aux_weight", 0.0)
-    )
-    p.add_argument(
-        "--depth-edge-aux-gradient-weight",
-        type=float,
-        default=cfg.get("depth_edge_aux_gradient_weight", 0.25),
-    )
-    p.add_argument(
-        "--depth-edge-aux-edge-weight",
-        type=float,
-        default=cfg.get("depth_edge_aux_edge_weight", 2.0),
-    )
-    p.add_argument(
-        "--depth-edge-aux-edge-threshold",
-        type=float,
-        default=cfg.get("depth_edge_aux_edge_threshold", 0.025),
-    )
-    p.add_argument(
-        "--depth-edge-aux-sigma-floor",
-        type=float,
-        default=cfg.get("depth_edge_aux_sigma_floor", 0.10),
-    )
-    p.add_argument(
-        "--normal-angular-loss-weight",
-        type=float,
-        default=cfg.get("normal_angular_loss_weight", 0.0),
-    )
-
-    # Output
-    p.add_argument("--output-dir", default=cfg.get("output_dir", "output/training"))
-    p.add_argument("--save-every", type=int, default=cfg.get("save_every", 500))
-    p.add_argument("--eval-every", type=int, default=cfg.get("eval_every", 250))
-    p.add_argument("--log-every", type=int, default=cfg.get("log_every", 25))
-
-    # EMA
-    p.add_argument("--ema-decay", type=float, default=cfg.get("ema_decay", 0.9999))
-    p.add_argument("--ema-warmup", type=int, default=cfg.get("ema_warmup", 500))
-
-    # W&B
-    p.add_argument("--wandb", action="store_true", default=cfg.get("wandb", False))
-    p.add_argument("--wandb-project", default=cfg.get("wandb_project", "open-vision-banana"))
-    p.add_argument("--wandb-run-name", default=cfg.get("wandb_run_name"))
-
-    # Device
-    p.add_argument("--device", default=cfg.get("device"))
-    p.add_argument("--resume", default=cfg.get("resume"), help="Checkpoint dir or lora.pt")
-    p.add_argument(
-        "--resume-weights-only",
-        action="store_true",
-        default=cfg.get("resume_weights_only", False),
-        help="Load only the LoRA weights from --resume; reset optimizer, scheduler, step.",
-    )
-
-    # Distributed: data parallelism turns on by itself under torchrun (WORLD_SIZE > 1,
-    # see training/distributed.py). --ddp is accepted because the DDP launchers pass it.
+    """Build a parser without reading process argv or injecting YAML defaults."""
+    p = argparse.ArgumentParser(description="Unified Vision Banana training script")
+    p.add_argument("--config", type=Path)
+    p.add_argument("--print-effective-config", action="store_true")
+    hints = get_type_hints(TrainingConfig)
+    for f in fields(TrainingConfig):
+        name = f.name
+        option = "--" + name.replace("_", "-")
+        if hints[name] is bool:
+            if name == "ema_enabled":
+                option = "--ema"
+            p.add_argument(option, dest=name, action=argparse.BooleanOptionalAction, default=None)
+        elif name in {"tasks", "lora_targets"}:
+            p.add_argument(option, nargs="+", default=None)
+        elif name in {"task_loss_weights", "task_sampling_weights"}:
+            p.add_argument(option, default=None, help="task=weight,task=weight")
+        else:
+            arg_type = int if hints[name] in (int, int | None) else float if hints[name] is float else str
+            p.add_argument(option, type=arg_type, default=None)
     p.add_argument("--ddp", action="store_true", help="accepted for launcher compatibility")
     p.add_argument("--fsdp", "--deepspeed", nargs=0, action=_UnsupportedBackend)
-
     return p
 
 
 class _UnsupportedBackend(argparse.Action):
-    """Give the FSDP/DeepSpeed launchers a clear error instead of 'unrecognized arguments'."""
+    """Reject unsupported distributed backends explicitly."""
 
     def __call__(self, parser, namespace, values, option_string=None):
         parser.error(
@@ -388,67 +375,18 @@ class _UnsupportedBackend(argparse.Action):
 
 
 def apply_cli_overrides(config: TrainingConfig, args: argparse.Namespace) -> TrainingConfig:
-    """Apply CLI argument overrides to config (for non-None values)."""
-    # Handle boolean flags that use action="store_true" with negation
-    if getattr(args, "no_img2img_flow", False):
-        config.img2img_flow = False
-    if getattr(args, "no_logit_normal", False):
-        config.logit_normal = False
-    if getattr(args, "no_min_snr", False):
-        config.min_snr = False
-    if getattr(args, "no_rslora", False):
-        config.rslora = False
-
-    # Apply all other non-None overrides
-    override_map = {
-        "model_name": "model_name",
-        "dtype": "dtype",
-        "resolution": "resolution",
-        "quantize": "quantize",
-        "lora_rank": "lora_rank",
-        "lora_alpha": "lora_alpha",
-        "data_dir": "data_dir",
-        "pair_manifest": "pair_manifest",
-        "tar_index": "tar_index",
-        "tasks": "tasks",
-        "num_workers": "num_workers",
-        "vision_ratio": "vision_ratio",
-        "max_samples_per_task": "max_samples_per_task",
-        "steps": "steps",
-        "batch_size": "batch_size",
-        "grad_accum": "grad_accum",
-        "lr": "lr",
-        "max_grad_norm": "max_grad_norm",
-        "seed": "seed",
-        "scheduler": "scheduler",
-        "warmup_ratio": "warmup_ratio",
-        "flow_sigma": "flow_sigma",
-        "flow_shift": "flow_shift",
-        "min_snr_gamma": "min_snr_gamma",
-        "cfg_dropout_rate": "cfg_dropout_rate",
-        "depth_edge_aux_weight": "depth_edge_aux_weight",
-        "depth_edge_aux_gradient_weight": "depth_edge_aux_gradient_weight",
-        "depth_edge_aux_edge_weight": "depth_edge_aux_edge_weight",
-        "depth_edge_aux_edge_threshold": "depth_edge_aux_edge_threshold",
-        "depth_edge_aux_sigma_floor": "depth_edge_aux_sigma_floor",
-        "normal_angular_loss_weight": "normal_angular_loss_weight",
-        "output_dir": "output_dir",
-        "save_every": "save_every",
-        "eval_every": "eval_every",
-        "log_every": "log_every",
-        "ema_decay": "ema_decay",
-        "ema_warmup": "ema_warmup",
-        "wandb": "wandb",
-        "wandb_project": "wandb_project",
-        "wandb_run_name": "wandb_run_name",
-        "device": "device",
-        "resume": "resume",
-        "resume_weights_only": "resume_weights_only",
-    }
-
-    for arg_name, config_name in override_map.items():
-        value = getattr(args, arg_name, None)
-        if value is not None:
-            setattr(config, config_name, value)
-
+    """Apply only explicit values; shared by both loading interfaces."""
+    valid = {f.name for f in fields(config)}
+    ignored = {"config", "print_effective_config", "ddp", "fsdp", "deepspeed"}
+    for name, value in vars(args).items():
+        if value is None or name in ignored:
+            continue
+        if name.startswith("no_") and name[3:] in valid:
+            if value:
+                setattr(config, name[3:], False)
+        elif name in valid:
+            setattr(config, name, value)
+        else:
+            raise ValueError(f"Unknown CLI configuration field: {name}")
+    config.validate()
     return config
