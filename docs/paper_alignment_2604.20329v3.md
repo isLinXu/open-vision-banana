@@ -155,17 +155,24 @@ B = trunc((1 + z)/2, min=0, max=1) × 255
 
 #### 评估数据集与指标
 
-| 方法 | NYUv2 mean↓/median↓ | DIODE mean↓/median↓ | ScanNet mean↓/median↓ | VKITTI mean↓/median↓ |
-|------|---------------------|---------------------|----------------------|---------------------|
-| Marigold | 19.606/11.828 | 20.864/11.134 | 16.671/12.084 | 21.284/12.268 |
-| DSINE | 17.017/10.190 | 16.4/8.4 | 18.453/13.871 | 16.2/8.3 |
-| StableNormal | 17.168/10.028 | 19.707/10.527 | 13.701/9.46 | 18.098/10.097 |
-| Lotus-2-Normal | 16.558/- | 16.9/N/A | 18.575/N/A | 14.2/N/A |
-| **Vision Banana** | **15.549/9.300** | **17.778/8.876** | **13.818/11.556** | **15.052/7.468** |
+> 勘误（2026-10-09）：论文 Table 7 的列顺序是「室内均值 / NYUv2 / DIODE-indoor / ScanNet / VKITTI」，
+> 此前版本把第一对数（室内均值）误当成 NYUv2，导致后面所有逐数据集列整体错位。下表已按原文重新核对，
+> 并用算术验证：Vision Banana 室内均值 (17.778+13.818+15.052)/3 = 15.549 ✓。
 
-**3 室内数据集平均**: mean=18.928 (全表最低), median=9.677 (仅次于 StableNormal)
+| 方法 | 室内均值 mean/median | NYUv2 | DIODE-indoor | ScanNet | VKITTI（室外） |
+|------|------|------|------|------|------|
+| Marigold | 19.606/11.828 | 20.864/11.134 | 16.671/12.084 | 21.284/12.268 | – |
+| DSINE | 17.017/10.190 | 16.4/8.4 | 18.453/13.871 | 16.2/8.3 | 28.9/9.9 |
+| StableNormal | 17.168/10.028 | 19.707/10.527 | 13.701/9.46 | 18.098/10.097 | – |
+| Lotus-2-Normal | 16.558/– | 16.9/N/A | 18.575/N/A | 14.2/N/A | 28.894/9.677 |
+| **Vision Banana** | **15.549/9.300** | 17.778/8.876 | 13.818/11.556 | 15.052/7.468 | 29.063/10.699 |
 
-**VKITTI 单独**: mean=29.063, median=10.699（比 Lotus-2 高，但论文解释 Lotus-2 训练用了 VKITTI）
+**Table 1 的 4 数据集均值 18.928**：(17.778+13.818+15.052+29.063)/4 = 18.928 ✓；Lotus-2 为 (16.9+18.575+14.2+28.894)/4 = 19.642 ✓。
+
+**要点**：
+- 室内均值 15.549 / 9.300，是表中最低的 mean 和 median。
+- NYUv2 上 Vision Banana (17.778) 并非最优（DSINE 16.4、Lotus-2 16.9 更低）；ScanNet 的 mean 13.818 接近 StableNormal (13.701)。
+- VKITTI 上 29.063 / 10.699 与 DSINE (28.9 / 9.9)、Lotus-2 (28.894) 基本持平，论文称其为 "on par"；Lotus-2 训练时用了 Virtual KITTI 2。
 
 我们的 eval 代码：`evaluation/normal.py` — mean/median angle error ✅
 
@@ -460,16 +467,18 @@ A(S_a ∪ S_b) ≤ γ × (A(S_a) + A(S_b))     γ = 5.0
 
 | 任务 | Benchmark | 指标 | Vision Banana 得分 | SOTA 对比 |
 |------|-----------|------|-------------------|-----------|
-| Depth | NYU v2 | δ1 | 0.948 | Depth Anything V3: 0.963 |
+| Depth | NYU v2 | δ1 | 0.948 | Depth Anything V3: 0.963（VB 落后） |
 | Depth | ETH3D | δ1 | 0.935 | Depth Anything V3: 0.917 |
-| Depth | DIODE | δ1 | 0.917 | Depth Anything V3: 0.671 |
-| Depth | KITTI | δ1 | 0.915 | Depth Anything V3: 0.843 |
+| Depth | DIODE | δ1 | 0.917 | Depth Anything V3: 0.838（按脚注 0.918 均值反推，见附录第 2 条） |
+| Depth | KITTI | δ1 | 0.915 | Depth Anything V3: 0.953（同上；此处 VB 落后） |
 | Depth | iBims-1 | δ1 | 0.934 | Depth Anything V3: 0.913 |
 | Depth | nuScenes | δ1 | 0.643 | DepthLM-7B: 0.865 (non-zero-shot) |
-| Normal | NYU v2 | mean↓ | 15.549 | Lotus-2: 16.558 |
-| Normal | DIODE | mean↓ | 17.778 | Lotus-2: 16.9 |
-| Normal | ScanNet | mean↓ | 13.818 | StableNormal: 13.701 |
-| Normal | VKITTI | mean↓ | 15.052 | Lotus-2: 14.2 (non-zero-shot) |
+| Normal | NYU v2 | mean↓ | 17.778 | DSINE: 16.4 / Lotus-2: 16.9 |
+| Normal | DIODE-indoor | mean↓ | 13.818 | StableNormal: 13.701 |
+| Normal | ScanNet | mean↓ | 15.052 | DSINE: 16.2 / Lotus-2: 14.2 |
+| Normal | VKITTI（室外） | mean↓ | 29.063 | Lotus-2: 28.894 (训练含 VKITTI，非零样本) |
+| Normal | 室内均值 | mean↓ | 15.549 | Lotus-2: 16.558 |
+| Normal | 4 数据集均值（Table 1） | mean↓ | 18.928 | Lotus-2: 19.642 |
 | Semantic | Cityscapes val | mIoU | 69.9 | SAM 3: 65.2 |
 | Instance | SA-Co/Gold | cgF1 | 47.5 | SAM 3: 54.1 (trained on SA-Co) |
 | Referring | RefCOCOg UMD | cIoU | 73.8 | SAM3+Gemini2.5: 73.4 |
@@ -531,9 +540,9 @@ A(S_a ∪ S_b) ≤ γ × (A(S_a) + A(S_b))     γ = 5.0
 
 ### ⚠️ 需要人工复核的数值
 
-1. **Surface Normal 4-dataset average** (Table 1: 18.928): Table 7 的 per-dataset mean values 直接算术平均无法得到 18.928。Vision Banana per-dataset means: 15.549 (NYU) + 17.778 (DIODE) + 13.818 (ScanNet) + 15.052 (VKITTI) = 4-dataset avg = 15.549。可能原因：Table 7 最后一列 "Average" 使用了不同聚合方式（如 pixel-level aggregation、加权平均、或含额外指标），建议直接参考 per-dataset 数值。
+1. **Surface Normal 4-dataset average (18.928)**：已解决。此前的"无法复现"源于 Table 7 列错位（见 §2.2 勘误）。按正确列 (17.778+13.818+15.052+29.063)/4 = 18.928 ✓，Lotus-2 同理得 19.642 ✓。
 
-2. **Lotus-2 的 Table 7 Average 列**: 28.894 同样无法用简单算术平均解释。由于 Lotus-2 在多个 benchmark 上未报告 median，其聚合方式存疑。
+2. **Depth Anything 3 逐数据集 δ1**：Table 6 在若干单元格缺项，列归属不唯一。论文脚注给出 DA3 在 NYU+ETH3D+DIODE+KITTI 上均值为 0.918。取 NYU 0.963、ETH3D 0.917、DIODE 0.838、KITTI 0.953 时 (3.671/4 = 0.918) 恰好吻合，故采用该分配；此前文档中的 DIODE 0.671 / KITTI 0.843 应属其他列。结论：Vision Banana 在 ETH3D、DIODE 上领先 DA3，在 NYU、KITTI 上落后，四项均值 0.929 vs 0.918 的领先幅度很小。建议最终以论文原表人工复核。
 
 3. **Depth 6-dataset avg δ1=0.882**: (0.948+0.934+0.935+0.917+0.915+0.643)/6 = 0.882，✅ 验证通过。
 
@@ -544,3 +553,124 @@ A(S_a ∪ S_b) ≤ γ × (A(S_a) + A(S_b))     γ = 5.0
 *文档生成日期: 2026-07-12*
 *对应论文: arXiv:2604.20329v3*
 *对应代码仓库: open-vision-banana v0.4.2*
+
+## 附录 B：深度评测协议核对（2026-10-09）
+
+对照论文 Table 6 与 `evaluation/benchmark.py`、`scripts/evaluate_paper_benchmarks.py`：
+
+| 项 | 论文 | 仓库 | 状态 |
+|---|---|---|---|
+| 指标 δ1 (<1.25)、AbsRel | 给出 | 实现一致 | ✅ |
+| 不使用相机内参 | 明确 | 无内参输入 | ✅ |
+| 是否做尺度对齐 | 度量深度，无对齐 | 主指标无对齐；`*_aligned` 仅作诊断 | ✅ |
+| crop / 深度上限 | **未披露** | NYU Eigen + 10m，KITTI Garg + 80m，ETH3D 80m（沿用社区常规） | ⚠️ 假设 |
+| 聚合方式 | **未披露** | 像素加权（主指标）+ 逐图平均（`*_per_image`） | ⚠️ 假设，两种都报 |
+| 评测分辨率 | **未披露**，推测原图分辨率 | 默认方形 512×512；`--native-resolution` 在原始 GT 分辨率打分（深度 NYU/iBims/DIODE/KITTI/ETH3D；法向量 NYU/DIODE-Indoor/ScanNet/VKITTI；RefCOCOg 掩码） | ⚠️ 部分解决 |
+
+**已修复的协议错误**：NYU 的 "Eigen crop" 原先用的是 KITTI Garg crop 的比例（上 40.8%、下 99.2%、左右 3.5%），即评测时丢掉图像上方约 40%；KITTI 的 Garg crop 又因为要求画布宽 ≥1000，在默认 512×512 下从不触发。现已改为：NYU 用 Eigen 的 `[45:471, 41:601]`（480×640 帧），KITTI 用 Garg 比例，二者按比例在任意画布尺寸生效，并新增单测。
+
+**对已有结果的影响**：`docs/plans/2026-08-28*`、`2026-08-30*`、`2026-08-31*` 中的 NYU δ1（0.403 / 0.357 / 0.286 / 0.253 / 0.018 等）、`output/acceptance_stage/*.json` 都是在旧 crop 下得到的。**绝对数值不可与修复后的结果直接比较**，需要用同一 checkpoint 重跑；方法之间的相对排序大概率不变，但没有验证。KITTI 相关结果（`sana_kitti_metric_depth_*`）同样受影响，因为之前 Garg crop 根本没生效。
+
+**偏离的处理进展**：
+1. 聚合方式：`DepthAccumulator` 现在同时输出像素加权（主指标，键名不变）和逐图平均（`AbsRel_per_image`、`RMSE_per_image`、`delta_1.25_per_image`、`images`）。论文未说明用哪种，建议两种都报。
+2. 评测分辨率：`scripts/evaluate_paper_benchmarks.py --native-resolution` 把解码后的深度双线性上采样到原始 GT 分辨率再计分，GT 不再被缩放。支持 NYU、iBims、DIODE、KITTI、ETH3D（数据集 `native_gt=True` 返回 `gt_depth_native` / `valid_mask_native`，有效像素规则与缩放后一致）；其他数据集会明确报错而不是静默退回方形画布。`depth_trivial_baselines.py` 同样支持 `--native-resolution`，保证基线与模型可比。
+   - 模型本身仍在方形 512 画布上生成，压扁长宽比的问题只是在"打分阶段"消除，没有在"生成阶段"消除。
+
+**平凡基线**：`scripts/depth_trivial_baselines.py`，在同一协议下给出常数深度、数据集中位数常数（oracle，上界）、逐图中位数（oracle，"只知道尺度"的上界）和合成训练集的像素均值图（合法的零样本先验基线）。判断一个 δ1 是否体现了几何学习，应以这些基线为参照，尤其是 `prior_mean_map`。
+
+## 附录 C：语义分割必须是「prompt 定义的开放词表」（2026-10-09）
+
+**论文**：类别→颜色映射写在 prompt 里，支持命名颜色 JSON、RGB 元组、十六进制和自然语言四种写法（Fig. 2）；Cityscapes 评测时对每张图使用同一个 19 类 prompt，包含图中不存在的类别，解码为最近色。
+
+**仓库此前的做法**（会让模型学成"背调色板"而不是"读 prompt"）：
+- `configs/encoding_contract.yaml`：SANA-1600M 训练线用 SegFormer 伪标签 + 固定 ADE20K-150 调色板 + 单一固定 prompt。
+- `task_prompts.normalize_task_prompt`：旧训练路径（`training/tuner.py`、`data/datasets.py::V3FlatDataset`）会把**任何**语义样本的 prompt 强制改写为固定的 Cityscapes 图例 prompt——即使目标图用的是别的调色板，prompt 与目标也自相矛盾。
+- `PromptBuilder.build_semantic_prompt` 在类别数 >19 且未指定模板时退化为不含图例的通用 prompt，开放词表推理因此无法直接使用。
+
+**新增**：`data/openvocab_semantic.py` + `scripts/build_openvocab_semantic_manifest.py`。对每个 (图, variant) 重新采样：提到的类别（可见类 + 不在图中的干扰类）、每类颜色（两两 RGB 距离 ≥ 90，含背景色）、背景色、prompt 写法（4 种）。输出 `pairs.jsonl`，每行自带 `prompt`，由统一训练器的 `ManifestVisionDataset` 原样读取（不会被 `normalize_task_prompt` 改写）。
+
+```bash
+python scripts/build_openvocab_semantic_manifest.py \
+  --images data/ade20k/images/training --labels data/ade20k/annotations/training \
+  --classes ade20k_classes.json --source-name ade20k --label-offset 1 --ignore-index -1 \
+  --out-dir data/openvocab_semantic_ade20k --variants 2
+```
+
+**使用注意**：
+1. 只能走统一训练器（`scripts/train.py`）。旧 `InstructionTuner` / `V3FlatDataset` 路径会覆盖 prompt，不要用于这份数据。
+2. 脚本默认拒绝 Cityscapes 等评测集作为训练源（`--allow-benchmark-source` 才放行），以免破坏零样本口径；用于"能否学会"的域内 gate 时，结果不得按零样本汇报。
+3. 推理/评测时用 `PromptBuilder.build_semantic_prompt(mapping, template_idx=0|1|2)` 显式指定模板；Cityscapes 评测沿用 `SEMANTIC_SEGMENTATION_PROMPT` 即可（它就是一种合法的 19 类映射）。
+4. 标签需是单通道索引 PNG；ADE20K SceneParse150 的 0 表示 other，用 `--label-offset 1` 处理。
+5. 未验证项：这套数据在真实模型上能否提升 Cityscapes 零样本 mIoU——需要 GPU 训练与 Cityscapes val 评测，本机无法验证。
+
+
+## 附录 D：编辑型基座实验、prompt 开关与 DIODE 适配器（2026-10-09）
+
+### D.1 为什么要换条件范式：FLUX.1 Kontext 的 in-context 条件
+
+此前所有训练线（SANA、FLUX.1-schnell/dev）都是文生图骨干，输入图只能通过 `img2img_flow` 注入：把"源图隐变量→目标隐变量"当作确定性桥（`flow_sigma=0`，无噪声）。论文的 NBP 是原生"图像+指令→图像"的编辑模型，输出从噪声生成。FLUX.1 Kontext 是最接近的开源对应物：源图的 latent token 拼在目标 token 之后、位置编码第 0 轴置 1，只对目标 token 的输出算损失。
+
+**已实现并验证（CPU，随机初始化的小型 `FluxTransformer2DModel`；约定已对照 diffusers `FluxKontextPipeline` 源码）**：
+- 注册表新增 `flux-kontext`（`in_context_conditioning=True`）。
+- `ModelBackend.forward(..., context_latents=...)`：拼接 token 与位置 id、FLUX 原生 timestep σ=1−t、只取目标 token、输出取负以保持仓库内的 flow 约定（`v = target − noise`），因此损失、辅助损失、验证代码完全不用改。
+- 训练器对 in-context 模型自动关闭 `img2img_flow`；其他模型的调用方式逐字节不变。
+- 推理：`BaseGenerator.generate(image=...)` 对 in-context 模型走官方 `FluxKontextPipeline`（`_auto_resize=False`，保持输入尺寸，**绝不单步**）。
+
+**预注册的通过标准**（`evaluation/gates.py`，实验前固定）：
+1. 度量闸门：NYU δ1 ≥ 最佳非 oracle 平凡基线 + 0.10，且 AbsRel 不劣于该基线；
+2. 结构闸门：逐图中位数对齐后的 δ1 > `oracle_image_median`（完美尺度但零结构）。
+
+**运行**：`NYU_ROOT=/path/to/nyu bash scripts/run_kontext_depth_gate.sh [N]`（平凡基线 → 训练 → 逐 checkpoint 原分辨率多步评测 → 闸门）。配置 `configs/experiments/flux_kontext_depth_gate.yaml`，需 ≥24GB CUDA 显存；Kontext-dev 为非商用许可。
+
+**未验证**：真实 12B 权重上的训练是否收敛、闸门是否通过——本机无 GPU 与权重。这是一个**可证伪**的实验：若 Kontext 同样过不了结构闸门，则此前的负结果主要源于数据/规模而非条件范式。
+
+### D.2 `normalize_task_prompt` 的开关
+
+默认行为不变（仍强制 Cityscapes 图例，`test_semantic_dataset_uses_complete_cityscapes_legend` 把这个约定固化了）。新增显式开关 `keep_custom`（`VisionTaskDataset` / `V3FlatDataset` 的 `keep_semantic_prompts`），仅对非空的语义 prompt 生效，供开放词表数据在旧路径上使用；统一训练器路径本来就不改写 prompt。
+
+### D.3 DIODE 适配器此前读不了官方数据
+
+旧 `DIODEDataset` 只扫描 `*_rgb.png`，而官方文件名是 `<stem>.png` + `<stem>_depth.npy` + `<stem>_depth_mask.npy`，且深度数组形状为 `[H, W, 1]`（旧代码对其做 `unsqueeze` 后送入 `interpolate` 会报维度错误）。另外它会把室内外场景混在一起，而论文评测的是 **DIODE-Indoor**。现已：兼容官方与旧命名、正确读取 `[H,W,1]`、新增 `scene_type`（`indoors`/`outdoor`），`evaluate_paper_benchmarks.py` 对 DIODE 默认 `scene_type="indoors"`。
+**此项依据官方 DIODE 的公开布局与单元测试（合成的官方布局文件），没有在真实 DIODE 数据上验证。**
+
+## 附录 E：法向量评测与 RefCOCOg cIoU（2026-10-09）
+
+论文 Table 7 的法向量是 NYU、DIODE-Indoor、ScanNet、VKITTI 四项。仓库原先有适配器，但没有原分辨率、有效掩码、DIODE 室内过滤，也没有和深度同一思路的闸门。指代分割的 cIoU 指标在 `evaluation/referring.py`，评测脚本却只跑 depth / normal / semantic。
+
+**法向量真值从哪来**（适配器不从深度估计法向量）：
+
+| 数据集 | 官方发布 | 适配器读取 |
+|---|---|---|
+| NYU | H5 只有 RGB 和深度 | 社区 `normals/`（`.npy` 相机系向量，或论文编码 PNG） |
+| DIODE | `<stem>_normal.npy`，可选 `*_depth_mask.npy` / `*_normal_mask.npy` | 官方文件；`scene_type="indoors"` |
+| ScanNet | 网格，不是逐帧法向量 | `images/`+`normals/`，或路径里 `color`→`normal` |
+| VKITTI2 | 不带法向量 | `rgb/` 旁的 `normal/` 或 `normals/` |
+
+零向量（长度 < 1e-3）和 DIODE mask 为 0 的像素不计入。`native_gt=True` 额外返回 `gt_normal_native` / `valid_mask_native`。`VisionEvaluator` 把预测双线性放大到该分辨率后再归一化。`NormalAccumulator` 同时给出像素加权均值和逐图均值（`mean_angle_deg_per_image`）。
+
+**预注册闸门**（`evaluation/gates.py::evaluate_normal_gate`，实验前固定，角度越低越好）：
+
+1. 度量闸门：平均角误差 ≤ 最佳非 oracle 平凡基线 − 5°。非 oracle 是朝相机 `(0,0,1)`、朝上 `(0,1,0)`，以及可选的训练集平均方向。
+2. 结构闸门：平均角误差 < `oracle_image_mean`（每张图一个最佳常数方向）。通过说明预测带有空间上的法向量场。
+
+```bash
+python scripts/normal_trivial_baselines.py \
+  --dataset-key diode_normal --root /data/diode \
+  --dataset-kwargs '{"scene_type": "indoors"}' --native-resolution \
+  --output-json output/eval/diode_normal_trivial.json
+
+python scripts/evaluate_paper_benchmarks.py \
+  --benchmark normal --normal-root /data/benchmarks --native-resolution \
+  --model-name <base> --lora-path <ckpt> \
+  --output-json output/eval/normals.json
+
+python scripts/check_normal_gate.py \
+  --model-json output/eval/normals.json --benchmark normal/diode \
+  --baseline-json output/eval/diode_normal_trivial.json
+```
+
+`evaluate_paper_benchmarks.py` 对 `diode_normal` 默认 `scene_type="indoors"`。
+
+**RefCOCOg**：`--benchmark referring --refcocog-root`。优先 `refs(umd).p`（论文 UMD val），没有则用 `refs(g).p`；带 `split` 字段的样本按 `--split` 过滤（默认 `val`）。每条句子单独计分。掩码来自 `instances.json` 的多边形或 RLE，画布尺寸用 COCO `images` 的高宽或 RLE `size`，**不用 bbox 填成区域**。没有 segmentation 的标注不进入样本。`native_gt` 返回 `gt_mask_native`，预测掩码最近邻放大后算数据集级 cIoU。
+
+**未验证**：本机没有 NYU / DIODE / ScanNet / VKITTI / RefCOCOg 的真实文件，上述行为由合成布局的单元测试覆盖。社区法向量的坐标约定（尤其 VKITTI、ScanNet 的 y 轴朝向）必须已经是论文的「+x 右、+y 上、+z 朝相机」；适配器不会猜测并翻转。真实数据上的平均角误差和 cIoU 都还没有跑出来。

@@ -1,9 +1,11 @@
 """Open Vision Banana — Image Generators are Generalist Vision Learners.
 
-Open-source implementation of Vision Banana: instruction-tuning FLUX.1
-on a mixture of its original training data alongside a small amount of
-vision task data, achieving SOTA zero-shot transfer on segmentation,
-depth estimation, and surface normal estimation.
+Unofficial open-source implementation of Vision Banana: instruction-tuning
+an open image generator on a mixture of its original training data alongside
+a small amount of vision task data, with all task outputs parameterized as
+decodable RGB images. The paper reports SOTA zero-shot transfer on
+segmentation, depth and surface normal estimation; this package does not
+claim to reproduce those numbers.
 
 Subpackages:
 - core: Reversible RGB mapping algorithms (no external deps)
