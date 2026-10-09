@@ -26,6 +26,13 @@ class DepthAccumulator:
     aligned_log_squared_sum: float = 0.0
     aligned_valid_pixels: int = 0
     aligned_delta_counts: list[int] = field(default_factory=lambda: [0, 0, 0])
+    # Per-image aggregation (mean of per-image metrics, the convention used by
+    # many depth papers). The paper does not state which one it uses, so both
+    # are reported; pixel-weighted remains the headline.
+    image_count: int = 0
+    image_abs_rel_sum: float = 0.0
+    image_rmse_sum: float = 0.0
+    image_delta1_sum: float = 0.0
 
     def __post_init__(self) -> None:
         if self.delta_counts is None:
@@ -80,6 +87,15 @@ class DepthAccumulator:
                 valid_mask = valid_mask.unsqueeze(0).expand_as(mask)
             mask &= valid_mask
         self._add(pred[mask], gt[mask], aligned=False)
+        for index in range(pred.shape[0]):
+            image_mask = mask[index]
+            if not bool(image_mask.any()):
+                continue
+            p_i, g_i = pred[index][image_mask], gt[index][image_mask]
+            self.image_count += 1
+            self.image_abs_rel_sum += torch.mean((p_i - g_i).abs() / g_i).item()
+            self.image_rmse_sum += torch.sqrt(torch.mean((p_i - g_i).square())).item()
+            self.image_delta1_sum += (torch.maximum(p_i / g_i, g_i / p_i) < 1.25).float().mean().item()
         aligned, stable = median_scale_align(pred, gt, mask)
         if stable.dim() == 0:
             stable = stable.view(1)
@@ -101,6 +117,10 @@ class DepthAccumulator:
             "delta_1.25^2": deltas[1] / n,
             "delta_1.25^3": deltas[2] / n,
             "valid_pixels": self.valid_pixels,
+            "AbsRel_per_image": self.image_abs_rel_sum / max(self.image_count, 1),
+            "RMSE_per_image": self.image_rmse_sum / max(self.image_count, 1),
+            "delta_1.25_per_image": self.image_delta1_sum / max(self.image_count, 1),
+            "images": self.image_count,
             "AbsRel_aligned": self.aligned_abs_rel_sum / aligned_n,
             "delta_1.25_aligned": aligned_deltas[0] / aligned_n,
             "RMSE_aligned": math.sqrt(self.aligned_squared_sum / aligned_n),
@@ -115,6 +135,8 @@ class NormalAccumulator:
     angle_sum: float = 0.0
     angles: list[torch.Tensor] | None = None
     valid_pixels: int = 0
+    image_count: int = 0
+    image_mean_sum: float = 0.0
 
     def __post_init__(self) -> None:
         if self.angles is None:
@@ -128,6 +150,9 @@ class NormalAccumulator:
     ) -> None:
         pred = pred.float()
         gt = gt.float()
+        if pred.dim() == 3:
+            pred = pred.unsqueeze(0)
+            gt = gt.unsqueeze(0)
         pred_norm = pred.norm(dim=1)
         gt_norm = gt.norm(dim=1)
         mask = torch.isfinite(pred).all(dim=1) & torch.isfinite(gt).all(dim=1)
@@ -136,17 +161,23 @@ class NormalAccumulator:
             valid_mask = valid_mask.to(device=mask.device).bool()
             if valid_mask.dim() == mask.dim() + 1 and valid_mask.shape[1] == 1:
                 valid_mask = valid_mask.squeeze(1)
+            if valid_mask.dim() == 2:
+                valid_mask = valid_mask.unsqueeze(0)
             mask &= valid_mask
         pred = pred / pred_norm.unsqueeze(1).clamp_min(1e-8)
         gt = gt / gt_norm.unsqueeze(1).clamp_min(1e-8)
         cosine = (pred * gt).sum(dim=1).clamp(-1.0, 1.0)
-        angles = torch.rad2deg(torch.acos(cosine))[mask]
-        if angles.numel() == 0:
-            return
-        self.angle_sum += angles.sum().item()
-        self.valid_pixels += angles.numel()
+        angle_map = torch.rad2deg(torch.acos(cosine))
         assert self.angles is not None
-        self.angles.append(angles.detach().cpu())
+        for sample_angles, sample_mask in zip(angle_map, mask, strict=True):
+            selected = sample_angles[sample_mask]
+            if selected.numel() == 0:
+                continue
+            self.angle_sum += selected.sum().item()
+            self.valid_pixels += int(selected.numel())
+            self.image_count += 1
+            self.image_mean_sum += selected.mean().item()
+            self.angles.append(selected.detach().cpu())
 
     def compute(self) -> dict[str, float | int]:
         angles = torch.cat(self.angles) if self.angles else torch.empty(0)
@@ -156,6 +187,7 @@ class NormalAccumulator:
         acc_11 = float((angles < 11.25).float().mean()) if angles.numel() else 0.0
         acc_22 = float((angles < 22.5).float().mean()) if angles.numel() else 0.0
         acc_30 = float((angles < 30).float().mean()) if angles.numel() else 0.0
+        per_image = self.image_mean_sum / self.image_count if self.image_count else float("nan")
         return {
             "mean_angle_deg": self.angle_sum / n,
             "median_angle_deg": median_angle,
@@ -168,6 +200,8 @@ class NormalAccumulator:
             "22.5° Accuracy": acc_22,
             "30° Accuracy": acc_30,
             "valid_pixels": self.valid_pixels,
+            "mean_angle_deg_per_image": per_image,
+            "images": self.image_count,
         }
 
 
@@ -229,6 +263,17 @@ DEPTH_EVAL_CAPS = {
     "nyu": 10.0,
     "kitti": 80.0,
     "eth3d": 80.0,
+}
+
+
+_MIN_CROP_CANVAS = 64
+
+# (top, bottom, left, right) as fractions of the original frame.
+DEPTH_CROP_FRACTIONS = {
+    # Eigen et al. NYU crop: rows 45:471, cols 41:601 of the 480x640 frame.
+    "nyu": (45 / 480, 471 / 480, 41 / 640, 601 / 640),
+    # Garg et al. KITTI crop (0.40810811 H, 0.99189189 H, 0.03594771 W, 0.96405229 W).
+    "kitti": (0.40810811, 0.99189189, 0.03594771, 0.96405229),
 }
 
 
@@ -296,22 +341,23 @@ def benchmark_valid_mask(
             f"normalization: mask={tuple(mask.shape)}, gt={tuple(gt.shape)}"
         )
     height, width = gt.shape[-2:]
-    if dataset == "nyu" and height >= 400 and width >= 500:
+    # Crops are defined as fractions of the original frame so they stay valid
+    # when the benchmark is evaluated on a resized canvas (e.g. 512x512).
+    # The size guard only skips degenerate toy tensors.
+    if min(height, width) >= _MIN_CROP_CANVAS and dataset in DEPTH_CROP_FRACTIONS:
+        top, bottom, left, right = DEPTH_CROP_FRACTIONS[dataset]
         crop = torch.zeros_like(mask)
-        y0, y1 = int(0.408 * height), int(0.992 * height)
-        x0, x1 = int(0.035 * width), int(0.965 * width)
-        crop[..., y0:y1, x0:x1] = True
-        mask &= crop
-    elif dataset == "kitti" and height >= 300 and width >= 1000:
-        crop = torch.zeros_like(mask)
-        y0, y1 = int(0.408 * height), int(0.992 * height)
-        x0, x1 = int(0.036 * width), int(0.964 * width)
-        crop[..., y0:y1, x0:x1] = True
+        crop[
+            ...,
+            round(top * height) : round(bottom * height),
+            round(left * width) : round(right * width),
+        ] = True
         mask &= crop
     return mask
 
 
 __all__ = [
+    "DEPTH_CROP_FRACTIONS",
     "DEPTH_EVAL_CAPS",
     "DepthAccumulator",
     "NormalAccumulator",

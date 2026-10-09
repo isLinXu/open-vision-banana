@@ -15,7 +15,9 @@ def resolve_manifest_path(value: str | Path, manifest_path: str | Path) -> Path:
     path = Path(value)
     if path.is_absolute():
         return path
-    return Path(manifest_path).resolve().parent / path
+    anchor = Path(manifest_path).resolve()
+    base = anchor if anchor.is_dir() else anchor.parent
+    return base / path
 
 
 def _normalise_record(record: dict[str, Any], root: Path | None) -> dict[str, Any]:

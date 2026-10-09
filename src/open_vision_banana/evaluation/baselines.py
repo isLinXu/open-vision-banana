@@ -1,69 +1,88 @@
-"""Published SOTA baseline metrics for automatic comparison.
+"""Published baseline metrics from the Vision Banana paper for comparison.
 
-Values sourced from the Vision Banana paper (Table 1) and README benchmarks.
-Used by ``scripts/evaluate.py --compare-sota`` and ``scripts/benchmark.py``.
+Every value below is transcribed from arXiv:2604.20329v3 (Tables 1-7).
+Keys match the metric names returned by ``open_vision_banana.evaluation``
+so ``format_sota_comparison`` can look them up directly.
+
+Caveats when comparing a local run against these numbers:
+
+* The paper numbers are *aggregates* (6- or 4-dataset averages for depth and
+  normal). A single-dataset local run is only indicative, never a Table 1
+  reproduction.
+* ``mIoU`` / ``cIoU`` are stored as fractions in [0, 1] to match the
+  evaluators; ``cgF1`` follows SA-Co (already scaled by 100).
+* SAM 3 and similar models marked non-zero-shot in the paper are omitted
+  here unless noted.
 """
 
 from __future__ import annotations
 
 # metric_name -> {method: value}
-# Lower-is-better metrics marked with _lower suffix in compare logic.
+# Lower-is-better metrics are listed in _LOWER_IS_BETTER.
 SOTA_BASELINES: dict[str, dict[str, dict[str, float]]] = {
     "depth": {
+        # Table 6, average over 6 datasets (NYU, iBims-1, ETH3D, DIODE-Indoor,
+        # KITTI, nuScenes). Depth Anything 3 / DepthLM report only partial
+        # averages and are therefore not listed.
         "delta_1.25": {
             "Vision Banana": 0.882,
             "UniK3D": 0.823,
-            "DPT": 0.780,
-        },
-        "abs_rel": {
-            "Vision Banana": 0.058,
-            "UniK3D": 0.072,
-            "DPT": 0.089,
-        },
-        "rmse": {
-            "Vision Banana": 0.312,
-            "UniK3D": 0.385,
-            "DPT": 0.420,
+            "MoGe-2": 0.802,
+            "Depth Pro": 0.715,
         },
     },
     "normal": {
-        "mean_angular_error": {
-            "Vision Banana": 15.05,
-            "Lotus-2": 15.72,
-            "Omnidata": 18.20,
+        # Table 1: mean angle error averaged over NYUv2, DIODE-indoor,
+        # ScanNet and VKITTI (Table 7 per-dataset values average to this).
+        "Mean Angular Error (°)": {
+            "Vision Banana": 18.928,
+            "Lotus-2": 19.642,
         },
     },
     "semantic": {
-        "miou": {
-            "Vision Banana": 69.9,
-            "SAM 3": 65.2,
-            "Mask2Former": 62.1,
+        # Table 2, Cityscapes val, zero-shot transfer.
+        "mIoU": {
+            "Vision Banana": 0.699,
+            "SAM 3": 0.652,
+            "X-Decoder": 0.520,
+            "OpenSeeD": 0.478,
+            "APE-D": 0.442,
         },
     },
     "instance": {
-        "ap_50": {
+        # Table 3, SA-Co/Gold, zero-shot transfer. Vision Banana is paired with
+        # Gemini 3.1 Flash-Lite for the positive/negative filter.
+        "cgF1": {
             "Vision Banana": 47.5,
             "OWLv2": 24.6,
-            "SAM 2": 35.0,
+            "DINO-X": 21.3,
+            "APE-D": 16.4,
         },
     },
     "referring": {
-        "ciou": {
-            "Vision Banana": 73.8,
-            "LocHeads": 67.7,
-            "SAM3+GPT": 71.0,
+        # Table 4, RefCOCOg val (UMD), zero-shot transfer.
+        "cIoU": {
+            "Vision Banana": 0.738,
+            "SAM 3 + Gemini 2.5 Pro": 0.734,
+            "LocalizationHeads": 0.677,
+            "HybridGL": 0.513,
         },
     },
 }
 
-_LOWER_IS_BETTER = frozenset({
-    "abs_rel",
-    "sq_rel",
-    "rmse",
-    "rmse_log",
-    "mean_angular_error",
-    "median_angular_error",
-})
+_LOWER_IS_BETTER = frozenset(
+    {
+        "abs_rel",
+        "AbsRel",
+        "sq_rel",
+        "rmse",
+        "rmse_log",
+        "mean_angular_error",
+        "median_angular_error",
+        "Mean Angular Error (°)",
+        "Median Angular Error (°)",
+    }
+)
 
 
 def format_sota_comparison(

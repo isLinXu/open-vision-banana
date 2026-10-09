@@ -52,6 +52,27 @@ DEPTH_DATASETS = {
     "diode": "diode",
     "kitti": "kitti",
 }
+# Dataset adapters that can return unresized GT (``native_gt=True``).
+NATIVE_GT_DATASETS = {
+    "nyu_depth",
+    "ibims",
+    "diode",
+    "kitti",
+    "eth3d",
+    "nyu_normal",
+    "diode_normal",
+    "normal",
+    "vkitti_normal",
+    "referring",
+}
+# Extra adapter kwargs that make a benchmark match the paper's definition.
+# The paper evaluates DIODE-Indoor, not the indoor+outdoor union, and RefCOCOg
+# on the UMD split.
+BENCHMARK_DATASET_KWARGS: dict[str, dict[str, Any]] = {
+    "diode": {"scene_type": "indoors"},
+    "diode_normal": {"scene_type": "indoors"},
+    "referring": {"protocol": "umd"},
+}
 NORMAL_DATASETS = {
     "nyu": "nyu_normal",
     "diode": "diode_normal",
@@ -62,7 +83,11 @@ NORMAL_DATASETS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--benchmark", choices=["depth", "normal", "semantic", "all"], default="all")
+    parser.add_argument(
+        "--benchmark",
+        choices=["depth", "normal", "semantic", "referring", "all"],
+        default="all",
+    )
     parser.add_argument(
         "--model-name",
         default=None,
@@ -92,13 +117,44 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kitti-root", type=Path, default=None)
     parser.add_argument("--scannet-root", type=Path, default=None)
     parser.add_argument("--vkitti-root", type=Path, default=None)
+    parser.add_argument("--refcocog-root", type=Path, default=None)
     parser.add_argument("--split", default="val")
+    parser.add_argument(
+        "--native-resolution",
+        action="store_true",
+        help=(
+            "Score at the original GT resolution. Depth: NYU, iBims, DIODE, "
+            "KITTI, ETH3D. Normals: NYU, DIODE-Indoor, ScanNet, VKITTI. "
+            "Referring: RefCOCOg masks. Semantic jobs ignore the flag. "
+            "Use --batch-size 1 for datasets with mixed image sizes."
+        ),
+    )
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--num-inference-steps", type=int, default=1)
     parser.add_argument("--strength", type=float, default=0.85)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--depth-colormap",
+        default="cube_edge",
+        help="Colormap used to invert predicted depth RGB. Default matches the paper cube-edge.",
+    )
+    parser.add_argument(
+        "--invert-depth",
+        action="store_true",
+        help="Decode bright pixels as near (1 - normalized) before the power inverse.",
+    )
+    parser.add_argument(
+        "--depth-prompt",
+        default=None,
+        help="Override the depth prompt. Use the checkpoint's training prompt when metadata.json has none.",
+    )
+    parser.add_argument(
+        "--relative-luminance",
+        action="store_true",
+        help="Also score a closer=brighter luminance map after median scale (relative_delta_1.25_aligned).",
+    )
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
         "--preflight-only",
@@ -166,7 +222,7 @@ def fingerprint_dataset(dataset: Any) -> str:
     records: list[dict[str, Any]] = []
     for sample in getattr(dataset, "samples", []):
         record: dict[str, Any] = {}
-        for key in ("image", "target"):
+        for key in ("image", "target", "expression"):
             value = sample.get(key)
             if value is not None:
                 record[key] = str(value)
@@ -219,6 +275,8 @@ def build_jobs(args: argparse.Namespace) -> list[tuple[str, str, Path, str]]:
                 jobs.append(("normal", name, normal_roots[name], task))
     if args.benchmark in ("semantic", "all") and args.cityscapes_root is not None:
         jobs.append(("semantic", "cityscapes", args.cityscapes_root, "semantic"))
+    if args.benchmark in ("referring", "all") and args.refcocog_root is not None:
+        jobs.append(("referring", "refcocog", args.refcocog_root, "referring"))
     return jobs
 
 
@@ -250,6 +308,7 @@ def preflight_jobs(
                     str(root),
                     split=dataset_split,
                     resolution=resolution,
+                    **BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
                 )
                 record["samples"] = len(dataset)
                 if len(dataset) == 0:
@@ -336,11 +395,18 @@ def main() -> int:
         device=device,
         dtype=runtime_dtype,
     )
+    if args.depth_prompt:
+        model.training_prompts["depth"] = args.depth_prompt
     evaluator = VisionEvaluator(model, device=device)
+    results["metadata"]["depth_colormap"] = args.depth_colormap
+    results["metadata"]["invert_depth"] = bool(args.invert_depth)
+    results["metadata"]["depth_prompt"] = args.depth_prompt
+    results["metadata"]["relative_luminance"] = bool(args.relative_luminance)
     results["metadata"]["protocol"] = {
-        "depth": "decoded RGB to metric depth; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol",
-        "normal": "decoded RGB to unit camera-space normals; valid unit-vector pixels only",
+        "depth": "decoded RGB to metric depth; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
+        "normal": "decoded RGB to unit camera-space normals; valid pixels are finite, non-zero GT (plus DIODE mask when present); mean_angle_deg_per_image is the mean of per-image means; NYU/ScanNet/VKITTI require community normal maps and are not derived from depth; DIODE is indoors",
         "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix",
+        "referring": "RefCOCOg UMD when refs(umd).p is present, else refs(g).p; every sentence is a sample; cIoU/gIoU from polygon or RLE masks, never from bounding boxes",
         "aggregation": "pixel-weighted across the complete selected dataset, not batch mean",
     }
 
@@ -349,7 +415,20 @@ def main() -> int:
         # default is ``val`` for the paper gate; callers may explicitly run
         # the official train split when that data is present.
         split = args.split
-        dataset = build_dataset(dataset_key, str(root), split=split, resolution=args.resolution)
+        native = args.native_resolution and benchmark in {"depth", "normal", "referring"}
+        if native and dataset_key not in NATIVE_GT_DATASETS:
+            raise SystemExit(
+                f"--native-resolution is not implemented for dataset {dataset_key!r}; "
+                f"supported: {sorted(NATIVE_GT_DATASETS)}"
+            )
+        dataset = build_dataset(
+            dataset_key,
+            str(root),
+            split=split,
+            resolution=args.resolution,
+            **BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
+            **({"native_gt": True} if native else {}),
+        )
         if len(dataset) == 0:
             raise RuntimeError(f"Empty benchmark dataset: {name} ({root})")
         selected = select_dataset(dataset, args.max_samples)
@@ -372,12 +451,18 @@ def main() -> int:
             strength=args.strength,
             seed=args.seed,
             dataset_name=name,
+            native_resolution=native,
+            depth_colormap=args.depth_colormap,
+            invert_depth=args.invert_depth,
+            report_relative_luminance=args.relative_luminance,
         )
         key = f"{benchmark}/{name}"
         results["benchmarks"][key] = {
             "dataset_key": dataset_key,
             "root": str(root),
             "split": split,
+            "native_resolution": native,
+            "dataset_kwargs": BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
             "samples": len(selected),
             "source_samples": len(dataset),
             "dataset_fingerprint": fingerprint_dataset(dataset),

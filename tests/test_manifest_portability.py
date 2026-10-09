@@ -14,6 +14,7 @@ from scripts.archive.pre_opensource.normalize_dataset_manifests import normalize
 def test_resolve_manifest_path_uses_manifest_directory(tmp_path: Path) -> None:
     manifest = tmp_path / "pairs.jsonl"
     assert resolve_manifest_path("images/sample.png", manifest) == tmp_path / "images/sample.png"
+    assert resolve_manifest_path("images/sample.png", tmp_path) == tmp_path / "images/sample.png"
 
 
 def test_fingerprint_is_independent_of_record_order(tmp_path: Path) -> None:

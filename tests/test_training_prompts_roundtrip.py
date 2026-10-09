@@ -66,6 +66,35 @@ def test_parent_metadata_is_only_read_for_the_adapter_subdirectory(tmp_path):
     assert read_training_prompts(str(other)) == {}
 
 
+def test_metric_depth_rows_train_as_depth_with_the_row_prompt(tmp_path):
+    root = tmp_path / "hypersim"
+    (root / "images").mkdir(parents=True)
+    (root / "targets").mkdir()
+    (root / "images" / "a.png").write_bytes(b"x")
+    (root / "targets" / "a.png").write_bytes(b"x")
+    prompt = "Generate a metric depth visualization of this image."
+    manifest = root / "pairs.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "task": "metric_depth",
+                "input": "images/a.png",
+                "target": "targets/a.png",
+                "split": "train",
+                "prompt": prompt,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    from open_vision_banana.training.trainer import ManifestVisionDataset
+
+    dataset = ManifestVisionDataset(manifest, 8, "train", {"depth"}, data_root=root)
+    assert len(dataset) == 1
+    assert dataset.samples[0]["task"] == "depth"
+    assert dataset.samples[0]["prompt"] == prompt
+
+
 def test_uniform_task_prompts_skips_tasks_with_per_sample_prompts():
     depth = SimpleNamespace(samples=[{"task": "depth", "prompt": "D"}] * 3)
     seg = SimpleNamespace(

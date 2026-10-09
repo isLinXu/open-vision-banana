@@ -89,8 +89,15 @@ def resize_scalar(value: torch.Tensor, resolution: int | tuple[int, int]) -> tor
     return F.interpolate(value.unsqueeze(0).float(), size=size, mode="nearest").squeeze(0)
 
 
-def load_normal(path: str | Path) -> torch.Tensor:
-    """Load camera-space normals as ``[3, H, W]`` in ``[-1, 1]``."""
+def load_normal_map(path: str | Path) -> tuple[torch.Tensor, torch.Tensor]:
+    """Load camera-space normals and a validity mask.
+
+    Returns ``(normal, valid)`` with ``normal`` ``[3, H, W]`` and ``valid``
+    ``[H, W]``. ``.npy`` files are raw vectors; PNG files use the paper
+    encoding ``R=(1-x)/2``, ``G=(1+y)/2``, ``B=(1+z)/2``. Pixels whose
+    pre-normalization length is below ``1e-3`` (the usual zero sentinel) are
+    invalid and stored as zeros. This does not invent normals from depth.
+    """
     source = Path(path)
     if source.suffix.lower() == ".npy":
         array = np.load(source)
@@ -105,7 +112,17 @@ def load_normal(path: str | Path) -> torch.Tensor:
         rgb = torch.from_numpy(np.array(Image.open(source).convert("RGB"), copy=True)).float()
         rgb = rgb.permute(2, 0, 1) / 255.0
         tensor = torch.stack((1.0 - 2.0 * rgb[0], 2.0 * rgb[1] - 1.0, 2.0 * rgb[2] - 1.0))
-    return F.normalize(tensor, dim=0, eps=1e-8)
+    length = tensor.norm(dim=0)
+    valid = torch.isfinite(tensor).all(dim=0) & (length > 1e-3)
+    tensor = F.normalize(tensor, dim=0, eps=1e-8)
+    tensor = torch.where(valid.unsqueeze(0), tensor, torch.zeros_like(tensor))
+    return tensor, valid
+
+
+def load_normal(path: str | Path) -> torch.Tensor:
+    """Load camera-space normals as ``[3, H, W]`` in ``[-1, 1]``."""
+    normal, _valid = load_normal_map(path)
+    return normal
 
 
 def resize_normal(value: torch.Tensor, resolution: int | tuple[int, int]) -> torch.Tensor:
@@ -127,6 +144,7 @@ __all__ = [
     "infer_planar_hw",
     "load_eth3d_depth",
     "load_normal",
+    "load_normal_map",
     "load_scalar",
     "resize_normal",
     "resize_scalar",

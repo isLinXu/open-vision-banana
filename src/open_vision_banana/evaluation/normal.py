@@ -13,12 +13,17 @@ import math
 import torch
 
 
-def evaluate_normals(pred: torch.Tensor, gt: torch.Tensor) -> dict[str, float]:
+def evaluate_normals(
+    pred: torch.Tensor,
+    gt: torch.Tensor,
+    valid_mask: torch.Tensor | None = None,
+) -> dict[str, float]:
     """Compute surface normal evaluation metrics.
 
     Args:
         pred: Predicted normals [B, 3, H, W] (unit vectors).
         gt: Ground truth normals [B, 3, H, W] (unit vectors).
+        valid_mask: Optional ``[B, H, W]`` or ``[H, W]`` pixels to score.
 
     Returns:
         Dictionary with angular error and cosine similarity metrics.
@@ -31,6 +36,25 @@ def evaluate_normals(pred: torch.Tensor, gt: torch.Tensor) -> dict[str, float]:
 
     angle_rad = torch.acos(cos_sim)
     angle_deg = angle_rad * (180.0 / math.pi)
+    if valid_mask is not None:
+        mask = valid_mask.to(device=angle_deg.device).bool()
+        if mask.dim() == angle_deg.dim() + 1 and mask.shape[1] == 1:
+            mask = mask.squeeze(1)
+        if mask.dim() == 2:
+            mask = mask.unsqueeze(0)
+        selected_angle = angle_deg[mask]
+        selected_cos = cos_sim[mask]
+        if selected_angle.numel() == 0:
+            return {
+                "Mean Angular Error (°)": float("nan"),
+                "Median Angular Error (°)": float("nan"),
+                "Mean Cosine Similarity": float("nan"),
+                "11.25° Accuracy": 0.0,
+                "22.5° Accuracy": 0.0,
+                "30° Accuracy": 0.0,
+            }
+        angle_deg = selected_angle
+        cos_sim = selected_cos
 
     return {
         "Mean Angular Error (°)": angle_deg.mean().item(),
