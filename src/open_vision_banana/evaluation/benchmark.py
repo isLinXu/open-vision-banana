@@ -263,6 +263,7 @@ DEPTH_EVAL_CAPS = {
     "nyu": 10.0,
     "kitti": 80.0,
     "eth3d": 80.0,
+    "nuscenes": 80.0,
 }
 
 
@@ -286,6 +287,8 @@ def canonical_depth_dataset(dataset: str) -> str:
         return "kitti"
     if key.startswith("eth3d"):
         return "eth3d"
+    if key.startswith("nuscenes") or key.startswith("nu_scenes"):
+        return "nuscenes"
     return key
 
 

@@ -165,29 +165,52 @@ _COLORMAP_REGISTRY: dict[str, torch.Tensor] = {
 
 _AVAILABLE_COLORMAPS = list(_COLORMAP_REGISTRY.keys())
 
+# Paper Section 3.2 default. ``log_relative`` is an opt-in data-level ablation:
+# per-image median normalize, then clip(α ln(d_rel+1), 0, 1), then the same
+# cube-edge / colormap. It is not the Vision Banana headline protocol.
+PAPER_DEPTH_CURVE = "metric_power"
+LOG_RELATIVE_CURVE = "log_relative"
+DEPTH_CURVES = (PAPER_DEPTH_CURVE, LOG_RELATIVE_CURVE)
+DEFAULT_LOG_ALPHA = 0.4
 
 
 class DepthRGBMapper:
-    """Reversible depth-to-RGB mapping using power transform + multi-colormap support.
+    """Reversible depth-to-RGB mapping using a 1-D curve + colormap.
 
-    From the paper (Section 3.2):
+    Paper protocol (Section 3.2, default ``curve='metric_power'``):
     - Apply power transform: f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
     - Parameters: λ=-3, c=10/3
-    - Then map via colormap (cube-edge by default, or plasma/inferno/viridis/grayscale)
+    - Then map via colormap (cube-edge by default)
 
-    This maps unbounded depth values [0, ∞) to bounded RGB [0, 1]³.
-    The curving prioritizes accuracy for nearby content (higher utility).
-
-    Multi-colormap support enables training-time augmentation:
-    the model learns to be robust to different RGB encoding schemes,
-    as recommended by the paper.
+    Opt-in ``curve='log_relative'`` keeps the same colormap and the same
+    training loss. Only the scalar→[0,1] curve changes. Decode returns
+    median-relative units, not metres; paper-protocol AbsRel must still
+    use ``metric_power``.
     """
 
-    def __init__(self, colormap: str = "cube_edge", lam: float = -3.0, c: float = 10.0 / 3.0):
+    def __init__(
+        self,
+        colormap: str = "cube_edge",
+        lam: float = -3.0,
+        c: float = 10.0 / 3.0,
+        curve: str = PAPER_DEPTH_CURVE,
+        log_alpha: float = DEFAULT_LOG_ALPHA,
+    ):
+        if curve not in DEPTH_CURVES:
+            raise ValueError(f"Unknown depth curve: {curve}. Available: {list(DEPTH_CURVES)}")
+        if log_alpha <= 0.0:
+            raise ValueError("log_alpha must be positive")
         self.lam = lam
         self.c = c
+        self.curve = curve
+        self.log_alpha = float(log_alpha)
         self.colormap = colormap
         self._keypoints = self._get_keypoints(colormap)
+
+    @property
+    def is_metric(self) -> bool:
+        """True when decode units are metres (paper protocol)."""
+        return self.curve == PAPER_DEPTH_CURVE
 
     def _get_keypoints(self, colormap: str) -> torch.Tensor:
         """Get keypoints for the specified colormap."""
@@ -209,18 +232,14 @@ class DepthRGBMapper:
         self._keypoints = self._get_keypoints(colormap)
 
     def depth_to_normalized(self, depth: torch.Tensor) -> torch.Tensor:
-        """Apply power transform with adaptive precision.
+        """Map scalar depth onto [0, 1] with the selected curve.
 
-        f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
-
-        Args:
-            depth: Metric depth values [B, 1, H, W] in meters, range [0, ∞).
-
-        Returns:
-            Normalized depth values [B, 1, H, W] in [0, 1).
+        ``metric_power`` (paper): f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
+        ``log_relative``: d_rel = d / median(d), then clip(α ln(d_rel+1), 0, 1)
         """
         depth = depth.clamp(min=0.0)
-
+        if self.curve == LOG_RELATIVE_CURVE:
+            return self._log_relative_to_normalized(depth)
         ratio = depth / (self.lam * self.c)
         ratio = ratio.clamp(max=1.0 - 1e-7)
         base = 1.0 - ratio
@@ -229,12 +248,23 @@ class DepthRGBMapper:
         return normalized.clamp(0.0, 1.0)
 
     def normalized_to_depth(self, normalized: torch.Tensor) -> torch.Tensor:
-        """Inverse: normalized [0, 1) → depth [0, ∞)."""
+        """Inverse of ``depth_to_normalized``.
+
+        ``metric_power`` returns metres. ``log_relative`` returns units where
+        the encoded median is 1.
+        """
+        if self.curve == LOG_RELATIVE_CURVE:
+            return torch.exp(normalized.clamp(0.0, 1.0) / self.log_alpha) - 1.0
         exponent = 1.0 / (self.lam + 1)  # = -0.5
         base = 1.0 - normalized
         ratio = 1.0 - torch.pow(base.clamp(min=1e-10), exponent)
         depth = self.lam * self.c * ratio
         return depth.clamp(min=0.0)
+
+    def _log_relative_to_normalized(self, depth: torch.Tensor) -> torch.Tensor:
+        median = _per_sample_positive_median(depth)
+        relative = depth / median.clamp(min=1e-8)
+        return (self.log_alpha * torch.log(relative + 1.0)).clamp(0.0, 1.0)
 
     def normalized_to_rgb(self, normalized: torch.Tensor) -> torch.Tensor:
         """Map normalized depth to RGB via the selected colormap.
@@ -376,9 +406,28 @@ class DepthRGBMapper:
         return self.normalized_to_depth(normalized)
 
 
+def _per_sample_positive_median(depth: torch.Tensor) -> torch.Tensor:
+    """Broadcastable per-sample median of finite, strictly positive depths."""
+    if depth.dim() == 0:
+        value = depth if torch.isfinite(depth) and float(depth) > 0.0 else depth.new_tensor(1.0)
+        return value
+    flat = depth.reshape(depth.shape[0], -1)
+    medians = []
+    for row in flat:
+        valid = row[torch.isfinite(row) & (row > 0)]
+        medians.append(valid.median() if valid.numel() else row.new_tensor(1.0))
+    view = [depth.shape[0]] + [1] * (depth.dim() - 1)
+    return torch.stack(medians).reshape(*view)
+
+
 def get_available_colormaps() -> list[str]:
     """Return the list of supported colormap names."""
     return _AVAILABLE_COLORMAPS.copy()
+
+
+def get_available_depth_curves() -> list[str]:
+    """Return the registered 1-D depth curves. Paper default is first."""
+    return list(DEPTH_CURVES)
 
 
 __all__ = [
@@ -391,5 +440,10 @@ __all__ = [
     "GRAYSCALE_KEYPOINTS",
     "RAINBOW_KEYPOINTS",
     "TURBO_KEYPOINTS",
+    "PAPER_DEPTH_CURVE",
+    "LOG_RELATIVE_CURVE",
+    "DEPTH_CURVES",
+    "DEFAULT_LOG_ALPHA",
     "get_available_colormaps",
+    "get_available_depth_curves",
 ]

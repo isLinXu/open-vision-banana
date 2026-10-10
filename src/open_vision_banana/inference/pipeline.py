@@ -97,6 +97,7 @@ class VisionBanana:
         dtype: torch.dtype = torch.bfloat16,
         lora_revision: str | None = None,
         enable_sequential_cpu_offload: bool = False,
+        quantize: str | None = None,
         inference_options: InferenceOptions | None = None,
         instance_grouping_mode: str = "seed",
         instance_adaptive_color_tolerance: bool = False,
@@ -122,8 +123,13 @@ class VisionBanana:
         from .optimization import InferenceOptions
 
         opts = inference_options
-        if opts is None and enable_sequential_cpu_offload:
-            opts = InferenceOptions(enable_sequential_cpu_offload=True)
+        if opts is None and (enable_sequential_cpu_offload or quantize):
+            opts = InferenceOptions(
+                enable_sequential_cpu_offload=enable_sequential_cpu_offload,
+                quantize=quantize,
+            )
+        elif opts is not None and quantize:
+            opts.quantize = quantize
 
         generator = BaseGenerator(
             model_name=model_name,

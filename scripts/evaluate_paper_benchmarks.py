@@ -40,6 +40,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from open_vision_banana.data import build_dataset  # noqa: E402
 from open_vision_banana.data.manifest import fingerprint_records  # noqa: E402
 from open_vision_banana.evaluation.evaluator import VisionEvaluator  # noqa: E402
+from open_vision_banana.evaluation.paper_capabilities import (  # noqa: E402
+    CAPABILITY_TO_BENCHMARKS,
+    PAPER_CAPABILITIES,
+    capability_for_benchmark,
+    paper_reference,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("paper_benchmarks")
@@ -51,6 +57,7 @@ DEPTH_DATASETS = {
     "eth3d": "eth3d",
     "diode": "diode",
     "kitti": "kitti",
+    "nuscenes": "nuscenes",
 }
 # Dataset adapters that can return unresized GT (``native_gt=True``).
 NATIVE_GT_DATASETS = {
@@ -64,6 +71,8 @@ NATIVE_GT_DATASETS = {
     "normal",
     "vkitti_normal",
     "referring",
+    "reasonseg",
+    "nuscenes",
 }
 # Extra adapter kwargs that make a benchmark match the paper's definition.
 # The paper evaluates DIODE-Indoor, not the indoor+outdoor union, and RefCOCOg
@@ -72,6 +81,7 @@ BENCHMARK_DATASET_KWARGS: dict[str, dict[str, Any]] = {
     "diode": {"scene_type": "indoors"},
     "diode_normal": {"scene_type": "indoors"},
     "referring": {"protocol": "umd"},
+    "nuscenes": {"task": "depth"},
 }
 NORMAL_DATASETS = {
     "nyu": "nyu_normal",
@@ -85,8 +95,23 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--benchmark",
-        choices=["depth", "normal", "semantic", "referring", "all"],
+        choices=[
+            "depth",
+            "normal",
+            "semantic",
+            "referring",
+            "instance",
+            "generation",
+            "2d",
+            "3d",
+            "all",
+        ],
         default="all",
+        help=(
+            "Paper capability groups: 2d = Cityscapes + RefCOCOg + ReasonSeg + "
+            "SA-Co/Gold; 3d = NYU/iBims/ETH3D/DIODE-Indoor/KITTI/nuScenes depth "
+            "plus normals; generation = GenAI-Bench / ImgEdit proxies; all = 2d+3d+generation."
+        ),
     )
     parser.add_argument(
         "--model-name",
@@ -95,6 +120,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--lora-path", default=None)
     parser.add_argument("--device", default=None)
+    parser.add_argument(
+        "--cpu-offload",
+        action="store_true",
+        help="Sequential CPU offload. Use this for FLUX.1-dev on a 24 GB GPU.",
+    )
+    parser.add_argument(
+        "--quantize",
+        choices=["4bit"],
+        default=None,
+        help="Load a FLUX transformer in 4-bit NF4 (and T5 in 8-bit) so a 24 GB GPU can evaluate without sequential offload.",
+    )
     # SANA's MPS kernels can produce non-finite img2img samples in fp16/bf16.
     # Keep evaluation reproducible and finite by defaulting to fp32; users may
     # still request reduced precision on CUDA/CPU explicitly.
@@ -115,17 +151,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eth3d-root", type=Path, default=None)
     parser.add_argument("--diode-root", type=Path, default=None)
     parser.add_argument("--kitti-root", type=Path, default=None)
+    parser.add_argument("--nuscenes-root", type=Path, default=None)
     parser.add_argument("--scannet-root", type=Path, default=None)
     parser.add_argument("--vkitti-root", type=Path, default=None)
     parser.add_argument("--refcocog-root", type=Path, default=None)
+    parser.add_argument("--reasonseg-root", type=Path, default=None)
+    parser.add_argument("--saco-root", type=Path, default=None)
+    parser.add_argument("--genai-bench-root", type=Path, default=None)
+    parser.add_argument("--imgedit-root", type=Path, default=None)
     parser.add_argument("--split", default="val")
     parser.add_argument(
         "--native-resolution",
         action="store_true",
         help=(
             "Score at the original GT resolution. Depth: NYU, iBims, DIODE, "
-            "KITTI, ETH3D. Normals: NYU, DIODE-Indoor, ScanNet, VKITTI. "
-            "Referring: RefCOCOg masks. Semantic jobs ignore the flag. "
+            "KITTI, ETH3D, nuScenes. Normals: NYU, DIODE-Indoor, ScanNet, VKITTI. "
+            "Referring: RefCOCOg and ReasonSeg masks. Semantic jobs ignore the flag. "
             "Use --batch-size 1 for datasets with mixed image sizes."
         ),
     )
@@ -139,6 +180,22 @@ def parse_args() -> argparse.Namespace:
         "--depth-colormap",
         default="cube_edge",
         help="Colormap used to invert predicted depth RGB. Default matches the paper cube-edge.",
+    )
+    parser.add_argument(
+        "--depth-curve",
+        choices=["metric_power", "log_relative"],
+        default="metric_power",
+        help=(
+            "1-D depth curve before the colormap. metric_power is the Vision Banana "
+            "paper protocol. log_relative is an opt-in median+log ablation; decode "
+            "units are relative and must not be cited as paper AbsRel."
+        ),
+    )
+    parser.add_argument(
+        "--depth-log-alpha",
+        type=float,
+        default=0.4,
+        help="α for --depth-curve log_relative (clip(α ln(d_rel+1))). Ignored otherwise.",
     )
     parser.add_argument(
         "--invert-depth",
@@ -222,7 +279,7 @@ def fingerprint_dataset(dataset: Any) -> str:
     records: list[dict[str, Any]] = []
     for sample in getattr(dataset, "samples", []):
         record: dict[str, Any] = {}
-        for key in ("image", "target", "expression"):
+        for key in ("image", "target", "expression", "query", "object_name", "annotation"):
             value = sample.get(key)
             if value is not None:
                 record[key] = str(value)
@@ -234,6 +291,15 @@ def select_dataset(dataset: Any, max_samples: int | None) -> Any:
     if max_samples is None or len(dataset) <= max_samples:
         return dataset
     return Subset(dataset, range(max_samples))
+
+
+def selected_benchmarks(choice: str) -> set[str]:
+    """Expand ``2d`` / ``3d`` / ``all`` onto concrete eval tasks."""
+    if choice == "all":
+        return {"depth", "normal", "semantic", "referring", "instance", "generation"}
+    if choice in CAPABILITY_TO_BENCHMARKS:
+        return set(CAPABILITY_TO_BENCHMARKS[choice])
+    return {choice}
 
 
 def _resolve_collection_root(root: Path | None, name: str) -> Path | None:
@@ -252,18 +318,20 @@ def _resolve_collection_root(root: Path | None, name: str) -> Path | None:
 
 def build_jobs(args: argparse.Namespace) -> list[tuple[str, str, Path, str]]:
     jobs: list[tuple[str, str, Path, str]] = []
-    if args.benchmark in ("depth", "all"):
+    wanted = selected_benchmarks(args.benchmark)
+    if "depth" in wanted:
         depth_roots = {
             "nyu": args.nyu_root or _resolve_collection_root(args.depth_root, "nyu"),
             "ibims": args.ibims_root or _resolve_collection_root(args.depth_root, "ibims"),
             "eth3d": args.eth3d_root or _resolve_collection_root(args.depth_root, "eth3d"),
             "diode": args.diode_root or _resolve_collection_root(args.depth_root, "diode"),
             "kitti": args.kitti_root or _resolve_collection_root(args.depth_root, "kitti"),
+            "nuscenes": args.nuscenes_root or _resolve_collection_root(args.depth_root, "nuscenes"),
         }
         for name, task in DEPTH_DATASETS.items():
             if depth_roots[name] is not None:
                 jobs.append(("depth", name, depth_roots[name], task))
-    if args.benchmark in ("normal", "all"):
+    if "normal" in wanted:
         normal_roots = {
             "nyu": args.nyu_root or _resolve_collection_root(args.normal_root, "nyu"),
             "diode": args.diode_root or _resolve_collection_root(args.normal_root, "diode"),
@@ -273,10 +341,18 @@ def build_jobs(args: argparse.Namespace) -> list[tuple[str, str, Path, str]]:
         for name, task in NORMAL_DATASETS.items():
             if normal_roots[name] is not None:
                 jobs.append(("normal", name, normal_roots[name], task))
-    if args.benchmark in ("semantic", "all") and args.cityscapes_root is not None:
+    if "semantic" in wanted and args.cityscapes_root is not None:
         jobs.append(("semantic", "cityscapes", args.cityscapes_root, "semantic"))
-    if args.benchmark in ("referring", "all") and args.refcocog_root is not None:
+    if "referring" in wanted and args.refcocog_root is not None:
         jobs.append(("referring", "refcocog", args.refcocog_root, "referring"))
+    if "referring" in wanted and args.reasonseg_root is not None:
+        jobs.append(("referring", "reasonseg", args.reasonseg_root, "reasonseg"))
+    if "instance" in wanted and args.saco_root is not None:
+        jobs.append(("instance", "saco", args.saco_root, "instance"))
+    if "generation" in wanted and args.genai_bench_root is not None:
+        jobs.append(("generation", "genai_bench", args.genai_bench_root, "genai_bench"))
+    if "generation" in wanted and args.imgedit_root is not None:
+        jobs.append(("generation", "imgedit", args.imgedit_root, "imgedit"))
     return jobs
 
 
@@ -359,6 +435,8 @@ def main() -> int:
             "evaluation_mode": "decoded_task_metrics",
             "model_name": args.model_name,
             "lora_path": str(args.lora_path) if args.lora_path else None,
+            "cpu_offload": bool(args.cpu_offload),
+            "quantize": args.quantize,
             "device": device,
             "dtype": args.dtype,
             "resolution": args.resolution,
@@ -368,6 +446,12 @@ def main() -> int:
             "seed": args.seed,
             "python": platform.python_version(),
             "torch": torch.__version__,
+            "capability": args.benchmark,
+            "paper_capabilities": PAPER_CAPABILITIES,
+            "depth_colormap": args.depth_colormap,
+            "depth_curve": args.depth_curve,
+            "depth_log_alpha": args.depth_log_alpha,
+            "invert_depth": bool(args.invert_depth),
         },
         "preflight": preflight,
         "benchmarks": {},
@@ -394,19 +478,25 @@ def main() -> int:
         lora_path=args.lora_path,
         device=device,
         dtype=runtime_dtype,
+        enable_sequential_cpu_offload=args.cpu_offload,
+        quantize=args.quantize,
     )
     if args.depth_prompt:
         model.training_prompts["depth"] = args.depth_prompt
     evaluator = VisionEvaluator(model, device=device)
     results["metadata"]["depth_colormap"] = args.depth_colormap
+    results["metadata"]["depth_curve"] = args.depth_curve
+    results["metadata"]["depth_log_alpha"] = args.depth_log_alpha
     results["metadata"]["invert_depth"] = bool(args.invert_depth)
     results["metadata"]["depth_prompt"] = args.depth_prompt
     results["metadata"]["relative_luminance"] = bool(args.relative_luminance)
     results["metadata"]["protocol"] = {
-        "depth": "decoded RGB to metric depth; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
+        "depth": "decoded RGB to metric depth with curve=metric_power (paper Eq.1); log_relative is an opt-in relative ablation and must not be cited as paper AbsRel; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap / nuScenes 80m cap (no paper crop) when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
         "normal": "decoded RGB to unit camera-space normals; valid pixels are finite, non-zero GT (plus DIODE mask when present); mean_angle_deg_per_image is the mean of per-image means; NYU/ScanNet/VKITTI require community normal maps and are not derived from depth; DIODE is indoors",
-        "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix",
-        "referring": "RefCOCOg UMD when refs(umd).p is present, else refs(g).p; every sentence is a sample; cIoU/gIoU from polygon or RLE masks, never from bounding boxes",
+        "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix; official gtFine only, never cityscapes8",
+        "referring": "RefCOCOg UMD when refs(umd).p is present, else refs(g).p; ReasonSeg val uses LISA JSON-next-to-image; every sentence/query is a sample; cIoU/gIoU from polygon or RLE masks, never from bounding boxes; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
+        "instance": "SA-Co/Gold query JSONL when present, else color/instance pairs; cgF1 = 100 * pmF1 * IL_MCC; paper IL_MCC uses Gemini 3.1 Flash-Lite presence filtering, which this command does not invent",
+        "generation": "paper GenAI-Bench / ImgEdit numbers are human pairwise win rates; this command only scores an optional CLIP/FID proxy when images exist and never writes those proxies into the paper win-rate column",
         "aggregation": "pixel-weighted across the complete selected dataset, not batch mean",
     }
 
@@ -431,6 +521,29 @@ def main() -> int:
         )
         if len(dataset) == 0:
             raise RuntimeError(f"Empty benchmark dataset: {name} ({root})")
+        key = f"{benchmark}/{name}"
+        record = {
+            "capability": capability_for_benchmark(benchmark, name),
+            "dataset_key": dataset_key,
+            "root": str(root),
+            "split": split,
+            "native_resolution": native,
+            "dataset_kwargs": BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
+            "samples": len(dataset) if args.max_samples is None else min(len(dataset), args.max_samples),
+            "source_samples": len(dataset),
+            "dataset_fingerprint": fingerprint_dataset(dataset),
+            "paper_reference": paper_reference(benchmark, name),
+        }
+        if benchmark == "generation" and not getattr(dataset, "has_images", False):
+            record["decoded_metrics"] = None
+            record["blocked"] = (
+                "prompt-only set; paper metric is a human pairwise win rate. "
+                "Use scripts/evaluate_generation_preservation.py after generating images "
+                "for a CLIP/FID proxy — never cite that proxy as GenAI-Bench or ImgEdit."
+            )
+            results["benchmarks"][key] = record
+            logger.info("%s: %s", key, record["blocked"])
+            continue
         selected = select_dataset(dataset, args.max_samples)
         loader = DataLoader(
             selected,
@@ -442,9 +555,10 @@ def main() -> int:
         if benchmark == "semantic":
             from open_vision_banana.data.datasets import CityscapesSegDataset
             class_color_map = CityscapesSegDataset.CITYSCAPES_COLORS
+        eval_task = "generation_preservation" if benchmark == "generation" else benchmark
         metrics = evaluator.evaluate(
             loader,
-            task=benchmark,
+            task=eval_task,
             num_classes=19 if benchmark == "semantic" else None,
             class_color_map=class_color_map,
             num_inference_steps=args.num_inference_steps,
@@ -453,21 +567,18 @@ def main() -> int:
             dataset_name=name,
             native_resolution=native,
             depth_colormap=args.depth_colormap,
+            depth_curve=args.depth_curve,
+            depth_log_alpha=args.depth_log_alpha,
             invert_depth=args.invert_depth,
             report_relative_luminance=args.relative_luminance,
         )
-        key = f"{benchmark}/{name}"
-        results["benchmarks"][key] = {
-            "dataset_key": dataset_key,
-            "root": str(root),
-            "split": split,
-            "native_resolution": native,
-            "dataset_kwargs": BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
-            "samples": len(selected),
-            "source_samples": len(dataset),
-            "dataset_fingerprint": fingerprint_dataset(dataset),
-            "decoded_metrics": metrics,
-        }
+        if benchmark == "generation":
+            metrics = dict(metrics)
+            metrics["formal_genai_bench"] = False
+            metrics["formal_imgedit"] = False
+        record["samples"] = len(selected)
+        record["decoded_metrics"] = metrics
+        results["benchmarks"][key] = record
         logger.info("%s: %s", key, metrics)
 
     write_results(args.output_json, results)

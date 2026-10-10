@@ -21,7 +21,11 @@ from typing import Any
 
 import torch
 
-from ..core.depth_mapper import DepthRGBMapper
+from ..core.depth_mapper import (
+    DEFAULT_LOG_ALPHA,
+    PAPER_DEPTH_CURVE,
+    DepthRGBMapper,
+)
 from ..core.flow_mapper import FlowRGBMapper
 from ..core.keypoint_mapper import KeypointRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
@@ -201,6 +205,8 @@ class VisionEvaluator:
         dataset_name: str | None = None,
         native_resolution: bool = False,
         depth_colormap: str = "cube_edge",
+        depth_curve: str = PAPER_DEPTH_CURVE,
+        depth_log_alpha: float = DEFAULT_LOG_ALPHA,
         invert_depth: bool = False,
         report_relative_luminance: bool = False,
     ) -> dict[str, Any]:
@@ -255,7 +261,13 @@ class VisionEvaluator:
 
         # Pre-instantiate shared decoders once (not per batch)
         depth_mapper = (
-            DepthRGBMapper(colormap=depth_colormap) if task in ("depth", "depth_edge") else None
+            DepthRGBMapper(
+                colormap=depth_colormap,
+                curve=depth_curve,
+                log_alpha=depth_log_alpha,
+            )
+            if task in ("depth", "depth_edge")
+            else None
         )
         relative_accumulator = (
             DepthAccumulator() if task == "depth" and report_relative_luminance else None
@@ -277,7 +289,10 @@ class VisionEvaluator:
                     image=image,
                     task=task,
                     class_color_map=class_color_map or batch.get("class_color_map"),
-                    object_name=object_name,
+                    object_name=_referring_expression(
+                        object_name,
+                        batch.get("object_name") or batch.get("query"),
+                    ),
                     expression=_referring_expression(expression, batch.get("expression")),
                     num_inference_steps=num_inference_steps,
                     strength=strength,
@@ -561,6 +576,10 @@ class VisionEvaluator:
         if task == "depth" and depth_accumulator is not None:
             metrics = depth_accumulator.compute()
             metrics["skipped_samples"] = skipped_samples
+            metrics["depth_curve"] = depth_curve
+            metrics["depth_units"] = (
+                "metres" if depth_mapper is None or depth_mapper.is_metric else "relative_median"
+            )
             if relative_accumulator is not None:
                 relative_metrics = relative_accumulator.compute()
                 metrics["relative_delta_1.25"] = relative_metrics["delta_1.25"]

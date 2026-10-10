@@ -56,8 +56,11 @@ class TrainingConfig:
     grad_accum: int = 4
     lr: float = 3e-5
     max_grad_norm: float = 1.0
+    drop_grad_norm: float = 0.0
     seed: int = 42
     gradient_checkpointing: bool = True
+    depth_curve: str = "metric_power"
+    depth_log_alpha: float = 0.4
 
     # ── Scheduler ──────────────────────────────────────────────────────
     scheduler: str = "cosine"
@@ -178,6 +181,14 @@ class TrainingConfig:
         for name in ("lr", "max_grad_norm", "flow_shift", "min_snr_gamma", "depth_edge_aux_sigma_floor"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
+        if self.drop_grad_norm < 0:
+            raise ValueError("drop_grad_norm must be non-negative")
+        if self.drop_grad_norm > 0 and self.drop_grad_norm <= self.max_grad_norm:
+            raise ValueError("drop_grad_norm must exceed max_grad_norm when enabled")
+        if self.depth_curve not in {"metric_power", "log_relative"}:
+            raise ValueError("depth_curve must be metric_power or log_relative")
+        if self.depth_log_alpha <= 0:
+            raise ValueError("depth_log_alpha must be positive")
         for name in ("flow_sigma", "depth_edge_aux_weight", "depth_edge_aux_gradient_weight",
                      "depth_edge_aux_edge_weight", "depth_edge_aux_edge_threshold",
                      "normal_angular_loss_weight"):
@@ -244,9 +255,11 @@ _YAML_SECTIONS = {
              "tasks": "tasks", "num_workers": "num_workers", "vision_ratio": "vision_ratio",
              "max_samples_per_task": "max_samples_per_task", "resolution": "resolution",
              "task_sampling": "task_sampling", "task_sampling_weights": "task_sampling_weights",
-             "task_weights": "task_sampling_weights"},
+             "task_weights": "task_sampling_weights",
+             "depth_curve": "depth_curve", "depth_log_alpha": "depth_log_alpha"},
     "training": {"steps": "steps", "batch_size": "batch_size", "gradient_accumulation": "grad_accum",
-                 "lr": "lr", "max_grad_norm": "max_grad_norm", "seed": "seed",
+                 "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
+                 "seed": "seed",
                  "gradient_checkpointing": "gradient_checkpointing"},
     "scheduler": {"type": "scheduler", "warmup_ratio": "warmup_ratio", "warmup_steps": "warmup_steps"},
     "validation": {"max_samples_per_task": "val_max_samples_per_task"},

@@ -24,6 +24,7 @@
 - [Quick Start](#quick-start)
 - [Training](#training)
 - [Key Algorithms](#key-algorithms)
+- [Checkpoints](#checkpoints)
 - [Benchmarks](#benchmarks-from-paper)
 - [Evaluation & Export](#evaluation--export)
 - [Project Structure](#project-structure)
@@ -170,7 +171,21 @@ result = model.predict(image=input_image, task="depth")
 | Lumina2 | lumina2 | ~3B | Apache-2.0 | ~16GB |
 | Chroma | chroma | ~3B | MIT | ~16GB |
 
-Instruction-editing checkpoints (source image + prompt) are registered as `flux-kontext`, `qwen-image-edit`, `qwen-image-edit-2509`, `longcat-image-edit`, `flux2-klein`, `joyimage-edit`, `joyimage-edit-plus`, `instruct-pix2pix`, `sdxl-instruct-pix2pix`, `hunyuan-image3-instruct`, and `hunyuan-image3-instruct-distil`. The registered `hunyuan-image` entry stays the HunyuanImage 2.1 text-to-image pipeline. Each editor has a training forward that matches its official conditioning. The diffusers editors have been executed on their official transformer and UNet classes at tiny width. HunyuanImage-3.0-Instruct builds tokens with `prepare_model_inputs` and calls the published `forward` with the noised target in `images` and the source in `cond_vae_images`; its checkpoint directory name cannot contain a dot. A full fine-tune of that 80B checkpoint has not been run. Qwen and Joy still receive the trainer's text embeddings; that encoding does not insert their vision-language image tokens.
+### Instruction-editing models
+
+These checkpoints take a source image plus an instruction. Each one has a training forward that follows that model's official conditioning. The diffusers classes have been executed at tiny width. A full fine-tune of those Hub checkpoints has not been run, except the in-progress FLUX.1 Kontext depth run.
+
+| Name | Pipeline | Notes |
+|------|----------|--------|
+| `flux-kontext` | `FluxKontextPipeline` | In-context tokens. Non-commercial. |
+| `qwen-image-edit`, `qwen-image-edit-2509` | Qwen edit / edit-plus | Packed 2×2 latents. Text encoding does not insert the VL image tokens. |
+| `longcat-image-edit` | `LongCatImageEditPipeline` | Packed tokens, modality 2 for the source. |
+| `flux2-klein` | `Flux2KleinPipeline` | Flattened reference tokens. |
+| `joyimage-edit`, `joyimage-edit-plus` | Joy image slots | Text encoding does not insert VL image tokens. |
+| `instruct-pix2pix`, `sdxl-instruct-pix2pix` | InstructPix2Pix | Source channels concatenated. `image_guidance_scale` stays 1.5. |
+| `hunyuan-image3-instruct`, `hunyuan-image3-instruct-distil` | `generate_image` | 80B MoE. The checkpoint directory name cannot contain `.`. Training calls `prepare_model_inputs`. |
+
+`hunyuan-image` stays the HunyuanImage 2.1 text-to-image pipeline.
 
 ### CLI Inference
 
@@ -319,9 +334,26 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 
 ---
 
+## Checkpoints
+
+Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb-). The repo id is `khazic/ovb-<run>`.
+
+| Name pattern | Base | What to load |
+|--------------|------|----------------|
+| `ovb-fix_*`, `ovb-best3_*`, `ovb-ctrl_*`, `ovb-main_*` | SANA-1600M | `checkpoint-*_final` (prefer `ema_adapter` when that directory exists) |
+| `ovb-flux*`, `ovb-flux2*`, `ovb-flux3*`, `ovb-flux4*` | FLUX.1-dev | same layout; `metadata.json` records `model_name: flux-dev` |
+
+Task-matched runs:
+
+- Depth: [`ovb-fix_ctrl_depth`](https://huggingface.co/khazic/ovb-fix_ctrl_depth), [`ovb-flux3_ctrl_depth_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_depth_nominsnr_15k)
+- Normals: [`ovb-fix_ctrl_normal`](https://huggingface.co/khazic/ovb-fix_ctrl_normal), [`ovb-flux3_ctrl_normal_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_normal_nominsnr_15k)
+- Semantic / referring: [`ovb-fix_ctrl_seg`](https://huggingface.co/khazic/ovb-fix_ctrl_seg), [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg), [`ovb-flux3_ctrl_seg_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k)
+
+The `fix_*` depth LoRAs were trained as closer-brighter grayscale. Decode them with `--depth-colormap grayscale --invert-depth`. A separate local SANA-1600M Hypersim run (cube-edge metric metres, not a Hub `ovb-*` repo) is listed separately.
+
 ## Benchmarks (from paper)
 
-> These are the **paper's** numbers (Nano Banana Pro base, undisclosed in-house data). This repository has **not** reproduced them; see `docs/plans/2026-08-31-acceptance-stage-progress.md` for the current local status.
+> These are the **paper's** numbers (Nano Banana Pro base, undisclosed in-house data). This repository has **not** reproduced them. Measured scores, gates, and blocked benches are in [`docs/EXPERIMENTAL_RESULTS_2026-10-10.md`](docs/EXPERIMENTAL_RESULTS_2026-10-10.md).
 
 | Task | Benchmark | Metric | Vision Banana | Previous SOTA |
 |------|-----------|:------:|:-------------:|:-------------:|
@@ -332,6 +364,71 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 | Depth | 6-dataset avg | δ1↑ | **0.882** | 0.823 (UniK3D) |
 | Depth | 4-dataset avg (NYU/ETH3D/DIODE/KITTI) | δ1↑ | **0.929** | 0.918 (Depth Anything 3) |
 | Normal | 4-dataset avg | mean°↓ | **18.928** | 19.642 (Lotus-2) |
+
+### Paper capability scorecard (this repository)
+
+The paper evaluates three axes. This table is the current measured-or-blocked status, not Table 1. Paper numbers stay in the left column only.
+
+| Axis | Benchmark | Paper | This repo | Status |
+|------|-----------|------:|-----------|--------|
+| 2D | RefCOCOg UMD val cIoU | 0.738 | SANA `ovb-fix_seg_plus_gcg` 0.143 (n=4896) | measured |
+| 2D | ReasonSeg val gIoU | 0.793 | — | adapter ready; dataset not on the eval machine. Paper score uses Gemini 2.5 Pro query rewrite |
+| 2D | Cityscapes val mIoU | 0.699 | — | blocked: official `gtFine` is not available. Do not use `cityscapes8` |
+| 2D | SA-Co/Gold cgF1 | 47.5 | — | adapter ready (query JSONL + pmF1/IL_MCC/cgF1). Dataset not present. Paper score uses Gemini 3.1 Flash-Lite NP filter |
+| 3D depth | NYU δ1 / AbsRel | 0.948 / 0.081 | SANA gray 0.066 / 1.990; SANA metric 0.124 / 1.251; FLUX gray 0.155 / 1.472 | measured, gate fail |
+| 3D depth | iBims-1 | 0.934 / 0.078 | SANA gray 0.101; SANA metric 0.179; FLUX gray 0.179 | measured, gate fail |
+| 3D depth | ETH3D | 0.935 / 0.103 | SANA gray 0.186; SANA metric 0.292; FLUX gray 0.163 | measured, gate fail |
+| 3D depth | DIODE-Indoor | 0.917 / 0.108 | SANA gray 0.083; SANA metric 0.184; FLUX gray 0.140 | measured, gate fail |
+| 3D depth | KITTI | 0.915 / 0.107 | SANA gray 0.264; SANA metric 0.051; FLUX gray 0.095 | measured, gate fail |
+| 3D depth | nuScenes | 0.643 / 0.219 | — | adapter now returns metric `gt_depth` (80 m cap, no paper crop). LiDAR projections not on the eval machine |
+| 3D normal | DIODE-Indoor mean° | 13.818 | SANA 24.96 (gates pass); FLUX 91.09 | measured |
+| 3D normal | NYU / ScanNet / VKITTI | 17.778 / 15.052 / 29.063 | — | official normal maps not in the eval tree |
+| Generation | GenAI-Bench T2I win | 53.5% | — | paper metric is human pairwise. Prompt adapter ready; no human judge run |
+| Generation | ImgEdit win | 47.8% | — | paper metric is human pairwise. Instruction-pair adapter ready; no human judge run |
+
+`--benchmark 2d|3d|generation|all` now groups those jobs. ReasonSeg, SA-Co/Gold, nuScenes, GenAI-Bench, and ImgEdit roots are `--reasonseg-root`, `--saco-root`, `--nuscenes-root`, `--genai-bench-root`, `--imgedit-root`.
+
+### Measurements in this repository
+
+These scores use the official splits, native ground-truth resolution, and the pixel-weighted metrics in `scripts/evaluate_paper_benchmarks.py`. They are not Table 1. `delta_1.25_aligned` is a per-image median-scale diagnostic. The depth gate requires metric δ1 at least 0.10 above the best non-oracle trivial baseline and AbsRel no worse than that baseline. Every depth row below failed that gate.
+
+SANA relative depth, [`ovb-fix_ctrl_depth`](https://huggingface.co/khazic/ovb-fix_ctrl_depth) EMA, 20 steps, grayscale with bright=near:
+
+| Dataset | n | δ1 | AbsRel | aligned δ1 |
+|---------|--:|---:|-------:|-----------:|
+| NYU Eigen + 10 m | 654 | 0.066 | 1.990 | 0.427 |
+| DIODE indoor | 325 | 0.083 | 550.1 | 0.322 |
+| KITTI Garg + 80 m | 1000 | 0.264 | 0.436 | 0.471 |
+| ETH3D public DSLR + 80 m | 454 | 0.186 | 1.765 | 0.418 |
+| iBims-1 | 100 | 0.101 | 229.5 | 0.345 |
+
+SANA metric depth, local Hypersim cube-edge EMA (`sana_1600m_hypersim_metric_depth`, step 3000), 20 steps, no luminance invert:
+
+| Dataset | n | δ1 | AbsRel | aligned δ1 |
+|---------|--:|---:|-------:|-----------:|
+| NYU Eigen + 10 m | 654 | 0.124 | 1.251 | 0.323 |
+| DIODE indoor | 325 | 0.184 | 18.62 | 0.494 |
+| KITTI Garg + 80 m | 1000 | 0.051 | 0.773 | 0.241 |
+| ETH3D public DSLR + 80 m | 454 | 0.292 | 0.543 | 0.486 |
+| iBims-1 | 100 | 0.179 | 23.02 | 0.393 |
+
+SANA normals, [`ovb-fix_ctrl_normal`](https://huggingface.co/khazic/ovb-fix_ctrl_normal) EMA, DIODE indoor n=325: mean angle 24.96°, median 17.01°. Both normal gates passed. This is not the paper's 13.818°. NYU, ScanNet and VKITTI normal maps are not in the eval tree.
+
+SANA referring, [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg) step-30000 adapter (no EMA), RefCOCOg UMD val n=4896: cIoU 0.143, gIoU 0.158, Precision@0.5 0.089. The paper's cIoU is 0.738. Cityscapes semantic mIoU is not measured: official `gtFine` is not available here.
+
+FLUX.1-dev specialist `ovb-flux3_ctrl_depth_nominsnr_15k`, 20 steps, 4-bit, closer-brighter grayscale:
+
+| Dataset | n | δ1 | AbsRel | aligned δ1 |
+|---------|--:|---:|-------:|-----------:|
+| NYU Eigen + 10 m | 654 | 0.155 | 1.472 | 0.202 |
+| DIODE indoor | 325 | 0.140 | 2433 | 0.219 |
+| KITTI Garg + 80 m | 1000 | 0.095 | 0.778 | 0.178 |
+| ETH3D public DSLR + 80 m | 454 | 0.163 | 1.398 | 0.206 |
+| iBims-1 | 100 | 0.179 | 2096 | 0.206 |
+
+FLUX.1-dev specialist `ovb-flux3_ctrl_normal_nominsnr_15k`, DIODE indoor n=325: mean angle 91.09°, median 91.51°. That is chance-level orientation, not the paper's 13.818°.
+
+FLUX.1 Kontext Hypersim metric EMA finished 3000/3000 (`flow_loss=0.1526`). NYU official_test (654, cube-edge, 28 steps) is still running. `ovb-flux3_ctrl_seg_nominsnr_15k` has no Cityscapes `gtFine` here, so semantic mIoU is not measured.
 
 ---
 
@@ -351,11 +448,32 @@ metrics = evaluate_normals(pred_normals, gt_normals)
 # → {"Mean Angular Error (°)": 15.3, "Cosine Similarity": 0.96, ...}
 ```
 
+Paper-protocol eval scores a decoded task against the official split at native ground-truth resolution. Relative grayscale depth LoRAs need the invert flags. Metric cube-edge checkpoints omit them.
+
 ```bash
-# CLI with SOTA comparison
-python scripts/evaluate.py --task depth --data-path /data/hypersim --compare-sota
-python scripts/evaluate.py --task semantic --data-path /data/cityscapes --output-json metrics.json
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
+  --benchmark depth --model-name sana-1600m \
+  --lora-path checkpoints/ovb-fix_ctrl_depth/ema_adapter \
+  --dtype float32 --native-resolution --num-inference-steps 20 \
+  --depth-colormap grayscale --invert-depth \
+  --nyu-root data/nyu/official_test \
+  --output-json output/eval/nyu_fix_ctrl_depth.json
+
+PYTHONPATH=src python scripts/check_depth_gate.py \
+  --model-json output/eval/nyu_fix_ctrl_depth.json --benchmark depth/nyu \
+  --baseline-json output/eval/nyu_trivial.json
+
+# FLUX.1-dev on a 24 GB GPU (4-bit transformer + 8-bit T5)
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
+  --benchmark depth --model-name flux-dev --quantize 4bit \
+  --lora-path checkpoints/ovb-flux3_ctrl_depth/lora_adapter \
+  --dtype bfloat16 --native-resolution --num-inference-steps 20 \
+  --depth-colormap grayscale --invert-depth \
+  --nyu-root data/nyu/official_test \
+  --output-json output/eval/nyu_flux3_ctrl_depth.json
 ```
+
+Capability groups: `--benchmark 2d` (Cityscapes, RefCOCOg, ReasonSeg, SA-Co/Gold), `--benchmark 3d` (NYU, iBims, ETH3D, DIODE-Indoor, KITTI, nuScenes, plus normals), `--benchmark generation` (GenAI-Bench / ImgEdit proxies). Single-task flags still work. Normals use `--benchmark normal`. Referring uses `--refcocog-root` and `--reasonseg-root`. Instance uses `--saco-root`. Semantic Cityscapes uses `--cityscapes-root`.
 
 ### Export
 
@@ -418,10 +536,11 @@ open-vision-banana/
 │   │   ├── losses.py            # Flow MSE + Min-SNR + aux losses
 │   │   ├── callbacks.py         # W&B logging + checkpoint
 │   │   ├── trainer.py           # Core training loop
+│   │   ├── edit_forward.py      # Instruction-editor training layouts
 │   │   ├── tuner.py             # Legacy InstructionTuner
 │   │   ├── trainer_interface.py # 5 backends (Native/DDP/FSDP/DeepSpeed/Accelerate)
 │   │   └── ...
-│   ├── evaluation/              # Metrics for all vision tasks
+│   ├── evaluation/              # Metrics, trivial baselines, depth/normal gates
 │   ├── export/                  # ONNX + TorchScript export
 │   └── data/                    # Dataset loaders
 ├── configs/                     # Training & experiment configs
@@ -438,9 +557,10 @@ open-vision-banana/
 > This is an **unofficial, community-driven reimplementation**. We are transparent about what is done and what is not.
 
 ### High Priority
-- [ ] Unified framework end-to-end verification (`scripts/train.py` + `Trainer` — needs full SANA/FLUX training runs)
-- [ ] Paper benchmark reproduction (Cityscapes, SA-Co/Gold, HyperSIM, etc.)
-- [ ] Public checkpoint release matching paper SOTA
+- [x] Unified trainer used for the published SANA LoRAs and the FLUX.1-dev LoRAs under `khazic/ovb-*`
+- [x] Paper-protocol adapters for 2D (Cityscapes, RefCOCOg, ReasonSeg, SA-Co/Gold), 3D (NYU, iBims, ETH3D, DIODE indoor, KITTI, nuScenes, normals) and generation prompt/edit sets
+- [ ] Paper Table 1 reproduction (current measurements are far from those numbers; Cityscapes `gtFine`, ReasonSeg, SA-Co/Gold, nuScenes, GenAI-Bench and ImgEdit data are not all present)
+- [ ] Public checkpoint whose paper-protocol scores match the paper
 - [ ] 9:1 vision-to-language data mix verification
 
 ### Medium Priority

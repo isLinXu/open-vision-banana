@@ -147,6 +147,8 @@ def encoding_noise_baseline(
     colormap: str = "cube_edge",
     num_samples: int = 64,
     valid_mask: torch.Tensor | None = None,
+    curve: str = "metric_power",
+    log_alpha: float = 0.4,
 ) -> float:
     """Estimate the encoding noise floor from 8-bit RGB quantization.
 
@@ -167,7 +169,7 @@ def encoding_noise_baseline(
     """
     from ..core.depth_mapper import DepthRGBMapper
 
-    mapper = DepthRGBMapper(colormap=colormap)
+    mapper = DepthRGBMapper(colormap=colormap, curve=curve, log_alpha=log_alpha)
     pred = gt.squeeze(1)
     if valid_mask is not None:
         pred = pred[valid_mask]

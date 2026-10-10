@@ -11,7 +11,14 @@ Provides reversible RGB mapping for all vision tasks:
 
 from .adaptive_depth_mapper import AdaptiveDepthRGBMapper
 from .depth_edge_mapper import DepthEdgeRGBMapper
-from .depth_mapper import DepthRGBMapper
+from .depth_mapper import (
+    DEFAULT_LOG_ALPHA,
+    DEPTH_CURVES,
+    LOG_RELATIVE_CURVE,
+    PAPER_DEPTH_CURVE,
+    DepthRGBMapper,
+    get_available_depth_curves,
+)
 from .edge_mapper import EdgeRGBMapper
 from .flow_mapper import FlowRGBMapper
 from .keypoint_mapper import KeypointRGBMapper
@@ -23,6 +30,11 @@ from .union_find import UnionFind
 
 __all__ = [
     "DepthRGBMapper",
+    "PAPER_DEPTH_CURVE",
+    "LOG_RELATIVE_CURVE",
+    "DEPTH_CURVES",
+    "DEFAULT_LOG_ALPHA",
+    "get_available_depth_curves",
     "NormalRGBMapper",
     "SegmentationDecoder",
     "UnionFind",

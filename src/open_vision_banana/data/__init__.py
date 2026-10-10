@@ -18,6 +18,7 @@ Extended benchmarks (15+ datasets):
 - nuScenes (multi-task autonomous driving)
 """
 
+from .paper_eval_datasets import GenAIBenchDataset, ImgEditDataset, ReasonSegDataset
 from .datasets import (
     BaseVisionDataset,
     CityscapesSegDataset,
@@ -85,6 +86,9 @@ __all__ = [
     "SintelFlowDataset",
     "MapillaryVistasDataset",
     "nuScenesDataset",
+    "ReasonSegDataset",
+    "GenAIBenchDataset",
+    "ImgEditDataset",
     "MixedVisionDataset",
     "HomogeneousMixedBatchSampler",
     "fingerprint_records",

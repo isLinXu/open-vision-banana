@@ -226,6 +226,30 @@ def test_rejects_unconsumed_tar_index(tmp_path, source):
             TrainingConfig(tar_index="index.json").validate()
 
 
+def test_depth_curve_and_grad_drop_defaults_are_paper_safe():
+    config = TrainingConfig()
+    assert config.depth_curve == "metric_power"
+    assert config.drop_grad_norm == 0.0
+    config.validate()
+
+
+def test_drop_grad_norm_must_exceed_clip(tmp_path):
+    path = write_config(tmp_path, {"training": {"max_grad_norm": 1.0, "drop_grad_norm": 1.0}})
+    with pytest.raises(ValueError, match="drop_grad_norm"):
+        load_config(config_path=path)
+    ok = write_config(tmp_path, {"training": {"max_grad_norm": 1.0, "drop_grad_norm": 10.0}})
+    assert load_config(config_path=ok).drop_grad_norm == 10.0
+
+
+def test_yaml_log_relative_curve_is_opt_in(tmp_path):
+    path = write_config(tmp_path, {"data": {"depth_curve": "log_relative", "depth_log_alpha": 0.4}})
+    assert load_config(config_path=path).depth_curve == "log_relative"
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("data:\n  depth_curve: wan\n")
+    with pytest.raises(ValueError, match="depth_curve"):
+        load_config(config_path=bad)
+
+
 def test_null_tar_index_remains_compatible(tmp_path):
     path = write_config(tmp_path, {"data": {"tar_index": None}})
     assert load_config(config_path=path).tar_index is None

@@ -30,6 +30,7 @@ class InferenceOptions:
     # Full-pipeline quantization options
     dtype: str = "bfloat16"  # float32 | float16 | bfloat16 | int8
     enable_model_cpu_offload: bool = False
+    quantize: str | None = None
 
 
 def apply_pipeline_optimizations(pipe, options: InferenceOptions) -> list[str]:
@@ -73,7 +74,9 @@ def apply_pipeline_optimizations(pipe, options: InferenceOptions) -> list[str]:
 
     # Dtype conversion for full pipeline
     dtype_map = {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}
-    if options.dtype in dtype_map:
+    if options.quantize == "4bit":
+        applied.append("quantize=4bit")
+    elif options.dtype in dtype_map:
         target_dtype = dtype_map[options.dtype]
         for component_name in ("transformer", "vae", "text_encoder", "text_encoder_2"):
             component = getattr(pipe, component_name, None)

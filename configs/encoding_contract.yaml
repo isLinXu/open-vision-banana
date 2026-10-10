@@ -20,6 +20,9 @@ depth:
   colormap: turbo
   power_lam: -3.0
   power_c: 3.333
+  # Paper headline decode. log_relative is an opt-in ablation, never the default.
+  curve: metric_power
+  log_alpha: 0.4
   decode_hint: "Decode with DepthRGBMapper(colormap='turbo', lam=-3.0, c=3.333). rgb_to_normalized() → [0,1] depth."
 
 semantic:

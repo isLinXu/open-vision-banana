@@ -8,6 +8,8 @@ import torch
 from PIL import Image
 
 from open_vision_banana.inference.flux_img2img import (
+    flux_guidance_tensor,
+    flow_matching_inference,
     images_to_flux_source,
     pack_flux_latents,
     unpack_flux_latents,
@@ -68,3 +70,161 @@ def test_generate_routes_flux_image_to_training_flow() -> None:
     assert out is sentinel
     mocked.assert_called_once()
     i2i.assert_not_called()
+
+
+def test_flux_dev_forward_receives_guidance_and_pooled_projections() -> None:
+    class _Cfg:
+        guidance_embeds = True
+
+    class _Transformer:
+        config = _Cfg()
+        calls = []
+
+        def __call__(self, **kwargs):
+            self.calls.append(kwargs)
+            hidden = kwargs["hidden_states"]
+            return (hidden,)
+
+    class _VAE:
+        def encode(self, images):
+            return type("Out", (), {"latent_dist": type("D", (), {"mode": lambda self=None: torch.zeros(1, 16, 4, 4)})()})()
+
+        def decode(self, latents, return_dict=True):
+            sample = torch.zeros(1, 3, 32, 32)
+            if return_dict:
+                return type("Out", (), {"sample": sample})()
+            return (sample,)
+
+        def parameters(self):
+            yield torch.zeros(1)
+
+        config = type("C", (), {"scaling_factor": 1.0, "shift_factor": 0.0})()
+
+    transformer = _Transformer()
+    pipe = type(
+        "Pipe",
+        (),
+        {
+            "transformer": transformer,
+            "vae": _VAE(),
+            "encode_prompt": lambda *a, **k: (
+                torch.zeros(1, 2, 8),
+                torch.zeros(1, 768),
+                torch.zeros(2, 3),
+            ),
+            "text_encoder": None,
+            "text_encoder_2": None,
+        },
+    )()
+    config = ModelConfig(
+        name="flux-dev",
+        model_id="black-forest-labs/FLUX.1-dev",
+        family="flux",
+        num_text_encoders=2,
+        vae_scaling_factor=1.0,
+        vae_has_latent_dist=True,
+    )
+    out = flow_matching_inference(
+        pipe=pipe,
+        config=config,
+        input_images=torch.zeros(1, 3, 32, 32),
+        prompts=["depth"],
+        device=torch.device("cpu"),
+        model_dtype=torch.float32,
+        num_steps=1,
+        guidance=50.0,
+    )
+    assert out.shape == (1, 3, 32, 32)
+    call = transformer.calls[0]
+    assert call["pooled_projections"].shape == (1, 768)
+    assert torch.allclose(call["guidance"], torch.tensor([50.0]))
+    schnell = type("T", (), {"config": type("C", (), {"guidance_embeds": False})()})()
+    assert flux_guidance_tensor(schnell, 1, torch.device("cpu"), torch.float32) is None
+
+
+def test_flux_decode_skips_meta_vae_parameters() -> None:
+    class _Cfg:
+        guidance_embeds = False
+
+    class _Transformer:
+        config = _Cfg()
+
+        def __call__(self, **kwargs):
+            return (kwargs["hidden_states"],)
+
+    class _VAE:
+        def encode(self, images):
+            return type("Out", (), {"latent_dist": type("D", (), {"mode": lambda self=None: torch.zeros(1, 16, 4, 4)})()})()
+
+        def decode(self, latents, return_dict=True):
+            assert latents.device.type != "meta"
+            sample = torch.zeros(1, 3, 32, 32, device=latents.device)
+            return (sample,) if not return_dict else type("Out", (), {"sample": sample})()
+
+        def parameters(self):
+            yield torch.zeros(1, device="meta")
+
+        config = type("C", (), {"scaling_factor": 1.0, "shift_factor": 0.0})()
+
+    pipe = type(
+        "Pipe",
+        (),
+        {
+            "transformer": _Transformer(),
+            "vae": _VAE(),
+            "encode_prompt": lambda *a, **k: (
+                torch.zeros(1, 2, 8),
+                torch.zeros(1, 768),
+                torch.zeros(2, 3),
+            ),
+            "text_encoder": None,
+            "text_encoder_2": None,
+        },
+    )()
+    config = ModelConfig(
+        name="flux-dev",
+        model_id="black-forest-labs/FLUX.1-dev",
+        family="flux",
+        num_text_encoders=2,
+        vae_scaling_factor=1.0,
+        vae_has_latent_dist=True,
+    )
+    out = flow_matching_inference(
+        pipe=pipe,
+        config=config,
+        input_images=torch.zeros(1, 3, 32, 32),
+        prompts=["depth"],
+        device=torch.device("cpu"),
+        model_dtype=torch.float32,
+        num_steps=1,
+    )
+    assert out.shape == (1, 3, 32, 32)
+
+
+def test_encode_text_flux_leaves_quantized_t5_in_place() -> None:
+    from open_vision_banana.inference.flux_img2img import encode_text_flux
+
+    class _Enc:
+        is_loaded_in_8bit = True
+
+        def to(self, *_args, **_kwargs):
+            raise AssertionError("quantized T5 must not be recast")
+
+        def parameters(self):
+            yield torch.zeros(1)
+
+    pipe = type(
+        "Pipe",
+        (),
+        {
+            "text_encoder": None,
+            "text_encoder_2": _Enc(),
+            "encode_prompt": lambda *a, **k: (
+                torch.zeros(1, 2, 8),
+                torch.zeros(1, 768),
+                torch.zeros(2, 3),
+            ),
+        },
+    )()
+    text = encode_text_flux(pipe, ["depth"], torch.device("cpu"))
+    assert text["pooled_prompt_embeds"].shape == (1, 768)
