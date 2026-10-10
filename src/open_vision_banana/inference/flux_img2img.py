@@ -95,12 +95,35 @@ def prepare_flux_latent_image_ids(
     return latent_image_ids.reshape(height * width, 3).to(device=device, dtype=dtype)
 
 
+def flux_guidance_tensor(
+    transformer: Any,
+    batch_size: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    guidance: float | None = None,
+) -> torch.Tensor | None:
+    """Guidance embedding for distilled FLUX.1-dev / Kontext transformers.
+
+    Schnell has ``guidance_embeds=False`` and must not receive this tensor.
+    Training (`train_flux.py`, ``ModelBackend``) feeds 50.0, which the
+    transformer then multiplies by 1000.
+    """
+    if not bool(getattr(getattr(transformer, "config", None), "guidance_embeds", False)):
+        return None
+    scale = 50.0 if guidance is None or guidance <= 0 else float(guidance)
+    return torch.full((batch_size,), scale, device=device, dtype=dtype)
+
+
 def encode_text_flux(pipe: Any, prompts: list[str], device: torch.device) -> dict[str, torch.Tensor | None]:
     """Encode prompts with FluxPipeline.encode_prompt, matching training."""
     encoders = [getattr(pipe, "text_encoder", None), getattr(pipe, "text_encoder_2", None)]
     original_dtypes = []
     for encoder in encoders:
-        if encoder is not None:
+        quantized = bool(
+            getattr(encoder, "is_loaded_in_8bit", False)
+            or getattr(encoder, "is_loaded_in_4bit", False)
+        )
+        if encoder is not None and not quantized:
             original_dtypes.append(next(encoder.parameters()).dtype)
             encoder.to(torch.float32)
         else:
@@ -137,6 +160,7 @@ def flow_matching_inference(
     device: torch.device,
     model_dtype: torch.dtype,
     num_steps: int = 4,
+    guidance: float | None = None,
 ) -> torch.Tensor:
     """Euler-integrate from input latents toward the prompted vision target.
 
@@ -144,7 +168,11 @@ def flow_matching_inference(
     """
     vae = pipe.vae
     transformer = pipe.transformer
-    vae_dtype = next(vae.parameters()).dtype
+    vae_dtype = model_dtype
+    for parameter in vae.parameters():
+        if parameter.device.type != "meta":
+            vae_dtype = parameter.dtype
+            break
     batch_size = input_images.shape[0]
 
     input_latents = vae_encode(vae, input_images.to(dtype=vae_dtype), config)
@@ -177,19 +205,27 @@ def flow_matching_inference(
             hidden = z
             img_ids = None
 
-        output = transformer(
-            hidden_states=hidden.to(dtype=model_dtype),
-            timestep=t_tensor,
-            encoder_hidden_states=prompt_embeds,
-            pooled_projections=pooled,
-            txt_ids=text_ids,
-            img_ids=img_ids,
-            return_dict=False,
+        call = {
+            "hidden_states": hidden.to(dtype=model_dtype),
+            "timestep": t_tensor,
+            "encoder_hidden_states": prompt_embeds,
+            "pooled_projections": pooled,
+            "txt_ids": text_ids,
+            "img_ids": img_ids,
+            "return_dict": False,
+        }
+        guidance_tensor = flux_guidance_tensor(
+            transformer, batch_size, device, model_dtype, guidance
         )
+        if guidance_tensor is not None:
+            call["guidance"] = guidance_tensor
+        output = transformer(**call)
         velocity = output[0] if isinstance(output, (tuple, list)) else output.sample
         if latent_channels == 16:
             velocity = unpack_flux_latents(velocity, latent_h, latent_w)
         z = z + dt * velocity.to(dtype=z.dtype)
 
-    decoded = vae_decode(vae, z.to(device=next(vae.parameters()).device, dtype=vae_dtype), config)
+    # Sequential CPU offload parks VAE weights on ``meta``. Decode on the
+    # inference device so accelerate can move the module onto it.
+    decoded = vae_decode(vae, z.to(device=device, dtype=vae_dtype), config)
     return ((decoded.float() + 1.0) / 2.0).clamp(0.0, 1.0)

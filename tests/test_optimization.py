@@ -33,6 +33,14 @@ class TestInferenceOptions:
         pipe.enable_attention_slicing.assert_called_once_with(1)
         assert any("attention_slicing" in item for item in applied)
 
+    def test_quantize_4bit_skips_dtype_cast(self):
+        pipe = MagicMock()
+        pipe.transformer.to = MagicMock()
+        opts = InferenceOptions(quantize="4bit", dtype="bfloat16")
+        applied = apply_pipeline_optimizations(pipe, opts)
+        assert "quantize=4bit" in applied
+        pipe.transformer.to.assert_not_called()
+
 
 class TestQuantizeMapper:
     def test_int8_mapper_runs(self):

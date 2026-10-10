@@ -277,7 +277,10 @@ class BaseGenerator:
             default_transformer = Path(model_source) / "transformer" / "diffusion_pytorch_model.safetensors"
             if fp16_transformer.is_file() and not default_transformer.is_file():
                 pipe_kwargs["variant"] = "fp16"
-        pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
+        if getattr(self.inference_options, "quantize", None) == "4bit" and family == "flux":
+            pipe = self._load_flux_quantized_pipeline(model_source, PipeClass)
+        else:
+            pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
         if family == "sdxl" and hasattr(pipe, "scheduler"):
             # SSD-1B/SDXL LoRA training uses epsilon prediction. Keep the base
             # pipeline on that contract before any checkpoint-specific setup.
@@ -335,11 +338,46 @@ class BaseGenerator:
         applied = apply_pipeline_optimizations(pipe, self.inference_options)
         if applied:
             logger.info("Applied inference optimizations: %s", ", ".join(applied))
-        if not self.inference_options.enable_sequential_cpu_offload:
+        if (
+            not self.inference_options.enable_sequential_cpu_offload
+            and getattr(self.inference_options, "quantize", None) != "4bit"
+        ):
             pipe = pipe.to(self.device)
 
         self._t2i_pipe = pipe
         logger.info(f"{pipe_class_name} loaded successfully (family={family})")
+
+    def _load_flux_quantized_pipeline(self, model_source: str, pipeline_cls):
+        """Load FLUX.1-dev / Kontext with a 4-bit transformer and 8-bit T5."""
+        from diffusers import FluxTransformer2DModel
+        from transformers import BitsAndBytesConfig, T5EncoderModel
+
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+        )
+        transformer = FluxTransformer2DModel.from_pretrained(
+            model_source,
+            subfolder="transformer",
+            torch_dtype=self.dtype,
+            quantization_config=quant_config,
+        )
+        text_encoder_2 = T5EncoderModel.from_pretrained(
+            model_source,
+            subfolder="text_encoder_2",
+            torch_dtype=self.dtype,
+            quantization_config=BitsAndBytesConfig(load_in_8bit=True),
+        )
+        kwargs: dict[str, Any] = {
+            "transformer": transformer,
+            "text_encoder_2": text_encoder_2,
+            "torch_dtype": self.dtype,
+        }
+        if Path(model_source).is_dir():
+            kwargs["local_files_only"] = True
+        pipe = pipeline_cls.from_pretrained(model_source, **kwargs)
+        return pipe.to(self.device)
 
     def _load_source_conditioning(self, pipe, checkpoint_dir: str) -> None:
         """Expand and restore UNet input conditioning declared by a checkpoint."""
@@ -1044,6 +1082,7 @@ class BaseGenerator:
             device=device,
             model_dtype=self.dtype,
             num_steps=steps,
+            guidance=None,
         )
 
     @torch.no_grad()
