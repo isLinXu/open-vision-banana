@@ -122,6 +122,8 @@ class EvalPipeline:
                 colormap=colormap,
                 lam=self.contract.depth.power_lam,
                 c=self.contract.depth.power_c,
+                curve=self.contract.depth.curve,
+                log_alpha=self.contract.depth.log_alpha,
             )
         return self._depth_mapper
 

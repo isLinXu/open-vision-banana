@@ -61,6 +61,8 @@ class MixedVisionDataset(Dataset):
         task_weights: dict[str, float] | None = None,
         depth_lam: float = -3.0,
         depth_c: float = 10.0 / 3.0,
+        depth_curve: str = "metric_power",
+        depth_log_alpha: float = 0.4,
     ):
         if not 0.0 < vision_ratio <= 1.0:
             raise ValueError(f"vision_ratio must be in (0, 1]; got {vision_ratio}")
@@ -76,6 +78,8 @@ class MixedVisionDataset(Dataset):
         self.task_weights = task_weights or {}
         self.depth_lam = depth_lam
         self.depth_c = depth_c
+        self.depth_curve = depth_curve
+        self.depth_log_alpha = depth_log_alpha
 
         self.total_vision: int = sum(len(ds) for ds in self.vision_datasets)  # type: ignore[misc]
         self._vision_lengths = [len(ds) for ds in self.vision_datasets]
@@ -145,15 +149,22 @@ class MixedVisionDataset(Dataset):
             cmap_idx = int(torch.randint(len(self.colormaps), (1,), generator=rng).item())
             colormap = self.colormaps[cmap_idx]
             sample["colormap"] = colormap
-            if colormap != "cube_edge" and "target_rgb" in sample:
+            need_reencode = colormap != "cube_edge" or self.depth_curve != "metric_power"
+            if need_reencode and "target_rgb" in sample:
                 from ..core.depth_mapper import DepthRGBMapper
 
-                mapper = DepthRGBMapper(lam=self.depth_lam, c=self.depth_c)
+                paper = DepthRGBMapper(lam=self.depth_lam, c=self.depth_c)
+                mapper = DepthRGBMapper(
+                    lam=self.depth_lam,
+                    c=self.depth_c,
+                    curve=self.depth_curve,
+                    log_alpha=self.depth_log_alpha,
+                )
                 depth = sample.get("gt_depth")
                 if not isinstance(depth, torch.Tensor):
                     target_rgb = sample["target_rgb"]
                     if isinstance(target_rgb, torch.Tensor):
-                        depth = mapper.rgb_to_depth(target_rgb.unsqueeze(0)).squeeze(0)
+                        depth = paper.rgb_to_depth(target_rgb.unsqueeze(0)).squeeze(0)
                 if isinstance(depth, torch.Tensor):
                     if depth.dim() == 2:
                         depth = depth.unsqueeze(0)

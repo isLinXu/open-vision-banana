@@ -42,11 +42,17 @@ class RGBMapper:
         self,
         depth_colormap: str = "cube_edge",
         *,
+        depth_curve: str = "metric_power",
+        depth_log_alpha: float = 0.4,
         instance_grouping_mode: str = "seed",
         instance_adaptive_color_tolerance: bool = False,
         instance_decoding_config: InstanceDecodingConfig | None = None,
     ) -> None:
-        self.depth_mapper = DepthRGBMapper(colormap=depth_colormap)
+        self.depth_mapper = DepthRGBMapper(
+            colormap=depth_colormap,
+            curve=depth_curve,
+            log_alpha=depth_log_alpha,
+        )
         self.normal_mapper = NormalRGBMapper()
         decoder_config = instance_decoding_config or InstanceDecodingConfig(
             grouping_mode=instance_grouping_mode,

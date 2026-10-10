@@ -30,6 +30,8 @@ class DepthContract:
     colormap: str | None  # None for grayscale
     power_lam: float = -3.0
     power_c: float = 10.0 / 3.0
+    curve: str = "metric_power"
+    log_alpha: float = 0.4
     decode_hint: str = ""
 
     def decode_rgb_to_depth(
@@ -55,13 +57,24 @@ class DepthContract:
             # Colormap-based decoding
             from ..core.depth_mapper import DepthRGBMapper
 
-            mapper = DepthRGBMapper(colormap=self.colormap, lam=self.power_lam, c=self.power_c)
+            mapper = DepthRGBMapper(
+                colormap=self.colormap,
+                lam=self.power_lam,
+                c=self.power_c,
+                curve=self.curve,
+                log_alpha=self.log_alpha,
+            )
             normalized = mapper.rgb_to_normalized(rgb)
 
         if return_metric:
             from ..core.depth_mapper import DepthRGBMapper
 
-            mapper = DepthRGBMapper(lam=self.power_lam, c=self.power_c)
+            mapper = DepthRGBMapper(
+                lam=self.power_lam,
+                c=self.power_c,
+                curve=self.curve,
+                log_alpha=self.log_alpha,
+            )
             return mapper.normalized_to_depth(normalized)
         return normalized
 
@@ -166,6 +179,8 @@ def load_encoding_contract(
             colormap=depth_data.get("colormap"),
             power_lam=depth_data.get("power_lam", -3.0),
             power_c=depth_data.get("power_c", 10.0 / 3.0),
+            curve=depth_data.get("curve", "metric_power"),
+            log_alpha=float(depth_data.get("log_alpha", 0.4)),
             decode_hint=depth_data.get("decode_hint", ""),
         ),
         semantic=SemanticContract(

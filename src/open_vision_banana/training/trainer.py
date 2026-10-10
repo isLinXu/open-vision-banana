@@ -42,6 +42,16 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 logger = logging.getLogger(__name__)
 
 
+def drop_oversized_gradients(grad_norm: float, drop_grad_norm: float) -> bool:
+    """Return True when this update should be discarded instead of clipped.
+
+    Paper-aligned training still clips at ``max_grad_norm``. A positive
+    ``drop_grad_norm`` (must be larger than the clip) throws away exploding
+    batches. Disabled when ``drop_grad_norm <= 0``.
+    """
+    return drop_grad_norm > 0.0 and grad_norm > drop_grad_norm
+
+
 # ── Task aliases and default prompts ──────────────────────────────────────
 
 TASK_ALIASES = {
@@ -94,8 +104,14 @@ class ManifestVisionDataset(Dataset):
         tasks: set[str],
         max_samples: int | None = None,
         data_root: Path | None = None,
+        depth_curve: str = "metric_power",
+        depth_log_alpha: float = 0.4,
+        depth_colormap: str = "cube_edge",
     ):
         self.resolution = resolution
+        self.depth_curve = depth_curve
+        self.depth_log_alpha = depth_log_alpha
+        self.depth_colormap = depth_colormap
         self.samples: list[dict[str, str]] = []
         path_anchor = data_root.resolve() if data_root else manifest_path
 
@@ -155,6 +171,17 @@ class ManifestVisionDataset(Dataset):
             img.load()
             img = img.convert("RGB").resize((self.resolution, self.resolution), resample)
             tgt = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
+        if s["task"] == "depth" and self.depth_curve != "metric_power":
+            from open_vision_banana.core.depth_mapper import DepthRGBMapper
+
+            paper = DepthRGBMapper(colormap=self.depth_colormap)
+            alt = DepthRGBMapper(
+                colormap=self.depth_colormap,
+                curve=self.depth_curve,
+                log_alpha=self.depth_log_alpha,
+            )
+            metric = paper.rgb_to_depth(tgt.unsqueeze(0))
+            tgt = alt.depth_to_rgb(metric).squeeze(0)
         return {
             "prompt": s["prompt"],
             "image": inp * 2.0 - 1.0,
@@ -426,6 +453,8 @@ class Trainer:
                 {t},
                 config.max_samples_per_task,
                 data_root=data_root,
+                depth_curve=config.depth_curve,
+                depth_log_alpha=config.depth_log_alpha,
             )
             for t in sorted(tasks_to_load)
         ]
@@ -435,7 +464,15 @@ class Trainer:
             raise ValueError(f"Requested training tasks have no samples: {empty_tasks}")
 
         val_datasets = [
-            ManifestVisionDataset(manifest_path, config.resolution, "val", {t}, data_root=data_root)
+            ManifestVisionDataset(
+                manifest_path,
+                config.resolution,
+                "val",
+                {t},
+                data_root=data_root,
+                depth_curve=config.depth_curve,
+                depth_log_alpha=config.depth_log_alpha,
+            )
             for t in sorted(tasks_to_load)
         ]
         val_datasets = [ds for ds in val_datasets if len(ds) > 0]
@@ -566,6 +603,19 @@ class Trainer:
 
                 # ── Optimizer step ─────────────────────────────────────
                 all_reduce_gradients_(self.trainable_params, self.dist)
+                grad_norm = float(
+                    torch.nn.utils.clip_grad_norm_(self.trainable_params, float("inf"))
+                )
+                if drop_oversized_gradients(grad_norm, config.drop_grad_norm):
+                    self.optimizer.zero_grad(set_to_none=True)
+                    if self.dist.is_main:
+                        logger.warning(
+                            "Dropped update at pending step %d: grad_norm=%.3f > drop_grad_norm=%.3f",
+                            global_step,
+                            grad_norm,
+                            config.drop_grad_norm,
+                        )
+                    continue
                 torch.nn.utils.clip_grad_norm_(self.trainable_params, config.max_grad_norm)
                 self.optimizer.step()
                 self.lr_scheduler.step()
