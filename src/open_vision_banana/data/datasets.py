@@ -455,10 +455,19 @@ class CityscapesSegDataset(BaseVisionDataset):
 
 
 class SACoInstanceDataset(BaseVisionDataset):
-    """SA-Co dataset for instance segmentation.
+    """SA-Co / SA-Co-Gold instance queries.
 
-    Expects a directory structure with images and instance masks.
-    Each instance is encoded as a unique color in the mask image.
+    Accepts either the training-style ``*color*`` / ``*instance*`` pairs or a
+    Gold query JSONL with noun phrases and optional presence labels::
+
+        root/queries.jsonl
+        root/val/queries.jsonl
+        root/gold.jsonl
+
+    Each JSONL row is ``{"image": "...", "query": "a red car", "present": true,
+    "mask": "optional.png"}``. The paper's cgF1 uses Gemini 3.1 Flash-Lite to
+    decide presence; this adapter only loads the official query set. Passing
+    ``gt_present`` lets the evaluator compute IL_MCC without inventing a filter.
     """
 
     TASK_TYPE = "instance"
@@ -470,22 +479,84 @@ class SACoInstanceDataset(BaseVisionDataset):
         if not self.root_dir.exists():
             logger.warning(f"SA-Co directory not found: {self.root_dir}")
             return
+        for name in ("queries.jsonl", "gold.jsonl", f"{self.split}.jsonl"):
+            for path in (self.root_dir / self.split / name, self.root_dir / name):
+                if path.is_file():
+                    self._scan_gold_queries(path)
+                    if self.samples:
+                        return
         for img_path in sorted(self.root_dir.rglob("*color*")):
             inst_path = Path(str(img_path).replace("color", "instance"))
             if inst_path.exists():
-                self.samples.append({"image": img_path, "target": inst_path})
+                self.samples.append({"image": img_path, "target": inst_path, "query": "objects"})
+
+    def _scan_gold_queries(self, path: Path) -> None:
+        import json
+
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            query = str(row.get("query") or row.get("noun_phrase") or row.get("text") or "").strip()
+            image_name = row.get("image") or row.get("file_name")
+            if not query or not image_name:
+                continue
+            image = Path(image_name)
+            if not image.is_file():
+                image = self.root_dir / image_name
+            if not image.is_file():
+                matches = sorted(self.root_dir.rglob(Path(image_name).name))
+                image = matches[0] if matches else None
+            if image is None:
+                continue
+            mask_name = row.get("mask") or row.get("target")
+            mask = None
+            if mask_name:
+                mask = Path(mask_name)
+                if not mask.is_file():
+                    mask = self.root_dir / mask_name
+                if not mask.is_file():
+                    matches = sorted(self.root_dir.rglob(Path(mask_name).name))
+                    mask = matches[0] if matches else None
+            present = row.get("present")
+            if present is None:
+                present = row.get("gt_present")
+            self.samples.append(
+                {
+                    "image": image,
+                    "target": mask,
+                    "query": query,
+                    "present": None if present is None else bool(present),
+                }
+            )
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
-
-        inst_img = Image.open(sample["target"]).convert("RGB")
-        if inst_img.size != (self.resolution, self.resolution):
-            inst_img = inst_img.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
-        target_rgb = _pil_to_tensor(inst_img).float() / 255.0
-
-        prompt = PromptBuilder.build_instance_prompt("objects")
-        return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
+        query = str(sample.get("query") or "objects")
+        if sample.get("target") is None:
+            target_rgb = torch.zeros(3, self.resolution, self.resolution)
+        else:
+            inst_img = Image.open(sample["target"]).convert("RGB")
+            if inst_img.size != (self.resolution, self.resolution):
+                inst_img = inst_img.resize(
+                    (self.resolution, self.resolution), Image.Resampling.LANCZOS
+                )
+            target_rgb = _pil_to_tensor(inst_img).float() / 255.0
+        present = sample.get("present")
+        if present is None:
+            present = bool(target_rgb.sum() > 0)
+        item = {
+            "prompt": PromptBuilder.build_instance_prompt(query),
+            "image": image,
+            "target_rgb": target_rgb,
+            "object_name": query,
+            "gt_present": present,
+        }
+        return item
 
 
 class RefCOCOgDataset(BaseVisionDataset):
@@ -2765,7 +2836,7 @@ class MapillaryVistasDataset(BaseVisionDataset):
         }
 
 
-class nuScenesDataset(BaseVisionDataset):
+class nuScenesDataset(_NativeGTMixin, BaseVisionDataset):
     """nuScenes dataset for multi-task autonomous driving perception.
 
     nuScenes provides 1,000 scenes with 360° camera coverage, LiDAR,
@@ -2777,18 +2848,31 @@ class nuScenesDataset(BaseVisionDataset):
         root_dir/
           samples/
             CAM_FRONT/       ← Front camera images (*.jpg)
-          depth/             ← LiDAR depth projections (*.npy)
+          depth/             ← LiDAR depth projections (*.npy or *.png)
           labels/            ← Semantic labels (*.png)
 
-    This is a lightweight wrapper; full nuScenes SDK integration would
-    provide richer annotations (3D boxes, trajectories, etc.).
+        root_dir/<split>/...  is also accepted.
+
+    Depth evaluation returns metric ``gt_depth`` so the paper 80 m protocol
+    can score decoded RGB. The class ``TASK_TYPE`` stays ``semantic`` for the
+    default constructor; pass ``task="depth"`` for the paper depth bench.
     """
 
     TASK_TYPE = "semantic"
 
-    def __init__(self, root_dir, split="train", resolution=512, task="semantic", **kwargs) -> None:
+    def __init__(
+        self,
+        root_dir,
+        split="train",
+        resolution=512,
+        task="semantic",
+        native_gt=False,
+        **kwargs,
+    ) -> None:
         self.task = task
         self._build_palette()
+        self.depth_mapper = DepthRGBMapper()
+        self._init_native(native_gt)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _build_palette(self):
@@ -2800,27 +2884,46 @@ class nuScenesDataset(BaseVisionDataset):
             colors.append((rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255)))
         self._color_palette = torch.tensor(colors, dtype=torch.float32) / 255.0
 
+    def _scan_roots(self) -> list[Path]:
+        roots = []
+        split_root = self.root_dir / self.split
+        if split_root.is_dir():
+            roots.append(split_root)
+        roots.append(self.root_dir)
+        return roots
+
     def _scan(self) -> None:
         if self.task == "depth":
-            img_dir = self.root_dir / "samples" / "CAM_FRONT"
-            depth_dir = self.root_dir / "depth"
-            if not img_dir.exists():
-                return
-            for img_path in sorted(img_dir.rglob("*.jpg")):
-                depth_path = depth_dir / (img_path.stem + ".npy")
-                if depth_path.exists():
-                    self.samples.append({"image": img_path, "target": depth_path, "task": "depth"})
-        elif self.task in ("semantic", "instance"):
-            img_dir = self.root_dir / "samples" / "CAM_FRONT"
-            label_dir = self.root_dir / "labels"
-            if not img_dir.exists():
-                return
-            for img_path in sorted(img_dir.rglob("*.jpg")):
-                label_path = label_dir / (img_path.stem + ".png")
-                if label_path.exists():
-                    self.samples.append(
-                        {"image": img_path, "target": label_path, "task": self.task}
-                    )
+            for root in self._scan_roots():
+                img_dir = root / "samples" / "CAM_FRONT"
+                depth_dir = root / "depth"
+                if not img_dir.exists() or not depth_dir.exists():
+                    continue
+                for img_path in sorted(img_dir.rglob("*.jpg")):
+                    depth_path = depth_dir / (img_path.stem + ".npy")
+                    if not depth_path.exists():
+                        depth_path = depth_dir / (img_path.stem + ".png")
+                    if depth_path.exists():
+                        self.samples.append(
+                            {"image": img_path, "target": depth_path, "task": "depth"}
+                        )
+                if self.samples:
+                    return
+            return
+        if self.task in ("semantic", "instance"):
+            for root in self._scan_roots():
+                img_dir = root / "samples" / "CAM_FRONT"
+                label_dir = root / "labels"
+                if not img_dir.exists():
+                    continue
+                for img_path in sorted(img_dir.rglob("*.jpg")):
+                    label_path = label_dir / (img_path.stem + ".png")
+                    if label_path.exists():
+                        self.samples.append(
+                            {"image": img_path, "target": label_path, "task": self.task}
+                        )
+                if self.samples:
+                    return
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -2828,36 +2931,51 @@ class nuScenesDataset(BaseVisionDataset):
         task = sample.get("task", self.task)
 
         if task == "depth":
-            import numpy as np
-
-            depth = np.load(sample["target"])
-            depth = torch.from_numpy(depth).float().unsqueeze(0)
+            depth_path = Path(sample["target"])
+            if depth_path.suffix.lower() == ".npy":
+                depth = torch.from_numpy(np.load(depth_path)).float()
+                if depth.dim() == 2:
+                    depth = depth.unsqueeze(0)
+            else:
+                depth = load_scalar(depth_path)
+                if depth.max() > 200:
+                    depth = depth / 256.0
+            native = self._native_fields(depth, torch.isfinite(depth) & (depth > 0))
             depth = torch.nn.functional.interpolate(
                 depth.unsqueeze(0), size=(self.resolution, self.resolution), mode="nearest"
             ).squeeze(0)
-            mapper = DepthRGBMapper()
-            target_rgb = mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+            valid_mask = torch.isfinite(depth) & (depth > 0)
+            depth = torch.where(valid_mask, depth, torch.zeros_like(depth))
+            target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
             prompt = PromptBuilder.build_depth_prompt()
-        else:
-            label_img = Image.open(sample["target"])
-            label = _pil_to_tensor(label_img).long().squeeze(0)
-            label = label.unsqueeze(0).unsqueeze(0).float()
-            label = (
-                torch.nn.functional.interpolate(
-                    label, size=(self.resolution, self.resolution), mode="nearest"
-                )
-                .long()
-                .squeeze(0)
-                .squeeze(0)
-            )
-            label = label.clamp(0, 22)
-            palette = self._color_palette.to(label.device)
-            rgb = palette[label.long()]
-            target_rgb = rgb.permute(2, 0, 1)
-            class_color_map = {
-                f"class_{i}": tuple(int(c * 255) for c in palette[i].tolist()) for i in range(23)
+            return {
+                "prompt": prompt,
+                "image": image,
+                "target_rgb": target_rgb,
+                "gt_depth": depth,
+                "valid_mask": valid_mask.squeeze(0),
+                **native,
             }
-            prompt = PromptBuilder.build_semantic_prompt(class_color_map)
+
+        label_img = Image.open(sample["target"])
+        label = _pil_to_tensor(label_img).long().squeeze(0)
+        label = label.unsqueeze(0).unsqueeze(0).float()
+        label = (
+            torch.nn.functional.interpolate(
+                label, size=(self.resolution, self.resolution), mode="nearest"
+            )
+            .long()
+            .squeeze(0)
+            .squeeze(0)
+        )
+        label = label.clamp(0, 22)
+        palette = self._color_palette.to(label.device)
+        rgb = palette[label.long()]
+        target_rgb = rgb.permute(2, 0, 1)
+        class_color_map = {
+            f"class_{i}": tuple(int(c * 255) for c in palette[i].tolist()) for i in range(23)
+        }
+        prompt = PromptBuilder.build_semantic_prompt(class_color_map)
 
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
@@ -2954,6 +3072,15 @@ def build_dataset(
         "nuscenes": nuScenesDataset,
         "preencoded_depth": PreEncodedDepthDataset,
     }
+    if task in {"reasonseg", "genai_bench", "imgedit"}:
+        from .paper_eval_datasets import GenAIBenchDataset, ImgEditDataset, ReasonSegDataset
+
+        registry = {
+            **registry,
+            "reasonseg": ReasonSegDataset,
+            "genai_bench": GenAIBenchDataset,
+            "imgedit": ImgEditDataset,
+        }
     if task not in registry:
         raise ValueError(f"Unknown task: {task}. Choose from: {list(registry.keys())}")
     return registry[task](root_dir=root_dir, split=split, resolution=resolution, **kwargs)

@@ -44,6 +44,11 @@ from .instance import (
 from .keypoint import evaluate_keypoints
 from .normal import evaluate_normals
 from .object_detection import evaluate_object_detection
+from .paper_capabilities import (
+    PAPER_CAPABILITIES,
+    capability_for_benchmark,
+    paper_reference,
+)
 from .referring import ReferringAccumulator, evaluate_referring
 from .contract import (
     DepthContract,
@@ -89,4 +94,7 @@ __all__ = [
     "NormalContract",
     "load_encoding_contract",
     "EvalPipeline",
+    "PAPER_CAPABILITIES",
+    "capability_for_benchmark",
+    "paper_reference",
 ]
