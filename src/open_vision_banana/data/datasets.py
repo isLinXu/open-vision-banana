@@ -567,16 +567,19 @@ class RefCOCOgDataset(BaseVisionDataset):
         root_dir/
           images/                 ← COCO images, or images/train2014, images/val2014
           refs(umd).p             ← paper split (preferred when protocol="umd")
-          refs(g).p               ← Google split, used when the UMD file is absent
+          refs(g).p               ← Google split (legacy fallback only)
           instances.json          ← COCO instances; required for a real cIoU
 
     Each referring sentence is its own sample (standard cIoU counts every
     expression). Refs that record a ``split`` are kept only when it matches
-    ``split``; refs with no split field are kept, so small fixtures still load.
-    Masks come from polygon or RLE segmentation. A missing mask is black and is
-    not a paper cIoU — samples whose annotation has no segmentation are omitted
-    when ``instances.json`` is present. Bounding boxes are never used as the
-    ground-truth region.
+    ``split``; by default refs with no split field are kept for small fixtures.
+    ``strict=True`` is required by the official benchmark command: it requires
+    the requested protocol, explicit splits, readable images, and nonempty COCO
+    polygon/RLE masks rasterized with pycocotools at native image dimensions.
+    Invalid selected records raise instead of silently changing the benchmark.
+    The default keeps legacy fixture behavior (protocol fallback, omitted
+    missing masks, and black masks without instances). Bounding boxes are never
+    used as the ground-truth region.
     """
 
     TASK_TYPE = "referring"
@@ -588,15 +591,27 @@ class RefCOCOgDataset(BaseVisionDataset):
         resolution=512,
         native_gt=False,
         protocol="umd",
+        strict=False,
         **kwargs,
     ) -> None:
         if protocol not in {"umd", "google"}:
             raise ValueError(f"protocol must be 'umd' or 'google', got {protocol!r}")
         self.native_gt = bool(native_gt)
         self.protocol = protocol
+        self.strict = bool(strict)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _annotation_file(self) -> Path | None:
+        if self.strict:
+            names = ("refs(umd).p",) if self.protocol == "umd" else ("refs(g).p", "refs(google).p")
+            for name in names:
+                path = self.root_dir / name
+                if path.is_file():
+                    return path
+            raise FileNotFoundError(
+                f"Strict RefCOCOg protocol={self.protocol!r} requires {' or '.join(names)} "
+                f"under {self.root_dir}; fallback to another protocol is forbidden"
+            )
         names = (
             ("refs(umd).p", "refs(g).p", "refs(google).p")
             if self.protocol == "umd"
@@ -609,6 +624,9 @@ class RefCOCOgDataset(BaseVisionDataset):
         return None
 
     def _scan(self) -> None:
+        if self.strict:
+            self._scan_strict()
+            return
         if not self.root_dir.exists():
             logger.warning(f"RefCOCOg directory not found: {self.root_dir}")
             return
@@ -669,6 +687,105 @@ class RefCOCOgDataset(BaseVisionDataset):
 
         except Exception as e:
             logger.warning(f"Failed to load RefCOCOg annotations: {e}")
+
+    def _scan_strict(self) -> None:
+        """Validate the full selected split before running an official benchmark."""
+        import json
+        import pickle
+
+        ann_file = self._annotation_file()
+        self._ann_file = ann_file
+        instances_file = self.root_dir / "instances.json"
+        if not instances_file.is_file():
+            raise FileNotFoundError(f"Strict RefCOCOg requires {instances_file}")
+        with instances_file.open(encoding="utf-8") as handle:
+            coco_data = json.load(handle)
+        if not isinstance(coco_data, dict):
+            raise ValueError(f"Invalid COCO instances object in {instances_file}")
+        self._ann_lookup = {}
+        image_lookup: dict[int, dict] = {}
+        for key, lookup in (("annotations", self._ann_lookup), ("images", image_lookup)):
+            records = coco_data.get(key)
+            if not isinstance(records, list) or not records:
+                raise ValueError(f"Strict RefCOCOg requires nonempty COCO {key} in {instances_file}")
+            for record in records:
+                if (
+                    not isinstance(record, dict)
+                    or not isinstance(record.get("id"), int)
+                    or isinstance(record["id"], bool)
+                ):
+                    raise ValueError(f"Invalid COCO {key} record in {instances_file}")
+                if record["id"] in lookup:
+                    raise ValueError(f"Duplicate COCO {key} id={record['id']} in {instances_file}")
+                lookup[record["id"]] = record
+        self._image_hw = {}
+        with ann_file.open("rb") as handle:
+            refs = pickle.load(handle)
+        if not isinstance(refs, list):
+            raise ValueError(f"Expected a list of RefCOCOg refs in {ann_file}")
+        validated_images: dict[int, Path] = {}
+        validated_annotations: set[int] = set()
+        for index, ref in enumerate(refs):
+            if not isinstance(ref, dict) or not isinstance(ref.get("split"), str) or not ref["split"]:
+                raise ValueError(f"RefCOCOg ref {index} requires an explicit nonempty split in {ann_file}")
+            if ref["split"] != self.split:
+                continue
+            image_id, ann_id = ref.get("image_id"), ref.get("ann_id")
+            if any(not isinstance(value, int) or isinstance(value, bool) for value in (image_id, ann_id)):
+                raise ValueError(f"RefCOCOg ref {index}: image_id and ann_id must be integers")
+            if image_id not in image_lookup:
+                raise ValueError(f"RefCOCOg ref {index}: missing COCO image_id={image_id}")
+            ann = self._ann_lookup.get(ann_id)
+            if ann is None:
+                raise ValueError(f"RefCOCOg ref {index}: missing COCO ann_id={ann_id}")
+            if ann.get("image_id") != image_id:
+                raise ValueError(f"RefCOCOg ann_id={ann_id}: annotation image_id does not match ref")
+            expressions = self._strict_expressions(ref, index)
+            if image_id not in validated_images:
+                info = image_lookup[image_id]
+                height, width = info.get("height"), info.get("width")
+                if any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in (height, width)):
+                    raise ValueError(f"RefCOCOg image_id={image_id}: invalid native image dimensions")
+                img_path = self._find_image(image_id, info.get("file_name") or ref.get("file_name"))
+                if img_path is None:
+                    raise FileNotFoundError(f"RefCOCOg image_id={image_id}: image not found under {self.root_dir}")
+                try:
+                    with Image.open(img_path) as source:
+                        source.load()
+                        if source.size != (width, height):
+                            raise ValueError(f"image size {source.size} differs from COCO size {(width, height)}")
+                except (OSError, ValueError) as exc:
+                    raise ValueError(f"RefCOCOg image_id={image_id}: invalid image {img_path}: {exc}") from exc
+                self._image_hw[image_id] = (height, width)
+                validated_images[image_id] = img_path
+            if ann_id not in validated_annotations:
+                self._decode_mask(ann_id, image_id)
+                validated_annotations.add(ann_id)
+            for expression in expressions:
+                self.samples.append({
+                    "image": validated_images[image_id],
+                    "expression": expression,
+                    "ann_id": ann_id,
+                    "image_id": image_id,
+                })
+        if not self.samples:
+            raise ValueError(f"No RefCOCOg samples for split={self.split!r} in {ann_file}")
+
+    @staticmethod
+    def _strict_expressions(ref: dict, index: int) -> list[str]:
+        raw = ref.get("sentences", [ref.get("sent")])
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list) or not raw:
+            raise ValueError(f"RefCOCOg ref {index}: missing expressions")
+        texts = []
+        for value in raw:
+            if isinstance(value, dict):
+                value = value.get("raw") or value.get("sent")
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"RefCOCOg ref {index}: empty or invalid expression")
+            texts.append(value.strip())
+        return texts
 
     @staticmethod
     def _expressions(ref: dict) -> list[str]:
@@ -763,6 +880,8 @@ class RefCOCOgDataset(BaseVisionDataset):
         return resized.unsqueeze(0).expand(3, -1, -1).clone()
 
     def _decode_mask(self, ann_id: int | None, image_id) -> np.ndarray | None:
+        if self.strict:
+            return self._decode_mask_strict(ann_id, image_id)
         if ann_id is None or ann_id not in getattr(self, "_ann_lookup", {}):
             return None
         ann = self._ann_lookup[ann_id]
@@ -809,6 +928,21 @@ class RefCOCOgDataset(BaseVisionDataset):
         except Exception as e:
             logger.debug(f"Mask decode failed for ann_id={ann_id}: {e}")
         return None
+
+    def _decode_mask_strict(self, ann_id: int | None, image_id) -> np.ndarray:
+        from ..referring_masks import decode_coco_segmentation
+
+        ann = self._ann_lookup.get(ann_id)
+        if ann is None:
+            raise ValueError(f"RefCOCOg: missing COCO ann_id={ann_id}")
+        lookup_id = image_id if image_id is not None else ann.get("image_id")
+        if lookup_id not in self._image_hw:
+            raise ValueError(f"RefCOCOg ann_id={ann_id}: missing verified native image dimensions")
+        height, width = self._image_hw[lookup_id]
+        try:
+            return decode_coco_segmentation(ann.get("segmentation"), height, width)
+        except ValueError as exc:
+            raise ValueError(f"RefCOCOg ann_id={ann_id}: {exc}") from exc
 
     def _mask_hw(self, ann: dict, image_id, seg) -> tuple[int, int]:
         if isinstance(seg, dict) and isinstance(seg.get("size"), (list, tuple)) and len(seg["size"]) == 2:

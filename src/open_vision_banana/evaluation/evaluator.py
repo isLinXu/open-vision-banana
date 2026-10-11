@@ -30,6 +30,7 @@ from ..core.flow_mapper import FlowRGBMapper
 from ..core.keypoint_mapper import KeypointRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
 from ..core.object_detection_mapper import ObjectDetectionRGBMapper
+from ..core.referring import decode_referring_mask, resolve_referring_encoding
 from ..core.segmentation import SegmentationDecoder
 from .benchmark import (
     DepthAccumulator,
@@ -38,6 +39,15 @@ from .benchmark import (
     apply_depth_benchmark_protocol,
 )
 from .depth import evaluate_depth
+from .edge import evaluate_edge
+from .flow import evaluate_flow
+from .generation_preservation import evaluate_generation_preservation
+from .instance import SACoAccumulator, evaluate_instance
+from .keypoint import evaluate_keypoints
+from .normal import evaluate_normals
+from .object_detection import evaluate_object_detection
+from .referring import ReferringAccumulator, evaluate_referring
+from .semantic import evaluate_semantic
 
 
 def decode_depth_rgb(
@@ -56,15 +66,6 @@ def decode_depth_rgb(
 def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
     """Unitless closer=brighter map in (0, 1], before any metric calibration."""
     return (1.0 - rgb.mean(dim=1, keepdim=True)).clamp(1e-3, 1.0)
-from .edge import evaluate_edge
-from .flow import evaluate_flow
-from .generation_preservation import evaluate_generation_preservation
-from .instance import SACoAccumulator, evaluate_instance
-from .keypoint import evaluate_keypoints
-from .normal import evaluate_normals
-from .object_detection import evaluate_object_detection
-from .referring import ReferringAccumulator, evaluate_referring
-from .semantic import evaluate_semantic
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,9 @@ class VisionEvaluator:
         strength: float = 0.85,
         seed: int | None = None,
         dataset_name: str | None = None,
+        referring_encoding: str | None = None,
+        referring_target_color: tuple[int, int, int] = (255, 255, 255),
+        referring_threshold: float | None = None,
     ) -> dict[str, Any]:
         """Evaluate a single batch without iterating a DataLoader.
 
@@ -179,6 +183,9 @@ class VisionEvaluator:
             strength=strength,
             seed=seed,
             dataset_name=dataset_name,
+            referring_encoding=referring_encoding,
+            referring_target_color=referring_target_color,
+            referring_threshold=referring_threshold,
             max_batches=1,
         )
         # Preserve the convenience API's historical scalar-float contract;
@@ -209,6 +216,9 @@ class VisionEvaluator:
         depth_log_alpha: float = DEFAULT_LOG_ALPHA,
         invert_depth: bool = False,
         report_relative_luminance: bool = False,
+        referring_encoding: str | None = None,
+        referring_target_color: tuple[int, int, int] = (255, 255, 255),
+        referring_threshold: float | None = None,
     ) -> dict[str, Any]:
         """Run evaluation on a dataset.
 
@@ -240,6 +250,12 @@ class VisionEvaluator:
                 re-normalize). Referring uses ``gt_mask_native`` (nearest).
                 Batches must share one native size (use batch_size=1 for
                 mixed-size datasets).
+            referring_encoding: RES decoding protocol, shared with inference.
+                White targets default to ``binary_white_black_v1``; custom
+                target colors retain ``legacy_color_distance_v1``.
+            referring_target_color: RGB target color for legacy RES checkpoints.
+            referring_threshold: Optional intensity (binary) or distance (legacy)
+                threshold, forwarded to prediction and reused for scoring.
 
         Returns:
             Dictionary of metric name → value (averaged over all batches).
@@ -282,6 +298,30 @@ class VisionEvaluator:
 
             image = batch["image"].to(self.device)
             target_rgb = batch["target_rgb"].to(self.device)
+            res_kwargs: dict[str, Any] = {}
+            if task == "referring":
+                if self._has_predict:
+                    image_range = _referring_expression(None, batch.get("image_range"))
+                    if image_range == "minus_one_one":
+                        # The generator accepts [0,1] but guesses [-1,1] only
+                        # when it sees negative pixels. Explicitly restore the
+                        # native intensity of bright, entirely positive RES
+                        # tensors. Unmarked datasets keep historical behavior.
+                        image = (image + 1.0) * 0.5
+                    elif image_range not in (None, "zero_one"):
+                        raise ValueError(f"Unsupported RES image_range: {image_range!r}")
+                # Resolve once so inference and metric computation use the
+                # same version, including manifest-provided encoding names.
+                batch_encoding = _referring_expression(referring_encoding, batch.get("encoding"))
+                active_referring_encoding = resolve_referring_encoding(
+                    batch_encoding, referring_target_color,
+                )
+                if batch_encoding is not None:
+                    res_kwargs["referring_encoding"] = active_referring_encoding
+                if tuple(referring_target_color) != (255, 255, 255):
+                    res_kwargs["referring_target_color"] = referring_target_color
+                if referring_threshold is not None:
+                    res_kwargs["referring_threshold"] = referring_threshold
 
             # ── Run model inference ───────────────────────────────────────
             try:
@@ -297,6 +337,7 @@ class VisionEvaluator:
                     num_inference_steps=num_inference_steps,
                     strength=strength,
                     seed=None if seed is None else seed + batch_idx,
+                    **res_kwargs,
                 )
             except ValueError as exc:
                 if "NaN or Inf" not in str(exc):
@@ -436,7 +477,10 @@ class VisionEvaluator:
                 } if per_query_metrics else {}
 
             elif task == "referring":
-                pred_mask = pred_rgb.mean(dim=1) > 0.5
+                pred_mask = decode_referring_mask(
+                    pred_rgb, referring_target_color, referring_threshold,
+                    encoding=active_referring_encoding,
+                ).squeeze(1)
                 if native_resolution:
                     if "gt_mask_native" not in batch:
                         raise ValueError(
@@ -447,7 +491,11 @@ class VisionEvaluator:
                 elif "gt_mask" in batch:
                     gt_mask = batch["gt_mask"].to(self.device).bool()
                 else:
-                    gt_mask = target_rgb.mean(dim=1) > 0.5
+                    gt_mask = decode_referring_mask(
+                        target_rgb, referring_target_color,
+                        encoding=active_referring_encoding,
+                        legacy_largest_component=False,
+                    ).squeeze(1)
                 if gt_mask.dim() == 4 and gt_mask.shape[1] == 1:
                     gt_mask = gt_mask.squeeze(1)
                 if pred_mask.shape[-2:] != gt_mask.shape[-2:]:
@@ -700,6 +748,9 @@ class VisionEvaluator:
         num_inference_steps: int = 1,
         strength: float = 0.85,
         seed: int | None = None,
+        referring_encoding: str | None = None,
+        referring_target_color: tuple[int, int, int] = (255, 255, 255),
+        referring_threshold: float | None = None,
     ) -> torch.Tensor:
         """Run model inference and return a [B, 3, H, W] RGB tensor in [0, 1].
 
@@ -727,6 +778,13 @@ class VisionEvaluator:
                 if expression is None:
                     raise ValueError("expression required for referring segmentation predict()")
                 predict_kwargs["expression"] = expression
+                # Do not add new default kwargs to third-party predict APIs.
+                if referring_encoding is not None:
+                    predict_kwargs["referring_encoding"] = referring_encoding
+                if tuple(referring_target_color) != (255, 255, 255):
+                    predict_kwargs["target_color"] = referring_target_color
+                if referring_threshold is not None:
+                    predict_kwargs["referring_threshold"] = referring_threshold
             elif task in ("edge", "depth_edge", "flow", "keypoint", "object_detection"):
                 # These tasks require no additional predict kwargs beyond task name
                 pass

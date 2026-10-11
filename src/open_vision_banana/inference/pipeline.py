@@ -29,6 +29,7 @@ from pathlib import Path
 
 import torch
 
+from ..core.referring import resolve_referring_encoding
 from ..core.rgb_mapper import RGBMapper
 from ..core.segmentation import InstanceDecodingConfig
 from .checkpoint import read_training_prompts
@@ -164,6 +165,8 @@ class VisionBanana:
         seed: int | None = None,
         prompt: str | None = None,
         diagnostics_callback: Callable[[dict], None] | None = None,
+        referring_encoding: str | None = None,
+        referring_threshold: float | None = None,
     ) -> dict:
         """Run inference for a vision task.
 
@@ -185,6 +188,11 @@ class VisionBanana:
                 directly instead of calling the task-specific prompt builder.
             diagnostics_callback: Optional callback receiving JSON-safe call
                 metadata after a successful inference.
+            referring_encoding: RES RGB protocol. Defaults to binary white/black
+                for white targets; non-white targets retain legacy decoding.
+                Use ``legacy_color_distance_v1`` to opt in with a white target.
+            referring_threshold: Intensity threshold for binary RES, or RGB L2
+                distance for legacy RES. None uses the protocol default.
 
         Returns:
             Task-specific result dict with decoded outputs.
@@ -193,6 +201,8 @@ class VisionBanana:
             raise ValueError(f"Unsupported task: {task}. Choose from: {self.SUPPORTED_TASKS}")
         self._validate_image(image)
         self._validate_inference_options(strength, num_inference_steps, height, width)
+        if task == "referring":
+            resolve_referring_encoding(referring_encoding, target_color)
 
         if prompt is None:
             conditioning = getattr(
@@ -212,6 +222,8 @@ class VisionBanana:
                     class_color_map=class_color_map,
                     object_name=object_name,
                     expression=expression,
+                    target_color=target_color,
+                    referring_encoding=referring_encoding,
                 )
 
         logger.info(f"Running {task} prediction with prompt: {prompt[:100]}...")
@@ -234,6 +246,8 @@ class VisionBanana:
             class_color_map=class_color_map,
             target_color=target_color,
             background_color=background_color,
+            referring_encoding=referring_encoding,
+            referring_threshold=referring_threshold,
         )
 
         result["prompt"] = prompt
@@ -249,6 +263,10 @@ class VisionBanana:
             width=width,
         )
         result["metadata"]["latency_ms"] = (time.perf_counter() - started) * 1000.0
+        if task == "referring":
+            result["metadata"]["referring_encoding"] = resolve_referring_encoding(
+                referring_encoding, target_color,
+            )
         self._emit_diagnostics(result["metadata"], diagnostics_callback)
 
         return result
@@ -308,6 +326,8 @@ class VisionBanana:
                     "background_color",
                     "prompt",
                     "diagnostics_callback",
+                    "referring_encoding",
+                    "referring_threshold",
                 )
             }
             rgb_output = self.generator.generate(
@@ -324,6 +344,8 @@ class VisionBanana:
                 class_color_map=kwargs.get("class_color_map"),
                 target_color=kwargs.get("target_color", (255, 255, 255)),
                 background_color=kwargs.get("background_color", (0, 0, 0)),
+                referring_encoding=kwargs.get("referring_encoding"),
+                referring_threshold=kwargs.get("referring_threshold"),
             )
             result["rgb_output"] = rgb_output
             result["metadata"] = self._build_inference_metadata(
@@ -337,6 +359,10 @@ class VisionBanana:
                 width=kwargs.get("width", 1024),
             )
             result["metadata"]["latency_ms"] = (time.perf_counter() - started) * 1000.0
+            if task == "referring":
+                result["metadata"]["referring_encoding"] = resolve_referring_encoding(
+                    kwargs.get("referring_encoding"), kwargs.get("target_color", (255, 255, 255)),
+                )
             self._emit_diagnostics(result["metadata"], kwargs.get("diagnostics_callback"))
             B = images.shape[0]
             per_image = self._split_batch_result(result, B)
@@ -463,11 +489,15 @@ class VisionBanana:
         class_color_map: dict | None = None,
         object_name: str | None = None,
         expression: str | None = None,
+        target_color: tuple[int, int, int] = (255, 255, 255),
+        referring_encoding: str | None = None,
     ) -> str:
         """Build instruction prompt for the specified task."""
         # The prompt the loaded LoRA was trained with wins over PromptBuilder's default;
         # an explicit class_color_map asks for that legend instead.
-        if task in self.training_prompts and class_color_map is None:
+        # RES must use the current expression, even if an older checkpoint
+        # recorded a generic or single-example prompt as its task default.
+        if task != "referring" and task in self.training_prompts and class_color_map is None:
             return self.training_prompts[task]
 
         if task == "semantic":
@@ -483,7 +513,11 @@ class VisionBanana:
         elif task == "referring":
             if expression is None:
                 raise ValueError("expression required for referring segmentation")
-            return self.prompt_builder.build_referring_prompt(expression)
+            encoding = resolve_referring_encoding(referring_encoding, target_color)
+            color = "white" if tuple(target_color) == (255, 255, 255) else (
+                f"<{target_color[0]}, {target_color[1]}, {target_color[2]}>"
+            )
+            return self.prompt_builder.build_referring_prompt(expression, color=color, encoding=encoding)
 
         elif task == "depth":
             return self.prompt_builder.build_depth_prompt()
@@ -515,6 +549,8 @@ class VisionBanana:
         class_color_map: dict | None = None,
         target_color: tuple[int, int, int] = (255, 255, 255),
         background_color: tuple[int, int, int] = (0, 0, 0),
+        referring_encoding: str | None = None,
+        referring_threshold: float | None = None,
     ) -> dict:
         """Decode RGB output to vision task result."""
         if task == "depth":
@@ -532,11 +568,9 @@ class VisionBanana:
             return self.decoder.decode_instance(rgb_output, background_color)
 
         elif task == "referring":
-            # Decode as binary mask by finding pixels closest to target_color
-            # in RGB space (L2 distance). This aligns with the paper's
-            # approach of "clustering pixels whose values are close to <255,255,0>".
             return self.decoder.decode_referring(
-                rgb_output, target_color=target_color
+                rgb_output, target_color=target_color,
+                threshold=referring_threshold, encoding=referring_encoding,
             )
 
         elif task == "edge":
@@ -835,6 +869,12 @@ class VisionBanana:
         elif task == "referring":
             result["mask"] = final_mask
         result["rgb_output"] = final_mask.float().expand(-1, 3, -1, -1)
+        if task == "referring":
+            color = final_mask.new_tensor(
+                kwargs.get("target_color", (255, 255, 255)), dtype=torch.float32,
+            ).view(1, 3, 1, 1) / 255.0
+            result["rgb_output"] = final_mask.float() * color
+            result["visualization"] = result["rgb_output"]
         result["metadata"] = {
             "task": task,
             "batch_size": 1,
@@ -845,6 +885,10 @@ class VisionBanana:
             "tile_count": tiles_h * tiles_w,
             "tiled": True,
         }
+        if task == "referring":
+            result["metadata"]["referring_encoding"] = resolve_referring_encoding(
+                kwargs.get("referring_encoding"), kwargs.get("target_color", (255, 255, 255)),
+            )
         return result
 
     @staticmethod

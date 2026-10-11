@@ -10,20 +10,12 @@ import json
 import math
 from pathlib import Path
 
-import numpy as np
 import torch
 
+from ..core.referring import decode_referring_mask
 from ..core.rgb_mapper import RGBMapper
 from ..core.segmentation import InstanceDecodingConfig
 from .prompt import PromptBuilder
-
-try:
-    import scipy.ndimage
-
-    _HAS_SCIPY = True
-except ImportError:
-    _HAS_SCIPY = False
-
 
 # ──────────────────────────────────────────────────────────────
 # ADE20K 151-class segmentation palette (0=background, 1-150=foreground)
@@ -256,70 +248,20 @@ class VisualizationDecoder:
         rgb_image: torch.Tensor,
         target_color: tuple[int, int, int] = (255, 255, 255),
         threshold: float | None = None,
+        *,
+        encoding: str | None = None,
     ) -> dict:
-        """Decode referring expression segmentation from RGB visualization.
+        """Decode RES with the shared versioned contract.
 
-        From the paper (Page 3):
-        "By prompting the model to 'Segment the skateboard category in pure
-        yellow (<255, 255, 0>)', we can easily parse the mask for skateboard by
-        clustering pixels whose values are close to <255, 255, 0>."
-
-        Computes the L2 distance in RGB space from each pixel to the
-        target color, then thresholds to produce a binary mask.
-
-        Args:
-            rgb_image: Generated RGB image [B, 3, H, W] in [0, 1].
-            target_color: Target RGB color for the referred object,
-                as (R, G, B) in [0, 255]. Default is white (255, 255, 255).
-            threshold: Distance threshold in [0, 1] normalized RGB space.
-                If None, uses an adaptive threshold based on the distance
-                distribution (mean - 0.5 * std heuristic).
-
-        Returns:
-            Dict with keys:
-            - "mask": bool tensor [B, 1, H, W], True = referred region.
-            - "visualization": original rgb_image for display.
+        White targets default to mean RGB > 0.5, retaining all components.
+        Non-white colors or ``encoding="legacy_color_distance_v1"`` use
+        the historical color-distance decoder. ``threshold`` is intensity
+        for binary decoding and L2 distance for legacy decoding.
         """
-        B, _, H, W = rgb_image.shape
-        device = rgb_image.device
-
-        # Normalize target color to [0, 1]
-        target = (
-            torch.tensor(target_color, dtype=torch.float32, device=device)
-            / 255.0
-        ).view(1, 3, 1, 1)
-
-        # L2 distance in RGB space [B, 1, H, W]
-        dist = torch.norm(rgb_image - target, dim=1, keepdim=True)
-
-        if threshold is None:
-            # Adaptive threshold: mean distance minus half std
-            # This works well when the referred object is a distinct color
-            # against a different background.
-            mean_dist = dist.mean(dim=(-2, -1), keepdim=True)
-            std_dist = dist.std(dim=(-2, -1), keepdim=True)
-            threshold = (mean_dist - 0.5 * std_dist).clamp(min=0.05, max=0.5)
-
-        mask = dist <= threshold
-
-        # Connected-component post-processing: keep the largest connected
-        # component to align with the paper's clustering approach.  SciPy is
-        # an optional dependency; if unavailable, the raw threshold mask is
-        # returned.
-        if _HAS_SCIPY:
-            mask_np = mask.squeeze(1).cpu().numpy()  # [B, H, W]
-            cleaned = np.zeros_like(mask_np)
-            for b in range(B):
-                labeled, num_features = scipy.ndimage.label(mask_np[b])
-                if num_features > 0:
-                    # Count pixels per label (skip background label 0)
-                    areas = np.bincount(labeled.ravel())[1:]
-                    largest_label = int(np.argmax(areas)) + 1
-                    cleaned[b] = (labeled == largest_label)
-            mask = torch.from_numpy(cleaned).to(device=device, dtype=torch.bool).unsqueeze(1)
-
         return {
-            "mask": mask,
+            "mask": decode_referring_mask(
+                rgb_image, target_color, threshold, encoding=encoding,
+            ),
             "visualization": rgb_image,
         }
 
