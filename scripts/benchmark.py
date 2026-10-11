@@ -42,7 +42,7 @@ def benchmark_fn(fn, *args, warmup=5, iterations=50, label=""):
     times = torch.tensor(times)
     stats = {
         "mean_ms": times.mean().item() * 1000,
-        "std_ms": times.std().item() * 1000,
+        "std_ms": times.std(unbiased=False).item() * 1000,
         "median_ms": times.median().item() * 1000,
         "p95_ms": times.quantile(0.95).item() * 1000,
         "min_ms": times.min().item() * 1000,
@@ -50,9 +50,9 @@ def benchmark_fn(fn, *args, warmup=5, iterations=50, label=""):
     }
 
     if label:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  {label}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         for k, v in stats.items():
             print(f"  {k:>12s}: {v:8.2f}")
 
@@ -90,6 +90,10 @@ def main():
         help="JSON output path for structured benchmark results",
     )
     args = parser.parse_args()
+    if args.resolution <= 0 or args.iterations <= 0:
+        parser.error("resolution and iterations must be positive")
+
+    torch.manual_seed(0)
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     res = args.resolution
@@ -103,14 +107,18 @@ def main():
     depth = torch.rand(1, 1, res, res, device=device) * 50.0
 
     stats_enc, rgb_d = benchmark_fn(
-        mapper_d.depth_to_rgb, depth,
-        iterations=iters, label="Depth → RGB Encoding",
+        mapper_d.depth_to_rgb,
+        depth,
+        iterations=iters,
+        label="Depth → RGB Encoding",
     )
     mem_enc = measure_memory(mapper_d.depth_to_rgb, depth, label="depth_enc")
 
     stats_dec, _ = benchmark_fn(
-        mapper_d.rgb_to_depth, rgb_d,
-        iterations=iters, label="RGB → Depth Decoding",
+        mapper_d.rgb_to_depth,
+        rgb_d,
+        iterations=iters,
+        label="RGB → Depth Decoding",
     )
     measure_memory(mapper_d.rgb_to_depth, rgb_d, label="depth_dec")
 
@@ -127,13 +135,17 @@ def main():
     normal = normal / normal.norm(dim=1, keepdim=True).clamp(min=1e-8)
 
     stats_n_enc, rgb_n = benchmark_fn(
-        mapper_n.normal_to_rgb, normal,
-        iterations=iters, label="Normal → RGB Encoding",
+        mapper_n.normal_to_rgb,
+        normal,
+        iterations=iters,
+        label="Normal → RGB Encoding",
     )
 
     stats_n_dec, recovered_n = benchmark_fn(
-        mapper_n.rgb_to_normal, rgb_n,
-        iterations=iters, label="RGB → Normal Decoding",
+        mapper_n.rgb_to_normal,
+        rgb_n,
+        iterations=iters,
+        label="RGB → Normal Decoding",
     )
 
     # Roundtrip angular error
@@ -146,7 +158,8 @@ def main():
     seg_rgb = torch.rand(1, 3, res, res, device=device)
 
     stats_seg, _ = benchmark_fn(
-        decoder.decode_instance, seg_rgb,
+        decoder.decode_instance,
+        seg_rgb,
         iterations=min(iters, 10),  # Fewer iters for heavier op
         label="Instance Segmentation Decoding",
     )
@@ -155,21 +168,27 @@ def main():
     mapper = RGBMapper()
 
     stats_u_enc, _ = benchmark_fn(
-        mapper.encode, depth, "depth",
-        iterations=iters, label="Unified Mapper: encode(depth)",
+        mapper.encode,
+        depth,
+        "depth",
+        iterations=iters,
+        label="Unified Mapper: encode(depth)",
     )
 
     stats_u_dec, _ = benchmark_fn(
-        mapper.decode, rgb_d, "depth",
-        iterations=iters, label="Unified Mapper: decode(depth)",
+        mapper.decode,
+        rgb_d,
+        "depth",
+        iterations=iters,
+        label="Unified Mapper: decode(depth)",
     )
 
     # ── Summary Table ──
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  SUMMARY (median latency at {res}×{res})")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  {'Operation':<35s} {'Median (ms)':>12s} {'P95 (ms)':>12s}")
-    print(f"  {'-'*35} {'-'*12} {'-'*12}")
+    print(f"  {'-' * 35} {'-' * 12} {'-' * 12}")
 
     results: dict[str, dict[str, float]] = {}
     for label, stats in [
@@ -203,8 +222,8 @@ def main():
     if args.output:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "w") as f:
-            json.dump(results, f, indent=2)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, allow_nan=False)
         print(f"\n  Results saved to: {out_path}")
 
 

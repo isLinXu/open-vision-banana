@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Smoke-test for the full InstructionTuner training path.
+"""Smoke-test the InstructionTuner optimization and checkpoint plumbing.
 
 Uses a tiny synthetic dataset and a mock FLUX-style model to verify
 that the entire training pipeline runs end-to-end without real data or
-pre-trained weights.  Suitable for CI and local sanity checks.
+pre-trained weights. Component fallback is explicitly enabled for this fixture:
+latents use the built-in pooled-pixel proxy and text conditioning is zero.
+This verifies real LoRA optimizer updates, EMA and checkpoint behavior, not
+VAE fidelity, text grounding, real-backbone convergence or model quality.
 
 Tests verified:
   ✅ VisionTaskDataset / MixedVisionDataset creation
@@ -17,7 +20,7 @@ Tests verified:
   ✅ MixedVisionDataset random sampling ratio
   ✅ Synthetic generation dataset builder
   ✅ Early stopping + checkpoint-best + TrainingLogger (TensorBoard)
-  ✅ Loss convergence (≥ 1 epoch)
+  ✅ Finite losses and changed trainable LoRA weights after optimizer steps
 
 Usage:
     python scripts/train_smoke.py
@@ -47,6 +50,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Tiny FLUX-style mock transformer
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class _MockFluxTransformer(nn.Module):
     """Minimal mock that matches the FLUX transformer calling convention:
@@ -85,19 +89,22 @@ class _MockGenerator:
     def __init__(self, resolution: int = 64) -> None:
         self.transformer = _MockFluxTransformer(in_channels=3, dim=32)
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Synthetic vision dataset
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class _SyntheticDataset(torch.utils.data.Dataset):
     """Produces (prompt, image, target_rgb) triples with random tensors."""
 
     TASK_PROMPTS = {
-        "depth":     "Estimate the metric depth of this scene.",
-        "normal":    "Estimate the surface normals of this scene.",
-        "semantic":  "Segment the image into semantic classes.",
-        "instance":  "Detect and segment all object instances.",
+        "depth": "Estimate the metric depth of this scene.",
+        "normal": "Estimate the surface normals of this scene.",
+        "semantic": "Segment the image into semantic classes.",
+        "instance": "Detect and segment all object instances.",
         "referring": "Segment the object described in the text.",
+        "generation": "Generate a synthetic test image.",
     }
 
     def __init__(
@@ -127,6 +134,7 @@ class _SyntheticDataset(torch.utils.data.Dataset):
 # ─────────────────────────────────────────────────────────────────────────────
 # Smoke-test runner
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _auto_device() -> str:
     if torch.cuda.is_available():
@@ -160,7 +168,7 @@ def run_smoke_test(
         _SyntheticDataset(num_samples, resolution, task=t, seed=seed + i)
         for i, t in enumerate(["depth", "normal", "semantic"])
     ]
-    gen_ds = _SyntheticDataset(num_samples, resolution, task="depth", seed=seed + 99)
+    gen_ds = _SyntheticDataset(num_samples, resolution, task="generation", seed=seed + 99)
 
     from open_vision_banana.data.mixed import MixedVisionDataset
 
@@ -178,13 +186,14 @@ def run_smoke_test(
 
     # Verify sampling ratio
     vision_count = sum(
-        1 for i in range(200)
-        if mixed_ds[i % len(mixed_ds)]["prompt"] != gen_ds[0]["prompt"]
+        1 for i in range(200) if mixed_ds[i % len(mixed_ds)]["prompt"] != gen_ds[0]["prompt"]
     )
     ratio = vision_count / 200
     if not (0.03 < ratio < 0.30):
         failures.append(f"MixedVisionDataset sampling ratio out of range: {ratio:.2%}")
-    logger.info(f"  Vision sampling ratio (expect ~10%): {ratio:.1%} {'✅' if not failures else '❌'}")
+    logger.info(
+        f"  Vision sampling ratio (expect ~10%): {ratio:.1%} {'✅' if not failures else '❌'}"
+    )
 
     # ── 2. Augmentation ───────────────────────────────────────────────────────
     logger.info("[2/10] Testing VisionAugmentation …")
@@ -192,7 +201,8 @@ def run_smoke_test(
 
     for task in ["depth", "normal"]:
         aug = VisionAugmentation(
-            resolution=resolution, hflip_prob=1.0,
+            resolution=resolution,
+            hflip_prob=1.0,
             crop_scale=(0.8, 1.0),
             color_jitter={"brightness": 0.3, "contrast": 0.3},
             task=task,
@@ -201,7 +211,9 @@ def run_smoke_test(
         tgt = torch.rand(3, resolution, resolution)
         aug_img, aug_tgt = aug(img, tgt)
         if aug_img.min() < -1.01 or aug_img.max() > 1.01:
-            failures.append(f"Augmentation clamp failed for task={task}: [{aug_img.min():.3f}, {aug_img.max():.3f}]")
+            failures.append(
+                f"Augmentation clamp failed for task={task}: [{aug_img.min():.3f}, {aug_img.max():.3f}]"
+            )
     logger.info(f"  Augmentation outputs in-range: {'✅' if not failures else '❌'}")
 
     # ── 3. InstructionTuner setup ─────────────────────────────────────────────
@@ -210,7 +222,8 @@ def run_smoke_test(
 
     gen = _MockGenerator(resolution=resolution)
     aug_train = VisionAugmentation(
-        resolution=resolution, hflip_prob=0.5,
+        resolution=resolution,
+        hflip_prob=0.5,
         crop_scale=(0.85, 1.0),
         color_jitter={"brightness": 0.1, "contrast": 0.1},
         task="depth",
@@ -226,9 +239,17 @@ def run_smoke_test(
         ema_warmup_steps=5,
         use_gradient_checkpointing=False,
         augmentation=aug_train,
+        allow_component_fallback=True,  # This fixture intentionally has no VAE/text encoder.
     )
     # Move peft_model to device
     tuner.peft_model = tuner.peft_model.to(device)
+    trainable_before = {
+        name: parameter.detach().clone()
+        for name, parameter in tuner.peft_model.named_parameters()
+        if parameter.requires_grad
+    }
+    if not trainable_before:
+        raise RuntimeError("Smoke fixture has no trainable LoRA parameters")
     logger.info(f"  PEFT model on device={device}: ✅")
 
     # ── 4. Single training step ───────────────────────────────────────────────
@@ -249,13 +270,13 @@ def run_smoke_test(
     t0 = time.time()
 
     # Use AMP only on CUDA
-    use_amp = (device == "cuda")
+    use_amp = device == "cuda"
     if device in ("mps", "cpu") and use_amp:
         use_amp = False
         logger.info(f"  AMP disabled on {device}")
 
     try:
-        tuner.train(
+        train_summary = tuner.train(
             train_dataset=mixed_ds,
             val_dataset=None,
             epochs=epochs,
@@ -270,7 +291,20 @@ def run_smoke_test(
             use_amp=use_amp,
             num_workers=0,
         )
-        logger.info(f"  Training loop completed in {time.time()-t0:.1f}s: ✅")
+        changed = any(
+            not torch.equal(parameter.detach(), trainable_before[name])
+            for name, parameter in tuner.peft_model.named_parameters()
+            if name in trainable_before
+        )
+        if train_summary.get("global_step", 0) < 1 or not changed:
+            failures.append("Training completed without an optimizer update to LoRA weights")
+        if any(
+            not torch.isfinite(parameter).all()
+            for parameter in tuner.peft_model.parameters()
+            if parameter.requires_grad
+        ):
+            failures.append("Training produced non-finite LoRA parameters")
+        logger.info(f"  Training loop completed in {time.time() - t0:.1f}s: ✅")
     except Exception as e:
         failures.append(f"Training loop failed: {e}")
         logger.error(f"  Training loop FAILED: {e}")
@@ -344,6 +378,7 @@ def run_smoke_test(
             lr=1e-3,
             use_ema=False,
             use_gradient_checkpointing=False,
+            allow_component_fallback=True,
         )
         es_tuner.peft_model = es_tuner.peft_model.to(device)
 
@@ -394,7 +429,9 @@ def run_smoke_test(
             logger.error(f"   • {f}")
         return False
     else:
-        logger.info("✅ ALL CHECKS PASSED — Training pipeline is ready!")
+        logger.info(
+            "✅ Mock optimization/checkpoint checks passed; no real-backbone quality claim."
+        )
         return True
 
 
@@ -402,8 +439,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="End-to-end smoke test for Vision Banana training pipeline"
     )
-    parser.add_argument("--device", type=str, default="auto",
-                        choices=["auto", "cuda", "mps", "cpu"])
+    parser.add_argument(
+        "--device", type=str, default="auto", choices=["auto", "cuda", "mps", "cpu"]
+    )
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--resolution", type=int, default=64)

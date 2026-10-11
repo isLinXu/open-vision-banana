@@ -273,7 +273,12 @@ class TestGenerationPreservation:
         assert metrics["FID_proxy"] == pytest.approx(0.0, abs=1e-5)
         assert metrics["diversity_score"] >= 0.0
 
-    def test_full_generation_preservation(self):
+    def test_full_generation_preservation(self, monkeypatch):
+        # Unit metrics operate on supplied features; pretrained LPIPS is an
+        # integration dependency, not a network prerequisite for this test.
+        monkeypatch.setattr(
+            "open_vision_banana.evaluation.generation_preservation._lpips_available", lambda: False
+        )
         real = torch.randn(10, 64)
         gen = torch.randn(10, 64)
         text = torch.randn(10, 64)
@@ -409,8 +414,18 @@ class TestEvaluatorExtendedTasks:
         with pytest.raises(ValueError, match="Unknown task"):
             ev.evaluate([batch], task="unknown_task")
 
-    def test_evaluator_generation_preservation_task(self):
-        pytest.importorskip("torchvision")
+    def test_evaluator_generation_preservation_task(self, monkeypatch):
+        # Exercise evaluator routing and actual metric aggregation with an
+        # explicit offline feature proxy, without downloading ImageNet weights.
+        from functools import partial
+
+        monkeypatch.setattr(
+            "open_vision_banana.evaluation.evaluator.evaluate_generation_preservation",
+            partial(evaluate_generation_preservation, feature_extractor=extract_rgb_features),
+        )
+        monkeypatch.setattr(
+            "open_vision_banana.evaluation.generation_preservation._lpips_available", lambda: False
+        )
         model = MockModelWithPredict()
         ev = VisionEvaluator(model, device="cpu")
         batch = {

@@ -1,0 +1,15 @@
+[run]
+source = src/open_vision_banana
+
+[report]
+fail_under = 80
+show_missing = True
+include =
+    */open_vision_banana/referring_contract.py
+    */open_vision_banana/referring_masks.py
+    */open_vision_banana/core/referring.py
+    */open_vision_banana/data/res_contract.py
+    */open_vision_banana/data/res_dataset.py
+    */open_vision_banana/res_manifest.py
+    */open_vision_banana/res_bundle.py
+    */open_vision_banana/res_training_view.py

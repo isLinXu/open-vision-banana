@@ -17,6 +17,45 @@ from open_vision_banana.data.res_dataset import RESManifestDataset  # noqa: E402
 from open_vision_banana.referring_contract import BINARY_REFERRING_ENCODING  # noqa: E402
 
 
+def inference_settings(model, steps: int, strength: float) -> dict:
+    """Distinguish public API requests from backend-resolved settings.
+
+    SANA's training-flow path replaces the historical schnell defaults and
+    ignores img2img strength. Resolve it with the same helper as the generator.
+    Other backends are explicitly left unreported rather than guessed.
+    """
+    generator = getattr(model, "generator", None)
+    config = getattr(generator, "model_config", None)
+    settings = {
+        "requested": {
+            "num_inference_steps": steps,
+            "strength": strength,
+            "guidance_scale": 0.0,
+        },
+        "effective": None,
+        "settings_status": "backend may override requests; effective settings not recorded",
+    }
+    if (
+        getattr(config, "family", None) == "sana"
+        and getattr(generator, "source_conditioning_config", None) is None
+    ):
+        from open_vision_banana.inference.sana_img2img import resolve_sana_img2img_settings
+
+        resolved_steps, guidance = resolve_sana_img2img_settings(
+            num_inference_steps=steps,
+            guidance_scale=0.0,
+            default_steps=int(getattr(config, "default_num_inference_steps", 20) or 20),
+        )
+        settings["effective"] = {
+            "num_inference_steps": resolved_steps,
+            "guidance_scale": guidance,
+            "strength": None,
+            "path": "sana_training_flow",
+        }
+        settings["settings_status"] = "resolved with generator helper; strength unused by SANA flow"
+    return settings
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-root", type=Path, required=True)
@@ -109,8 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             "resolution": args.resolution,
             "device": device,
             "dtype": args.dtype,
-            "num_inference_steps": args.num_inference_steps,
-            "strength": args.strength,
+            **inference_settings(model, args.num_inference_steps, args.strength),
             "seed": args.seed,
             "evaluated_samples": sample_count,
         }

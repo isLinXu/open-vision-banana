@@ -438,6 +438,12 @@ from open_vision_banana.model_registry import (
 
 ## 8. Data Preparation
 
+### RES manifests and evaluation
+
+Use the dedicated workflow in [docs/res_data.md](docs/res_data.md) for RefCOCO-family referring segmentation. The `binary_white_black_v1` contract requires a per-expression prompt, native binary target, source protocol and split provenance. Train with `configs/sana_res_binary_v1.yaml` and its test-disjoint `training.jsonl`; use the complete official manifests for evaluation. Do not turn Flickr30K/VG boxes into segmentation ground truth. Existing colored-background checkpoints must explicitly select `legacy_color_distance_v1`.
+
+The published dataset is supervised training data, not a zero-shot reproduction. Keep claims limited to verified data/interface behavior until actual training and held-out evaluation are completed. The release ID and full build/download/train/evaluation commands are in the linked guide.
+
 ```bash
 # List all supported datasets
 python scripts/download_data.py --list
@@ -456,6 +462,8 @@ python scripts/build_snvc50m_manifest.py    # Build SNVC-50M manifest
 ---
 
 ## 9. Testing
+
+The `RES Contract` workflow runs on Python 3.10–3.12 without model downloads or private local data. It checks RES lint/format/types and the source-build, training-conditioning, inference and native-evaluation tests; `.coveragerc-res` requires at least 80% statement coverage of the new RES protocol/data modules. It supplements the repository-wide CI and performance workflows; passing RES checks does not imply those other gates passed. Use the commands and dependency groups in `.github/workflows/res.yml` to reproduce it locally. Keep all original benchmark protocols and the existing whole-repository thresholds intact.
 
 ```bash
 # Run all tests (tests/ is a flat directory — no subdirectories)

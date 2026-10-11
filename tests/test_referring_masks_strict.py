@@ -4,12 +4,25 @@ from __future__ import annotations
 
 import json
 import pickle
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import torch
 from PIL import Image
+from torch.utils.data import DataLoader
 
 from open_vision_banana.data.datasets import RefCOCOgDataset
+from open_vision_banana.data.res_dataset import RESManifestDataset
+from open_vision_banana.evaluation.evaluator import VisionEvaluator
+from open_vision_banana.inference.decoder import VisualizationDecoder
+from open_vision_banana.inference.generator import _tensor_to_pil
+from open_vision_banana.inference.pipeline import VisionBanana
+from open_vision_banana.inference.prompt import PromptBuilder
+from open_vision_banana.referring_contract import (
+    BINARY_REFERRING_ENCODING,
+    build_binary_referring_prompt,
+)
 from open_vision_banana.referring_masks import decode_coco_segmentation
 
 coco_mask = pytest.importorskip("pycocotools.mask")
@@ -224,3 +237,51 @@ def test_polygon_clipping_remains_coco_compatible():
     polygons = [[-2, -1, 5.8, -1, 5.8, 4.3, -2, 4.3]]
     expected = coco_mask.decode(coco_mask.merge(coco_mask.frPyObjects(polygons, 3, 4)))
     np.testing.assert_array_equal(decode_coco_segmentation(polygons, 3, 4), expected.astype(bool))
+
+
+def test_strict_and_portable_evaluation_preserve_identical_bright_input(tmp_path):
+    _, _, image_path = _fixture(tmp_path)
+    Image.new("RGB", (20, 12), (192, 192, 192)).save(image_path)
+    native = decode_coco_segmentation(POLYGONS, 12, 20)
+    Image.fromarray(native.astype(np.uint8) * 255).save(tmp_path / "mask.png")
+    expression = "the two chairs"
+    row = {
+        "sample_id": "ref3",
+        "task": "referring",
+        "split": "val",
+        "source_dataset": "refcocog",
+        "source_protocol": "umd",
+        "source_split": "val",
+        "input": image_path.relative_to(tmp_path).as_posix(),
+        "target": "mask.png",
+        "width": 20,
+        "height": 12,
+        "expression": expression,
+        "prompt": build_binary_referring_prompt(expression),
+        "encoding": BINARY_REFERRING_ENCODING,
+    }
+    (tmp_path / "pairs.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    strict = _load(tmp_path)
+    portable = RESManifestDataset(tmp_path, split="val", resolution=8)
+    observed = []
+    model = object.__new__(VisionBanana)
+    model.training_prompts = {}
+    model.prompt_builder = PromptBuilder()
+    model.decoder = VisualizationDecoder()
+
+    def generate(**kwargs):
+        observed.append(_tensor_to_pil(kwargs["image"][0]).getpixel((0, 0)))
+        return torch.ones_like(kwargs["image"])
+
+    model.generator = SimpleNamespace(generate=generate)
+    for dataset in (strict, portable):
+        assert dataset[0]["image"].min() > 0
+        assert dataset[0]["image_range"] == "minus_one_one"
+        VisionEvaluator(model, device="cpu").evaluate(
+            DataLoader(dataset, batch_size=1),
+            task="referring",
+            native_resolution=True,
+            max_batches=1,
+        )
+    assert observed == [(192, 192, 192), (192, 192, 192)]
+    assert "image_range" not in RefCOCOgDataset(tmp_path, split="val", resolution=8)[0]

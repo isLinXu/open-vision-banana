@@ -251,3 +251,37 @@ def test_cli_scores_native_pixels_with_expression_and_encoding(tmp_path, monkeyp
     assert [call["expression"] for call in calls] == ["object 2", "object 3"]
     assert all(call["referring_encoding"] == BINARY_REFERRING_ENCODING for call in calls)
     assert all(call["image"].shape == (1, 3, 2, 2) for call in calls)
+
+
+def test_public_dataset_exports():
+    from open_vision_banana import RESManifestDataset as PublicDataset
+    from open_vision_banana.data import RESManifestDataset as DataDataset
+
+    assert PublicDataset is RESManifestDataset
+    assert DataDataset is RESManifestDataset
+
+
+@pytest.mark.parametrize("requested, effective", [(1, 20), (12, 12)])
+def test_sana_report_records_resolved_steps_and_unused_strength(requested, effective):
+    from types import SimpleNamespace
+
+    from scripts.evaluate_res_manifest import inference_settings
+
+    model = SimpleNamespace(
+        generator=SimpleNamespace(
+            model_config=SimpleNamespace(family="sana", default_num_inference_steps=20)
+        )
+    )
+    settings = inference_settings(model, requested, 0.85)
+    assert settings["requested"]["num_inference_steps"] == requested
+    assert settings["effective"]["num_inference_steps"] == effective
+    assert settings["effective"]["guidance_scale"] == 1.0
+    assert settings["effective"]["strength"] is None
+
+
+def test_unknown_backend_does_not_claim_requested_settings_were_effective():
+    from scripts.evaluate_res_manifest import inference_settings
+
+    settings = inference_settings(object(), 1, 0.85)
+    assert settings["effective"] is None
+    assert "not recorded" in settings["settings_status"]

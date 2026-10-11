@@ -151,8 +151,8 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
                 used = count = 0
             info = tarfile.TarInfo(name)
             info.size, info.mode, info.mtime = size, 0o644, 0
-            with source.open("rb") as handle:
-                tar.addfile(info, handle)
+            with source.open("rb") as asset_stream:
+                tar.addfile(info, asset_stream)
             used += size
             count += 1
         finish()
@@ -223,8 +223,8 @@ def restore_bundle(bundle_dir: Path, output_dir: Path) -> dict:
                 for member in archive:
                     if not member.isfile():
                         raise ValueError(f"Non-regular archive member: {member.name}")
-                    with archive.extractfile(member) as stream:
-                        copy_checked(member.name, stream)
+                    with archive.extractfile(member) as member_stream:
+                        copy_checked(member.name, member_stream)
                     count += 1
             if count != item["members"]:
                 raise ValueError(f"Archive member count mismatch: {item['path']}")

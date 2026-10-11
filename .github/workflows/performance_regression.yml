@@ -8,6 +8,7 @@ on:
       - "scripts/benchmark.py"
       - "scripts/benchmark_pipeline.py"
       - "scripts/compare_benchmarks.py"
+      - ".github/workflows/performance_regression.yml"
   pull_request:
     branches: [main]
     paths:
@@ -15,11 +16,14 @@ on:
       - "scripts/benchmark.py"
       - "scripts/benchmark_pipeline.py"
       - "scripts/compare_benchmarks.py"
+      - ".github/workflows/performance_regression.yml"
   workflow_dispatch:
 
 env:
   BENCHMARK_RESULTS_DIR: .benchmarks
   REGRESSION_THRESHOLD: "0.15"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
 
 jobs:
   benchmark-core:
@@ -27,58 +31,84 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out exact PR base for a measured baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .benchmark-base
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install package with core deps
-        run: pip install -e ".[evaluation,dev]"
+        run: |
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[evaluation,dev]"
+
+      - name: Measure PR base using the same driver and runner
+        if: github.event_name == 'pull_request'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.benchmark-base/src
+        run: |
+          mkdir -p "${BENCHMARK_RESULTS_DIR}"
+          git -C .benchmark-base rev-parse HEAD > "${BENCHMARK_RESULTS_DIR}/base_revision.txt"
+          python scripts/benchmark.py --resolution 256 --iterations 20 --device cpu \
+            --output "${BENCHMARK_RESULTS_DIR}/core_benchmark_baseline.json"
 
       - name: Run core benchmark (CPU)
         run: |
+          mkdir -p "${BENCHMARK_RESULTS_DIR}"
           python scripts/benchmark.py \
             --resolution 256 \
             --iterations 20 \
             --device cpu \
+            --output "${BENCHMARK_RESULTS_DIR}/core_benchmark_current.json" \
             > "${BENCHMARK_RESULTS_DIR}/core_benchmark_current.txt"
-
-      - name: Parse benchmark to JSON
-        run: |
-          python -c "
-          import json, re, pathlib
-          txt = pathlib.Path('${BENCHMARK_RESULTS_DIR}/core_benchmark_current.txt').read_text()
-          data = {}
-          for m in re.finditer(r'^(\s+)?([\w\s\(\)]+?)\s+([\d\.]+)\s+([\d\.]+)\s*$', txt, re.MULTILINE):
-              label = m.group(2).strip()
-              median = float(m.group(3))
-              p95 = float(m.group(4))
-              data[label] = {'median_ms': median, 'p95_ms': p95}
-          with open('${BENCHMARK_RESULTS_DIR}/core_benchmark_current.json', 'w') as f:
-              json.dump(data, f, indent=2)
-          print('Parsed operations:', list(data.keys()))
-          "
 
       - name: Upload benchmark artifact
         uses: actions/upload-artifact@v4
         with:
           name: core-benchmark-current
+          if-no-files-found: error
           path: |
             .benchmarks/core_benchmark_current.json
             .benchmarks/core_benchmark_current.txt
+            .benchmarks/core_benchmark_baseline.json
+            .benchmarks/base_revision.txt
 
   benchmark-mapper:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out exact PR base for a measured baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .benchmark-base
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install package with core deps
-        run: pip install -e ".[evaluation,dev]"
+        run: |
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[evaluation,dev]"
+
+      - name: Measure PR base using the same driver and runner
+        if: github.event_name == 'pull_request'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.benchmark-base/src
+        run: |
+          python scripts/benchmark_pipeline.py --mapper-only --resolution 256 \
+            --num-samples 20 --batch-size 1 --device cpu \
+            --output "${BENCHMARK_RESULTS_DIR}/mapper_benchmark_baseline.json"
 
       - name: Run mapper-only pipeline benchmark
         run: |
@@ -94,7 +124,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mapper-benchmark-current
-          path: .benchmarks/mapper_benchmark_current.json
+          if-no-files-found: error
+          path: |
+            .benchmarks/mapper_benchmark_current.json
+            .benchmarks/mapper_benchmark_baseline.json
 
   compare-regression:
     runs-on: ubuntu-latest
@@ -120,42 +153,61 @@ jobs:
           path: .benchmarks/current
 
       - name: Restore baseline from cache
+        if: github.event_name != 'pull_request'
         id: cache-baseline
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .benchmarks/baseline
-          key: benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-v2-cpu-py312-main-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-main-
-            benchmark-baseline-
+            benchmark-baseline-v2-cpu-py312-main-
+
+      - name: Use measured exact-base results for PRs
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p .benchmarks/baseline
+          cp .benchmarks/current/core_benchmark_baseline.json .benchmarks/baseline/
+          cp .benchmarks/current/mapper_benchmark_baseline.json .benchmarks/baseline/
+          cat .benchmarks/current/base_revision.txt
 
       - name: Seed baseline if missing
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p .benchmarks/baseline
           if [ ! -f .benchmarks/baseline/core_benchmark_baseline.json ]; then
+            echo "::notice::No compatible main-branch core baseline exists yet; recording initial measurements."
             echo '{}' > .benchmarks/baseline/core_benchmark_baseline.json
           fi
           if [ ! -f .benchmarks/baseline/mapper_benchmark_baseline.json ]; then
+            echo "::notice::No compatible main-branch mapper baseline exists yet; recording initial measurements."
             echo '[]' > .benchmarks/baseline/mapper_benchmark_baseline.json
           fi
 
       - name: Compare core benchmark
+        id: compare-core
+        continue-on-error: true
         run: |
+          bootstrap=()
+          if [ "${{ github.event_name }}" != "pull_request" ]; then bootstrap=(--allow-empty-baseline); fi
           python scripts/compare_benchmarks.py \
             .benchmarks/baseline/core_benchmark_baseline.json \
             .benchmarks/current/core_benchmark_current.json \
             --threshold ${{ env.REGRESSION_THRESHOLD }} \
             --report .benchmarks/core_regression_report.md \
-            --json  .benchmarks/core_regression_report.json || true
+            --json  .benchmarks/core_regression_report.json "${bootstrap[@]}"
 
       - name: Compare mapper benchmark
+        id: compare-mapper
+        continue-on-error: true
         run: |
+          bootstrap=()
+          if [ "${{ github.event_name }}" != "pull_request" ]; then bootstrap=(--allow-empty-baseline); fi
           python scripts/compare_benchmarks.py \
             .benchmarks/baseline/mapper_benchmark_baseline.json \
             .benchmarks/current/mapper_benchmark_current.json \
             --threshold ${{ env.REGRESSION_THRESHOLD }} \
             --report .benchmarks/mapper_regression_report.md \
-            --json  .benchmarks/mapper_regression_report.json || true
+            --json  .benchmarks/mapper_regression_report.json "${bootstrap[@]}"
 
       - name: Print regression reports
         run: |
@@ -166,11 +218,21 @@ jobs:
           cat .benchmarks/mapper_regression_report.md || echo "No report generated."
 
       - name: Fail on regression
+        env:
+          CORE_OUTCOME: ${{ steps.compare-core.outcome }}
+          MAPPER_OUTCOME: ${{ steps.compare-mapper.outcome }}
         run: |
+          if [ "$CORE_OUTCOME" != "success" ] || [ "$MAPPER_OUTCOME" != "success" ]; then
+            echo "ERROR: Benchmark comparison failed or detected a regression."
+            exit 1
+          fi
           has_regression=0
           for f in .benchmarks/core_regression_report.json .benchmarks/mapper_regression_report.json; do
-            if [ -f "$f" ]; then
-              val=$(python -c "import json; print(json.load(open('$f')).get('has_regression', False))")
+            if [ ! -f "$f" ]; then
+              echo "ERROR: Missing required regression report: $f"
+              exit 1
+            else
+              val=$(python -c "import json; print(json.load(open('$f'))['has_regression'])")
               if [ "$val" = "True" ]; then
                 has_regression=1
                 echo "Regression detected in $f"
@@ -212,7 +274,13 @@ jobs:
           path: .benchmarks/current
 
       - name: Save new baseline
-        uses: actions/cache@v4
+        run: |
+          mkdir -p .benchmarks/baseline
+          cp .benchmarks/current/core_benchmark_current.json .benchmarks/baseline/core_benchmark_baseline.json
+          cp .benchmarks/current/mapper_benchmark_current.json .benchmarks/baseline/mapper_benchmark_baseline.json
+
+      - name: Cache successful main baseline
+        uses: actions/cache/save@v4
         with:
-          path: .benchmarks/current
-          key: benchmark-baseline-main-${{ github.run_id }}
+          path: .benchmarks/baseline
+          key: benchmark-baseline-v2-cpu-py312-main-${{ github.run_id }}

@@ -855,6 +855,10 @@ class RefCOCOgDataset(BaseVisionDataset):
             "gt_mask": gt_mask,
             "expression": expression,
         }
+        if self.strict:
+            # Match the portable RES adapter's explicit input range. Bright
+            # signed tensors otherwise look like [0,1] to generator heuristics.
+            item["image_range"] = "minus_one_one"
         if self.native_gt and native is not None:
             item["gt_mask_native"] = torch.from_numpy(np.ascontiguousarray(native)).bool()
         elif self.native_gt:

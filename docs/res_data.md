@@ -183,6 +183,8 @@ Replace `<CHECKPOINT_DIRECTORY>` with the saved checkpoint to assess. The exampl
 
 The evaluator uses batch size 1, one expression per sample, native GT dimensions, and the shared binary decoder. Its JSON includes filters, selected source counts, the manifest hash, encoding, inference settings, and RES metrics: `cIoU` (cumulative intersection/union), `gIoU`/`IoU` (mean per-expression IoU), `Precision@0.5`, pixel precision/recall, and F-score. Here `gIoU` is not generalized bounding-box IoU. Metric ratios are returned on a `[0, 1]` scale. `--max-samples N` is only a smoke-test score on the first N selected rows; it is not a full benchmark result. Report per-source and per-official-subset results, rather than presenting a combined cross-source average as an official benchmark score.
 
+Inference metadata separates `inference.requested` from `inference.effective`. The SANA generator resolves the historical one-step default to its configured schedule (20 steps for the supplied model), uses guidance 1.0, and does not use the img2img `strength` argument. The report resolves those settings with the same helper used by the generator. Backends without a verified metadata resolver explicitly report `effective: null`; their requested settings must not be presented as observed execution parameters. Strict official RefCOCOg loading and portable manifest loading both declare their input image range to preserve identical pixel brightness through inference.
+
 ## Attribution and experimental scope
 
 The images, human expressions, and derived annotation masks retain their upstream ownership and applicable terms. The repository's code license does not relicense those data. Consult the release dataset card, the [REFER project and source citations](https://github.com/lichengunc/refer), and the [COCO terms of use](https://cocodataset.org/#termsofuse); retain the source identifiers and attribution with downstream copies.
@@ -190,6 +192,20 @@ The images, human expressions, and derived annotation masks retain their upstrea
 This is a **supervised RES** dataset extension using RefCOCO-family training annotations. Results from models trained on this corpus must be labeled accordingly and must not be presented as zero-shot transfer onto those benchmarks. The release establishes data/interface correctness and reproducible preparation; it does not claim an accuracy improvement, trained checkpoint, or reproduction of a paper's reported results. Such claims require controlled training and held-out evaluation.
 
 ## Validation performed for this change
+
+### Review gates
+
+The root `agent.md` requires tests, Ruff and conventional commits. `CONTRIBUTING.md` also requires public API exports, an Unreleased changelog entry, pre-commit and 80% whole-package coverage; the existing CI workflow currently enforces 70% whole-package coverage. This PR preserves that existing threshold and documents the difference rather than lowering either requirement.
+
+The additional `.github/workflows/res.yml` runs independently on Python 3.10, 3.11 and 3.12. It installs and imports the actual COCO/streaming decoders, forbids model downloads, checks Ruff/format/types, runs the RES and adjacent normal benchmark tests, and requires at least 80% statement coverage of the eight new RES protocol/data modules in `.coveragerc-res`. Its coverage scope is explicit and is not whole-package coverage. JUnit and coverage XML are uploaded even when tests fail. Ruff and mypy versions match pre-commit.
+
+The repository-wide CPU test job now installs its declared `ci` extra and includes previously omitted export/generation/training tests. The performance workflow compares a PR against its exact base SHA on the same runner using the same drivers, fixed inputs and thread count. Missing measurements or failed comparators fail the gate; the 15% regression threshold remains unchanged. Main-branch baseline initialization is explicit and does not claim a regression comparison. The training smoke uses a documented lightweight fixture and verifies finite LoRA weight updates and checkpoint restoration; it does not validate real diffusion-model quality.
+
+These checks supplement existing CI. Full-repository lint, coverage, pre-commit and tests still need to pass before claiming all contributor gates are satisfied. Do not merge based on the RES check alone.
+
+The scoped type check uses `.mypy-res.ini` and the explicit eight-module list: it checks those modules and their mutual types while skipping imported implementations/stubs. The existing full-source mypy job remains unchanged in scope. This keeps the focused gate independent of unrelated Torch/NumPy stub versions and does not claim whole-repository type safety.
+
+### Data release evidence
 
 On Windows with Python 3.12, the final RES and adjacent benchmark suite passed **146 tests**. Coverage includes multi-expression conditioning, strict source loading, polygon/RLE decoding, disconnected masks, legacy inference, explicit bright-image normalization, bundle integrity and native-resolution evaluation. The final validator fully decoded all 101,283 assets; its output matched the bundled validation report byte for byte. The complete bundle restored successfully, and the actual training loader indexed all 270,195 training and 24,554 checkpoint-validation rows from that restoration. Samples from all three sources collated at 512 pixels with binary targets. All 4,896 restored RefCOCOg UMD validation expressions passed native evaluation preflight.
 

@@ -81,14 +81,14 @@ def decode_coco_segmentation(segmentation, height: int, width: int) -> np.ndarra
     elif isinstance(segmentation, dict):
         size = segmentation.get("size")
         if (
-            not isinstance(size, (list, tuple))
+            not isinstance(size, list | tuple)
             or len(size) != 2
             or any(not isinstance(n, Integral) or isinstance(n, bool) for n in size)
             or tuple(size) != (height, width)
         ):
             raise ValueError("COCO RLE size must match the native image dimensions")
         counts = segmentation.get("counts")
-        if isinstance(counts, (str, bytes)):
+        if isinstance(counts, str | bytes):
             runs = _compressed_counts(counts)
         elif isinstance(counts, list) and counts:
             if any(not isinstance(n, Integral) or isinstance(n, bool) or n < 0 for n in counts):
