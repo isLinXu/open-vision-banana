@@ -250,6 +250,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: regression-reports
+          if-no-files-found: error
+          include-hidden-files: true
           path: |
             .benchmarks/*_report.md
             .benchmarks/*_report.json
