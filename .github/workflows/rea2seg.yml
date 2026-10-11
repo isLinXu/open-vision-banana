@@ -1,0 +1,40 @@
+name: Rea2Seg adapter
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rea2seg.yml"
+      - "src/open_vision_banana/rea2seg.py"
+      - "scripts/prepare_rea2seg.py"
+      - "tests/test_rea2seg.py"
+      - "configs/sana_rea2seg.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      WANDB_MODE: disabled
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install CPU test dependencies
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[inference,evaluation,data,dev]" pyarrow
+          pip install ruff==0.11.4 mypy==1.19.1
+      - name: Check adapter
+        run: |
+          ruff check src/open_vision_banana/rea2seg.py scripts/prepare_rea2seg.py tests/test_rea2seg.py
+          ruff format --check src/open_vision_banana/rea2seg.py scripts/prepare_rea2seg.py tests/test_rea2seg.py
+          mypy --config-file .mypy-res.ini src/open_vision_banana/rea2seg.py
+          python -m pytest tests/test_rea2seg.py tests/test_res_training_contract.py tests/test_referring_masks_strict.py tests/test_manifest_portability.py
+          python scripts/train.py --config configs/sana_rea2seg.yaml --print-effective-config

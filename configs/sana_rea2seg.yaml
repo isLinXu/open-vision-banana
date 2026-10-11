@@ -1,0 +1,17 @@
+# Optional supervised Rea2Seg example; existing defaults/configs remain unchanged.
+# Prepare data first: docs/rea2seg.md. No validation split is invented.
+model:
+  name: sana-1600m
+  resolution: 512
+data:
+  dir: data/rea2seg
+  pair_manifest: data/rea2seg/training.jsonl
+  tasks: [referring]
+  vision_ratio: 1.0
+flow:
+  shift: 3.0
+  cfg_dropout_rate: 0.0
+loss:
+  task_loss_weights: {referring: 1.0}
+checkpoint:
+  output_dir: output/sana_rea2seg
