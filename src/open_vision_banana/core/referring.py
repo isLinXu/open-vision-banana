@@ -58,9 +58,14 @@ def decode_referring_mask(
             raise ValueError("Binary referring threshold must be in [0,1]")
         return rgb_image.mean(dim=1, keepdim=True) > threshold
 
-    target = torch.tensor(
-        target_color, dtype=torch.float32, device=rgb_image.device,
-    ).view(1, 3, 1, 1) / 255.0
+    target = (
+        torch.tensor(
+            target_color,
+            dtype=torch.float32,
+            device=rgb_image.device,
+        ).view(1, 3, 1, 1)
+        / 255.0
+    )
     distance = torch.norm(rgb_image - target, dim=1, keepdim=True)
     if threshold is None:
         mean = distance.mean(dim=(-2, -1), keepdim=True)

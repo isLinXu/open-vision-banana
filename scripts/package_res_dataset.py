@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Package validated RES data into portable Hub upload shards."""
+
 import argparse
 import json
 import sys

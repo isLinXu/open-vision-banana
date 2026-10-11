@@ -36,8 +36,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package with core + evaluation deps
-        run: pip install -e ".[evaluation,dev]"
+      - name: Install package with core + evaluation + data deps
+        run: pip install -e ".[evaluation,data,dev]"
       - name: Run unit tests (skip optional-dependency tests)
         run: |
           python -m pytest tests/ -v \

@@ -45,8 +45,11 @@ def _derive(root: Path, destination: BinaryIO | None = None) -> dict:
         if asset.get("kind") != "image":
             continue
         name, digest = asset.get("path"), asset.get("sha256")
-        if not isinstance(name, str) or not isinstance(digest, str) or len(digest) != 64 or any(
-            character not in "0123456789abcdef" for character in digest
+        if (
+            not isinstance(name, str)
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
         ):
             raise ValueError("Training view requires valid image paths and SHA256 asset entries")
         if name in image_hashes:
@@ -84,7 +87,9 @@ def _derive(root: Path, destination: BinaryIO | None = None) -> dict:
         id_overlap, hash_overlap = image_id in test_ids, image_hash in test_hashes
         source = f"{row['source_dataset']}/{row['source_protocol']}/{row['source_split']}"
         if split == "train" and (id_overlap or hash_overlap):
-            raise ValueError("Training source already overlaps official test images; rebuild its global exclusion")
+            raise ValueError(
+                "Training source already overlaps official test images; rebuild its global exclusion"
+            )
         if split == "val" and (id_overlap or hash_overlap):
             excluded += 1
             excluded_id += int(id_overlap)
@@ -101,13 +106,19 @@ def _derive(root: Path, destination: BinaryIO | None = None) -> dict:
     if _file_digest(assets_path) != asset_sha or _file_digest(pairs_path) != pairs_sha:
         raise ValueError("Source manifests changed while deriving the training view")
     return {
-        "schema_version": VIEW_SCHEMA, "manifest": VIEW_NAME,
+        "schema_version": VIEW_SCHEMA,
+        "manifest": VIEW_NAME,
         "policy": "all train; val excludes all official test image IDs and exact image-file SHA256s",
-        "sha256": digest.hexdigest(), "bytes": total_bytes,
-        "counts": dict(sorted(counts.items())), "source_counts": dict(sorted(source_counts.items())),
-        "excluded_val": excluded, "excluded_val_by_source": dict(sorted(excluded_by_source.items())),
-        "excluded_val_by_image_id": excluded_id, "excluded_val_by_exact_content": excluded_hash,
-        "test_image_ids": len(test_ids), "test_content_sha256s": len(test_hashes),
+        "sha256": digest.hexdigest(),
+        "bytes": total_bytes,
+        "counts": dict(sorted(counts.items())),
+        "source_counts": dict(sorted(source_counts.items())),
+        "excluded_val": excluded,
+        "excluded_val_by_source": dict(sorted(excluded_by_source.items())),
+        "excluded_val_by_image_id": excluded_id,
+        "excluded_val_by_exact_content": excluded_hash,
+        "test_image_ids": len(test_ids),
+        "test_content_sha256s": len(test_hashes),
         "input_manifests": {"assets.jsonl": asset_sha, "pairs.jsonl": pairs_sha},
     }
 

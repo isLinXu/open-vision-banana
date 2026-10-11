@@ -25,9 +25,14 @@ from open_vision_banana.res_manifest import (
 
 def _ref(ref_id: int, image: int, split: str, *expressions: str) -> dict:
     return {
-        "ref_id": ref_id, "image_id": image, "ann_id": image * 10, "split": split,
-        "sentences": [{"sent_id": ref_id * 10 + index, "raw": text, "sent": text.lower()}
-                      for index, text in enumerate(expressions)],
+        "ref_id": ref_id,
+        "image_id": image,
+        "ann_id": image * 10,
+        "split": split,
+        "sentences": [
+            {"sent_id": ref_id * 10 + index, "raw": text, "sent": text.lower()}
+            for index, text in enumerate(expressions)
+        ],
     }
 
 
@@ -41,22 +46,41 @@ def sources(tmp_path: Path) -> tuple[Path, Path]:
         name = f"COCO_train2014_{number:012d}.jpg"
         Image.new("RGB", (12, 10), (number * 40, number * 10, 2)).save(image_root / name)
         images.append({"id": number, "file_name": name, "width": 12, "height": 10})
-        annotations.append({"id": number * 10, "image_id": number, "bbox": [1, 1, 9, 7],
-                            "segmentation": [[1, 1, 4, 1, 4, 4, 1, 4], [7, 5, 10, 5, 10, 8, 7, 8]]})
+        annotations.append(
+            {
+                "id": number * 10,
+                "image_id": number,
+                "bbox": [1, 1, 9, 7],
+                "segmentation": [[1, 1, 4, 1, 4, 4, 1, 4], [7, 5, 10, 5, 10, 8, 7, 8]],
+            }
+        )
     refs_by_source = {
-        "refcoco": [_ref(1, 1, "train", "The object", "another phrase"),
-                    _ref(2, 2, "train", "leaks into plus val"),
-                    _ref(3, 3, "testA", "test target"), _ref(4, 5, "val", "duplicate", "duplicate")],
-        "refcoco+": [_ref(1, 1, "train", "The object"), _ref(2, 2, "val", "plus validation"),
-                     _ref(3, 4, "train", "training only")],
-        "refcocog": [_ref(1, 3, "train", "leaks into unc testA"),
-                     _ref(2, 1, "train", "third expression"), _ref(3, 5, "test", "g test")],
+        "refcoco": [
+            _ref(1, 1, "train", "The object", "another phrase"),
+            _ref(2, 2, "train", "leaks into plus val"),
+            _ref(3, 3, "testA", "test target"),
+            _ref(4, 5, "val", "duplicate", "duplicate"),
+        ],
+        "refcoco+": [
+            _ref(1, 1, "train", "The object"),
+            _ref(2, 2, "val", "plus validation"),
+            _ref(3, 4, "train", "training only"),
+        ],
+        "refcocog": [
+            _ref(1, 3, "train", "leaks into unc testA"),
+            _ref(2, 1, "train", "third expression"),
+            _ref(3, 5, "test", "g test"),
+        ],
     }
     for source, protocol in SOURCE_SPECS:
         folder = annotation_root / source
         folder.mkdir(parents=True)
-        (folder / "instances.json").write_text(json.dumps({"images": images, "annotations": annotations}))
-        (folder / f"refs({protocol}).p").write_bytes(pickle.dumps(refs_by_source[source], protocol=2))
+        (folder / "instances.json").write_text(
+            json.dumps({"images": images, "annotations": annotations})
+        )
+        (folder / f"refs({protocol}).p").write_bytes(
+            pickle.dumps(refs_by_source[source], protocol=2)
+        )
     return annotation_root, image_root
 
 
@@ -109,19 +133,34 @@ def test_attribution_preserves_available_source_metadata_and_nulls(sources, tmp_
     for source, _ in SOURCE_SPECS:
         path = annotation_root / source / "instances.json"
         payload = json.loads(path.read_text())
-        payload["licenses"] = [{"id": 4, "name": "source license name", "url": "https://example.org/license"}]
-        payload["images"][0].update({"license": 4, "coco_url": "https://example.org/coco.jpg",
-                                     "flickr_url": "https://example.org/flickr.jpg"})
+        payload["licenses"] = [
+            {"id": 4, "name": "source license name", "url": "https://example.org/license"}
+        ]
+        payload["images"][0].update(
+            {
+                "license": 4,
+                "coco_url": "https://example.org/coco.jpg",
+                "flickr_url": "https://example.org/flickr.jpg",
+            }
+        )
         path.write_text(json.dumps(payload))
     output = tmp_path / "output"
     report = build_res_manifest(annotation_root, image_root, output)
-    rows = [json.loads(line) for line in (output / "image_attribution.jsonl").read_text().splitlines()]
+    rows = [
+        json.loads(line) for line in (output / "image_attribution.jsonl").read_text().splitlines()
+    ]
     assert len(rows) == report["unique_images"] == 5
     assert rows[0] == {
-        "image_id": 1, "input": "images/coco2014/COCO_train2014_000000000001.jpg", "license": 4,
-        "license_name": "source license name", "license_url": "https://example.org/license",
-        "coco_url": "https://example.org/coco.jpg", "flickr_url": "https://example.org/flickr.jpg",
-        "file_name": "COCO_train2014_000000000001.jpg", "width": 12, "height": 10,
+        "image_id": 1,
+        "input": "images/coco2014/COCO_train2014_000000000001.jpg",
+        "license": 4,
+        "license_name": "source license name",
+        "license_url": "https://example.org/license",
+        "coco_url": "https://example.org/coco.jpg",
+        "flickr_url": "https://example.org/flickr.jpg",
+        "file_name": "COCO_train2014_000000000001.jpg",
+        "width": 12,
+        "height": 10,
     }
     assert rows[1]["license"] is None and rows[1]["license_url"] is None
     assert rows[1]["coco_url"] is None and rows[1]["flickr_url"] is None
@@ -161,9 +200,20 @@ def test_image_dimension_mismatch_fails(sources, tmp_path):
         build_res_manifest(annotations, images, tmp_path / "out")
 
 
-@pytest.mark.parametrize("value", ["../escape.png", "images/../../escape.png", "/tmp/a.png",
-                                  "C:/data/a.png", "C:\\data\\a.png", "images//a.png",
-                                  "images/NUL.jpg", "images/a?.png", "images/trailing. "])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "../escape.png",
+        "images/../../escape.png",
+        "/tmp/a.png",
+        "C:/data/a.png",
+        "C:\\data\\a.png",
+        "images//a.png",
+        "images/NUL.jpg",
+        "images/a?.png",
+        "images/trailing. ",
+    ],
+)
 def test_portable_path_rejects_unsafe_paths(tmp_path, value):
     with pytest.raises(ValueError):
         portable_path(tmp_path, value)
@@ -192,5 +242,8 @@ def test_validator_detects_modified_mask(sources, tmp_path):
 def test_ref_pickle_cannot_load_globals(tmp_path):
     path = tmp_path / "unsafe.p"
     path.write_bytes(pickle.dumps(Path("never_constructed")))
-    with path.open("rb") as stream, pytest.raises(pickle.UnpicklingError, match="Globals are forbidden"):
+    with (
+        path.open("rb") as stream,
+        pytest.raises(pickle.UnpicklingError, match="Globals are forbidden"),
+    ):
         PrimitiveUnpickler(stream).load()

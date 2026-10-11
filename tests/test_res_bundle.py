@@ -1,4 +1,5 @@
 """A Hub release restores the exact portable assets and refuses corrupt input."""
+
 import hashlib
 import io
 import json
@@ -15,17 +16,34 @@ def fixture_dataset(root):
     (root / "targets").mkdir()
     (root / "images/a.jpg").write_bytes(b"image bytes")
     (root / "targets/a.png").write_bytes(b"mask bytes")
-    (root / "pairs.jsonl").write_text(json.dumps({"input": "images/a.jpg", "target": "targets/a.png"}) + "\n")
-    assets = [{"path": name, "bytes": (root / name).stat().st_size,
-               "sha256": sha256_file(root / name)} for name in ("images/a.jpg", "targets/a.png")]
+    (root / "pairs.jsonl").write_text(
+        json.dumps({"input": "images/a.jpg", "target": "targets/a.png"}) + "\n"
+    )
+    assets = [
+        {"path": name, "bytes": (root / name).stat().st_size, "sha256": sha256_file(root / name)}
+        for name in ("images/a.jpg", "targets/a.png")
+    ]
     (root / "assets.jsonl").write_text("".join(json.dumps(a) + "\n" for a in assets))
-    files = {name: {"bytes": (root / name).stat().st_size, "sha256": sha256_file(root / name)}
-             for name in ("pairs.jsonl", "assets.jsonl")}
-    fp = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    (root / "build_report.json").write_text(json.dumps({"status": "complete", "files": files,
-                                                     "dataset_fingerprint": fp, "counts": {"train": 1}}))
-    (root / "validation_report.json").write_text(json.dumps({"status": "passed", "dataset_fingerprint": fp,
-                                                          "counts": {"train": 1}}))
+    files = {
+        name: {"bytes": (root / name).stat().st_size, "sha256": sha256_file(root / name)}
+        for name in ("pairs.jsonl", "assets.jsonl")
+    }
+    fp = hashlib.sha256(
+        json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    (root / "build_report.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "files": files,
+                "dataset_fingerprint": fp,
+                "counts": {"train": 1},
+            }
+        )
+    )
+    (root / "validation_report.json").write_text(
+        json.dumps({"status": "passed", "dataset_fingerprint": fp, "counts": {"train": 1}})
+    )
 
 
 def test_roundtrip_and_idempotent_restore(tmp_path):
@@ -44,7 +62,9 @@ def test_roundtrip_and_idempotent_restore(tmp_path):
     assert not (tmp_path / "bad").exists()
 
 
-@pytest.mark.parametrize("path", ["../escape", "/absolute", "C:/drive", "a\\..\\b", "a/../b", "a//b"])
+@pytest.mark.parametrize(
+    "path", ["../escape", "/absolute", "C:/drive", "a\\..\\b", "a/../b", "a//b"]
+)
 def test_unsafe_path(tmp_path, path):
     with pytest.raises(ValueError, match="Unsafe"):
         safe_path(tmp_path, path)

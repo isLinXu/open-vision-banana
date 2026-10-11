@@ -20,13 +20,19 @@ def test_expression_only_builds_prompt_and_legacy_prompt_survives():
     assert resolve_referring_prompt({"prompt": "Segment the dog."}) == "Segment the dog."
 
 
-@pytest.mark.parametrize("row", [
-    {}, {"expression": " "}, {"expression": 1}, {"prompt": 7},
-    {"expression": "cat", "prompt": "Segment the dog."},
-    {"encoding": BINARY_RES_ENCODING, "prompt": "Segment the dog."},
-    {"expression": "dog", "encoding": "unknown"},
-    {"expression": "dog", "encoding": BINARY_RES_ENCODING, "prompt": "Segment dog in red."},
-])
+@pytest.mark.parametrize(
+    "row",
+    [
+        {},
+        {"expression": " "},
+        {"expression": 1},
+        {"prompt": 7},
+        {"expression": "cat", "prompt": "Segment the dog."},
+        {"encoding": BINARY_RES_ENCODING, "prompt": "Segment the dog."},
+        {"expression": "dog", "encoding": "unknown"},
+        {"expression": "dog", "encoding": BINARY_RES_ENCODING, "prompt": "Segment dog in red."},
+    ],
+)
 def test_invalid_res_conditioning_fails(row):
     with pytest.raises(ValueError):
         resolve_referring_prompt(row)
@@ -37,11 +43,19 @@ def test_same_image_multiple_expressions_and_targets_survive_resize(tmp_path):
     rows = []
     for index, expression in enumerate(("left dog", "right dog")):
         mask = np.zeros((7, 9, 3), dtype=np.uint8)
-        mask[1:6, (1 if index == 0 else 6):(3 if index == 0 else 8)] = 255
+        mask[1:6, (1 if index == 0 else 6) : (3 if index == 0 else 8)] = 255
         Image.fromarray(mask).save(tmp_path / f"mask{index}.png")
-        rows.append({"task": "referring", "split": "train", "input": "image.png",
-                     "target": f"mask{index}.png", "expression": expression,
-                     "sample_id": str(index), "encoding": BINARY_RES_ENCODING})
+        rows.append(
+            {
+                "task": "referring",
+                "split": "train",
+                "input": "image.png",
+                "target": f"mask{index}.png",
+                "expression": expression,
+                "sample_id": str(index),
+                "encoding": BINARY_RES_ENCODING,
+            }
+        )
     path = tmp_path / "pairs.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
     ds = ManifestVisionDataset(path, 13, "train", {"referring"})
@@ -57,8 +71,12 @@ def test_same_image_multiple_expressions_and_targets_survive_resize(tmp_path):
 
 
 def test_single_res_expression_never_becomes_checkpoint_global_prompt():
-    ds = SimpleNamespace(samples=[{"task": "referring", "prompt": "Segment this dog"},
-                                  {"task": "depth", "prompt": "depth prompt"}])
+    ds = SimpleNamespace(
+        samples=[
+            {"task": "referring", "prompt": "Segment this dog"},
+            {"task": "depth", "prompt": "depth prompt"},
+        ]
+    )
     assert uniform_task_prompts(ds) == {"depth": "depth prompt"}
 
 

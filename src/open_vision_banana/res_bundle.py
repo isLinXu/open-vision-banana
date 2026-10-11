@@ -22,12 +22,28 @@ def sha256_file(path: Path) -> str:
 def safe_path(root: Path, name: str) -> Path:
     """Reject absolute, traversing and Windows-special paths, including links."""
     posix = PurePosixPath(name)
-    if (not name or "\\" in name or ":" in name or posix.is_absolute()
-            or PureWindowsPath(name).drive or ".." in posix.parts
-            or any(part in {"", "."} or part.endswith((".", " "))
-                   or any(ord(c) < 32 or c in '<>"|?*' for c in part)
-                   or part.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"{p}{n}" for p in ("COM", "LPT") for n in range(1, 10)]}
-                   for part in name.split("/"))):
+    if (
+        not name
+        or "\\" in name
+        or ":" in name
+        or posix.is_absolute()
+        or PureWindowsPath(name).drive
+        or ".." in posix.parts
+        or any(
+            part in {"", "."}
+            or part.endswith((".", " "))
+            or any(ord(c) < 32 or c in '<>"|?*' for c in part)
+            or part.split(".")[0].upper()
+            in {
+                "CON",
+                "PRN",
+                "AUX",
+                "NUL",
+                *[f"{p}{n}" for p in ("COM", "LPT") for n in range(1, 10)],
+            }
+            for part in name.split("/")
+        )
+    ):
         raise ValueError(f"Unsafe bundle path: {name!r}")
     path = root.joinpath(*posix.parts)
     if not path.resolve().is_relative_to(root.resolve()):
@@ -44,12 +60,18 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
         raise ValueError("Cannot package an incomplete RES build")
     build = json.loads((data_dir / "build_report.json").read_text(encoding="utf-8"))
     validation = json.loads((data_dir / "validation_report.json").read_text(encoding="utf-8"))
-    if (build.get("status") != "complete" or validation.get("status") != "passed"
-            or build.get("dataset_fingerprint") != validation.get("dataset_fingerprint")
-            or build.get("counts") != validation.get("counts")):
+    if (
+        build.get("status") != "complete"
+        or validation.get("status") != "passed"
+        or build.get("dataset_fingerprint") != validation.get("dataset_fingerprint")
+        or build.get("counts") != validation.get("counts")
+    ):
         raise ValueError("Package requires a matching successful validation report")
-    fingerprint = hashlib.sha256(json.dumps(build["files"], ensure_ascii=False, sort_keys=True,
-                                          separators=(",", ":")).encode("utf-8")).hexdigest()
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            build["files"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
     if fingerprint != build["dataset_fingerprint"]:
         raise ValueError("Dataset metadata fingerprint mismatch")
     for name, entry in build["files"].items():
@@ -75,11 +97,21 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
     metadata = {*build["files"], "build_report.json", "validation_report.json"}
     for name in sorted(metadata):
         source = safe_path(data_dir, name)
-        if source.is_file() and source.suffix in {".json", ".jsonl"} and source.parent == data_dir.resolve():
+        if (
+            source.is_file()
+            and source.suffix in {".json", ".jsonl"}
+            and source.parent == data_dir.resolve()
+        ):
             target = output_dir / source.name
             shutil.copyfile(source, target)
-            entries.append({"path": source.name, "sha256": sha256_file(target),
-                            "size": target.stat().st_size, "kind": "file"})
+            entries.append(
+                {
+                    "path": source.name,
+                    "sha256": sha256_file(target),
+                    "size": target.stat().st_size,
+                    "kind": "file",
+                }
+            )
     shard = None
     tar = None
     used = count = 0
@@ -91,9 +123,15 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
     def finish():
         if tar is not None:
             tar.close()
-            entries.append({"path": shard.relative_to(output_dir).as_posix(),
-                            "sha256": sha256_file(shard), "size": shard.stat().st_size,
-                            "kind": "tar", "members": count})
+            entries.append(
+                {
+                    "path": shard.relative_to(output_dir).as_posix(),
+                    "sha256": sha256_file(shard),
+                    "size": shard.stat().st_size,
+                    "kind": "tar",
+                    "members": count,
+                }
+            )
 
     try:
         for name in sorted(assets):
@@ -103,7 +141,11 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
                 raise ValueError(f"Validated asset changed: {name}")
             if tar is None or (used + size > shard_bytes and count):
                 finish()
-                shard = output_dir / "assets" / f"part-{sum(e['kind'] == 'tar' for e in entries):05d}.tar"
+                shard = (
+                    output_dir
+                    / "assets"
+                    / f"part-{sum(e['kind'] == 'tar' for e in entries):05d}.tar"
+                )
                 shard.parent.mkdir(exist_ok=True)
                 tar = tarfile.open(shard, "w")  # noqa: SIM115 - shards are closed on rollover/finally
                 used = count = 0
@@ -118,8 +160,13 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
     finally:
         if tar is not None:
             tar.close()
-    index = {"format": FORMAT, "encoding": "binary_white_black_v1",
-             "asset_files": len(assets), "dataset_fingerprint": build["dataset_fingerprint"], "files": entries}
+    index = {
+        "format": FORMAT,
+        "encoding": "binary_white_black_v1",
+        "asset_files": len(assets),
+        "dataset_fingerprint": build["dataset_fingerprint"],
+        "files": entries,
+    }
     (output_dir / "bundle.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
     return index
 

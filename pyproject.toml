@@ -66,7 +66,7 @@ data = [
     "h5py>=3.8",
     "ijson>=3.2",
     "pycocotools>=2.0.7",
-    "huggingface_hub>=0.20",
+    "huggingface_hub>=0.23",
 ]
 serving = [
     "fastapi>=0.100",

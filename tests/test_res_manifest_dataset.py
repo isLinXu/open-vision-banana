@@ -29,20 +29,31 @@ def _bundle(root):
     rows = []
     for index, source_split in enumerate(["train", "val", "testA", "testB"]):
         expression = f"object {index}"
-        rows.append({
-            "sample_id": f"ref{index}", "task": "referring",
-            "split": source_split if source_split in {"train", "val"} else "test",
-            "source_dataset": "refcoco", "source_protocol": "unc", "source_split": source_split,
-            "input": "images/image.png", "target": "targets/mask.png", "width": 5, "height": 3,
-            "expression": expression, "prompt": build_binary_referring_prompt(expression),
-            "encoding": BINARY_REFERRING_ENCODING,
-        })
+        rows.append(
+            {
+                "sample_id": f"ref{index}",
+                "task": "referring",
+                "split": source_split if source_split in {"train", "val"} else "test",
+                "source_dataset": "refcoco",
+                "source_protocol": "unc",
+                "source_split": source_split,
+                "input": "images/image.png",
+                "target": "targets/mask.png",
+                "width": 5,
+                "height": 3,
+                "expression": expression,
+                "prompt": build_binary_referring_prompt(expression),
+                "encoding": BINARY_REFERRING_ENCODING,
+            }
+        )
     _write(root, rows)
     return rows, mask[..., 0] == 255
 
 
 def _write(root, rows):
-    (root / "pairs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    (root / "pairs.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
 
 
 def test_native_mask_and_expression_rows_are_preserved(tmp_path):
@@ -60,15 +71,26 @@ def test_native_mask_and_expression_rows_are_preserved(tmp_path):
     assert item["image"].eq(1).all()
     assert set(item["target_rgb"].unique().tolist()) <= {0.0, 1.0}
     assert dataset.validate_assets() == {
-        "samples": 2, "unique_images": 1, "unique_masks": 1,
+        "samples": 2,
+        "unique_images": 1,
+        "unique_masks": 1,
         "source_counts": {"refcoco/unc/testA": 1, "refcoco/unc/testB": 1},
     }
-    assert dataset.manifest_sha256 == hashlib.sha256((tmp_path / "pairs.jsonl").read_bytes()).hexdigest()
+    assert (
+        dataset.manifest_sha256
+        == hashlib.sha256((tmp_path / "pairs.jsonl").read_bytes()).hexdigest()
+    )
 
 
 def test_source_filters_preserve_official_testa(tmp_path):
     _bundle(tmp_path)
-    dataset = RESManifestDataset(tmp_path, split="test", source_dataset="refcoco", source_protocol="unc", source_split="testA")
+    dataset = RESManifestDataset(
+        tmp_path,
+        split="test",
+        source_dataset="refcoco",
+        source_protocol="unc",
+        source_split="testA",
+    )
     assert len(dataset) == 1
     assert dataset[0]["sample_id"] == "ref2"
     with pytest.raises(ValueError, match="No RES"):
@@ -85,7 +107,18 @@ def test_evaluation_requires_explicit_held_out_split(tmp_path):
         RESManifestDataset(tmp_path, split="val", source_split="testA")
 
 
-@pytest.mark.parametrize("change", ["traversal", "absolute", "wrong_encoding", "prompt", "duplicate", "missing_asset", "source_split"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "traversal",
+        "absolute",
+        "wrong_encoding",
+        "prompt",
+        "duplicate",
+        "missing_asset",
+        "source_split",
+    ],
+)
 def test_manifest_contract_rejects_invalid_rows(tmp_path, change):
     rows, _ = _bundle(tmp_path)
     row = rows[1]
@@ -146,11 +179,28 @@ def test_cli_preflight_outputs_fingerprint_without_loading_model(tmp_path, monke
     from open_vision_banana.inference.pipeline import VisionBanana
 
     _bundle(tmp_path)
+
     def forbidden_load(*args, **kwargs):
         raise AssertionError("preflight must not load a model")
+
     monkeypatch.setattr(VisionBanana, "from_pretrained", forbidden_load)
     output = tmp_path / "preflight.json"
-    assert main(["--dataset-root", str(tmp_path), "--split", "test", "--source-split", "testB", "--preflight", "--output-json", str(output)]) == 0
+    assert (
+        main(
+            [
+                "--dataset-root",
+                str(tmp_path),
+                "--split",
+                "test",
+                "--source-split",
+                "testB",
+                "--preflight",
+                "--output-json",
+                str(output),
+            ]
+        )
+        == 0
+    )
     result = json.loads(output.read_text())
     assert result["status"] == "preflight_passed"
     assert result["counts"]["samples"] == 1
@@ -164,6 +214,7 @@ def test_cli_scores_native_pixels_with_expression_and_encoding(tmp_path, monkeyp
 
     _bundle(tmp_path)
     calls = []
+
     class WhiteMask:
         def eval(self):
             return self
@@ -171,9 +222,28 @@ def test_cli_scores_native_pixels_with_expression_and_encoding(tmp_path, monkeyp
         def predict(self, **kwargs):
             calls.append(kwargs)
             return {"rgb_output": torch.ones(1, 3, 2, 2)}
+
     monkeypatch.setattr(VisionBanana, "from_pretrained", lambda **kwargs: WhiteMask())
     output = tmp_path / "metrics.json"
-    assert main(["--dataset-root", str(tmp_path), "--split", "test", "--model-name", "test/mock", "--resolution", "2", "--device", "cpu", "--output-json", str(output)]) == 0
+    assert (
+        main(
+            [
+                "--dataset-root",
+                str(tmp_path),
+                "--split",
+                "test",
+                "--model-name",
+                "test/mock",
+                "--resolution",
+                "2",
+                "--device",
+                "cpu",
+                "--output-json",
+                str(output),
+            ]
+        )
+        == 0
+    )
     result = json.loads(output.read_text())
     assert result["status"] == "evaluated"
     assert result["metrics"]["samples"] == 2

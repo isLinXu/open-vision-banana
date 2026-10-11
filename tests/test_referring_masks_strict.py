@@ -22,13 +22,15 @@ def _fixture(root, *, layout="images/train2014", protocol="umd"):
     folder.mkdir(parents=True, exist_ok=True)
     image = folder / "COCO_train2014_000000000123.jpg"
     Image.new("RGB", (20, 12), (100, 120, 140)).save(image)
-    refs = [{
-        "ref_id": 3,
-        "image_id": 123,
-        "ann_id": 7,
-        "split": "val",
-        "sentences": [{"raw": "the two chairs"}, {"sent": "both chairs"}],
-    }]
+    refs = [
+        {
+            "ref_id": 3,
+            "image_id": 123,
+            "ann_id": 7,
+            "split": "val",
+            "sentences": [{"raw": "the two chairs"}, {"sent": "both chairs"}],
+        }
+    ]
     instances = {
         "images": [{"id": 123, "height": 12, "width": 20, "file_name": image.name}],
         "annotations": [{"id": 7, "image_id": 123, "segmentation": POLYGONS}],
@@ -54,7 +56,9 @@ def test_strict_native_masks_match_coco_and_preserve_components(tmp_path, layout
     refs.append({"split": "train", "image_id": 999, "ann_id": 999, "sentences": ["train only"]})
     _write(tmp_path, refs, instances)
     dataset = _load(tmp_path)
-    expected = coco_mask.decode(coco_mask.merge(coco_mask.frPyObjects(POLYGONS, 12, 20))).astype(bool)
+    expected = coco_mask.decode(coco_mask.merge(coco_mask.frPyObjects(POLYGONS, 12, 20))).astype(
+        bool
+    )
     assert len(dataset) == 2
     assert [dataset[i]["expression"] for i in range(2)] == ["the two chairs", "both chairs"]
     actual = dataset[0]["gt_mask_native"].numpy()
@@ -85,7 +89,10 @@ def test_strict_requires_instances(tmp_path):
         _load(tmp_path)
 
 
-@pytest.mark.parametrize("segmentation", [None, [], {}, [[1, 1, 1, 1, 1, 1]], [[1, 1, 2]], [[1, 1, float("nan"), 2, 3, 4]]])
+@pytest.mark.parametrize(
+    "segmentation",
+    [None, [], {}, [[1, 1, 1, 1, 1, 1]], [[1, 1, 2]], [[1, 1, float("nan"), 2, 3, 4]]],
+)
 def test_strict_rejects_missing_malformed_and_empty_gt(tmp_path, segmentation):
     refs, instances, _ = _fixture(tmp_path)
     instances["annotations"][0]["segmentation"] = segmentation
@@ -94,7 +101,21 @@ def test_strict_rejects_missing_malformed_and_empty_gt(tmp_path, segmentation):
         _load(tmp_path)
 
 
-@pytest.mark.parametrize("change", ["missing_annotation", "wrong_image", "missing_image_metadata", "missing_split", "empty_split", "no_selected_split", "empty_expression", "one_empty_expression", "boolean_annotation_id", "malformed_image_id"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing_annotation",
+        "wrong_image",
+        "missing_image_metadata",
+        "missing_split",
+        "empty_split",
+        "no_selected_split",
+        "empty_expression",
+        "one_empty_expression",
+        "boolean_annotation_id",
+        "malformed_image_id",
+    ],
+)
 def test_strict_ref_integrity(tmp_path, change):
     refs, instances, _ = _fixture(tmp_path)
     if change == "missing_annotation":
@@ -174,21 +195,26 @@ def test_strict_dataset_loads_uncompressed_rle(tmp_path):
     expected[8:11, 13:18] = 1
     instances["annotations"][0]["segmentation"] = _uncompressed_rle(expected)
     _write(tmp_path, refs, instances)
-    np.testing.assert_array_equal(_load(tmp_path)[0]["gt_mask_native"].numpy(), expected.astype(bool))
+    np.testing.assert_array_equal(
+        _load(tmp_path)[0]["gt_mask_native"].numpy(), expected.astype(bool)
+    )
 
 
-@pytest.mark.parametrize("rle", [
-    {"size": [2, 3], "counts": [1, 1, 4]},
-    {"size": [3, 2], "counts": [1, 1]},
-    {"size": [3, 2], "counts": [0, 7]},
-    {"size": [3, 2], "counts": [-1, 7]},
-    {"size": [3, 2], "counts": [1.0, 5.0]},
-    {"size": [3, 2], "counts": [6]},
-    {"size": [3, 2], "counts": "11"},
-    {"size": [3, 2], "counts": "0"},
-    {"size": [3, 2], "counts": "P"},
-    {"size": [3, 2], "counts": "\x00"},
-])
+@pytest.mark.parametrize(
+    "rle",
+    [
+        {"size": [2, 3], "counts": [1, 1, 4]},
+        {"size": [3, 2], "counts": [1, 1]},
+        {"size": [3, 2], "counts": [0, 7]},
+        {"size": [3, 2], "counts": [-1, 7]},
+        {"size": [3, 2], "counts": [1.0, 5.0]},
+        {"size": [3, 2], "counts": [6]},
+        {"size": [3, 2], "counts": "11"},
+        {"size": [3, 2], "counts": "0"},
+        {"size": [3, 2], "counts": "P"},
+        {"size": [3, 2], "counts": "\x00"},
+    ],
+)
 def test_rle_rejects_bad_dimensions_runs_and_empty_foreground(rle):
     with pytest.raises(ValueError):
         decode_coco_segmentation(rle, 3, 2)

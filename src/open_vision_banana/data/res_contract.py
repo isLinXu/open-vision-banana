@@ -33,8 +33,10 @@ def resolve_referring_prompt(row: dict[str, Any]) -> str:
             return build_binary_referring_prompt(expression)
         if encoding == BINARY_RES_ENCODING and prompt != build_binary_referring_prompt(expression):
             raise ValueError("Versioned binary RES rows require the canonical white/black prompt")
+
         def normalized(text: str) -> str:
             return " ".join(text.casefold().split())
+
         if normalized(expression) not in normalized(prompt):
             raise ValueError("RES prompt does not contain its expression")
     if not prompt:

@@ -14,18 +14,31 @@ def fixture_manifests(root):
     root.mkdir()
     # Image 4 is a byte-identical alias of test image 3 despite a different COCO ID.
     hashes = {1: "a" * 64, 2: "b" * 64, 3: "c" * 64, 4: "c" * 64, 5: "d" * 64}
-    assets = [{"path": f"images/{number}.jpg", "kind": "image", "sha256": digest}
-              for number, digest in hashes.items()]
+    assets = [
+        {"path": f"images/{number}.jpg", "kind": "image", "sha256": digest}
+        for number, digest in hashes.items()
+    ]
     (root / "assets.jsonl").write_text("\n".join(json.dumps(item) for item in assets) + "\n")
-    records = [(1, "train", "refcoco"), (2, "val", "refcoco"),
-               (3, "val", "refcoco+"), (4, "val", "refcocog"),
-               (5, "val", "refcocog"), (2, "test", "refcocog"),
-               (3, "test", "refcoco")]
+    records = [
+        (1, "train", "refcoco"),
+        (2, "val", "refcoco"),
+        (3, "val", "refcoco+"),
+        (4, "val", "refcocog"),
+        (5, "val", "refcocog"),
+        (2, "test", "refcocog"),
+        (3, "test", "refcoco"),
+    ]
     lines = []
     for index, (number, split, source) in enumerate(records):
-        row = {"image_id": number, "input": f"images/{number}.jpg", "split": split,
-               "source_dataset": source, "source_protocol": "umd" if source == "refcocog" else "unc",
-               "source_split": split, "expression": f"target {index}"}
+        row = {
+            "image_id": number,
+            "input": f"images/{number}.jpg",
+            "split": split,
+            "source_dataset": source,
+            "source_protocol": "umd" if source == "refcocog" else "unc",
+            "source_split": split,
+            "expression": f"target {index}",
+        }
         # Preserve intentionally noncanonical whitespace and CRLF in selected source rows.
         lines.append(("  " + json.dumps(row) + " \r\n").encode("utf-8"))
     (root / "pairs.jsonl").write_bytes(b"".join(lines))

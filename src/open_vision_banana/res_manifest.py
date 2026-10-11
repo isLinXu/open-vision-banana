@@ -51,7 +51,9 @@ def _json(value: Any) -> str:
 
 
 def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def portable_path(root: Path, value: Any) -> Path:
@@ -151,14 +153,22 @@ def write_image_attribution(annotations_root: str | Path, output_dir: str | Path
             image_paths[image_id] = asset["path"]
             for dimension in ("width", "height"):
                 if entry.get(dimension) is not None and entry[dimension] != asset.get(dimension):
-                    raise ValueError(f"Image attribution {dimension} differs from exported asset: {name}")
+                    raise ValueError(
+                        f"Image attribution {dimension} differs from exported asset: {name}"
+                    )
             license_id = entry.get("license")
             info = licenses.get(license_id, {})
             record = {
-                "image_id": image_id, "input": asset["path"], "license": license_id,
-                "license_name": info.get("license_name"), "license_url": info.get("license_url"),
-                "coco_url": entry.get("coco_url"), "flickr_url": entry.get("flickr_url"),
-                "file_name": name, "width": entry.get("width"), "height": entry.get("height"),
+                "image_id": image_id,
+                "input": asset["path"],
+                "license": license_id,
+                "license_name": info.get("license_name"),
+                "license_url": info.get("license_url"),
+                "coco_url": entry.get("coco_url"),
+                "flickr_url": entry.get("flickr_url"),
+                "file_name": name,
+                "width": entry.get("width"),
+                "height": entry.get("height"),
             }
             previous = records.get(name)
             if previous is not None:
@@ -166,13 +176,17 @@ def write_image_attribution(annotations_root: str | Path, output_dir: str | Path
                     if value is None:
                         continue
                     if previous[key] is not None and previous[key] != value:
-                        raise ValueError(f"Conflicting image attribution {key} for {name} in {source}")
+                        raise ValueError(
+                            f"Conflicting image attribution {key} for {name} in {source}"
+                        )
                     previous[key] = value
             else:
                 records[name] = record
     missing = set(exported) - set(records)
     if missing:
-        raise ValueError(f"Missing COCO attribution for {len(missing)} exported images: {sorted(missing)[:3]}")
+        raise ValueError(
+            f"Missing COCO attribution for {len(missing)} exported images: {sorted(missing)[:3]}"
+        )
     temporary = output_dir / "image_attribution.jsonl.tmp"
     with temporary.open("w", encoding="utf-8", newline="\n") as stream:
         for record in sorted(records.values(), key=lambda item: item["input"]):
@@ -202,10 +216,13 @@ def _index_sources(connection: sqlite3.Connection, root: Path) -> dict[str, Any]
         if not refs_path.is_file() or not instances_path.is_file():
             raise FileNotFoundError(f"Required official files missing for {source}/{protocol}")
         for path in (refs_path, instances_path):
-            report["source_files"].append({
-                "path": path.relative_to(root).as_posix(), "bytes": path.stat().st_size,
-                "sha256": sha256_file(path),
-            })
+            report["source_files"].append(
+                {
+                    "path": path.relative_to(root).as_posix(),
+                    "bytes": path.stat().st_size,
+                    "sha256": sha256_file(path),
+                }
+            )
         refs = _read_refs(refs_path)
         counts: Counter[str] = Counter()
         ref_counts: Counter[str] = Counter()
@@ -230,15 +247,33 @@ def _index_sources(connection: sqlite3.Connection, root: Path) -> dict[str, Any]
                 expression = sentence.get("raw", sentence.get("sent"))
                 if not isinstance(expression, str) or not expression.strip():
                     raise ValueError(f"Empty expression in {source} ref {ref_id}")
-                connection.execute("INSERT INTO samples VALUES (NULL,?,?,?,?,?,?,?,?)", (
-                    source, protocol, split, image_id, ann_id, ref_id, sent_id, expression,
-                ))
+                connection.execute(
+                    "INSERT INTO samples VALUES (NULL,?,?,?,?,?,?,?,?)",
+                    (
+                        source,
+                        protocol,
+                        split,
+                        image_id,
+                        ann_id,
+                        ref_id,
+                        sent_id,
+                        expression,
+                    ),
+                )
                 counts[split] += 1
         del refs
-        wanted_images = {row[0] for row in connection.execute(
-            "SELECT DISTINCT image_id FROM samples WHERE source=?", (source,))}
-        wanted_anns = {row[0] for row in connection.execute(
-            "SELECT DISTINCT ann_id FROM samples WHERE source=?", (source,))}
+        wanted_images = {
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT image_id FROM samples WHERE source=?", (source,)
+            )
+        }
+        wanted_anns = {
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT ann_id FROM samples WHERE source=?", (source,)
+            )
+        }
         found_images: set[int] = set()
         for entry in _stream_items(instances_path, "images.item"):
             image_id = entry.get("id")
@@ -255,12 +290,18 @@ def _index_sources(connection: sqlite3.Connection, root: Path) -> dict[str, Any]
             portable_path(root, name)
             if PurePosixPath(name).name != name:
                 raise ValueError("COCO source image file_name must be a basename")
-            previous = connection.execute("SELECT file_name,width,height FROM images WHERE image_id=?", (image_id,)).fetchone()
+            previous = connection.execute(
+                "SELECT file_name,width,height FROM images WHERE image_id=?", (image_id,)
+            ).fetchone()
             if previous and previous != (name, width, height):
                 raise ValueError(f"Conflicting source metadata for image {image_id}")
-            connection.execute("INSERT OR IGNORE INTO images VALUES (?,?,?,?)", (image_id, name, width, height))
+            connection.execute(
+                "INSERT OR IGNORE INTO images VALUES (?,?,?,?)", (image_id, name, width, height)
+            )
         if found_images != wanted_images:
-            raise ValueError(f"Missing COCO image metadata in {source}: {len(wanted_images - found_images)}")
+            raise ValueError(
+                f"Missing COCO image metadata in {source}: {len(wanted_images - found_images)}"
+            )
         found_anns: set[int] = set()
         for entry in _stream_items(instances_path, "annotations.item"):
             ann_id = entry.get("id")
@@ -272,18 +313,27 @@ def _index_sources(connection: sqlite3.Connection, root: Path) -> dict[str, Any]
             image_id = _integer(entry.get("image_id"), "annotation image_id")
             geometry = _json({"bbox": entry.get("bbox"), "segmentation": entry.get("segmentation")})
             geometry_hash = hashlib.sha256(geometry.encode("utf-8")).hexdigest()
-            connection.execute("INSERT INTO annotations VALUES (?,?,?,?,?)", (source, ann_id, image_id, geometry, geometry_hash))
+            connection.execute(
+                "INSERT INTO annotations VALUES (?,?,?,?,?)",
+                (source, ann_id, image_id, geometry, geometry_hash),
+            )
         if found_anns != wanted_anns:
-            raise ValueError(f"Missing COCO annotations in {source}: {len(wanted_anns - found_anns)}")
-        mismatches = connection.execute("""SELECT COUNT(*) FROM samples s JOIN annotations a
+            raise ValueError(
+                f"Missing COCO annotations in {source}: {len(wanted_anns - found_anns)}"
+            )
+        mismatches = connection.execute(
+            """SELECT COUNT(*) FROM samples s JOIN annotations a
             ON s.source=a.source AND s.ann_id=a.ann_id
-            WHERE s.source=? AND s.image_id!=a.image_id""", (source,)).fetchone()[0]
+            WHERE s.source=? AND s.image_id!=a.image_id""",
+            (source,),
+        ).fetchone()[0]
         if mismatches:
             raise ValueError(f"{source}: {mismatches} refs have annotation/image ID mismatches")
         report["sources"][f"{source}/{protocol}"] = {
             "refs_by_split": dict(sorted(ref_counts.items())),
             "expressions_by_split": dict(sorted(counts.items())),
-            "unique_images": len(wanted_images), "unique_annotations": len(wanted_anns),
+            "unique_images": len(wanted_images),
+            "unique_annotations": len(wanted_anns),
         }
         connection.commit()
     return report
@@ -324,7 +374,12 @@ def build_res_manifest(
     cursor = None
     try:
         report = _index_sources(connection, annotations_root)
-        blocked = {row[0] for row in connection.execute("SELECT DISTINCT image_id FROM samples WHERE source_split!='train'")}
+        blocked = {
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT image_id FROM samples WHERE source_split!='train'"
+            )
+        }
         _write_json(output_dir / "evaluation_image_ids.json", sorted(blocked))
         counts: Counter[str] = Counter()
         source_counts: Counter[str] = Counter()
@@ -335,10 +390,12 @@ def build_res_manifest(
         target_paths: dict[tuple[int, str], str] = {}
         train_images: set[int] = set()
         eval_images: set[int] = set()
+
         def stream(name: str):
             if name not in handles:
                 handles[name] = (output_dir / name).open("w", encoding="utf-8", newline="\n")
             return handles[name]
+
         inventory = stream("assets.jsonl")
         duplicate_log = stream("train_duplicates.jsonl")
         stream("pairs.jsonl")
@@ -350,8 +407,21 @@ def build_res_manifest(
             i.file_name,i.width,i.height FROM samples s
             JOIN annotations a ON s.source=a.source AND s.ann_id=a.ann_id
             JOIN images i ON s.image_id=i.image_id ORDER BY s.id""")
-        for (source, protocol, source_split, image_id, ann_id, ref_id, sent_id,
-             expression, geometry_json, geometry_hash, file_name, width, height) in cursor:
+        for (
+            source,
+            protocol,
+            source_split,
+            image_id,
+            ann_id,
+            ref_id,
+            sent_id,
+            expression,
+            geometry_json,
+            geometry_hash,
+            file_name,
+            width,
+            height,
+        ) in cursor:
             source_key = f"{source}/{protocol}"
             split = source_split if source_split in ("train", "val") else "test"
             sample_id = _sample_id(source, protocol, ref_id, sent_id)
@@ -359,14 +429,30 @@ def build_res_manifest(
                 if image_id in blocked:
                     excluded[source_key] += 1
                     continue
-                identity = hashlib.sha256(_json([image_id, geometry_hash, expression]).encode("utf-8")).hexdigest()
-                primary = connection.execute("SELECT sample_id FROM selected_train WHERE identity=?", (identity,)).fetchone()
+                identity = hashlib.sha256(
+                    _json([image_id, geometry_hash, expression]).encode("utf-8")
+                ).hexdigest()
+                primary = connection.execute(
+                    "SELECT sample_id FROM selected_train WHERE identity=?", (identity,)
+                ).fetchone()
                 if primary:
                     duplicates[source_key] += 1
-                    duplicate_log.write(_json({"primary_sample_id": primary[0], "duplicate_sample_id": sample_id,
-                                               "source_dataset": source, "source_protocol": protocol,
-                                               "image_id": image_id, "ann_id": ann_id, "ref_id": ref_id,
-                                               "sent_id": sent_id, "identity_sha256": identity}) + "\n")
+                    duplicate_log.write(
+                        _json(
+                            {
+                                "primary_sample_id": primary[0],
+                                "duplicate_sample_id": sample_id,
+                                "source_dataset": source,
+                                "source_protocol": protocol,
+                                "image_id": image_id,
+                                "ann_id": ann_id,
+                                "ref_id": ref_id,
+                                "sent_id": sent_id,
+                                "identity_sha256": identity,
+                            }
+                        )
+                        + "\n"
+                    )
                     continue
                 connection.execute("INSERT INTO selected_train VALUES (?,?)", (identity, sample_id))
                 if max_train_samples is not None and counts["train"] >= max_train_samples:
@@ -380,13 +466,26 @@ def build_res_manifest(
                 with Image.open(source_path) as image:
                     image.load()
                     if image.size != (width, height):
-                        raise ValueError(f"COCO image {image_id} dimensions disagree with annotations")
+                        raise ValueError(
+                            f"COCO image {image_id} dimensions disagree with annotations"
+                        )
                 relative = f"images/coco2014/{file_name}"
                 destination = portable_path(output_dir, relative)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source_path, destination)
-                inventory.write(_json({"path": relative, "kind": "image", "width": width, "height": height,
-                                       "bytes": destination.stat().st_size, "sha256": sha256_file(destination)}) + "\n")
+                inventory.write(
+                    _json(
+                        {
+                            "path": relative,
+                            "kind": "image",
+                            "width": width,
+                            "height": height,
+                            "bytes": destination.stat().st_size,
+                            "sha256": sha256_file(destination),
+                        }
+                    )
+                    + "\n"
+                )
                 image_paths[image_id] = relative
             target_key = (image_id, geometry_hash)
             if target_key not in target_paths:
@@ -397,18 +496,40 @@ def build_res_manifest(
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 rgb = np.repeat((mask.astype(np.uint8) * 255)[..., None], 3, axis=2)
                 Image.fromarray(rgb, mode="RGB").save(destination)
-                inventory.write(_json({"path": relative, "kind": "mask", "width": width, "height": height,
-                                       "bytes": destination.stat().st_size, "sha256": sha256_file(destination)}) + "\n")
+                inventory.write(
+                    _json(
+                        {
+                            "path": relative,
+                            "kind": "mask",
+                            "width": width,
+                            "height": height,
+                            "bytes": destination.stat().st_size,
+                            "sha256": sha256_file(destination),
+                        }
+                    )
+                    + "\n"
+                )
                 target_paths[target_key] = relative
             row = {
-                "sample_id": sample_id, "task": "referring", "split": split,
-                "input": image_paths[image_id], "target": target_paths[target_key],
-                "expression": expression, "prompt": build_binary_referring_prompt(expression),
-                "encoding": BINARY_REFERRING_ENCODING, "source_dataset": source,
-                "source_protocol": protocol, "source_split": source_split, "image_id": image_id,
-                "ann_id": ann_id, "ref_id": ref_id, "sent_id": sent_id,
-                "supervision": "human_polygon", "geometry_sha256": geometry_hash,
-                "width": width, "height": height,
+                "sample_id": sample_id,
+                "task": "referring",
+                "split": split,
+                "input": image_paths[image_id],
+                "target": target_paths[target_key],
+                "expression": expression,
+                "prompt": build_binary_referring_prompt(expression),
+                "encoding": BINARY_REFERRING_ENCODING,
+                "source_dataset": source,
+                "source_protocol": protocol,
+                "source_split": source_split,
+                "image_id": image_id,
+                "ann_id": ann_id,
+                "ref_id": ref_id,
+                "sent_id": sent_id,
+                "supervision": "human_polygon",
+                "geometry_sha256": geometry_hash,
+                "width": width,
+                "height": height,
             }
             serialized = _json(row) + "\n"
             stream("pairs.jsonl").write(serialized)
@@ -419,26 +540,40 @@ def build_res_manifest(
         for handle in handles.values():
             handle.close()
         connection.commit()
-        report.update({
-            "schema_version": SCHEMA_VERSION, "status": "complete", "encoding": BINARY_REFERRING_ENCODING,
-            "path_policy": "manifest-relative", "image_mode": image_mode,
-            "expression_policy": "raw verbatim, falling back to sent only when raw is absent",
-            "split_policy": "official unc/umd; all sources val/test image IDs excluded from every train",
-            "deduplication": "train only: exact image_id + bbox/segmentation JSON + expression; eval multiplicity unchanged",
-            "max_train_samples": max_train_samples, "counts": dict(sorted(counts.items())),
-            "source_counts": dict(sorted(source_counts.items())),
-            "excluded_train_by_source": dict(sorted(excluded.items())),
-            "duplicate_train_by_source": dict(sorted(duplicates.items())),
-            "pilot_omitted_unique_train": pilot_omitted, "evaluation_blacklist_images": len(blocked),
-            "unique_images": len(image_paths), "unique_targets": len(target_paths),
-            "unique_train_images": len(train_images), "unique_eval_images": len(eval_images),
-            "train_eval_image_overlap": len(train_images & eval_images),
-        })
+        report.update(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "status": "complete",
+                "encoding": BINARY_REFERRING_ENCODING,
+                "path_policy": "manifest-relative",
+                "image_mode": image_mode,
+                "expression_policy": "raw verbatim, falling back to sent only when raw is absent",
+                "split_policy": "official unc/umd; all sources val/test image IDs excluded from every train",
+                "deduplication": "train only: exact image_id + bbox/segmentation JSON + expression; eval multiplicity unchanged",
+                "max_train_samples": max_train_samples,
+                "counts": dict(sorted(counts.items())),
+                "source_counts": dict(sorted(source_counts.items())),
+                "excluded_train_by_source": dict(sorted(excluded.items())),
+                "duplicate_train_by_source": dict(sorted(duplicates.items())),
+                "pilot_omitted_unique_train": pilot_omitted,
+                "evaluation_blacklist_images": len(blocked),
+                "unique_images": len(image_paths),
+                "unique_targets": len(target_paths),
+                "unique_train_images": len(train_images),
+                "unique_eval_images": len(eval_images),
+                "train_eval_image_overlap": len(train_images & eval_images),
+            }
+        )
         write_image_attribution(annotations_root, output_dir)
         report["training_view"] = write_training_view(output_dir)
-        report["files"] = {path.name: {"bytes": path.stat().st_size, "sha256": sha256_file(path)}
-                           for path in sorted(output_dir.iterdir()) if path.suffix in (".jsonl", ".json")}
-        report["dataset_fingerprint"] = hashlib.sha256(_json(report["files"]).encode("utf-8")).hexdigest()
+        report["files"] = {
+            path.name: {"bytes": path.stat().st_size, "sha256": sha256_file(path)}
+            for path in sorted(output_dir.iterdir())
+            if path.suffix in (".jsonl", ".json")
+        }
+        report["dataset_fingerprint"] = hashlib.sha256(
+            _json(report["files"]).encode("utf-8")
+        ).hexdigest()
         _write_json(output_dir / "build_report.json", report)
         incomplete.unlink()
         return report
@@ -458,7 +593,10 @@ def validate_res_manifest(dataset_root: str | Path, *, write_report: bool = True
     if (root / "BUILD_INCOMPLETE").exists():
         raise ValueError("Dataset contains BUILD_INCOMPLETE; rebuild before validation")
     build_report = json.loads((root / "build_report.json").read_text(encoding="utf-8"))
-    if build_report.get("schema_version") != SCHEMA_VERSION or build_report.get("status") != "complete":
+    if (
+        build_report.get("schema_version") != SCHEMA_VERSION
+        or build_report.get("status") != "complete"
+    ):
         raise ValueError("Missing or unsupported completed RES build report")
     assets: dict[str, dict[str, Any]] = {}
     for number, line in enumerate((root / "assets.jsonl").open(encoding="utf-8"), 1):
@@ -477,7 +615,9 @@ def validate_res_manifest(dataset_root: str | Path, *, write_report: bool = True
                 if image.mode != "RGB" or image.format != "PNG":
                     raise ValueError(f"Target must be a lossless RGB PNG: {value}")
                 pixels = np.asarray(image)
-                if not np.all((pixels == 0) | (pixels == 255)) or not np.all(pixels == pixels[..., :1]):
+                if not np.all((pixels == 0) | (pixels == 255)) or not np.all(
+                    pixels == pixels[..., :1]
+                ):
                     raise ValueError(f"Target is not binary white/black: {value}")
                 if not np.any(pixels):
                     raise ValueError(f"Empty target mask: {value}")
@@ -503,7 +643,11 @@ def validate_res_manifest(dataset_root: str | Path, *, write_report: bool = True
             raise ValueError(f"Missing RES expression at row {number}")
         if row.get("prompt") != build_binary_referring_prompt(expression):
             raise ValueError(f"Expression/prompt mismatch at row {number}")
-        source, protocol, source_split = row["source_dataset"], row["source_protocol"], row["source_split"]
+        source, protocol, source_split = (
+            row["source_dataset"],
+            row["source_protocol"],
+            row["source_split"],
+        )
         if (source, protocol) not in SOURCE_SPECS or source_split not in SOURCE_SPLITS:
             raise ValueError(f"Unsupported source/protocol/split at row {number}")
         expected_split = source_split if source_split in ("train", "val") else "test"
@@ -532,7 +676,9 @@ def validate_res_manifest(dataset_root: str | Path, *, write_report: bool = True
         if expected_split == "train":
             if image_id in blocked:
                 raise ValueError(f"Train/evaluation leakage at row {number}")
-            identity = hashlib.sha256(_json([image_id, row["geometry_sha256"], expression]).encode("utf-8")).hexdigest()
+            identity = hashlib.sha256(
+                _json([image_id, row["geometry_sha256"], expression]).encode("utf-8")
+            ).hexdigest()
             if identity in seen_train:
                 raise ValueError(f"Duplicate training expression/geometry at row {number}")
             seen_train.add(identity)
@@ -551,17 +697,24 @@ def validate_res_manifest(dataset_root: str | Path, *, write_report: bool = True
         raise ValueError("Asset inventory contains unreferenced files")
     if dict(counts) != build_report["counts"] or dict(sources) != build_report["source_counts"]:
         raise ValueError("Manifest counts disagree with build report")
-    raw_train = sum(source["expressions_by_split"].get("train", 0)
-                    for source in build_report["sources"].values())
-    accounted_train = (counts["train"] + sum(build_report["excluded_train_by_source"].values())
-                       + sum(build_report["duplicate_train_by_source"].values())
-                       + build_report["pilot_omitted_unique_train"])
+    raw_train = sum(
+        source["expressions_by_split"].get("train", 0)
+        for source in build_report["sources"].values()
+    )
+    accounted_train = (
+        counts["train"]
+        + sum(build_report["excluded_train_by_source"].values())
+        + sum(build_report["duplicate_train_by_source"].values())
+        + build_report["pilot_omitted_unique_train"]
+    )
     if raw_train != accounted_train:
         raise ValueError("Training source counts do not reconcile with exclusion/deduplication")
     for source_key, source_report in build_report["sources"].items():
         for split, expected in source_report["expressions_by_split"].items():
             if split != "train" and sources[f"{source_key}/{split}"] != expected:
-                raise ValueError(f"Official evaluation multiplicity changed for {source_key}/{split}")
+                raise ValueError(
+                    f"Official evaluation multiplicity changed for {source_key}/{split}"
+                )
     for value, metadata in build_report["files"].items():
         path = portable_path(root, value)
         if path.stat().st_size != metadata["bytes"] or sha256_file(path) != metadata["sha256"]:
@@ -571,14 +724,22 @@ def validate_res_manifest(dataset_root: str | Path, *, write_report: bool = True
     if fingerprint != build_report["dataset_fingerprint"]:
         raise ValueError("Dataset fingerprint mismatch")
     report = {
-        "schema_version": SCHEMA_VERSION, "status": "passed", "counts": dict(sorted(counts.items())),
-        "source_counts": dict(sorted(sources.items())), "verified_assets": len(assets),
-        "unique_train_images": len(train_images), "unique_eval_images": len(eval_images),
-        "train_eval_image_overlap": 0, "train_eval_exact_content_overlap": 0,
-        "official_eval_multiplicity_preserved": True, "all_assets_fully_decoded": True,
+        "schema_version": SCHEMA_VERSION,
+        "status": "passed",
+        "counts": dict(sorted(counts.items())),
+        "source_counts": dict(sorted(sources.items())),
+        "verified_assets": len(assets),
+        "unique_train_images": len(train_images),
+        "unique_eval_images": len(eval_images),
+        "train_eval_image_overlap": 0,
+        "train_eval_exact_content_overlap": 0,
+        "official_eval_multiplicity_preserved": True,
+        "all_assets_fully_decoded": True,
         "dataset_fingerprint": fingerprint,
         "training_view": training_view,
-        "limitations": ["Exact content and COCO identity checked; perceptual near-duplicate detection is not performed."],
+        "limitations": [
+            "Exact content and COCO identity checked; perceptual near-duplicate detection is not performed."
+        ],
     }
     if write_report:
         _write_json(root / "validation_report.json", report)

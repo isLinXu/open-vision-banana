@@ -69,7 +69,10 @@ def test_nonwhite_color_call_still_uses_color_distance():
     decoder = VisualizationDecoder()
     implicit = decoder.decode_referring(rgb, target_color=(255, 0, 0), threshold=0.1)["mask"]
     explicit = decoder.decode_referring(
-        rgb, target_color=(255, 0, 0), threshold=0.1, encoding=LEGACY_REFERRING_ENCODING,
+        rgb,
+        target_color=(255, 0, 0),
+        threshold=0.1,
+        encoding=LEGACY_REFERRING_ENCODING,
     )["mask"]
     assert torch.equal(implicit, explicit)
     assert implicit[0, 0, 1, 1]
@@ -84,7 +87,9 @@ def test_unknown_protocol_fails(encoding):
 
 def test_binary_rejects_conflicting_nonwhite_target():
     with pytest.raises(ValueError, match="white target_color"):
-        decode_referring_mask(_two_regions(), target_color=(255, 0, 0), encoding=BINARY_REFERRING_ENCODING)
+        decode_referring_mask(
+            _two_regions(), target_color=(255, 0, 0), encoding=BINARY_REFERRING_ENCODING
+        )
 
 
 def test_default_prompt_uses_current_expression_and_shared_binary_template():
@@ -108,7 +113,9 @@ def test_custom_color_and_explicit_legacy_are_reflected_in_prompts():
     model = _pipeline(_two_regions())
     custom = model._build_prompt("referring", expression="the dog", target_color=(255, 0, 0))
     assert "<255, 0, 0>" in custom
-    legacy = model._build_prompt("referring", expression="the dog", referring_encoding=LEGACY_REFERRING_ENCODING)
+    legacy = model._build_prompt(
+        "referring", expression="the dog", referring_encoding=LEGACY_REFERRING_ENCODING
+    )
     assert "other objects are rendered in green" in legacy
 
 
@@ -129,7 +136,8 @@ def test_predict_and_evaluator_use_identical_masks(monkeypatch, encoding):
     monkeypatch.setattr(evaluator_module, "evaluate_referring", capture)
     VisionEvaluator(model, device="cpu").evaluate(
         [{"image": torch.zeros_like(rgb), "target_rgb": rgb, "expression": ["the pieces"]}],
-        task="referring", **kwargs,
+        task="referring",
+        **kwargs,
     )
     assert torch.equal(observed[0], result["mask"].squeeze(1))
     assert result["metadata"]["referring_encoding"] == (encoding or BINARY_REFERRING_ENCODING)
@@ -146,7 +154,10 @@ def test_evaluator_keeps_gt_components_even_for_legacy_predictions(monkeypatch):
 
     monkeypatch.setattr(evaluator_module, "evaluate_referring", capture)
     VisionEvaluator(_pipeline(rgb), device="cpu").evaluate_batch(
-        torch.zeros_like(rgb), rgb, "referring", expression="the pieces",
+        torch.zeros_like(rgb),
+        rgb,
+        "referring",
+        expression="the pieces",
         referring_encoding=LEGACY_REFERRING_ENCODING,
     )
     assert observed[0].sum() == 10
@@ -156,12 +167,17 @@ def test_batch_explicit_prompts_support_the_same_protocol_options():
     rgb = _two_regions().expand(2, -1, -1, -1)
     model = _pipeline(rgb)
     results = model.predict_batch(
-        torch.zeros_like(rgb), "referring", prompts=["first", "second"],
-        referring_encoding=BINARY_REFERRING_ENCODING, referring_threshold=0.9,
+        torch.zeros_like(rgb),
+        "referring",
+        prompts=["first", "second"],
+        referring_encoding=BINARY_REFERRING_ENCODING,
+        referring_threshold=0.9,
     )
     assert len(results) == 2
     assert all(result["mask"].sum() == 10 for result in results)
-    assert all(result["metadata"]["referring_encoding"] == BINARY_REFERRING_ENCODING for result in results)
+    assert all(
+        result["metadata"]["referring_encoding"] == BINARY_REFERRING_ENCODING for result in results
+    )
 
 
 def test_streaming_forwards_color_encoding_and_threshold():
@@ -169,8 +185,11 @@ def test_streaming_forwards_color_encoding_and_threshold():
     rgb[:, 0] = 0.8
     model = _pipeline(rgb)
     result = model.predict_streaming(
-        torch.zeros_like(rgb), "referring", expression="red target",
-        target_color=(255, 0, 0), referring_encoding=LEGACY_REFERRING_ENCODING,
+        torch.zeros_like(rgb),
+        "referring",
+        expression="red target",
+        target_color=(255, 0, 0),
+        referring_encoding=LEGACY_REFERRING_ENCODING,
         referring_threshold=0.3,
     )
     assert result["mask"].all()
@@ -183,8 +202,13 @@ def test_tiled_referring_forwards_threshold_and_preserves_protocol(threshold, ex
     model = _pipeline(rgb)
     model.generator.generate = lambda **kwargs: kwargs["image"]
     result = model.predict_tiled(
-        rgb, "referring", tile_size=6, overlap=2, expression="the region",
-        referring_encoding=BINARY_REFERRING_ENCODING, referring_threshold=threshold,
+        rgb,
+        "referring",
+        tile_size=6,
+        overlap=2,
+        expression="the region",
+        referring_encoding=BINARY_REFERRING_ENCODING,
+        referring_threshold=threshold,
     )
     assert bool(result["mask"].all()) == expected
     assert result["metadata"]["referring_encoding"] == BINARY_REFERRING_ENCODING
@@ -197,8 +221,13 @@ def test_tiled_custom_color_rgb_is_encoded_with_the_requested_color():
     model = _pipeline(rgb)
     model.generator.generate = lambda **kwargs: kwargs["image"]
     result = model.predict_tiled(
-        rgb, "referring", tile_size=6, overlap=2, expression="the region",
-        target_color=(255, 0, 0), referring_threshold=0.1,
+        rgb,
+        "referring",
+        tile_size=6,
+        overlap=2,
+        expression="the region",
+        target_color=(255, 0, 0),
+        referring_threshold=0.1,
     )
     assert result["mask"].all()
     assert result["rgb_output"][:, 0].all()
@@ -211,10 +240,18 @@ def test_manifest_evaluation_preserves_bright_gray_192_through_generator(tmp_pat
     Image.new("RGB", (3, 2), (192, 192, 192)).save(tmp_path / "image.png")
     Image.new("L", (3, 2), 255).save(tmp_path / "mask.png")
     row = {
-        "sample_id": "gray192", "task": "referring", "split": "val",
-        "source_dataset": "refcoco", "source_protocol": "unc", "source_split": "val",
-        "input": "image.png", "target": "mask.png", "width": 3, "height": 2,
-        "expression": "the region", "prompt": build_binary_referring_prompt("the region"),
+        "sample_id": "gray192",
+        "task": "referring",
+        "split": "val",
+        "source_dataset": "refcoco",
+        "source_protocol": "unc",
+        "source_split": "val",
+        "input": "image.png",
+        "target": "mask.png",
+        "width": 3,
+        "height": 2,
+        "expression": "the region",
+        "prompt": build_binary_referring_prompt("the region"),
         "encoding": BINARY_REFERRING_ENCODING,
     }
     (tmp_path / "pairs.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
@@ -230,7 +267,9 @@ def test_manifest_evaluation_preserves_bright_gray_192_through_generator(tmp_pat
 
     model.generator.generate = generate
     metrics = VisionEvaluator(model, device="cpu").evaluate(
-        DataLoader(dataset, batch_size=1), task="referring", native_resolution=True,
+        DataLoader(dataset, batch_size=1),
+        task="referring",
+        native_resolution=True,
     )
     assert seen == [(192, 192, 192)]
     assert metrics["cIoU"] == pytest.approx(1.0)

@@ -19,11 +19,29 @@ def main() -> None:
     parser.add_argument("--image-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--image-mode", choices=("copy",), default="copy")
-    parser.add_argument("--max-train-samples", type=int, default=None,
-                        help="Pilot limit after full global eval exclusion; official eval remains complete")
+    parser.add_argument(
+        "--max-train-samples",
+        type=int,
+        default=None,
+        help="Pilot limit after full global eval exclusion; official eval remains complete",
+    )
     args = parser.parse_args()
     report = build_res_manifest(**vars(args))
-    print(json.dumps({key: report[key] for key in ("status", "counts", "unique_images", "unique_targets", "dataset_fingerprint")}, indent=2))
+    print(
+        json.dumps(
+            {
+                key: report[key]
+                for key in (
+                    "status",
+                    "counts",
+                    "unique_images",
+                    "unique_targets",
+                    "dataset_fingerprint",
+                )
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
