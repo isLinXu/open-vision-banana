@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from open_vision_banana.data.res_contract import BINARY_RES_ENCODING, resolve_referring_prompt
@@ -85,3 +86,21 @@ def test_training_refuses_incomplete_res_restore(tmp_path):
     (tmp_path / "pairs.jsonl").write_text("", encoding="utf-8")
     with pytest.raises(ValueError, match="incomplete"):
         ManifestVisionDataset(tmp_path / "pairs.jsonl", 8, "train", {"referring"})
+
+
+@pytest.mark.parametrize("task", ["depth", "normal", "semantic", "instance"])
+def test_non_referring_collate_preserves_historical_fields(task):
+    sample = {
+        "image": torch.zeros(3, 4, 4),
+        "target_rgb": torch.ones(3, 4, 4),
+        "task": task,
+        "prompt": "existing task prompt",
+        "expression": "unrelated metadata",
+        "sample_id": "example",
+    }
+    batch = _collate_fn([sample])
+    assert set(batch) == {"image", "target_rgb", "task", "prompt"}
+    assert batch["task"] == [task]
+    assert batch["prompt"] == [sample["prompt"]]
+    assert torch.equal(batch["image"][0], sample["image"])
+    assert torch.equal(batch["target_rgb"][0], sample["target_rgb"])

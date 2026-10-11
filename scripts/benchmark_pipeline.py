@@ -154,10 +154,6 @@ def run_benchmark(args: argparse.Namespace) -> list[BenchmarkResult]:
     num_samples = args.num_samples
     warmup = args.warmup
 
-    # Mapper-only is an explicit execution mode, not a failed model load.
-    if args.mapper_only:
-        return _run_mapper_only_benchmark(args, device)
-
     # Try to load the model
     try:
         from open_vision_banana import VisionBanana
@@ -193,7 +189,9 @@ def run_benchmark(args: argparse.Namespace) -> list[BenchmarkResult]:
             logger.info("  Task: %s", task)
             reset_vram_peak()
 
-            times = benchmark_task(model, task, resolution, batch_size, num_samples, warmup, device)
+            times = benchmark_task(
+                model, task, resolution, batch_size, num_samples, warmup, device
+            )
             if not times:
                 continue
 
@@ -209,7 +207,7 @@ def run_benchmark(args: argparse.Namespace) -> list[BenchmarkResult]:
                 num_inference_steps=args.num_inference_steps,
                 median_latency_ms=times_t.median().item(),
                 mean_latency_ms=times_t.mean().item(),
-                std_latency_ms=times_t.std(unbiased=False).item(),
+                std_latency_ms=times_t.std().item(),
                 p95_latency_ms=times_t.quantile(0.95).item(),
                 throughput_img_per_sec=(batch_size * 1000.0) / times_t.median().item(),
                 peak_vram_mb=peak_vram,
@@ -228,7 +226,9 @@ def run_benchmark(args: argparse.Namespace) -> list[BenchmarkResult]:
     return results
 
 
-def _run_mapper_only_benchmark(args: argparse.Namespace, device: str) -> list[BenchmarkResult]:
+def _run_mapper_only_benchmark(
+    args: argparse.Namespace, device: str
+) -> list[BenchmarkResult]:
     """Fallback: benchmark only the mapper/decoding pipeline (no FLUX)."""
     from open_vision_banana.core import DepthRGBMapper, NormalRGBMapper, SegmentationDecoder
 
@@ -253,16 +253,10 @@ def _run_mapper_only_benchmark(args: argparse.Namespace, device: str) -> list[Be
             x = torch.randn(batch_size, 3, resolution, resolution, device=device)
             x = x / x.norm(dim=1, keepdim=True).clamp(min=1e-8)
 
-        encode, decode = (
-            (mapper.depth_to_rgb, mapper.rgb_to_depth)
-            if task == "depth"
-            else (mapper.normal_to_rgb, mapper.rgb_to_normal)
-        )
-
         # Warmup
-        for _ in range(args.warmup):
+        for _ in range(5):
             with torch.no_grad():
-                _ = decode(encode(x))
+                _ = mapper.encode(x) if hasattr(mapper, "encode") else mapper(x)
 
         times = []
         for _ in range(num_samples):
@@ -270,7 +264,12 @@ def _run_mapper_only_benchmark(args: argparse.Namespace, device: str) -> list[Be
                 torch.cuda.synchronize()
             t0 = time.perf_counter()
             with torch.no_grad():
-                _ = decode(encode(x))
+                if task == "depth":
+                    rgb = mapper.depth_to_rgb(x)  # type: ignore[attr-defined]
+                    _ = mapper.rgb_to_depth(rgb)  # type: ignore[attr-defined]
+                else:
+                    rgb = mapper.normal_to_rgb(x)  # type: ignore[attr-defined]
+                    _ = mapper.rgb_to_normal(rgb)  # type: ignore[attr-defined]
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             times.append((time.perf_counter() - t0) * 1000)
@@ -287,7 +286,7 @@ def _run_mapper_only_benchmark(args: argparse.Namespace, device: str) -> list[Be
             num_inference_steps=0,
             median_latency_ms=times_t.median().item(),
             mean_latency_ms=times_t.mean().item(),
-            std_latency_ms=times_t.std(unbiased=False).item(),
+            std_latency_ms=times_t.std().item(),
             p95_latency_ms=times_t.quantile(0.95).item(),
             throughput_img_per_sec=(batch_size * 1000.0) / times_t.median().item(),
             peak_vram_mb=peak_vram,
@@ -305,9 +304,6 @@ def _run_mapper_only_benchmark(args: argparse.Namespace, device: str) -> list[Be
     logger.info("  Mapper benchmark: segmentation")
     reset_vram_peak()
     seg_rgb = torch.rand(batch_size, 3, 128, 128, device=device)
-    for _ in range(args.warmup):
-        with torch.no_grad():
-            _ = decoder.decode_instance(seg_rgb)
     times = []
     for _ in range(num_samples):
         if torch.cuda.is_available():
@@ -330,7 +326,7 @@ def _run_mapper_only_benchmark(args: argparse.Namespace, device: str) -> list[Be
         num_inference_steps=0,
         median_latency_ms=times_t.median().item(),
         mean_latency_ms=times_t.mean().item(),
-        std_latency_ms=times_t.std(unbiased=False).item(),
+        std_latency_ms=times_t.std().item(),
         p95_latency_ms=times_t.quantile(0.95).item(),
         throughput_img_per_sec=(batch_size * 1000.0) / times_t.median().item(),
         peak_vram_mb=peak_vram,
@@ -366,7 +362,9 @@ def print_summary(results: list[BenchmarkResult]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="End-to-end pipeline benchmark for Vision Banana")
+    parser = argparse.ArgumentParser(
+        description="End-to-end pipeline benchmark for Vision Banana"
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -402,21 +400,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Benchmark only mapper/decoding (no FLUX model load)",
     )
-    args = parser.parse_args()
-    if any(
-        value <= 0
-        for value in (args.resolution, args.num_samples, args.batch_size, args.num_inference_steps)
-    ):
-        parser.error("resolution, num-samples, batch-size and num-inference-steps must be positive")
-    if args.warmup < 0:
-        parser.error("warmup must be nonnegative")
-    return args
+    return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
-    torch.manual_seed(0)
+    if args.mapper_only:
+        # Force mapper-only mode
+        args.model = "none"
+
     results = run_benchmark(args)
     if not results:
         logger.error("No benchmark results collected.")
@@ -427,8 +420,8 @@ def main() -> int:
     if args.output:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump([r.to_dict() for r in results], f, indent=2, allow_nan=False)
+        with open(out_path, "w") as f:
+            json.dump([r.to_dict() for r in results], f, indent=2)
         logger.info("Results saved to: %s", out_path)
 
     return 0

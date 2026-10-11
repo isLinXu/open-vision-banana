@@ -226,9 +226,10 @@ def _collate_fn(batch: list[dict]) -> dict:
         "target_rgb": torch.stack([b["target_rgb"] for b in batch]),
         "task": [b["task"] for b in batch],
     }
-    for key in ("expression", "encoding", "sample_id", "source_dataset"):
-        if any(key in b for b in batch):
-            result[key] = [b.get(key) for b in batch]
+    if any(b["task"] == "referring" for b in batch):
+        for key in ("expression", "encoding", "sample_id", "source_dataset"):
+            if any(key in b for b in batch):
+                result[key] = [b.get(key) for b in batch]
     return result
 
 

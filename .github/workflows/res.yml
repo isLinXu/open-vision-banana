@@ -3,8 +3,53 @@ name: RES Contract
 on:
   push:
     branches: [main]
+    paths:
+      - ".github/workflows/res.yml"
+      - ".coveragerc-res"
+      - ".mypy-res.ini"
+      - "pyproject.toml"
+      - "src/open_vision_banana/referring*.py"
+      - "src/open_vision_banana/res_*.py"
+      - "src/open_vision_banana/core/referring.py"
+      - "src/open_vision_banana/data/res_*.py"
+      - "src/open_vision_banana/data/datasets.py"
+      - "src/open_vision_banana/training/trainer.py"
+      - "src/open_vision_banana/inference/decoder.py"
+      - "src/open_vision_banana/inference/pipeline.py"
+      - "src/open_vision_banana/inference/prompt.py"
+      - "src/open_vision_banana/evaluation/evaluator.py"
+      - "scripts/*res_manifest.py"
+      - "scripts/*res_dataset.py"
+      - "scripts/evaluate_paper_benchmarks.py"
+      - "tests/test_res_*.py"
+      - "tests/test_referring_masks_strict.py"
+      - "tests/test_normal_referring_benchmarks.py"
+      - "configs/sana_res_binary_v1.yaml"
   pull_request:
     branches: [main]
+    paths:
+      - ".github/workflows/res.yml"
+      - ".coveragerc-res"
+      - ".mypy-res.ini"
+      - "pyproject.toml"
+      - "src/open_vision_banana/referring*.py"
+      - "src/open_vision_banana/res_*.py"
+      - "src/open_vision_banana/core/referring.py"
+      - "src/open_vision_banana/data/res_*.py"
+      - "src/open_vision_banana/data/datasets.py"
+      - "src/open_vision_banana/training/trainer.py"
+      - "src/open_vision_banana/inference/decoder.py"
+      - "src/open_vision_banana/inference/pipeline.py"
+      - "src/open_vision_banana/inference/prompt.py"
+      - "src/open_vision_banana/evaluation/evaluator.py"
+      - "scripts/*res_manifest.py"
+      - "scripts/*res_dataset.py"
+      - "scripts/evaluate_paper_benchmarks.py"
+      - "tests/test_res_*.py"
+      - "tests/test_referring_masks_strict.py"
+      - "tests/test_normal_referring_benchmarks.py"
+      - "configs/sana_res_binary_v1.yaml"
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -463,7 +463,7 @@ python scripts/build_snvc50m_manifest.py    # Build SNVC-50M manifest
 
 ## 9. Testing
 
-The `RES Contract` workflow runs on Python 3.10–3.12 without model downloads or private local data. It checks RES lint/format/types and the source-build, training-conditioning, inference and native-evaluation tests; `.coveragerc-res` requires at least 80% statement coverage of the new RES protocol/data modules. It supplements the repository-wide CI and performance workflows; passing RES checks does not imply those other gates passed. Use the commands and dependency groups in `.github/workflows/res.yml` to reproduce it locally. Keep all original benchmark protocols and the existing whole-repository thresholds intact.
+The independent `RES Contract` workflow runs on Python 3.10–3.12 for paths used by RES (or by manual dispatch), without model downloads or private local data. It checks RES lint/format/types, source builds, training conditioning, inference and native evaluation; `.coveragerc-res` measures the new RES protocol/data modules only. Use `.github/workflows/res.yml` to reproduce these checks locally. RES work should preserve other tasks' loading and metric behavior and leave general CI, performance drivers and unrelated tests unchanged; existing whole-repository failures are reported separately.
 
 ```bash
 # Run all tests (tests/ is a flat directory — no subdirectories)

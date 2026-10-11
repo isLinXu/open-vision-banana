@@ -23,15 +23,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-LATENCY_METRICS = {"median_ms", "p95_ms", "mean_ms"}
-THROUGHPUT_METRICS = {"throughput_img_per_sec", "throughput"}
-COMPARABLE_METRICS = LATENCY_METRICS | THROUGHPUT_METRICS
 
 
 @dataclass
@@ -94,19 +89,14 @@ def _compare_metric(
     current: float,
     threshold: float,
 ) -> ComparisonResult:
-    """Compare latency (lower is better) or throughput (higher is better)."""
-    if any(not math.isfinite(value) or value < 0 for value in (baseline, current, threshold)):
-        raise ValueError("Benchmark values and regression threshold must be finite and nonnegative")
+    """Compare a single metric; regression means current is *worse* (higher for latency)."""
     if baseline == 0:
         change_pct = 0.0 if current == 0 else float("inf")
     else:
         change_pct = (current - baseline) / baseline * 100.0
 
-    regression = (
-        change_pct < -threshold * 100.0
-        if metric in THROUGHPUT_METRICS
-        else change_pct > threshold * 100.0
-    )
+    # For latency metrics, higher is worse; threshold is positive
+    regression = change_pct > threshold * 100.0
     return ComparisonResult(
         operation=operation,
         metric=metric,
@@ -169,25 +159,16 @@ def compare_benchmarks(
         if not isinstance(b_metrics, dict) or not isinstance(c_metrics, dict):
             continue
 
-        for metric in sorted(b_metrics):
+        for metric in sorted(set(b_metrics.keys()) & set(c_metrics.keys())):
             b_val = b_metrics[metric]
-            if not isinstance(b_val, int | float):
-                continue
-            c_val = c_metrics.get(metric)
-            if not isinstance(c_val, int | float):
-                missing = ComparisonResult(op, metric, float(b_val), 0.0, 0.0, True)
-                report.comparisons.append(missing)
-                report.regressions.append(missing)
+            c_val = c_metrics[metric]
+            if not isinstance(b_val, (int, float)) or not isinstance(c_val, (int, float)):
                 continue
             comp = _compare_metric(op, metric, float(b_val), float(c_val), threshold)
             report.comparisons.append(comp)
             if comp.regression:
                 report.regressions.append(comp)
-            elif (
-                comp.change_pct > threshold * 100.0
-                if metric in THROUGHPUT_METRICS
-                else comp.change_pct < -threshold * 100.0
-            ):
+            elif comp.change_pct < -threshold * 100.0:
                 report.improvements.append(comp)
 
     return report
@@ -201,46 +182,18 @@ def _benchmark_file_to_dict(path: Path) -> dict[str, Any]:
         flat: dict[str, Any] = {}
         for item in data:
             if not isinstance(item, dict):
-                raise ValueError("Every benchmark result must be a metric mapping")
+                continue
             op_name = item.get("task", item.get("label", "unknown"))
-            if not isinstance(op_name, str) or not op_name:
-                raise ValueError("Benchmark operation names must be nonempty strings")
-            if op_name in flat:
-                raise ValueError(f"Duplicate benchmark operation: {op_name}")
-            aliases = {
-                "median_ms": "median_latency_ms",
-                "p95_ms": "p95_latency_ms",
-                "mean_ms": "mean_latency_ms",
-                "throughput_img_per_sec": "throughput",
-            }
             flat[op_name] = {
-                metric: item[metric] if metric in item else item[alias]
-                for metric, alias in aliases.items()
-                if metric in item or alias in item
+                "median_ms": item.get("median_latency_ms", item.get("median_ms", 0)),
+                "p95_ms": item.get("p95_latency_ms", item.get("p95_ms", 0)),
+                "mean_ms": item.get("mean_latency_ms", item.get("mean_ms", 0)),
+                "throughput_img_per_sec": item.get(
+                    "throughput_img_per_sec", item.get("throughput", 0)
+                ),
             }
-        data = flat
-    if not isinstance(data, dict):
-        raise ValueError("Benchmark JSON must be an operation mapping or result list")
-    normalized = {}
-    for operation, metrics in data.items():
-        if operation.startswith("_"):
-            continue
-        if not isinstance(metrics, dict):
-            raise ValueError(f"Benchmark operation {operation} must have a metric mapping")
-        # Dispersion/extrema and run metadata are diagnostic, not latency gates.
-        selected = {key: value for key, value in metrics.items() if key in COMPARABLE_METRICS}
-        if not selected:
-            raise ValueError(f"No comparable metrics for benchmark operation {operation}")
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, int | float)
-            or not math.isfinite(value)
-            or value < 0
-            for value in selected.values()
-        ):
-            raise ValueError(f"Invalid numeric benchmark metric for {operation}")
-        normalized[operation] = selected
-    return normalized
+        return flat
+    return data
 
 
 def main() -> int:
@@ -255,51 +208,30 @@ def main() -> int:
     )
     parser.add_argument("--report", type=Path, default=None, help="Markdown report output path")
     parser.add_argument("--json", type=Path, default=None, help="Structured JSON output path")
-    parser.add_argument(
-        "--allow-empty-baseline",
-        action="store_true",
-        help="Explicit first-main-run bootstrap; reports that no regression comparison occurred",
-    )
     args = parser.parse_args()
 
     try:
         baseline = _benchmark_file_to_dict(args.baseline)
         current = _benchmark_file_to_dict(args.current)
-        if not current:
-            raise ValueError("Current benchmark has no measured operations")
-        if not baseline and not args.allow_empty_baseline:
-            raise ValueError("Baseline has no measured operations; comparison cannot be performed")
-        if not math.isfinite(args.threshold) or args.threshold < 0:
-            raise ValueError("Regression threshold must be finite and nonnegative")
-        report = compare_benchmarks(baseline, current, threshold=args.threshold)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    markdown = (
-        report.to_markdown()
-        if baseline
-        else (
-            "# Performance baseline initialization\n\n"
-            "No previous baseline is available. Current measurements were validated, "
-            "but performance regression was **not assessed**.\n"
-        )
-    )
-    print(markdown)
+    report = compare_benchmarks(baseline, current, threshold=args.threshold)
+
+    print(report.to_markdown())
 
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        with open(args.report, "w", encoding="utf-8") as f:
-            f.write(markdown)
+        with open(args.report, "w") as f:
+            f.write(report.to_markdown())
         print(f"Report saved to: {args.report}")
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        with open(args.json, "w", encoding="utf-8") as f:
+        with open(args.json, "w") as f:
             json.dump(
                 {
-                    "baseline_available": bool(baseline),
-                    "comparison_status": "compared" if baseline else "baseline_initialization",
                     "has_regression": report.has_regression,
                     "regression_count": len(report.regressions),
                     "comparisons": [

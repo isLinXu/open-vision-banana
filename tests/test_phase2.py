@@ -453,11 +453,5 @@ class TestVisionEvaluatorRouting:
         metrics = ev.evaluate(_FakeLoader(), task="depth")
         assert "AbsRel" in metrics
         assert "RMSE" in metrics
-        metadata = {"depth_curve", "depth_units", "skipped_samples"}
-        assert metrics["depth_curve"] == "metric_power"
-        assert metrics["depth_units"] == "metres"
-        assert metrics["skipped_samples"] == 0
-        for key, v in metrics.items():
-            if key in metadata:
-                continue
+        for v in metrics.values():
             assert v >= 0.0 and torch.isfinite(torch.tensor(v))

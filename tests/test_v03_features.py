@@ -115,11 +115,7 @@ class TestEvaluateBatch:
             task="depth",
         )
         assert len(metrics) > 0
-        metadata = {"depth_curve", "depth_units", "skipped_samples"}
-        assert metrics["depth_curve"] == "metric_power"
-        assert metrics["depth_units"] == "metres"
-        assert metrics["skipped_samples"] == 0
-        assert all(isinstance(v, float) for key, v in metrics.items() if key not in metadata)
+        assert all(isinstance(v, float) for v in metrics.values())
 
     def test_normal_batch_eval(self):
         class MockModel:

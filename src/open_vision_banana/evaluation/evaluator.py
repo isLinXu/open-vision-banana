@@ -39,15 +39,6 @@ from .benchmark import (
     apply_depth_benchmark_protocol,
 )
 from .depth import evaluate_depth
-from .edge import evaluate_edge
-from .flow import evaluate_flow
-from .generation_preservation import evaluate_generation_preservation
-from .instance import SACoAccumulator, evaluate_instance
-from .keypoint import evaluate_keypoints
-from .normal import evaluate_normals
-from .object_detection import evaluate_object_detection
-from .referring import ReferringAccumulator, evaluate_referring
-from .semantic import evaluate_semantic
 
 
 def decode_depth_rgb(
@@ -66,6 +57,15 @@ def decode_depth_rgb(
 def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
     """Unitless closer=brighter map in (0, 1], before any metric calibration."""
     return (1.0 - rgb.mean(dim=1, keepdim=True)).clamp(1e-3, 1.0)
+from .edge import evaluate_edge
+from .flow import evaluate_flow
+from .generation_preservation import evaluate_generation_preservation
+from .instance import SACoAccumulator, evaluate_instance
+from .keypoint import evaluate_keypoints
+from .normal import evaluate_normals
+from .object_detection import evaluate_object_detection
+from .referring import ReferringAccumulator, evaluate_referring
+from .semantic import evaluate_semantic
 
 logger = logging.getLogger(__name__)
 

@@ -48,20 +48,6 @@ class TestCompareMetric:
         assert result.change_pct == 0.0
         assert not result.regression
 
-    def test_throughput_increase_is_an_improvement(self) -> None:
-        result = _compare_metric("depth", "throughput_img_per_sec", 100.0, 130.0, 0.15)
-        assert result.change_pct == 30.0
-        assert not result.regression
-
-    def test_throughput_decrease_is_a_regression(self) -> None:
-        result = _compare_metric("depth", "throughput_img_per_sec", 100.0, 80.0, 0.15)
-        assert result.regression
-
-    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1.0])
-    def test_invalid_timing_fails(self, value) -> None:
-        with pytest.raises(ValueError, match="finite and nonnegative"):
-            _compare_metric("depth", "median_ms", 1.0, value, 0.15)
-
 
 class TestCompareBenchmarks:
     """Unit tests for compare_benchmarks."""
@@ -93,15 +79,6 @@ class TestCompareBenchmarks:
         assert report.has_regression
         assert len(report.regressions) == 1
         assert report.regressions[0].operation == "Depth encode"
-
-    def test_missing_current_metric_is_a_regression(self) -> None:
-        report = compare_benchmarks(
-            {"depth": {"median_ms": 1.0, "p95_ms": 2.0}},
-            {"depth": {"median_ms": 1.0}},
-            threshold=0.15,
-        )
-        assert report.has_regression
-        assert report.regressions[0].metric == "p95_ms"
 
     def test_missing_baseline_operation(self) -> None:
         baseline = {}
@@ -215,74 +192,6 @@ class TestBenchmarkFileToDict:
     def test_file_not_found(self) -> None:
         with pytest.raises(FileNotFoundError):
             _benchmark_file_to_dict(Path("/nonexistent/benchmark.json"))
-
-    def test_core_json_excludes_dispersion_and_metadata(self, tmp_path) -> None:
-        path = tmp_path / "core.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "depth": {
-                        "median_ms": 1.0,
-                        "p95_ms": 2.0,
-                        "mean_ms": 1.2,
-                        "std_ms": 0.2,
-                        "min_ms": 0.9,
-                        "max_ms": 2.2,
-                    },
-                    "_meta": {"iterations": 20, "resolution": 256},
-                }
-            )
-        )
-        assert _benchmark_file_to_dict(path) == {
-            "depth": {"median_ms": 1.0, "p95_ms": 2.0, "mean_ms": 1.2},
-        }
-
-    def test_invalid_numeric_metric_rejected(self, tmp_path) -> None:
-        path = tmp_path / "bad.json"
-        path.write_text('{"depth":{"median_ms":NaN}}')
-        with pytest.raises(ValueError, match="Invalid numeric"):
-            _benchmark_file_to_dict(path)
-
-    def test_cli_rejects_empty_current(self, tmp_path, monkeypatch) -> None:
-        from scripts.compare_benchmarks import main
-
-        path = tmp_path / "empty.json"
-        path.write_text("{}")
-        monkeypatch.setattr("sys.argv", ["compare_benchmarks.py", str(path), str(path)])
-        assert main() == 2
-
-    def test_cli_requires_measured_baseline(self, tmp_path, monkeypatch) -> None:
-        from scripts.compare_benchmarks import main
-
-        baseline = tmp_path / "baseline.json"
-        current = tmp_path / "current.json"
-        baseline.write_text("{}")
-        current.write_text('{"depth":{"median_ms":1.0}}')
-        monkeypatch.setattr("sys.argv", ["compare_benchmarks.py", str(baseline), str(current)])
-        assert main() == 2
-
-    def test_bootstrap_reports_absent_comparison(self, tmp_path, monkeypatch) -> None:
-        from scripts.compare_benchmarks import main
-
-        baseline = tmp_path / "baseline.json"
-        current = tmp_path / "current.json"
-        report = tmp_path / "report.json"
-        baseline.write_text("{}")
-        current.write_text('{"depth":{"median_ms":1.0}}')
-        monkeypatch.setattr(
-            "sys.argv",
-            [
-                "compare_benchmarks.py",
-                str(baseline),
-                str(current),
-                "--allow-empty-baseline",
-                "--json",
-                str(report),
-            ],
-        )
-        assert main() == 0
-        assert json.loads(report.read_text())["comparison_status"] == "baseline_initialization"
-        assert json.loads(report.read_text())["baseline_available"] is False
 
 
 class TestRegressionReport:

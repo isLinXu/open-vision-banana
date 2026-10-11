@@ -78,18 +78,6 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
-ci = [
-    # CPU validation uses tiny/mock backbones and never downloads model weights.
-    # Keep GPU-only training extras (bitsandbytes/deepspeed) out of this environment.
-    "open-vision-banana[inference,export,evaluation,data,serving,dev]",
-    "peft>=0.10",
-    "wandb>=0.16",
-    "tensorboard>=2.14",
-    "httpx>=0.24",
-    "opencv-python-headless>=4.8",
-    "matplotlib>=3.7",
-    "seaborn>=0.12",
-]
 all = [
     "open-vision-banana[inference,training,export,evaluation,data,serving,dev,deepspeed]",
 ]
