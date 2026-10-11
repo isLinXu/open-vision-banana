@@ -27,6 +27,38 @@ Cross-source validation/test overlap also exists: 123 UNC validation images occu
 
 Flickr30K Entities and Visual Genome are not included in this release: the audited local material does not provide verified native RES masks for the intended additional records. A region box or an image caption is insufficient mask supervision. Adding box-conditioned pseudo-masks would require a separately identified, quality-controlled release.
 
+## Mixed-seg / `instances_nogoogle.json` compatibility
+
+The additional `instances_nogoogle.json` is valid referring segmentation supervision, but it is an alternative serialization of the same source data, not extra annotations. The [C3VG merge script](https://github.com/Dmmm1997/C3VG/blob/main/tools/data_process/merge_mask_dataset.py) combines RefCOCO UNC, RefCOCO+ UNC and RefCOCOg UMD, excluding the Google protocol. Its [loader](https://github.com/Dmmm1997/C3VG/blob/main/c3vg/datasets/pipelines/loading.py) resolves `image_id` to the same `COCO_train2014_<12-digit-id>.jpg` images and decodes the `mask` polygons/RLE.
+
+The JSON's top-level keys are `train` and eight named official evaluation subsets. Each row contains `image_id`, `width`, `height`, a COCO XYWH `bbox`, a zero-based contiguous `category_id`, a `mask` and an `expressions` list. Expand the list conceptually to obtain one expression per mask; it is not a COCO `images`/`annotations` document and is not directly a training JSONL manifest.
+
+The supplied file has SHA256 `b5760bc94c56840929129a3273f84638915c79f062ad242b47a64b87cc95f9a7`. All **378,784 expressions** (321,327 train, 26,488 validation, 30,969 test) exactly match the original official `(split, image, geometry, dimensions, category, sent)` multiset. Unlike the canonical manifest's verbatim `raw` text, these expressions use the official processed `sent` field. Punctuation, tokenization and case differences are not new human annotations. Training rows also omit source dataset/ref/sentence IDs, so source identity must not be guessed from row order.
+
+The supplemental source, automated audit and nine inspected examples are available under [`source_annotations/mixed-seg/`](https://huggingface.co/datasets/Melo111/open-vision-banana-res/tree/244d89993e5e08ff63fc1647f0e7fc5bbd61b361/source_annotations/mixed-seg) on the same Hub dataset. All 30,956 original images were decoded and matched to released asset hashes; all 71,991 source masks decoded successfully, and all 70,327 released masks were pixel-identical. The 1,664 source masks outside the filtered release are all on official held-out images and provide no eligible additional training masks. Download the supplement separately:
+
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    "Melo111/open-vision-banana-res",
+    repo_type="dataset",
+    revision="244d89993e5e08ff63fc1647f0e7fc5bbd61b361",
+    allow_patterns=["source_annotations/mixed-seg/*"],
+    local_dir="data/res_source",
+)
+```
+
+Reproduce the audit with the original official refs/instances and a restored canonical release:
+
+```bash
+python scripts/audit_res_mixed.py --annotations-json data/res_source/source_annotations/mixed-seg/instances_nogoogle.json --annotations-root /path/to/official/annotations --image-root /path/to/train2014 --dataset-root data/res_binary_v1 --output-json output/res/mixed_source_audit.json
+```
+
+The auditor verifies official source fingerprints, all expression multiplicities, image bytes/dimensions, all unique native masks and exact agreement with released target pixels. Missing, altered, duplicate or unmatched records fail reconciliation. It writes a new report only and does not edit training/evaluation files. Automated checks do not establish semantic correctness; the separate `visual_review.json` records the limited visual sample and observed coarse boundaries/occlusions.
+
+**Train with the existing `training.jsonl` and SANA RES configuration. Do not concatenate this mixed file into it.** Its 33,723 training expressions on official held-out images must stay excluded, and remaining expressions already contribute to the canonical release. The supplement adds provenance and input-format verification, with **zero new training examples**; the 270,195-row training set, checkpoint-selection view, official benchmark splits and original immutable bundle remain unchanged. No training/inference/evaluation interface changes are needed to reuse the already converted supervision.
+
 ## Binary RES contract and compatibility
 
 The versioned encoding is `binary_white_black_v1`:
@@ -195,15 +227,15 @@ This is a **supervised RES** dataset extension using RefCOCO-family training ann
 
 This change is limited to Grounding/RES data preparation, training reads, inference conditioning and native-resolution evaluation. Shared trainer/evaluator changes are conditional on `referring`; the permissive RefCOCOg dataset default and explicit legacy color protocol remain available. A pure depth/normal/semantic/instance batch retains its historical collated fields. Existing general CI, performance drivers, smoke scripts and non-RES tests are unchanged from main. Whole-repository gate failures are recorded separately rather than repaired through unrelated changes.
 
-The independent `.github/workflows/res.yml` runs only for paths used by RES or manual dispatch, on Python 3.10, 3.11 and 3.12. It checks the actual COCO/streaming dependencies, RES formatting/types and the source-build, training-conditioning, inference and native-evaluation tests, without model downloads. `.coveragerc-res` requires 80% statement coverage of the eight new protocol/data modules; this is explicitly not whole-package coverage. `.mypy-res.ini` checks the listed modules and their mutual types while skipping imported implementations/stubs. These checks do not change the repository's existing gates.
+The independent `.github/workflows/res.yml` runs only for paths used by RES or manual dispatch, on Python 3.10, 3.11 and 3.12. It checks the actual COCO/streaming dependencies, RES formatting/types and the source-build, training-conditioning, inference and native-evaluation tests, without model downloads. `.coveragerc-res` requires 80% statement coverage of the nine new protocol/data modules, including mixed-source auditing; this is explicitly not whole-package coverage. `.mypy-res.ini` checks the listed modules and their mutual types while skipping imported implementations/stubs. These checks do not change the repository's existing gates.
 
 Reproduce the focused suite after installing `.[inference,evaluation,data,dev]`:
 
 ```bash
-python -m pytest tests/test_res_training_contract.py tests/test_res_training_view.py tests/test_res_manifest_builder.py tests/test_res_bundle.py tests/test_res_manifest_dataset.py tests/test_res_inference_contract.py tests/test_referring_masks_strict.py tests/test_normal_referring_benchmarks.py --cov --cov-config=.coveragerc-res --cov-report=term-missing
+python -m pytest tests/test_res_training_contract.py tests/test_res_training_view.py tests/test_res_manifest_builder.py tests/test_res_bundle.py tests/test_res_manifest_dataset.py tests/test_res_inference_contract.py tests/test_referring_masks_strict.py tests/test_normal_referring_benchmarks.py tests/test_res_mixed.py --cov --cov-config=.coveragerc-res --cov-report=term-missing
 ```
 
-Regression coverage includes per-expression prompts, binary resizing, disconnected masks, strict annotation errors, polygon/RLE decoding, legacy inference, identical bright-image pixels through official/portable adapters, bundle integrity, held-out exclusion and native evaluation. The final local Python 3.12 focused suite passed all 155 tests with 88.88% scoped coverage, including checks that non-RES collated fields remain unchanged. A separate adjacent compatibility suite passed 38 tests covering manifest portability, evaluator aggregation and depth/normal inference. Consult the [PR checks](https://github.com/isLinXu/open-vision-banana/pull/25/checks) for the latest remote run; these local results do not certify all repository gates.
+Regression coverage includes per-expression prompts, binary resizing, disconnected masks, strict annotation errors, polygon/RLE decoding, legacy inference, identical bright-image pixels through official/portable adapters, bundle integrity, held-out exclusion, mixed-source reconciliation and native evaluation. The local Python 3.12 focused suite passed all 179 tests with 89.28% scoped coverage, including checks that non-RES collated fields remain unchanged. The 24 mixed-source tests cover processed-versus-raw expressions, categories, polygon/RLE masks, shared-image integrity, official multiplicity and failure on tampering. A separate adjacent compatibility suite passed 38 tests covering manifest portability, evaluator aggregation and depth/normal inference. Consult the [PR checks](https://github.com/isLinXu/open-vision-banana/pull/25/checks) for the latest remote run; these local results do not certify all repository gates.
 
 ## Data release verification
 

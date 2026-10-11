@@ -13,3 +13,4 @@ include =
     */open_vision_banana/res_manifest.py
     */open_vision_banana/res_bundle.py
     */open_vision_banana/res_training_view.py
+    */open_vision_banana/res_mixed.py
