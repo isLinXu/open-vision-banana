@@ -82,6 +82,10 @@ def uniform_task_prompts(dataset: Dataset) -> dict[str, str]:
     prompts: dict[str, set[str]] = {}
     for part in getattr(dataset, "datasets", [dataset]):
         for sample in part.samples:
+            # A single-object pilot still must not bake its expression into
+            # the checkpoint as the prompt for every future RES query.
+            if sample["task"] == "referring":
+                continue
             prompts.setdefault(sample["task"], set()).add(sample["prompt"])
     return {
         task: next(iter(found))
@@ -114,6 +118,12 @@ class ManifestVisionDataset(Dataset):
         self.depth_colormap = depth_colormap
         self.samples: list[dict[str, str]] = []
         path_anchor = data_root.resolve() if data_root else manifest_path
+        if "referring" in tasks:
+            roots = [Path(manifest_path).parent]
+            if data_root is not None:
+                roots.append(Path(data_root))
+            if any((root / "BUILD_INCOMPLETE").exists() for root in roots):
+                raise ValueError("RES dataset build or restore is incomplete; validate before training")
 
         from open_vision_banana.data.manifest import resolve_manifest_path
 
@@ -137,12 +147,24 @@ class ManifestVisionDataset(Dataset):
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
+                if mapped == "referring":
+                    from ..data.res_contract import resolve_referring_prompt
+
+                    try:
+                        prompt = resolve_referring_prompt(row)
+                    except ValueError as exc:
+                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 self.samples.append(
                     {
                         "image_path": str(img_path),
                         "target_path": str(tgt_path),
                         "task": mapped,
                         "prompt": prompt,
+                        **{
+                            key: row[key]
+                            for key in ("expression", "encoding", "sample_id", "source_dataset")
+                            if key in row and mapped == "referring"
+                        },
                     }
                 )
 
@@ -166,7 +188,11 @@ class ManifestVisionDataset(Dataset):
                 (self.resolution, self.resolution), Image.Resampling.LANCZOS
             )
             inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
-        resample = Image.Resampling.NEAREST if s["task"] == "semantic" else Image.Resampling.LANCZOS
+        resample = (
+            Image.Resampling.NEAREST
+            if s["task"] in {"semantic", "referring"}
+            else Image.Resampling.LANCZOS
+        )
         with Image.open(s["target_path"]) as img:
             img.load()
             img = img.convert("RGB").resize((self.resolution, self.resolution), resample)
@@ -182,21 +208,29 @@ class ManifestVisionDataset(Dataset):
             )
             metric = paper.rgb_to_depth(tgt.unsqueeze(0))
             tgt = alt.depth_to_rgb(metric).squeeze(0)
-        return {
+        item = {
             "prompt": s["prompt"],
             "image": inp * 2.0 - 1.0,
             "target_rgb": tgt,
             "task": s["task"],
         }
+        if s["task"] == "referring":
+            item.update({key: s[key] for key in ("expression", "encoding", "sample_id", "source_dataset") if key in s})
+        return item
 
 
 def _collate_fn(batch: list[dict]) -> dict:
-    return {
+    result = {
         "prompt": [b["prompt"] for b in batch],
         "image": torch.stack([b["image"] for b in batch]),
         "target_rgb": torch.stack([b["target_rgb"] for b in batch]),
         "task": [b["task"] for b in batch],
     }
+    if any(b["task"] == "referring" for b in batch):
+        for key in ("expression", "encoding", "sample_id", "source_dataset"):
+            if any(key in b for b in batch):
+                result[key] = [b.get(key) for b in batch]
+    return result
 
 
 # ── Trainer ───────────────────────────────────────────────────────────────

@@ -211,6 +211,8 @@ python scripts/infer_sana_512.py \
 
 > 📖 **GPU Training Guide**: See [`docs/quick-start.md`](docs/quick-start.md) for H20 / A100 / RTX quick-start with copy-paste commands.
 
+For supervised referring expression segmentation, see the [RES data and evaluation guide](docs/res_data.md): validated RefCOCO-family data, a versioned binary mask contract, a pinned Hugging Face release, and native-resolution evaluation.
+
 ### Unified Training Framework
 
 The project provides a **unified multi-model training framework** via `scripts/train.py`,
