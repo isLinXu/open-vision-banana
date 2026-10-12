@@ -444,6 +444,8 @@ Use the dedicated workflow in [docs/res_data.md](docs/res_data.md) for RefCOCO-f
 
 The published dataset is supervised training data, not a zero-shot reproduction. Keep claims limited to verified data/interface behavior until actual training and held-out evaluation are completed. The release ID and full build/download/train/evaluation commands are in the linked guide.
 
+The mixed-seg `instances_nogoogle.json` supplement is an equivalent serialization, not additional supervision. Use `scripts/audit_res_mixed.py` to verify it against official sources and the canonical release; train with the existing `training.jsonl` rather than concatenating duplicate or held-out records. See the same guide for its pinned source archive and visual review.
+
 ```bash
 # List all supported datasets
 python scripts/download_data.py --list

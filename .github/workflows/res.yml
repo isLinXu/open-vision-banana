@@ -20,6 +20,7 @@ on:
       - "src/open_vision_banana/evaluation/evaluator.py"
       - "scripts/*res_manifest.py"
       - "scripts/*res_dataset.py"
+      - "scripts/audit_res_mixed.py"
       - "scripts/evaluate_paper_benchmarks.py"
       - "tests/test_res_*.py"
       - "tests/test_referring_masks_strict.py"
@@ -44,6 +45,7 @@ on:
       - "src/open_vision_banana/evaluation/evaluator.py"
       - "scripts/*res_manifest.py"
       - "scripts/*res_dataset.py"
+      - "scripts/audit_res_mixed.py"
       - "scripts/evaluate_paper_benchmarks.py"
       - "tests/test_res_*.py"
       - "tests/test_referring_masks_strict.py"
@@ -90,6 +92,7 @@ jobs:
             scripts/build_res_manifest.py scripts/validate_res_manifest.py
             scripts/package_res_dataset.py scripts/download_res_dataset.py
             scripts/evaluate_res_manifest.py
+            scripts/audit_res_mixed.py
             tests/test_res_*.py tests/test_referring_masks_strict.py
           )
           ruff check "${files[@]}"
@@ -104,12 +107,14 @@ jobs:
             src/open_vision_banana/data/res_dataset.py \
             src/open_vision_banana/res_manifest.py \
             src/open_vision_banana/res_bundle.py \
-            src/open_vision_banana/res_training_view.py
+            src/open_vision_banana/res_training_view.py \
+            src/open_vision_banana/res_mixed.py
       - name: Verify RES and adjacent benchmark contracts
         run: |
           python -m pytest \
             tests/test_res_training_contract.py \
             tests/test_res_training_view.py \
+            tests/test_res_mixed.py \
             tests/test_res_manifest_builder.py \
             tests/test_res_bundle.py \
             tests/test_res_manifest_dataset.py \
