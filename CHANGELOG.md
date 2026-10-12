@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Mixed RES source audit**: reconcile C3VG/SeqTR `instances_nogoogle.json` with official RefCOCO-family expressions, shared COCO images and released native masks. Publish the equivalent source and visual audit as a supplement without duplicating training data or changing benchmark splits.
+- **Rea²Seg-16K training preparation**: offline Parquet/HF-cache conversion to the existing binary referring pair contract, with optional split-preserving merge and duplicate/held-out image checks. See [preparation and training commands](docs/rea2seg.md); no training or evaluation behavior changes.
 
 - **Portable RES data pipeline**: official RefCOCO/RefCOCO+/RefCOCOg conversion, provenance and leakage audits, checksum-verified Hub bundles, public `RESManifestDataset`, native-resolution evaluation and a supervised SANA training configuration. See [RES data and evaluation](docs/res_data.md) for the pinned public release, split accounting and compatibility guidance. No trained checkpoint or benchmark accuracy is claimed.
 
