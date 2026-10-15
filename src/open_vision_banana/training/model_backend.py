@@ -163,6 +163,8 @@ class ModelBackend:
         )
 
         # Load pipeline components
+        if quantize and edit_latent_layout(self.model_config) == "qwen21":
+            raise ValueError("Quantized loading is not implemented for Qwen-Image-2.1")
         if quantize:
             self._load_quantized(quantize)
         else:

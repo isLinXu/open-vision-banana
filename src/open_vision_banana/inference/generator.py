@@ -925,8 +925,11 @@ class BaseGenerator:
                 call["width"] = max(16, width // 16 * 16)
             if "output_resolution" in explicit:
                 # Qwen-Image-2.1 resizes the source to output_resolution**2 pixels (default
-                # 1024**2). Training encodes the source at its own size, so keep its area.
-                call["output_resolution"] = max(32, round((width * height) ** 0.5) // 32 * 32)
+                # 1024**2). Training sees source and target at the dataset resolution, which
+                # is the size callers pass here, so keep that area, capped at the model's
+                # native resolution.
+                side = min(int((width * height) ** 0.5), self.model_config.default_resolution)
+                call["output_resolution"] = max(256, side // 32 * 32)
             if "true_cfg_scale" in explicit:
                 call["true_cfg_scale"] = guidance
                 if "negative_prompt" in explicit:

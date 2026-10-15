@@ -194,20 +194,23 @@ def test_qwen_image21_keeps_the_source_area_as_output_resolution():
             return _Out((width, height))
 
     gen = _generator("qwen-image-2.1", _Pipe())
-    out = gen._generate_instruction_edit(
-        prompt="depth",
-        image=Image.new("RGB", (512, 512)),
-        num_inference_steps=20,
-        guidance_scale=0.0,
-        seed=0,
-    )
+    for size in ((512, 512), (4000, 3000)):
+        out = gen._generate_instruction_edit(
+            prompt="depth",
+            image=Image.new("RGB", size),
+            num_inference_steps=20,
+            guidance_scale=0.0,
+            seed=0,
+        )
+        assert out.shape == (1, 3, size[1], size[0])
     assert calls[0] == {
         "height": 512,
         "width": 512,
         "output_resolution": 512,
         "true_cfg_scale": 1.0,
     }
-    assert out.shape == (1, 3, 512, 512)
+    # Large sources are capped at the model's native 1024 instead of their own area.
+    assert calls[1]["output_resolution"] == 1024
 
 
 def test_flux2_klein_passes_guidance_scale():
