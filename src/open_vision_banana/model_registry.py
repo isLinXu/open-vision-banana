@@ -542,11 +542,9 @@ def _build_registry() -> None:
             family="qwen-image-2.1",
             backbone_type="transformer",
             num_text_encoders=1,
-            needs_added_cond_kwargs=False,
-            cross_attention_dim=4096,
-            vae_scaling_factor=None,
+            # RGBA VAE normalized by per-channel latents_mean / latents_std (see vae_encode).
             vae_downsample_factor=16,
-            memory_budget_gb=40.0,
+            vae_latent_channels=64,
             pipeline_class="QwenImage21Pipeline",
             default_resolution=1024,
             default_guidance_scale=1.0,
@@ -564,8 +562,6 @@ def _build_registry() -> None:
                 "img_mlp.gate_layer",
                 "img_mlp.out",
             ],
-            needs_attention_mask=True,
-            vae_has_latent_dist=True,
             description=(
                 "Qwen-Image-2.1 — unified text-to-image and editing, 7B single-stream DiT "
                 "with a Qwen3-VL text encoder (QwenImage21Pipeline, diffusers>=0.41, "
@@ -3011,6 +3007,14 @@ def extract_vae_latents(enc_out: Any) -> torch.Tensor:
     )
 
 
+def _qwen_image21_latent_stats(vae, like: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-channel latents_mean / latents_std of AutoencoderKLQwenImage21, shaped like ``like``."""
+    shape = (1, -1, 1, 1, 1)
+    mean = torch.tensor(vae.config.latents_mean, device=like.device, dtype=like.dtype).view(shape)
+    std = torch.tensor(vae.config.latents_std, device=like.device, dtype=like.dtype).view(shape)
+    return mean, std
+
+
 def vae_encode(
     vae: torch.nn.Module,
     images: torch.Tensor,
@@ -3025,7 +3029,13 @@ def vae_encode(
     Qwen-Image: vae.encode(img).latent_dist.mode() * scaling
     FLUX.2: retrieve_latents(vae.encode(img)) then patchify
     CogView4: vae.encode(img).latent_dist.mode() * scaling
+    Qwen-Image-2.1: RGBA [B, 4, 1, H, W] (opaque alpha), (mode() - mean) / std per channel
     """
+    if config.family == "qwen-image-2.1":
+        rgba = torch.cat([images, torch.ones_like(images[:, :1])], dim=1).unsqueeze(2)
+        latents = vae.encode(rgba).latent_dist.mode()
+        mean, std = _qwen_image21_latent_stats(vae, latents)
+        return ((latents - mean) / std).squeeze(2)
 
     # Encode
     if config.vae_has_latent_dist:
@@ -3060,7 +3070,13 @@ def vae_decode(
     SANA/AuraFlow: vae.decode(latents / scaling_factor)[0]
     Z-Image/Lumina2/Chroma: (latents / scaling) + shift, then vae.decode(...)
     CogView4: latents / scaling, then vae.decode(...)
+    Qwen-Image-2.1: latents * std + mean, decode the one frame, drop alpha
     """
+    if config.family == "qwen-image-2.1":
+        latents = latents.unsqueeze(2)
+        mean, std = _qwen_image21_latent_stats(vae, latents)
+        return vae.decode(latents * std + mean, return_dict=False)[0][:, :3, 0]
+
     scaling = config.vae_scaling_factor
     shift = 0.0
 

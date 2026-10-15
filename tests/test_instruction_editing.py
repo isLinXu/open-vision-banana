@@ -24,6 +24,7 @@ EDIT_MODELS = (
     "sdxl-instruct-pix2pix",
     "hunyuan-image3-instruct",
     "hunyuan-image3-instruct-distil",
+    "qwen-image-2.1",
 )
 
 
@@ -46,6 +47,7 @@ def test_edit_models_are_inference_only():
         "sdxl-instruct-pix2pix": "StableDiffusionXLInstructPix2PixPipeline",
         "hunyuan-image3-instruct": "HunyuanImage3Instruct",
         "hunyuan-image3-instruct-distil": "HunyuanImage3Instruct",
+        "qwen-image-2.1": "QwenImage21Pipeline",
     }
     for name, pipeline_class in expected.items():
         cfg = get_model_config(name)
@@ -163,6 +165,49 @@ def test_longcat_edit_omits_height_and_width():
     assert calls[0]["guidance_scale"] == 4.5
     assert "height" not in calls[0]
     assert out.shape == (1, 3, 48, 64)
+
+
+def test_qwen_image21_keeps_the_source_area_as_output_resolution():
+    calls = []
+
+    class _Pipe:
+        def __call__(
+            self,
+            image,
+            prompt,
+            height,
+            width,
+            num_inference_steps,
+            true_cfg_scale,
+            negative_prompt=None,
+            output_resolution=1024,
+            generator=None,
+        ):
+            calls.append(
+                {
+                    "height": height,
+                    "width": width,
+                    "output_resolution": output_resolution,
+                    "true_cfg_scale": true_cfg_scale,
+                }
+            )
+            return _Out((width, height))
+
+    gen = _generator("qwen-image-2.1", _Pipe())
+    out = gen._generate_instruction_edit(
+        prompt="depth",
+        image=Image.new("RGB", (512, 512)),
+        num_inference_steps=20,
+        guidance_scale=0.0,
+        seed=0,
+    )
+    assert calls[0] == {
+        "height": 512,
+        "width": 512,
+        "output_resolution": 512,
+        "true_cfg_scale": 1.0,
+    }
+    assert out.shape == (1, 3, 512, 512)
 
 
 def test_flux2_klein_passes_guidance_scale():
