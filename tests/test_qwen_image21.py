@@ -254,3 +254,27 @@ def test_trainer_rejects_batches_before_loading_the_model(monkeypatch, tmp_path)
     with pytest.raises(ValueError, match="batch_size 1"):
         module.Trainer(config)
     assert not loaded
+
+
+def test_encode_edit_text_keeps_the_other_layouts(monkeypatch):
+    calls = []
+    hunyuan = object.__new__(ModelBackend)
+    hunyuan.model_config = get_model_config("hunyuan-image3-instruct")
+    monkeypatch.setattr(
+        ModelBackend, "encode_hunyuan_edit", lambda self, p, i: calls.append(("hunyuan", p)) or {}
+    )
+    hunyuan.encode_edit_text(["depth"], torch.zeros(1, 3, 8, 8), cfg_dropout_rate=0.5)
+
+    text_only = object.__new__(ModelBackend)
+    text_only.model_config = get_model_config("sana-1600m")
+    text_only.device, text_only.dtype = torch.device("cpu"), torch.float32
+    monkeypatch.setattr(
+        ModelBackend, "encode_text", lambda self, p, d, t: calls.append(("text", p)) or {}
+    )
+    monkeypatch.setattr(
+        ModelBackend,
+        "apply_cfg_dropout",
+        lambda self, cond, rate, n: calls.append(("dropout", rate, n)) or cond,
+    )
+    text_only.encode_edit_text(["depth"], torch.zeros(1, 3, 8, 8), cfg_dropout_rate=0.1)
+    assert calls == [("hunyuan", ["depth"]), ("text", ["depth"]), ("dropout", 0.1, 1)]
