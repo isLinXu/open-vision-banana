@@ -4,13 +4,18 @@
 #
 # Manifest (pass with --pair-manifest; built by the shared-baseline build_manifest.py,
 # seed 42). Source data: the SNVC train pack rows that have inputs on disk, plus
-# Rea2Seg-16K train. Not the full SNVC corpus.
-#   rows (train / val):  @ROWS@
-#   referring pool:      SNVC gcg resampled to @GCG@ rows (from @GCG_UNIQUE@ unique train
-#                        rows; each kept once, @GCG_DUP@ drawn a second time) and Rea2Seg
-#                        @R2S@ rows, so gcg : Rea2Seg = 1 : 1.
-#   Rea2Seg categories:  @R2S_CATS@
-#   Cityscapes genseg:   @CITY@ of @GENSEG@ semantic train rows (@CITY_SHARE@).
+# Rea2Seg-16K train (revision 1b2247c). Not the full SNVC corpus.
+#   train / val rows:   depth 5630 / 309, normal 4575 / 267, semantic (genseg) 4460 / 239,
+#                       referring 32136 / 537.
+#   referring pool:     SNVC gcg resampled to 16068 rows (from 9904 unique train rows, each
+#                       kept once, 6164 drawn a second time) and Rea2Seg 16068 rows, so
+#                       gcg : Rea2Seg = 1 : 1.
+#   Rea2Seg categories: gqa-seg 7985, lisa-plus 7052, spatial 799, reasonseg 232.
+#   Cityscapes genseg:  311 of 4460 semantic train rows (6.97%).
+#   Removed: 1315 rows whose input image is a RefCOCOg UMD val/test, Cityscapes val, NYU
+#   test or DIODE val image (same RGB pixels), and 143 pack rows whose image cannot be
+#   decoded. 561 Rea2Seg spatial masks stored at the original resolution were rescaled to
+#   the stored image; 7 reasonseg rows with mismatched aspect ratios were dropped.
 #   No row uses the trainer's default "150-class ... fixed training palette" prompt,
 #   and no structured-understanding or multi-view reconstruction rows are included.
 #
