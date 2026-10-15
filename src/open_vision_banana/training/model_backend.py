@@ -41,6 +41,7 @@ from .edit_forward import (
     hunyuan_edit_forward,
     joy_edit_forward,
     longcat_edit_forward,
+    qwen21_edit_forward,
     qwen_edit_forward,
 )
 from .flow_matching import (
@@ -176,6 +177,12 @@ class ModelBackend:
         self.backbone = self.components.unet  # backbone stored as 'unet' for compat
         self.vae = self.components.vae
         self.pipe = getattr(self, "_pipe", None)  # Full pipe for FLUX encode_prompt
+        if edit_latent_layout(self.model_config) == "qwen21":
+            # Its prompt encoder takes the source image; built once around the loaded parts.
+            self.pipe = qwen_image21.build_pipeline(self.components)
+            self._qwen21_logged = (
+                torch.distributed.is_initialized() and torch.distributed.get_rank() > 0
+            )
 
         # Apply LoRA
         logger.info(
@@ -438,32 +445,37 @@ class ModelBackend:
             },
         }
 
-    @property
-    def qwen21_pipeline(self):
-        """QwenImage21Pipeline around the loaded components, for its encode helpers."""
-        if getattr(self, "_qwen21_pipeline", None) is None:
-            self._qwen21_pipeline = qwen_image21.build_pipeline(self.components)
-        return self._qwen21_pipeline
+    def encode_edit_text(
+        self, prompts: list[str], images: torch.Tensor, cfg_dropout_rate: float = 0.0
+    ) -> dict[str, Any]:
+        """Text condition for a training forward; editors that read the source get it here.
 
-    def encode_qwen21_edit(self, prompts: list[str], images: torch.Tensor) -> dict[str, Any]:
-        """Prompt plus source image through Qwen3-VL, as QwenImage21Pipeline's edit mode.
-
-        ``images`` is [1, 3, H, W] in [-1, 1]; the result carries the image-pad mask the
-        transformer needs to place the reference latents.
+        ``images`` is the [B, 3, H, W] source batch in [-1, 1]. Qwen-Image-2.1 drops the
+        prompt to "" with the same source image, as its pipeline's unconditional branch
+        does; text-only conditions drop through ``apply_cfg_dropout``.
         """
-        text_cond = qwen_image21.encode_condition(
-            self.qwen21_pipeline, prompts, images, self.device, self.dtype
-        )
-        if not getattr(self, "_qwen21_logged", False):
-            self._qwen21_logged = True
-            logger.info(
-                "Qwen-Image-2.1 conditioning: source image %s -> %d Qwen3-VL visual tokens "
-                "in a %d-token condition sequence",
-                tuple(images.shape[-2:]),
-                int(text_cond["image_pad_mask"][0].sum()),
-                text_cond["encoder_hidden_states"].shape[1],
+        layout = edit_latent_layout(self.model_config)
+        if layout == "hunyuan":
+            return self.encode_hunyuan_edit(prompts, images)
+        if layout == "qwen21":
+            if cfg_dropout_rate > 0:
+                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
+                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            text_cond = qwen_image21.encode_condition(
+                self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
-        return text_cond
+            if not self._qwen21_logged:
+                self._qwen21_logged = True
+                logger.info(
+                    "Qwen-Image-2.1 conditioning: source image %s -> %d Qwen3-VL visual tokens "
+                    "in a %d-token condition sequence",
+                    tuple(images.shape[-2:]),
+                    int(text_cond["image_pad_mask"][0].sum()),
+                    text_cond["encoder_hidden_states"].shape[1],
+                )
+            return text_cond
+        text_cond = self.encode_text(prompts, self.device, self.dtype)
+        return self.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
 
     # ── VAE encode/decode ──────────────────────────────────────────────────
 
@@ -480,8 +492,6 @@ class ModelBackend:
         if edit_latent_layout(self.model_config) == "hunyuan" and hasattr(self.peft_model, "vae_encode"):
             _timestep, latents = self.peft_model.vae_encode(images)
             return latents.to(self.dtype)
-        if edit_latent_layout(self.model_config) == qwen_image21.LAYOUT:
-            return qwen_image21.vae_encode(self.qwen21_pipeline, images).to(self.dtype)
         latents = registry_vae_encode(self.vae, images, self.model_config)
         return latents.to(self.dtype)
 
@@ -494,8 +504,6 @@ class ModelBackend:
         Returns:
             Images in [-1, 1].
         """
-        if edit_latent_layout(self.model_config) == qwen_image21.LAYOUT:
-            return qwen_image21.vae_decode(self.qwen21_pipeline, latents)
         return registry_vae_decode(self.vae, latents, self.model_config)
 
     # ── Forward pass ───────────────────────────────────────────────────────
@@ -662,8 +670,8 @@ class ModelBackend:
             return hunyuan_edit_forward(
                 self.peft_model, latents, context_latents, timesteps, text_cond
             )
-        if layout == qwen_image21.LAYOUT:
-            return qwen_image21.edit_forward(
+        if layout == "qwen21":
+            return qwen21_edit_forward(
                 self.peft_model, latents, context_latents, timesteps, text_cond
             )
         raise ValueError(f"No training forward for edit layout {layout}")
@@ -800,10 +808,6 @@ class ModelBackend:
         """Apply classifier-free guidance dropout to text conditioning."""
         if cfg_dropout_rate <= 0 or "hunyuan_inputs" in text_cond:
             return text_cond
-        if "image_pad_mask" in text_cond:
-            # The pipeline's unconditional branch re-encodes an empty prompt with the same
-            # source images, which this text-only dropout cannot do.
-            raise NotImplementedError("cfg_dropout_rate > 0 is not implemented for Qwen-Image-2.1")
 
         drop_mask = torch.rand(batch_size, device=self.device) < cfg_dropout_rate
         if not drop_mask.any():
