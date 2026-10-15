@@ -26,7 +26,7 @@ from open_vision_banana.evaluation.paper_capabilities import (
     PAPER_CAPABILITIES,
     capability_for_benchmark,
 )
-from scripts.evaluate_paper_benchmarks import build_jobs, selected_benchmarks
+from scripts.evaluate_paper_benchmarks import build_jobs, preflight_jobs, selected_benchmarks
 
 
 def test_capability_groups_match_paper_axes() -> None:
@@ -133,6 +133,26 @@ def test_saco_gold_query_jsonl(tmp_path: Path) -> None:
     assert float(positive["target_rgb"].sum()) > 0
     assert negative["gt_present"] is False
     assert float(negative["target_rgb"].sum()) == 0
+
+
+def _nuscenes_val(root: Path) -> None:
+    (root / "val" / "samples" / "CAM_FRONT").mkdir(parents=True)
+    (root / "val" / "depth").mkdir(parents=True)
+    Image.new("RGB", (6, 4)).save(root / "val" / "samples" / "CAM_FRONT" / "cam.jpg")
+    np.save(root / "val" / "depth" / "cam.npy", np.full((4, 6), 30.0, dtype=np.float32))
+
+
+def test_nuscenes_depth_benchmark_builds_through_preflight(tmp_path: Path) -> None:
+    # build_dataset's first argument is ``task``; a {"task": "depth"} adapter kwarg clashed.
+    _nuscenes_val(tmp_path)
+    jobs = [("depth", "nuscenes", tmp_path, "nuscenes_depth")]
+    result = preflight_jobs(jobs, split="val", resolution=8)
+    assert result["ok"], result
+    assert result["jobs"][0]["samples"] == 1
+    dataset = build_dataset(
+        "nuscenes_depth", str(tmp_path), split="val", resolution=8, native_gt=True
+    )
+    assert float(dataset[0]["gt_depth"].mean()) == pytest.approx(30.0)
 
 
 def test_nuscenes_depth_returns_metric_gt(tmp_path: Path) -> None:

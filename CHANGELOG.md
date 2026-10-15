@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **nuScenes depth benchmark**: `evaluate_paper_benchmarks.py --nuscenes-root` failed before loading any model with `TypeError: build_dataset() got multiple values for argument 'task'`, because the depth task of `nuScenesDataset` was passed as an adapter keyword while `build_dataset`'s first argument is also named `task`. The benchmark now uses a `nuscenes_depth` adapter key (`NuScenesDepthDataset`), as NYU uses `nyu_depth`.
+
 - **Expression-conditioned RES**: keep one prompt per expression, resize binary masks with nearest-neighbor interpolation, and share the versioned white/black decoding contract across training, inference and evaluation. Preserve disconnected targets and provide an explicit legacy color decoder. Strict RefCOCOg evaluation rejects incomplete annotations and declares its image range so official and portable loaders preserve the same input pixels.
 
 - **Inference prompts for LoRAs from the manifest trainers**: `scripts/train.py` (like `train_sana_512.py` / `train_flux.py`) trains depth and normal with "Generate a relative depth map. ..." / "Generate an RGB surface-normal map. ...", while `VisionBanana` and `scripts/inference.py` prompted with PromptBuilder's "Generate a metric depth visualization of this image.", which such a LoRA never saw. Unified-trainer checkpoints now record in `metadata.json` (`task_prompts`) the prompt of each task trained with a single prompt, `VisionBanana.from_pretrained` uses that record for a local LoRA, and `scripts/inference.py --prompt` sets the prompt for checkpoints without the record.

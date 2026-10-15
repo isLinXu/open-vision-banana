@@ -3118,6 +3118,18 @@ class nuScenesDataset(_NativeGTMixin, BaseVisionDataset):
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
 
+
+class NuScenesDepthDataset(nuScenesDataset):
+    """nuScenes front-camera metric depth, the paper's 80 m depth benchmark.
+
+    ``build_dataset``'s first argument is named ``task``, so the depth task of
+    ``nuScenesDataset`` cannot be passed through its keyword arguments; this key
+    fixes it instead, as ``nyu_depth`` does for NYU.
+    """
+
+    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+        super().__init__(root_dir, split, resolution, task="depth", **kwargs)
+
 class PreEncodedDepthDataset(BaseVisionDataset):
     """Dataset for pre-encoded depth RGB targets.
 
@@ -3208,6 +3220,7 @@ def build_dataset(
         "flyingthings3d": FlyingThings3DDataset,
         "mapillary": MapillaryVistasDataset,
         "nuscenes": nuScenesDataset,
+        "nuscenes_depth": NuScenesDepthDataset,
         "preencoded_depth": PreEncodedDepthDataset,
     }
     if task in {"reasonseg", "genai_bench", "imgedit"}:
