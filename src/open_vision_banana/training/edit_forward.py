@@ -21,6 +21,7 @@ def edit_latent_layout(model_config) -> str | None:
         "FluxKontextPipeline": "kontext",
         "QwenImageEditPipeline": "qwen_packed",
         "QwenImageEditPlusPipeline": "qwen_packed",
+        "QwenImage21Pipeline": "qwen21",
         "LongCatImageEditPipeline": "longcat_packed",
         "Flux2KleinPipeline": "flux2_packed",
         "JoyImageEditPipeline": "joy_slots",

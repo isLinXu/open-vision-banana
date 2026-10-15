@@ -758,6 +758,8 @@ class Trainer:
     def _encode_edit_text(self, prompts, images):
         if self._edit_layout() == "hunyuan":
             return self.backend.encode_hunyuan_edit(prompts, images)
+        if self._edit_layout() == "qwen21":
+            return self.backend.encode_qwen21_edit(prompts, images)
         return self.backend.encode_text(prompts, self.device, self.dtype)
 
     def _edit_layout(self) -> str | None:

@@ -535,6 +535,48 @@ def _build_registry() -> None:
     )
 
     _register_model(
+        "qwen-image-2.1",
+        lambda: ModelConfig(
+            name="qwen-image-2.1",
+            model_id="Qwen/Qwen-Image-2.1",
+            family="qwen-image-2.1",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=16,
+            memory_budget_gb=40.0,
+            pipeline_class="QwenImage21Pipeline",
+            default_resolution=1024,
+            default_guidance_scale=1.0,
+            default_num_inference_steps=40,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            # Every nn.Linear of a transformer block; modulation is one shared top-level layer.
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "img_mlp.proj",
+                "img_mlp.gate_layer",
+                "img_mlp.out",
+            ],
+            needs_attention_mask=True,
+            vae_has_latent_dist=True,
+            description=(
+                "Qwen-Image-2.1 — unified text-to-image and editing, 7B single-stream DiT "
+                "with a Qwen3-VL text encoder (QwenImage21Pipeline, diffusers>=0.41, "
+                "transformers>=5.17). Training conditions on the source image as Qwen3-VL "
+                "visual tokens plus reference latents, as the pipeline's editing mode does. "
+                "Apache-2.0."
+            ),
+        ),
+    )
+
+    _register_model(
         "z-image",
         lambda: ModelConfig(
             name="z-image",
@@ -1773,6 +1815,7 @@ def _auto_detect_family(model_path: str) -> ModelConfig | None:
         "Flux2KleinPipeline": "flux2-klein",
         "QwenImageEditPipeline": "qwen-image-edit",
         "QwenImageEditPlusPipeline": "qwen-image-edit-2509",
+        "QwenImage21Pipeline": "qwen-image-2.1",
         "LongCatImageEditPipeline": "longcat-image-edit",
         "JoyImageEditPipeline": "joyimage-edit",
         "JoyImageEditPlusPipeline": "joyimage-edit-plus",
@@ -1886,6 +1929,7 @@ def load_pipeline(
         "QwenImagePipeline": "diffusers",
         "QwenImageEditPipeline": "diffusers",
         "QwenImageEditPlusPipeline": "diffusers",
+        "QwenImage21Pipeline": "diffusers",
         "LongCatImageEditPipeline": "diffusers",
         "JoyImageEditPipeline": "diffusers",
         "JoyImageEditPlusPipeline": "diffusers",
@@ -1997,7 +2041,7 @@ def load_pipeline(
             text_encoder_4.requires_grad_(False)
         tokenizer_4 = getattr(pipe, "tokenizer_4", None)
 
-    if config.family in ("nucleusmoe-image", "longcat-image"):
+    if config.family in ("nucleusmoe-image", "longcat-image", "qwen-image-2.1"):
         processor = getattr(pipe, "processor", None) or getattr(pipe, "text_processor", None)
 
     # Enable gradient checkpointing for memory efficiency
