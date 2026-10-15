@@ -201,7 +201,7 @@ def joy_edit_forward(
     hidden = torch.cat([source_slot, noise_slot], dim=1)
     predicted = backbone(
         hidden_states=hidden,
-        timestep=timesteps * 1000,
+        timestep=timesteps.float() * 1000,  # float32: bf16 steps by 4 above 512
         encoder_hidden_states=text_cond["encoder_hidden_states"],
         return_dict=False,
     )[0]
@@ -273,7 +273,7 @@ def hunyuan_edit_forward(
         rope_image_info=prepared.get("rope_image_info"),
         images=noisy_latents,
         image_mask=prepared["image_mask"],
-        timesteps=timesteps * 1000,
+        timesteps=timesteps.float() * 1000,  # float32: bf16 steps by 4 above 512
         timesteps_index=prepared["timesteps_index"],
         cond_vae_images=context_latents,
         cond_vae_image_mask=prepared["cond_vae_image_mask"],
