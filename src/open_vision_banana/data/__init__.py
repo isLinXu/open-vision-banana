@@ -47,6 +47,7 @@ from .datasets import (
     build_dataset,
     build_v3_datasets,
     load_v3_train_val_split,
+    NuScenesDepthDataset,
     nuScenesDataset,
 )
 from .generation import GenerationDataset, build_generation_dataset
@@ -87,6 +88,7 @@ __all__ = [
     "FlyingThings3DDataset",
     "SintelFlowDataset",
     "MapillaryVistasDataset",
+    "NuScenesDepthDataset",
     "nuScenesDataset",
     "ReasonSegDataset",
     "GenAIBenchDataset",

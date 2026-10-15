@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 
 from open_vision_banana.data import build_dataset
-from open_vision_banana.data.datasets import SACoInstanceDataset, nuScenesDataset
+from open_vision_banana.data.datasets import SACoInstanceDataset
 from open_vision_banana.data.paper_eval_datasets import (
     GenAIBenchDataset,
     ImgEditDataset,
@@ -135,35 +135,26 @@ def test_saco_gold_query_jsonl(tmp_path: Path) -> None:
     assert float(negative["target_rgb"].sum()) == 0
 
 
-def _nuscenes_val(root: Path) -> None:
-    (root / "val" / "samples" / "CAM_FRONT").mkdir(parents=True)
-    (root / "val" / "depth").mkdir(parents=True)
-    Image.new("RGB", (6, 4)).save(root / "val" / "samples" / "CAM_FRONT" / "cam.jpg")
-    np.save(root / "val" / "depth" / "cam.npy", np.full((4, 6), 30.0, dtype=np.float32))
-
-
-def test_nuscenes_depth_benchmark_builds_through_preflight(tmp_path: Path) -> None:
-    # build_dataset's first argument is ``task``; a {"task": "depth"} adapter kwarg clashed.
-    _nuscenes_val(tmp_path)
-    jobs = [("depth", "nuscenes", tmp_path, "nuscenes_depth")]
-    result = preflight_jobs(jobs, split="val", resolution=8)
-    assert result["ok"], result
-    assert result["jobs"][0]["samples"] == 1
-    dataset = build_dataset(
-        "nuscenes_depth", str(tmp_path), split="val", resolution=8, native_gt=True
-    )
-    assert float(dataset[0]["gt_depth"].mean()) == pytest.approx(30.0)
-
-
-def test_nuscenes_depth_returns_metric_gt(tmp_path: Path) -> None:
+def test_nuscenes_depth_benchmark_builds_and_returns_metric_gt(tmp_path: Path) -> None:
     rgb_dir = tmp_path / "val" / "samples" / "CAM_FRONT"
     depth_dir = tmp_path / "val" / "depth"
     rgb_dir.mkdir(parents=True)
     depth_dir.mkdir(parents=True)
     Image.new("RGB", (6, 4), (8, 9, 10)).save(rgb_dir / "cam.jpg")
     np.save(depth_dir / "cam.npy", np.full((4, 6), 12.5, dtype=np.float32))
-    dataset = nuScenesDataset(tmp_path, split="val", resolution=8, task="depth", native_gt=True)
-    assert len(dataset) == 1
+    args = type(
+        "Args",
+        (),
+        {"benchmark": "depth", "depth_root": None, "nuscenes_root": tmp_path}
+        | {f"{name}_root": None for name in ("nyu", "ibims", "eth3d", "diode", "kitti")},
+    )()
+    jobs = build_jobs(args)
+    # build_dataset's first argument is ``task``; a {"task": "depth"} adapter kwarg clashed.
+    preflight = preflight_jobs(jobs, split="val", resolution=8)
+    assert preflight["ok"], preflight
+    assert [job["samples"] for job in preflight["jobs"]] == [1]
+    dataset = build_dataset(jobs[0][3], str(tmp_path), split="val", resolution=8, native_gt=True)
+    assert dataset.TASK_TYPE == "depth"
     item = dataset[0]
     assert item["gt_depth"].shape[0] == 1
     assert float(item["gt_depth"].mean()) == pytest.approx(12.5)
