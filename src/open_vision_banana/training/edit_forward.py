@@ -1,8 +1,11 @@
 """Training forwards for instruction-editing models.
 
 Each function builds the tensor layout the official denoiser uses, then returns
-a spatial prediction of the target only. FLUX.1 Kontext stays in
-``ModelBackend.forward`` because its sigma frame is already tested there.
+a spatial prediction of the target only. The flow forwards work in their
+pipeline's native frame: ``timesteps`` is sigma (1 = pure noise) and the output is
+the transformer's ``noise - x0``; ``ModelBackend._forward_edit`` converts from and
+to the repo's flow time. FLUX.1 Kontext does the same conversion inside
+``ModelBackend.forward``.
 """
 
 from __future__ import annotations
@@ -49,8 +52,8 @@ def qwen_edit_forward(
 ) -> torch.Tensor:
     """Qwen-Image-Edit: pack 2x2, append the source tokens, pass ``img_shapes``.
 
-    The pipeline feeds ``scheduler_timestep / 1000``, i.e. sigma; ``timesteps`` is that
-    sigma. The prediction is sliced back to the target tokens.
+    The pipeline feeds ``scheduler_timestep / 1000``, i.e. sigma. The prediction is
+    sliced back to the target tokens.
     """
     batch, _, height, width = noisy_latents.shape
     packed_h, packed_w = height // 2, width // 2
@@ -83,10 +86,7 @@ def longcat_edit_forward(
     timesteps: torch.Tensor,
     text_cond: dict[str, Any],
 ) -> torch.Tensor:
-    """LongCat-Image-Edit: packed tokens, modality 1 for the target and 2 for the source.
-
-    The pipeline feeds ``scheduler_timestep / 1000``, i.e. sigma; ``timesteps`` is that sigma.
-    """
+    """LongCat-Image-Edit: packed tokens, modality 1 for the target and 2 for the source."""
     batch, _, height, width = noisy_latents.shape
     packed_h, packed_w = height // 2, width // 2
     target_tokens = packed_h * packed_w
@@ -135,10 +135,7 @@ def flux2_edit_forward(
     timesteps: torch.Tensor,
     text_cond: dict[str, Any],
 ) -> torch.Tensor:
-    """FLUX.2 Klein: flatten to tokens and append the reference with time index 10.
-
-    The pipeline feeds ``scheduler_timestep / 1000``, i.e. sigma; ``timesteps`` is that sigma.
-    """
+    """FLUX.2 Klein: flatten to tokens and append the reference with time index 10."""
     batch, channels, height, width = noisy_latents.shape
     target = _flatten_latents(noisy_latents)
     source = _flatten_latents(context_latents)
@@ -197,7 +194,7 @@ def joy_edit_forward(
 ) -> torch.Tensor:
     """JoyImage edit: reference slot first, noised target slot second, keep the last slot.
 
-    The pipeline feeds the scheduler timestep, sigma * 1000; ``timesteps`` is sigma.
+    The pipeline feeds the scheduler timestep, sigma * 1000.
     """
     source_slot = context_latents.unsqueeze(1).unsqueeze(3)
     noise_slot = noisy_latents.unsqueeze(1).unsqueeze(3)
@@ -247,10 +244,6 @@ def channel_concat_edit_forward(
     return output.sample if hasattr(output, "sample") else output
 
 
-# HunyuanImage-3.0's FlowMatchDiscreteScheduler: timesteps = sigmas * 1000.
-HUNYUAN_NUM_TRAIN_TIMESTEPS = 1000
-
-
 def hunyuan_edit_forward(
     model: torch.nn.Module,
     noisy_latents: torch.Tensor,
@@ -263,7 +256,7 @@ def hunyuan_edit_forward(
     ``text_cond['hunyuan_inputs']`` is the token batch from the model's
     preprocess. The noised target is ``images``. The source VAE latent is
     ``cond_vae_images`` at timestep 0, which is how a clean condition is marked.
-    ``timesteps`` is sigma; the model's scheduler feeds ``sigma * num_train_timesteps``.
+    The model's scheduler feeds ``sigma * 1000``.
     """
     prepared = text_cond.get("hunyuan_inputs")
     if not prepared:
@@ -280,7 +273,7 @@ def hunyuan_edit_forward(
         rope_image_info=prepared.get("rope_image_info"),
         images=noisy_latents,
         image_mask=prepared["image_mask"],
-        timesteps=timesteps * HUNYUAN_NUM_TRAIN_TIMESTEPS,
+        timesteps=timesteps * 1000,
         timesteps_index=prepared["timesteps_index"],
         cond_vae_images=context_latents,
         cond_vae_image_mask=prepared["cond_vae_image_mask"],

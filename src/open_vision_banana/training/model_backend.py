@@ -52,6 +52,15 @@ from .sana_flow import native_sana_timestep
 
 logger = logging.getLogger(__name__)
 
+# Edit layouts whose training forward runs in the pipeline's native sigma frame.
+_FLOW_EDIT_FORWARDS = {
+    "qwen_packed": qwen_edit_forward,
+    "longcat_packed": longcat_edit_forward,
+    "flux2_packed": flux2_edit_forward,
+    "joy_slots": joy_edit_forward,
+    "hunyuan": hunyuan_edit_forward,
+}
+
 # bitsandbytes (0.50+) logs "MatMul8bitLt: inputs will be cast from ... to float16" on
 # every LLM.int8 forward with non-fp16 inputs. The 8-bit T5 runs every training step,
 # so a FLUX run writes hundreds of thousands of identical lines per hour into train.log
@@ -610,33 +619,15 @@ class ModelBackend:
             return channel_concat_edit_forward(
                 self.peft_model, latents, context_latents, timesteps, text_cond, self.model_config
             )
-        # The flow editors' pipelines (FlowMatchEulerDiscreteScheduler, HunyuanImage-3's own
-        # flow scheduler) noise as sigma * noise + (1 - sigma) * x0, feed sigma-derived
-        # timesteps and integrate a transformer output of noise - x0. This repo's t runs
-        # from 0 (noise) to 1 (target) with velocity x0 - noise, so each forward gets
-        # sigma = 1 - t and the prediction is negated, as the FLUX Kontext path does.
-        sigma = 1.0 - timesteps
-        if layout == "qwen_packed":
-            predicted = qwen_edit_forward(
-                self.peft_model, latents, context_latents, sigma, text_cond, guidance
-            )
-        elif layout == "longcat_packed":
-            predicted = longcat_edit_forward(
-                self.peft_model, latents, context_latents, sigma, text_cond
-            )
-        elif layout == "flux2_packed":
-            predicted = flux2_edit_forward(
-                self.peft_model, latents, context_latents, sigma, text_cond
-            )
-        elif layout == "joy_slots":
-            predicted = joy_edit_forward(self.peft_model, latents, context_latents, sigma, text_cond)
-        elif layout == "hunyuan":
-            predicted = hunyuan_edit_forward(
-                self.peft_model, latents, context_latents, sigma, text_cond
-            )
-        else:
+        forward = _FLOW_EDIT_FORWARDS.get(layout)
+        if forward is None:
             raise ValueError(f"No training forward for edit layout {layout}")
-        return -predicted
+        # Flow editors' pipelines noise as sigma * noise + (1 - sigma) * x0 and integrate a
+        # transformer output of noise - x0. The repo's t runs from 0 (noise) to 1 (target)
+        # with velocity x0 - noise: feed sigma = 1 - t and negate, as Kontext does.
+        extra = (guidance,) if layout == "qwen_packed" else ()
+        sigma = 1.0 - timesteps
+        return -forward(self.peft_model, latents, context_latents, sigma, text_cond, *extra)
 
     def model_timesteps(self, timesteps: torch.Tensor, batch_size: int) -> torch.Tensor:
         """Convert flow time in [0, 1] to what the backbone's timestep embedding expects.
