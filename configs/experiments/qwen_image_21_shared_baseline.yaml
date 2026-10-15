@@ -1,0 +1,71 @@
+# Qwen-Image-2.1 shared baseline (ABLATION_BASELINE.md, card T7): the shared-baseline control
+# recipe with only the base changed. The source image reaches the model as
+# Qwen3-VL visual tokens and as reference latents, as QwenImage21Pipeline's edit mode.
+# Needs diffusers>=0.41 and transformers>=5.17 (a separate env from the SANA runs).
+#
+# Batch 1 x accumulation 32: the transformer reads one token layout per batch, so each
+# step encodes one sample. flow.shift only changes SANA's timesteps; it has no effect here.
+
+model:
+  name: qwen-image-2.1
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+
+data:
+  tasks: [depth, normal, semantic, referring]
+  task_sampling: uniform
+  task_sampling_weights: {}
+  vision_ratio: 1.0
+  depth_curve: metric_power
+  num_workers: 4
+
+training:
+  steps: 30000
+  batch_size: 1
+  gradient_accumulation: 32
+  lr: 1.0e-4
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: constant
+  warmup_ratio: 0.05
+
+validation:
+  max_samples_per_task: 40
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 3.0
+  min_snr: false
+  cfg_dropout_rate: 0.0
+
+loss:
+  task_loss_weights: {depth: 1.0, normal: 1.0, semantic: 1.0, referring: 1.0}
+  normal_angular_loss_weight: 0.0
+  depth_edge_aux_weight: 0.0
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/qwen_image_21_shared_baseline
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+
+device: cuda
