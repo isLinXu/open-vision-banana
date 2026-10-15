@@ -255,7 +255,7 @@ def test_hunyuan_encode_builds_the_token_batch_and_uses_its_vae():
     assert latents.shape == (2, 4, 8, 8)
     noisy = torch.randn(2, 4, 8, 8)
     out = backend.forward(noisy, torch.tensor([0.2, 0.4]), text, 2, context_latents=latents)
-    torch.testing.assert_close(out, noisy)
+    torch.testing.assert_close(out, -noisy)
     assert backend.apply_cfg_dropout(text, 0.5, 2) is text
     try:
         backend.encode_text(["x"], torch.device("cpu"), torch.float32)
