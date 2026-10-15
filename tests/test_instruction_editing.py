@@ -201,7 +201,12 @@ def test_qwen_image21_keeps_the_source_area_as_output_resolution():
         guidance_scale=0.0,
         seed=0,
     )
-    assert calls[0] == {"height": 512, "width": 512, "output_resolution": 512, "true_cfg_scale": 1.0}
+    assert calls[0] == {
+        "height": 512,
+        "width": 512,
+        "output_resolution": 512,
+        "true_cfg_scale": 1.0,
+    }
     assert out.shape == (1, 3, 512, 512)
 
 
