@@ -161,3 +161,23 @@ def test_cfg_dropout_blanks_the_prompt_and_keeps_the_source():
     backend.encode_edit_text(["depth"], images, cfg_dropout_rate=1.0)
     assert [call[0] for call in pipe.calls] == [["depth"], [""]]
     assert all(len(call[1]) == 1 for call in pipe.calls)
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "resolution", "message"),
+    [(4, 512, "batch_size 1"), (1, 528, "multiple of 32"), (1, 224, "multiple of 32")],
+)
+def test_training_config_is_checked_before_loading(batch_size, resolution, message):
+    config = types.SimpleNamespace(batch_size=batch_size, resolution=resolution)
+    with pytest.raises(ValueError, match=message):
+        qwen_image21.check_training_config(config)
+    qwen_image21.check_training_config(types.SimpleNamespace(batch_size=1, resolution=512))
+
+
+def test_quantized_loading_is_refused(monkeypatch):
+    def load_pipeline(*args, **kwargs):
+        raise AssertionError("the model must not load")
+
+    monkeypatch.setattr("open_vision_banana.training.model_backend.load_pipeline", load_pipeline)
+    with pytest.raises(ValueError, match="Quantized loading"):
+        ModelBackend("qwen-image-2.1", device=torch.device("cpu"), quantize="4bit")

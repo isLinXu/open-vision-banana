@@ -15,6 +15,21 @@ from typing import Any
 import torch
 
 
+def check_training_config(config) -> None:
+    """Reject settings the Qwen-Image-2.1 forward cannot honour, before loading the model.
+
+    The transformer reads one token layout per batch (batch size 1), and the pipeline
+    snaps images to multiples of 32 so that the Qwen3-VL visual-token grid equals the
+    latent grid / 2; 256 px is the processor's minimum area per side.
+    """
+    if config.batch_size != 1:
+        raise ValueError(
+            "Qwen-Image-2.1 training uses batch_size 1; raise gradient_accumulation instead"
+        )
+    if config.resolution % 32 or config.resolution < 256:
+        raise ValueError("Qwen-Image-2.1 needs a resolution that is a multiple of 32, at least 256")
+
+
 def build_pipeline(components) -> Any:
     """A QwenImage21Pipeline around already-loaded components, for its prompt encoder."""
     from diffusers import QwenImage21Pipeline

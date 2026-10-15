@@ -22,6 +22,8 @@ import torch.nn.functional as F
 from PIL import Image, ImageFile
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
 
+from ..model_registry import resolve_model_config
+from . import qwen_image21
 from .callbacks import TrainingCallbacks
 from .config import TrainingConfig
 from .distributed import (
@@ -31,6 +33,7 @@ from .distributed import (
     cleanup,
     init_distributed,
 )
+from .edit_forward import edit_latent_layout
 from .losses import TrainingLosses
 from .model_backend import ModelBackend
 from .optimization import SchedulerFactory
@@ -276,6 +279,8 @@ class Trainer:
 
         # Data errors must fail before downloading/loading a large backbone.
         self.train_loader, self.val_loader = self._build_datasets()
+        if edit_latent_layout(resolve_model_config(config.model_name)) == "qwen21":
+            qwen_image21.check_training_config(config)
 
         # ── Model backend ──────────────────────────────────────────────
         self.backend = ModelBackend(
