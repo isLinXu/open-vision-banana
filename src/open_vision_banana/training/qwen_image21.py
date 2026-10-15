@@ -29,7 +29,9 @@ def build_pipeline(components) -> Any:
     from diffusers import QwenImage21Pipeline
 
     if components.processor is None:
-        raise RuntimeError("Qwen-Image-2.1 needs its Qwen3VLProcessor; load_pipeline did not keep it")
+        raise RuntimeError(
+            "Qwen-Image-2.1 needs its Qwen3VLProcessor; load_pipeline did not keep it"
+        )
     return QwenImage21Pipeline(
         scheduler=components.scheduler,
         vae=components.vae,
@@ -49,7 +51,9 @@ def _rgba(images: torch.Tensor) -> torch.Tensor:
 def vae_encode(pipe, images: torch.Tensor) -> torch.Tensor:
     """[B, 3, H, W] in [-1, 1] -> normalized latents [B, 64, H/16, W/16]."""
     vae = pipe.vae
-    latents = pipe._encode_vae_image(_rgba(images).to(device=vae.device, dtype=vae.dtype), generator=None)
+    latents = pipe._encode_vae_image(
+        _rgba(images).to(device=vae.device, dtype=vae.dtype), generator=None
+    )
     return latents.squeeze(2)
 
 
@@ -65,7 +69,9 @@ def vae_decode(pipe, latents: torch.Tensor) -> torch.Tensor:
 
 
 @torch.no_grad()
-def encode_condition(pipe, prompts: list[str], images: torch.Tensor, device, dtype) -> dict[str, Any]:
+def encode_condition(
+    pipe, prompts: list[str], images: torch.Tensor, device, dtype
+) -> dict[str, Any]:
     """Prompt + source image -> text-encoder states with the source as visual tokens.
 
     ``images`` is [1, 3, H, W] in [-1, 1]. One sample per call: the transformer reads
@@ -73,7 +79,9 @@ def encode_condition(pipe, prompts: list[str], images: torch.Tensor, device, dty
     length as well as image size.
     """
     if len(prompts) != 1 or images.shape[0] != 1:
-        raise ValueError("Qwen-Image-2.1 training uses batch_size 1; raise gradient_accumulation instead")
+        raise ValueError(
+            "Qwen-Image-2.1 training uses batch_size 1; raise gradient_accumulation instead"
+        )
     from .model_backend import _tensors_to_pils
 
     embeds, mask, image_pad_mask = pipe._get_qwen_prompt_embeds(
@@ -105,7 +113,8 @@ def edit_forward(
     hidden = torch.cat([tokens(context_latents), tokens(noisy_latents)], dim=1)
     image_pad_mask = text_cond["image_pad_mask"]
     img_mask = torch.cat(
-        [image_pad_mask, image_pad_mask.new_ones(image_pad_mask.shape[0], target_tokens // 4)], dim=1
+        [image_pad_mask, image_pad_mask.new_ones(image_pad_mask.shape[0], target_tokens // 4)],
+        dim=1,
     )
     sigma = (1.0 - timesteps).to(noisy_latents.dtype)
     predicted = backbone(

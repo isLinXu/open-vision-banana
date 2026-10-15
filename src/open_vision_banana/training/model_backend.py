@@ -33,6 +33,7 @@ from ..model_registry import (
 from ..model_registry import (
     vae_encode as registry_vae_encode,
 )
+from . import qwen_image21
 from .edit_forward import (
     channel_concat_edit_forward,
     edit_latent_layout,
@@ -48,7 +49,6 @@ from .flow_matching import (
     prepare_latent_image_ids,
     unpack_latents,
 )
-from . import qwen_image21
 from .sana_flow import native_sana_timestep
 
 logger = logging.getLogger(__name__)

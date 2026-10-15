@@ -29,9 +29,7 @@ def _backend(module=None, pipe=None):
 
 class _Vae:
     def __init__(self):
-        self.config = types.SimpleNamespace(
-            z_dim=C, latents_mean=[0.5] * C, latents_std=[2.0] * C
-        )
+        self.config = types.SimpleNamespace(z_dim=C, latents_mean=[0.5] * C, latents_std=[2.0] * C)
         self.dtype = torch.float32
         self.device = torch.device("cpu")
         self.decoded = None
@@ -87,7 +85,9 @@ def test_vae_decode_undoes_normalization_and_keeps_rgb():
 def test_encode_condition_feeds_the_source_to_the_text_encoder():
     pipe = _Pipe()
     images = torch.zeros(1, 3, 32, 32)
-    cond = qwen_image21.encode_condition(pipe, ["depth"], images, torch.device("cpu"), torch.float32)
+    cond = qwen_image21.encode_condition(
+        pipe, ["depth"], images, torch.device("cpu"), torch.float32
+    )
     prompt, pils, _ = pipe.prompt_calls[0]
     assert prompt == ["depth"] and len(pils) == 1 and pils[0].size == (32, 32)
     assert cond["attention_mask"] is None
@@ -142,7 +142,10 @@ def test_backend_routes_encode_and_forward_through_the_qwen21_layout():
 
 def test_cfg_dropout_is_refused_for_qwen21():
     backend = _backend()
-    cond = {"encoder_hidden_states": torch.zeros(1, 2, 8), "image_pad_mask": torch.zeros(1, 2, dtype=torch.bool)}
+    cond = {
+        "encoder_hidden_states": torch.zeros(1, 2, 8),
+        "image_pad_mask": torch.zeros(1, 2, dtype=torch.bool),
+    }
     assert backend.apply_cfg_dropout(cond, 0.0, 1) is cond
     with pytest.raises(NotImplementedError):
         backend.apply_cfg_dropout(cond, 0.5, 1)
