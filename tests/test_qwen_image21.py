@@ -181,3 +181,76 @@ def test_quantized_loading_is_refused(monkeypatch):
     monkeypatch.setattr("open_vision_banana.training.model_backend.load_pipeline", load_pipeline)
     with pytest.raises(ValueError, match="Quantized loading"):
         ModelBackend("qwen-image-2.1", device=torch.device("cpu"), quantize="4bit")
+
+
+class _FakeQwen21Pipeline:
+    """Stands in for diffusers.QwenImage21Pipeline in loader tests."""
+
+    def __init__(self, **modules):
+        self.modules = modules
+
+    @classmethod
+    def from_pretrained(cls, source, **kwargs):
+        return types.SimpleNamespace(
+            transformer=torch.nn.Linear(2, 2),
+            vae=torch.nn.Linear(2, 2),
+            text_encoder=torch.nn.Linear(2, 2),
+            processor="qwen3-vl-processor",
+            scheduler="scheduler",
+        )
+
+
+def test_load_pipeline_keeps_the_processor(monkeypatch):
+    import diffusers
+
+    from open_vision_banana.model_registry import load_pipeline
+
+    monkeypatch.setattr(diffusers, "QwenImage21Pipeline", _FakeQwen21Pipeline, raising=False)
+    components = load_pipeline(CONFIG, device="cpu", dtype=torch.float32)
+    assert components.processor == "qwen3-vl-processor"
+    assert components.scheduler == "scheduler"
+
+
+def test_build_pipeline_wraps_the_loaded_components(monkeypatch):
+    import diffusers
+
+    monkeypatch.setattr(diffusers, "QwenImage21Pipeline", _FakeQwen21Pipeline, raising=False)
+    parts = types.SimpleNamespace(scheduler="s", vae="v", text_encoder="t", processor="p", unet="u")
+    pipe = qwen_image21.build_pipeline(parts)
+    assert pipe.modules == {
+        "scheduler": "s",
+        "vae": "v",
+        "text_encoder": "t",
+        "processor": "p",
+        "transformer": "u",
+    }
+
+
+def test_backend_builds_the_prompt_pipeline_once(monkeypatch):
+    from open_vision_banana.training import model_backend
+
+    components = types.SimpleNamespace(unet=torch.nn.Linear(2, 2), vae=_Vae(), processor="p")
+    built = []
+    monkeypatch.setattr(model_backend, "load_pipeline", lambda config, **kwargs: components)
+    monkeypatch.setattr(model_backend, "apply_lora", lambda backbone, **kwargs: backbone)
+    monkeypatch.setattr(
+        model_backend.qwen_image21, "build_pipeline", lambda parts: built.append(parts) or "pipe"
+    )
+    backend = ModelBackend("qwen-image-2.1", device=torch.device("cpu"), dtype=torch.float32)
+    assert backend.pipe == "pipe" and built == [components]
+    assert backend._qwen21_logged is False
+
+
+def test_trainer_rejects_batches_before_loading_the_model(monkeypatch, tmp_path):
+    import open_vision_banana.training.trainer as module
+    from open_vision_banana.training.config import TrainingConfig
+
+    loaded = []
+    monkeypatch.setattr(module.Trainer, "_build_datasets", lambda self: (None, None))
+    monkeypatch.setattr(module, "ModelBackend", lambda **kwargs: loaded.append(kwargs))
+    config = TrainingConfig(
+        model_name="qwen-image-2.1", batch_size=4, device="cpu", output_dir=str(tmp_path)
+    )
+    with pytest.raises(ValueError, match="batch_size 1"):
+        module.Trainer(config)
+    assert not loaded
