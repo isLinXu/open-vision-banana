@@ -2993,7 +2993,8 @@ class nuScenesDataset(_NativeGTMixin, BaseVisionDataset):
 
     Depth evaluation returns metric ``gt_depth`` so the paper 80 m protocol
     can score decoded RGB. The class ``TASK_TYPE`` stays ``semantic`` for the
-    default constructor; pass ``task="depth"`` for the paper depth bench.
+    default constructor; pass ``task="depth"`` for the paper depth bench, or use
+    the ``nuscenes_depth`` key of ``build_dataset``.
     """
 
     TASK_TYPE = "semantic"
@@ -3118,6 +3119,21 @@ class nuScenesDataset(_NativeGTMixin, BaseVisionDataset):
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 
 
+class NuScenesDepthDataset(nuScenesDataset):
+    """nuScenes front-camera metric depth (the paper's 80 m benchmark) as its own key.
+
+    ``build_dataset`` names its first argument ``task``, so the depth task cannot be
+    passed through its keyword arguments.
+    """
+
+    TASK_TYPE = "depth"
+
+    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+        if kwargs.pop("task", "depth") != "depth":
+            raise ValueError("nuscenes_depth is the depth task; use the nuscenes key for others")
+        super().__init__(root_dir, split, resolution, task="depth", **kwargs)
+
+
 class PreEncodedDepthDataset(BaseVisionDataset):
     """Dataset for pre-encoded depth RGB targets.
 
@@ -3208,6 +3224,7 @@ def build_dataset(
         "flyingthings3d": FlyingThings3DDataset,
         "mapillary": MapillaryVistasDataset,
         "nuscenes": nuScenesDataset,
+        "nuscenes_depth": NuScenesDepthDataset,
         "preencoded_depth": PreEncodedDepthDataset,
     }
     if task in {"reasonseg", "genai_bench", "imgedit"}:

@@ -310,7 +310,7 @@ class TestBuildDatasetExtended:
             "nyu_depth", "diode", "kitti", "ade20k", "sintel",
             "eth3d", "oasis", "coco_detection", "coco_stuff",
             "refcoco", "virtual_kitti", "tum_rgbd", "flyingthings3d",
-            "mapillary", "nuscenes",
+            "mapillary", "nuscenes", "nuscenes_depth",
         ]
         for task in expected_tasks:
             try:

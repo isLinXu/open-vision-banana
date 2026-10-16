@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Training frame of the flow instruction editors**: the Qwen-Image-Edit (and -2509), LongCat-Image-Edit, FLUX.2 Klein, JoyImage-Edit and HunyuanImage-3.0-Instruct training forwards fed the repo's flow time `t` (0 at noise, 1 at the target) and returned the raw prediction. Each official pipeline instead feeds sigma (1 at noise; JoyImage and Hunyuan scale it by 1000) and integrates a transformer output of `noise - x0`, so the LoRAs were trained with a mirrored timestep and a sign-flipped velocity, against both the pretrained prior and the sampler used at inference. `ModelBackend._forward_edit` now feeds `sigma = 1 - t` and negates the prediction, as the FLUX Kontext path already did; the x1000 scaling is done in float32.
+- **nuScenes depth benchmark**: `evaluate_paper_benchmarks.py --nuscenes-root` failed before loading any model with `TypeError: build_dataset() got multiple values for argument 'task'`, because the depth task of `nuScenesDataset` was passed as an adapter keyword while `build_dataset`'s first argument is also named `task`. The benchmark now uses a `nuscenes_depth` adapter key (`NuScenesDepthDataset`), as NYU uses `nyu_depth`.
 
 - **Expression-conditioned RES**: keep one prompt per expression, resize binary masks with nearest-neighbor interpolation, and share the versioned white/black decoding contract across training, inference and evaluation. Preserve disconnected targets and provide an explicit legacy color decoder. Strict RefCOCOg evaluation rejects incomplete annotations and declares its image range so official and portable loaders preserve the same input pixels.
 

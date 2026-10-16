@@ -57,7 +57,7 @@ DEPTH_DATASETS = {
     "eth3d": "eth3d",
     "diode": "diode",
     "kitti": "kitti",
-    "nuscenes": "nuscenes",
+    "nuscenes": "nuscenes_depth",
 }
 # Dataset adapters that can return unresized GT (``native_gt=True``).
 NATIVE_GT_DATASETS = {
@@ -72,7 +72,7 @@ NATIVE_GT_DATASETS = {
     "vkitti_normal",
     "referring",
     "reasonseg",
-    "nuscenes",
+    "nuscenes_depth",
 }
 # Extra adapter kwargs that make a benchmark match the paper's definition.
 # The paper evaluates DIODE-Indoor, not the indoor+outdoor union, and RefCOCOg
@@ -81,7 +81,6 @@ BENCHMARK_DATASET_KWARGS: dict[str, dict[str, Any]] = {
     "diode": {"scene_type": "indoors"},
     "diode_normal": {"scene_type": "indoors"},
     "referring": {"protocol": "umd", "strict": True},
-    "nuscenes": {"task": "depth"},
 }
 NORMAL_DATASETS = {
     "nyu": "nyu_normal",
