@@ -24,6 +24,7 @@ def edit_latent_layout(model_config) -> str | None:
         "FluxKontextPipeline": "kontext",
         "QwenImageEditPipeline": "qwen_packed",
         "QwenImageEditPlusPipeline": "qwen_packed",
+        "QwenImage21Pipeline": "qwen21",
         "LongCatImageEditPipeline": "longcat_packed",
         "Flux2KleinPipeline": "flux2_packed",
         "JoyImageEditPipeline": "joy_slots",
@@ -162,6 +163,39 @@ def _flatten_latents(latents: torch.Tensor) -> torch.Tensor:
 
 def _unflatten_latents(tokens: torch.Tensor, channels: int, height: int, width: int) -> torch.Tensor:
     return tokens.transpose(1, 2).reshape(tokens.shape[0], channels, height, width)
+
+
+def qwen21_edit_forward(
+    backbone: torch.nn.Module,
+    noisy_latents: torch.Tensor,
+    context_latents: torch.Tensor,
+    timesteps: torch.Tensor,
+    text_cond: dict[str, Any],
+) -> torch.Tensor:
+    """Qwen-Image-2.1: [source tokens, target tokens], unpatched, in the repo frame.
+
+    QwenImage21Pipeline feeds sigma in [0, 1] (1 = noise) and its transformer predicts
+    ``noise - x0``. The repo's t runs 0 (noise) -> 1 (target) with velocity
+    ``target - noise``, so this feeds ``1 - t`` and negates, as the Kontext path does.
+    ``img_mask`` appends one slot per 2x2 group of target latents to the image-pad mask.
+    """
+    batch, channels, height, width = noisy_latents.shape
+    target_tokens = height * width
+    image_pad_mask = text_cond["image_pad_mask"]
+    predicted = backbone(
+        hidden_states=torch.cat(
+            [_flatten_latents(context_latents), _flatten_latents(noisy_latents)], dim=1
+        ),
+        encoder_hidden_states=text_cond["encoder_hidden_states"],
+        encoder_hidden_states_mask=None,
+        timestep=(1.0 - timesteps).to(noisy_latents.dtype),
+        img_shapes=[[(1, *context_latents.shape[-2:]), (1, height, width)]] * batch,
+        img_mask=torch.cat(
+            [image_pad_mask, image_pad_mask.new_ones(batch, target_tokens // 4)], dim=1
+        ),
+        return_dict=False,
+    )[0]
+    return -_unflatten_latents(predicted[:, -target_tokens:], channels, height, width)
 
 
 def _flux2_text_ids(text_cond: dict[str, Any], text: torch.Tensor) -> torch.Tensor:

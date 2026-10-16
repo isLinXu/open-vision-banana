@@ -33,6 +33,7 @@ from ..model_registry import (
 from ..model_registry import (
     vae_encode as registry_vae_encode,
 )
+from . import qwen_image21
 from .edit_forward import (
     channel_concat_edit_forward,
     edit_latent_layout,
@@ -40,6 +41,7 @@ from .edit_forward import (
     hunyuan_edit_forward,
     joy_edit_forward,
     longcat_edit_forward,
+    qwen21_edit_forward,
     qwen_edit_forward,
 )
 from .flow_matching import (
@@ -170,6 +172,8 @@ class ModelBackend:
         )
 
         # Load pipeline components
+        if quantize and edit_latent_layout(self.model_config) == "qwen21":
+            raise ValueError("Quantized loading is not implemented for Qwen-Image-2.1")
         if quantize:
             self._load_quantized(quantize)
         else:
@@ -184,6 +188,12 @@ class ModelBackend:
         self.backbone = self.components.unet  # backbone stored as 'unet' for compat
         self.vae = self.components.vae
         self.pipe = getattr(self, "_pipe", None)  # Full pipe for FLUX encode_prompt
+        if edit_latent_layout(self.model_config) == "qwen21":
+            # Its prompt encoder takes the source image; built once around the loaded parts.
+            self.pipe = qwen_image21.build_pipeline(self.components)
+            self._qwen21_logged = (
+                torch.distributed.is_initialized() and torch.distributed.get_rank() > 0
+            )
 
         # Apply LoRA
         logger.info(
@@ -445,6 +455,38 @@ class ModelBackend:
                 "cond_timesteps_index": prepared["cond_timesteps_index"],
             },
         }
+
+    def encode_edit_text(
+        self, prompts: list[str], images: torch.Tensor, cfg_dropout_rate: float = 0.0
+    ) -> dict[str, Any]:
+        """Text condition for a training forward; editors that read the source get it here.
+
+        ``images`` is the [B, 3, H, W] source batch in [-1, 1]. Qwen-Image-2.1 drops the
+        prompt to "" with the same source image, as its pipeline's unconditional branch
+        does; text-only conditions drop through ``apply_cfg_dropout``.
+        """
+        layout = edit_latent_layout(self.model_config)
+        if layout == "hunyuan":
+            return self.encode_hunyuan_edit(prompts, images)
+        if layout == "qwen21":
+            if cfg_dropout_rate > 0:
+                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
+                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            text_cond = qwen_image21.encode_condition(
+                self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
+            )
+            if not self._qwen21_logged:
+                self._qwen21_logged = True
+                logger.info(
+                    "Qwen-Image-2.1 conditioning: source image %s -> %d Qwen3-VL visual tokens "
+                    "in a %d-token condition sequence",
+                    tuple(images.shape[-2:]),
+                    int(text_cond["image_pad_mask"][0].sum()),
+                    text_cond["encoder_hidden_states"].shape[1],
+                )
+            return text_cond
+        text_cond = self.encode_text(prompts, self.device, self.dtype)
+        return self.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
 
     # ── VAE encode/decode ──────────────────────────────────────────────────
 

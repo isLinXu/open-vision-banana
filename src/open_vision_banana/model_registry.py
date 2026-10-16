@@ -535,6 +535,44 @@ def _build_registry() -> None:
     )
 
     _register_model(
+        "qwen-image-2.1",
+        lambda: ModelConfig(
+            name="qwen-image-2.1",
+            model_id="Qwen/Qwen-Image-2.1",
+            family="qwen-image-2.1",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            # RGBA VAE normalized by per-channel latents_mean / latents_std (see vae_encode).
+            vae_downsample_factor=16,
+            vae_latent_channels=64,
+            pipeline_class="QwenImage21Pipeline",
+            default_resolution=1024,
+            default_guidance_scale=1.0,
+            default_num_inference_steps=40,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            # Every nn.Linear of a transformer block; modulation is one shared top-level layer.
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "img_mlp.proj",
+                "img_mlp.gate_layer",
+                "img_mlp.out",
+            ],
+            description=(
+                "Qwen-Image-2.1 — unified text-to-image and editing, 7B single-stream DiT "
+                "with a Qwen3-VL text encoder (QwenImage21Pipeline, diffusers>=0.41, "
+                "transformers>=5.17). Training conditions on the source image as Qwen3-VL "
+                "visual tokens plus reference latents, as the pipeline's editing mode does. "
+                "Apache-2.0."
+            ),
+        ),
+    )
+
+    _register_model(
         "z-image",
         lambda: ModelConfig(
             name="z-image",
@@ -1773,6 +1811,7 @@ def _auto_detect_family(model_path: str) -> ModelConfig | None:
         "Flux2KleinPipeline": "flux2-klein",
         "QwenImageEditPipeline": "qwen-image-edit",
         "QwenImageEditPlusPipeline": "qwen-image-edit-2509",
+        "QwenImage21Pipeline": "qwen-image-2.1",
         "LongCatImageEditPipeline": "longcat-image-edit",
         "JoyImageEditPipeline": "joyimage-edit",
         "JoyImageEditPlusPipeline": "joyimage-edit-plus",
@@ -1886,6 +1925,7 @@ def load_pipeline(
         "QwenImagePipeline": "diffusers",
         "QwenImageEditPipeline": "diffusers",
         "QwenImageEditPlusPipeline": "diffusers",
+        "QwenImage21Pipeline": "diffusers",
         "LongCatImageEditPipeline": "diffusers",
         "JoyImageEditPipeline": "diffusers",
         "JoyImageEditPlusPipeline": "diffusers",
@@ -1997,7 +2037,7 @@ def load_pipeline(
             text_encoder_4.requires_grad_(False)
         tokenizer_4 = getattr(pipe, "tokenizer_4", None)
 
-    if config.family in ("nucleusmoe-image", "longcat-image"):
+    if config.family in ("nucleusmoe-image", "longcat-image", "qwen-image-2.1"):
         processor = getattr(pipe, "processor", None) or getattr(pipe, "text_processor", None)
 
     # Enable gradient checkpointing for memory efficiency
@@ -2967,6 +3007,14 @@ def extract_vae_latents(enc_out: Any) -> torch.Tensor:
     )
 
 
+def _qwen_image21_latent_stats(vae, like: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-channel latents_mean / latents_std of AutoencoderKLQwenImage21, shaped like ``like``."""
+    shape = (1, -1, 1, 1, 1)
+    mean = torch.tensor(vae.config.latents_mean, device=like.device, dtype=like.dtype).view(shape)
+    std = torch.tensor(vae.config.latents_std, device=like.device, dtype=like.dtype).view(shape)
+    return mean, std
+
+
 def vae_encode(
     vae: torch.nn.Module,
     images: torch.Tensor,
@@ -2981,7 +3029,13 @@ def vae_encode(
     Qwen-Image: vae.encode(img).latent_dist.mode() * scaling
     FLUX.2: retrieve_latents(vae.encode(img)) then patchify
     CogView4: vae.encode(img).latent_dist.mode() * scaling
+    Qwen-Image-2.1: RGBA [B, 4, 1, H, W] (opaque alpha), (mode() - mean) / std per channel
     """
+    if config.family == "qwen-image-2.1":
+        rgba = torch.cat([images, torch.ones_like(images[:, :1])], dim=1).unsqueeze(2)
+        latents = vae.encode(rgba).latent_dist.mode()
+        mean, std = _qwen_image21_latent_stats(vae, latents)
+        return ((latents - mean) / std).squeeze(2)
 
     # Encode
     if config.vae_has_latent_dist:
@@ -3016,7 +3070,13 @@ def vae_decode(
     SANA/AuraFlow: vae.decode(latents / scaling_factor)[0]
     Z-Image/Lumina2/Chroma: (latents / scaling) + shift, then vae.decode(...)
     CogView4: latents / scaling, then vae.decode(...)
+    Qwen-Image-2.1: latents * std + mean, decode the one frame, drop alpha
     """
+    if config.family == "qwen-image-2.1":
+        latents = latents.unsqueeze(2)
+        mean, std = _qwen_image21_latent_stats(vae, latents)
+        return vae.decode(latents * std + mean, return_dict=False)[0][:, :3, 0]
+
     scaling = config.vae_scaling_factor
     shift = 0.0
 
