@@ -30,6 +30,7 @@ def make_trainer(**config) -> tuple[Trainer, list[dict]]:
         encode_image=lambda pixels: torch.zeros(pixels.shape[0], C, H, W),
         prepare_flow_batch=prepare_flow_batch,
         encode_text=lambda *a: {},
+        encode_edit_text=lambda *a, **k: {},
         forward=lambda noisy, *a: noisy,
     )
     losses = SimpleNamespace(
