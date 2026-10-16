@@ -54,6 +54,15 @@ from .sana_flow import native_sana_timestep
 
 logger = logging.getLogger(__name__)
 
+# Edit layouts whose training forward runs in the pipeline's native sigma frame.
+_FLOW_EDIT_FORWARDS = {
+    "qwen_packed": qwen_edit_forward,
+    "longcat_packed": longcat_edit_forward,
+    "flux2_packed": flux2_edit_forward,
+    "joy_slots": joy_edit_forward,
+    "hunyuan": hunyuan_edit_forward,
+}
+
 # bitsandbytes (0.50+) logs "MatMul8bitLt: inputs will be cast from ... to float16" on
 # every LLM.int8 forward with non-fp16 inputs. The 8-bit T5 runs every training step,
 # so a FLUX run writes hundreds of thousands of identical lines per hour into train.log
@@ -648,35 +657,19 @@ class ModelBackend:
         layout: str,
     ) -> torch.Tensor:
         context_latents = context_latents.to(dtype=latents.dtype)
-        if layout == "qwen_packed":
-            return qwen_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond, guidance
-            )
-        if layout == "longcat_packed":
-            return longcat_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
-        if layout == "flux2_packed":
-            return flux2_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
-        if layout == "joy_slots":
-            return joy_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
         if layout == "channel_concat":
             return channel_concat_edit_forward(
                 self.peft_model, latents, context_latents, timesteps, text_cond, self.model_config
             )
-        if layout == "hunyuan":
-            return hunyuan_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
-        if layout == "qwen21":
-            return qwen21_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
-        raise ValueError(f"No training forward for edit layout {layout}")
+        forward = _FLOW_EDIT_FORWARDS.get(layout)
+        if forward is None:
+            raise ValueError(f"No training forward for edit layout {layout}")
+        # Flow editors' pipelines noise as sigma * noise + (1 - sigma) * x0 and integrate a
+        # transformer output of noise - x0. The repo's t runs from 0 (noise) to 1 (target)
+        # with velocity x0 - noise: feed sigma = 1 - t and negate, as Kontext does.
+        extra = (guidance,) if layout == "qwen_packed" else ()
+        sigma = 1.0 - timesteps
+        return -forward(self.peft_model, latents, context_latents, sigma, text_cond, *extra)
 
     def model_timesteps(self, timesteps: torch.Tensor, batch_size: int) -> torch.Tensor:
         """Convert flow time in [0, 1] to what the backbone's timestep embedding expects.

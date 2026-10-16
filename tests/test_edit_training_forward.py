@@ -1,5 +1,6 @@
 """Training forwards for instruction editors, using stub backbones on CPU."""
 
+import pytest
 import torch
 
 from open_vision_banana.model_registry import get_model_config
@@ -65,6 +66,26 @@ def test_qwen_edit_2509_uses_the_same_packed_layout():
     assert "img_shapes" in backend.peft_model.calls[0][1]
 
 
+@pytest.mark.parametrize(
+    ("name", "scale"),
+    [
+        ("qwen-image-edit", 1.0),
+        ("longcat-image-edit", 1.0),
+        ("flux2-klein", 1.0),
+        ("joyimage-edit", 1000.0),
+    ],
+)
+def test_flow_editors_feed_sigma_and_negate_the_prediction(name, scale):
+    # Native frame: sigma = 1 - t in, noise - x0 out, so the repo velocity is its negation.
+    backend = _backend(name, _Record(lambda _a, kw: (torch.ones_like(kw["hidden_states"]),)))
+    t = torch.tensor([0.1, 0.9])
+    out = backend.forward(
+        torch.randn(B, C, H, W), t, _text(), B, context_latents=torch.randn(B, C, H, W)
+    )
+    torch.testing.assert_close(backend.peft_model.calls[0][1]["timestep"], (1.0 - t) * scale)
+    torch.testing.assert_close(out, -torch.ones(B, C, H, W))
+
+
 def test_longcat_edit_marks_source_modality_two():
     def produce(_args, kwargs):
         ids = kwargs["img_ids"]
@@ -106,7 +127,7 @@ def test_joy_edit_puts_the_source_in_the_first_slot():
     def produce(_args, kwargs):
         hidden = kwargs["hidden_states"]
         assert hidden.shape == (B, 2, C, 1, H, W)
-        assert torch.allclose(kwargs["timestep"], torch.tensor([250.0, 250.0]))
+        assert torch.allclose(kwargs["timestep"], torch.tensor([750.0, 750.0]))
         return (hidden,)
 
     backend = _backend("joyimage-edit", _Record(produce))
@@ -177,7 +198,8 @@ def test_hunyuan_edit_forward_passes_clean_condition_at_timestep_zero():
         },
     }
     out = backend.forward(noisy, torch.tensor([0.3, 0.8]), text, B, context_latents=context)
-    torch.testing.assert_close(out, noisy)
+    torch.testing.assert_close(out, -noisy)
+    torch.testing.assert_close(model.kwargs["timesteps"], torch.tensor([700.0, 200.0]))
     assert model.kwargs["mode"] == "gen_image"
     assert model.kwargs["first_step"] is True
     assert model.kwargs["use_cache"] is False
@@ -237,7 +259,7 @@ def test_hunyuan_encode_builds_the_token_batch_and_uses_its_vae():
     assert latents.shape == (2, 4, 8, 8)
     noisy = torch.randn(2, 4, 8, 8)
     out = backend.forward(noisy, torch.tensor([0.2, 0.4]), text, 2, context_latents=latents)
-    torch.testing.assert_close(out, noisy)
+    torch.testing.assert_close(out, -noisy)
     assert backend.apply_cfg_dropout(text, 0.5, 2) is text
     try:
         backend.encode_text(["x"], torch.device("cpu"), torch.float32)
