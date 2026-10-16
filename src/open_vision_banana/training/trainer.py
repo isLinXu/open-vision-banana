@@ -22,6 +22,8 @@ import torch.nn.functional as F
 from PIL import Image, ImageFile
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
 
+from ..model_registry import resolve_model_config
+from . import qwen_image21
 from .callbacks import TrainingCallbacks
 from .config import TrainingConfig
 from .distributed import (
@@ -31,6 +33,7 @@ from .distributed import (
     cleanup,
     init_distributed,
 )
+from .edit_forward import edit_latent_layout
 from .losses import TrainingLosses
 from .model_backend import ModelBackend
 from .optimization import SchedulerFactory
@@ -276,6 +279,8 @@ class Trainer:
 
         # Data errors must fail before downloading/loading a large backbone.
         self.train_loader, self.val_loader = self._build_datasets()
+        if edit_latent_layout(resolve_model_config(config.model_name)) == "qwen21":
+            qwen_image21.check_training_config(config)
 
         # ── Model backend ──────────────────────────────────────────────
         self.backend = ModelBackend(
@@ -755,11 +760,6 @@ class Trainer:
         """Whether the backbone takes the source image as in-context tokens (Kontext-style)."""
         return self._edit_layout() == "kontext"
 
-    def _encode_edit_text(self, prompts, images):
-        if self._edit_layout() == "hunyuan":
-            return self.backend.encode_hunyuan_edit(prompts, images)
-        return self.backend.encode_text(prompts, self.device, self.dtype)
-
     def _edit_layout(self) -> str | None:
         """Source-image layout of the training forward, or None for a text-to-image backbone."""
         from .edit_forward import edit_latent_layout
@@ -804,9 +804,8 @@ class Trainer:
 
         # ── Text encoding ──────────────────────────────────────────────
         with torch.no_grad():
-            text_cond = self._encode_edit_text(prompts, input_images)
-            text_cond = self.backend.apply_cfg_dropout(
-                text_cond, config.cfg_dropout_rate, batch_size
+            text_cond = self.backend.encode_edit_text(
+                prompts, input_images, cfg_dropout_rate=config.cfg_dropout_rate
             )
 
         # ── Forward pass ───────────────────────────────────────────────
@@ -941,7 +940,7 @@ class Trainer:
             )
 
             # Text encoding
-            text_cond = self._encode_edit_text(prompts, input_images)
+            text_cond = self.backend.encode_edit_text(prompts, input_images)
 
             # Forward
             predicted = self.backend.forward(

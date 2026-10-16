@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Qwen-Image-2.1 LoRA training and inference**: `qwen-image-2.1` (`QwenImage21Pipeline`, diffusers>=0.41 with transformers>=5.17) trains with the source image given the way the pipeline's editing mode gives it: as Qwen3-VL visual tokens through the pipeline's own prompt encoder, and as reference latents placed before the target tokens (`edit_forward.qwen21_edit_forward`, sigma in and `noise - x0` out, converted to the repo frame). `vae_encode` / `vae_decode` handle its RGBA VAE with per-channel `latents_mean` / `latents_std`. Training takes batch size 1 (the transformer reads one token layout per batch) and a resolution that is a multiple of 32, checked before the model loads; CFG dropout blanks the prompt and keeps the source image. At inference, `output_resolution` keeps the input's area up to the model's native 1024 instead of always resizing the source to 1024 px.
+
 - **Mixed RES source audit**: reconcile C3VG/SeqTR `instances_nogoogle.json` with official RefCOCO-family expressions, shared COCO images and released native masks. Publish the equivalent source and visual audit as a supplement without duplicating training data or changing benchmark splits.
 
 - **Portable RES data pipeline**: official RefCOCO/RefCOCO+/RefCOCOg conversion, provenance and leakage audits, checksum-verified Hub bundles, public `RESManifestDataset`, native-resolution evaluation and a supervised SANA training configuration. See [RES data and evaluation](docs/res_data.md) for the pinned public release, split accounting and compatibility guidance. No trained checkpoint or benchmark accuracy is claimed.
