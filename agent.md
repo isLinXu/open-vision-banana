@@ -36,7 +36,10 @@ The paper demonstrates that **instruction-tuning a pre-trained image generator**
 | Flow matching (linear_flow + rectified-flow) | ✅ Implemented | `src/open_vision_banana/training/flow_matching.py` |
 | SANA-1600M multi-task training | ✅ Verified (legacy + unified) | `scripts/train_sana_512.py`, `scripts/train.py` |
 | FLUX.1-dev (12B) quantized training | ✅ Verified (legacy + unified) | `scripts/train_flux.py`, `scripts/train.py` |
-| 9:1 vision-to-language data mix | ⚠️ Code exists, not fully verified | `src/open_vision_banana/training/trainer.py` |
+| Low-ratio mixing with generation/editing replay (`vision_ratio` + `generation` task) | ✅ Implemented; ratio value is a repo choice (paper gives none) | `src/open_vision_banana/training/trainer.py`, `scripts/build_generation_replay_manifest.py` |
+| Zero-shot protocol (path + COCO image-id audits) | ✅ Implemented | `scripts/build_qwen_baseline_manifest.py` |
+| Instance training data (COCO / LVIS, Fig. 3 prompts + backgrounds) | ✅ Implemented | `scripts/build_instance_manifest.py` |
+| Referring contract (Fig. 4 (c)/(d) verbatim, train = eval prompt) | ✅ Implemented | `src/open_vision_banana/referring_contract.py` |
 | Paper benchmark reproduction | ❌ Not yet achieved | — |
 | Released checkpoints matching SOTA | ❌ Not available | — |
 
@@ -45,7 +48,8 @@ The paper demonstrates that **instruction-tuning a pre-trained image generator**
 - **Not all 10 vision tasks are equally verified**: Depth, normal, and semantic segmentation have the most testing. Tasks like optical flow, keypoint detection, and object detection have mapper code but limited end-to-end training verification.
 - **Not all registered models are verified**: FLUX and SANA have been trained. Z-Image, Qwen-Image, Lumina2, Chroma are registered in `model_registry.py` but have NOT been trained end-to-end. Instruction editors (`qwen-image-edit`, `qwen-image-edit-2509`, `longcat-image-edit`, `flux2-klein`, `joyimage-edit`, `joyimage-edit-plus`, `instruct-pix2pix`, `sdxl-instruct-pix2pix`, `hunyuan-image3-instruct`, `hunyuan-image3-instruct-distil`, and `flux-kontext`) have a training forward. The diffusers editors have been executed on the official transformer and UNet classes built at tiny width. HunyuanImage-3.0-Instruct builds its token batch with `prepare_model_inputs` and calls the published forward; a full fine-tune of that 80B checkpoint has not been run. Qwen and Joy still receive the text embeddings the trainer already encoded; `encode_text` does not insert their vision-language image tokens. `hunyuan-image` remains the HunyuanImage 2.1 text-to-image pipeline.
 - **Export/serving modules**: Code exists in `src/open_vision_banana/export/` and `src/open_vision_banana/serving/` but integration with the new unified training framework has not been verified.
-- **Generation preservation**: The paper claims 90%+ generation capability is preserved. This has NOT been measured in this repo.
+- **Generation preservation**: The paper reports human pairwise win rates (53.5% GenAI-Bench / 47.8% ImgEdit). This repo has an FID/LPIPS proxy (`scripts/evaluate_generation_preservation.py`) that can only rule out severe degradation; it is not the paper protocol.
+- **Paper alignment, in one sentence**: everything the paper *states* (formulas, constants, prompt strings, Appendix A algorithm, evaluation protocols, data rules) is implemented one-to-one (~96% method-level, see README "Paper Alignment Statement"); everything the paper *does not state* (architecture, optimizer, lr, schedule, batch, ratio, seed, resolution, inference steps) is a recorded repo choice; the base model, in-house data and human study are closed and are not reproduced.
 
 ---
 

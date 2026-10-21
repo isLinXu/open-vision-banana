@@ -25,6 +25,7 @@
 - [Training](#training)
 - [Key Algorithms](#key-algorithms)
 - [Checkpoints](#checkpoints)
+- [Paper Alignment Statement](#paper-alignment-statement)
 - [Benchmarks](#benchmarks-from-paper)
 - [Evaluation & Export](#evaluation--export)
 - [Project Structure](#project-structure)
@@ -352,6 +353,19 @@ Task-matched runs:
 - Semantic / referring: [`ovb-fix_ctrl_seg`](https://huggingface.co/khazic/ovb-fix_ctrl_seg), [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg), [`ovb-flux3_ctrl_seg_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k)
 
 The `fix_*` depth LoRAs were trained as closer-brighter grayscale. Decode them with `--depth-colormap grayscale --invert-depth`. A separate local SANA-1600M Hypersim run (cube-edge metric metres, not a Hub `ovb-*` repo) is listed separately.
+
+## Paper Alignment Statement
+
+> What "aligned with the paper" means here, and what it cannot mean. Audited on 2026-10-22 against arXiv:2604.20329v3 (Sections 2–3, Appendix A–D). Details and line references: [`docs/ABLATION_BASELINE.md`](docs/ABLATION_BASELINE.md).
+
+**Three categories, kept separate on purpose:**
+
+1. **Stated by the paper and matched here (method-level, ~96%).** Every formula, constant, prompt string and evaluation protocol the paper writes down has a one-to-one implementation:
+   depth power transform (λ = −3, c = 10/3) and the cube-edge colormap with its analytic inverse (`core/depth_mapper.py`); normal mapping R=(1−x)/2, G=(1+y)/2, B=(1+z)/2 (`core/normal_mapper.py`); the four semantic prompt styles of Fig. 2, the instance prompts of Fig. 3 and the referring prompts of Fig. 4, verbatim (`inference/prompt.py`, `referring_contract.py`); the five-stage instance decoder of Appendix A with τ = 14, θ_size = 2×10⁻⁴, θ_erosion = 0.1, γ = 5, 16-connectivity (`core/segmentation/`); the SA-Co cgF1 = 100·pmF1·IL_MCC with the Gemini 3.1 Flash-Lite presence prompt and the single-turn Gemini 2.5 Pro ReasonSeg rewrite (`evaluation/instance.py`, `evaluation/gemini.py`); metric depth evaluated without scale alignment or intrinsics; the five tasks, low-ratio mixing with generation data, and the zero-shot rule that no evaluation benchmark enters training (path- and image-id-level audits in `scripts/build_qwen_baseline_manifest.py`). The only remaining items the paper shows but does not benchmark are covered as optional training data (Fig. 4 (a)/(b) multi-expression rows). Two readings the paper leaves open — Eq. (3) seed comparison and the Eq. (6) area basis — are exposed as `seed_merge_rule` / `spatial_merge_area_basis` with the paper-literal reading as default.
+
+2. **Not stated by the paper; chosen here and recorded.** The paper gives no architecture, optimizer, learning rate, schedule, batch size, warmup, weight decay, gradient clipping, loss form, loss weights, mixing ratio, seed, resolution, inference steps or CFG, and no benchmark depth caps/crops. The values in `configs/experiments/*_paper_aligned.yaml` (AdamW 1e-4, rsLoRA r32/α64, 512 px, `vision_ratio` 0.5, NYU 10 m Eigen / KITTI 80 m Garg, …) are this repository's choices, written to `effective_config.json` per run and marked "not a paper constant" in the config comments. They can be reproduced, but they cannot be "aligned".
+
+3. **Closed, not reproducible by any open implementation.** The Nano Banana Pro base model, the in-house 2D annotations and internal 3D renders, and the human pairwise generation study (GenAI-Bench 53.5 % / ImgEdit 47.8 %). This repository substitutes Qwen-Image-2.1 / Qwen-Image-Edit, public data (SNVC, Hypersim, TartanAir, BlendedMVS, COCO, LVIS, Rea2Seg) and an FID/LPIPS proxy that can only show the absence of severe generation degradation. **The paper's benchmark numbers are therefore not a target of this repository and are reported in the next section for reference only.**
 
 ## Benchmarks (from paper)
 
