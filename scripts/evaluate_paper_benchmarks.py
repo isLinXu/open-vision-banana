@@ -38,6 +38,10 @@ from torch.utils.data import DataLoader, Subset
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from open_vision_banana.core.segmentation import (  # noqa: E402
+    PAPER_INSTANCE_DECODING_CONFIG,
+    InstanceDecodingConfig,
+)
 from open_vision_banana.data import build_dataset  # noqa: E402
 from open_vision_banana.data.manifest import fingerprint_records  # noqa: E402
 from open_vision_banana.evaluation.evaluator import VisionEvaluator  # noqa: E402
@@ -96,6 +100,25 @@ NORMAL_DATASETS = {
     "scannet": "normal",
     "vkitti": "vkitti_normal",
 }
+
+
+def parse_instance_decoding(spec: str | None) -> InstanceDecodingConfig:
+    """Paper Appendix A defaults, with ``key=value`` overrides for ablations."""
+    base = PAPER_INSTANCE_DECODING_CONFIG.to_dict()
+    if spec:
+        for item in spec.split(","):
+            if not item.strip():
+                continue
+            key, _, value = item.partition("=")
+            key = key.strip()
+            if key not in base:
+                raise ValueError(f"Unknown instance decoding field {key!r}; choose from {sorted(base)}")
+            current = base[key]
+            base[key] = (
+                value.strip().lower() in {"1", "true", "yes"} if isinstance(current, bool)
+                else type(current)(value.strip())
+            )
+    return InstanceDecodingConfig(**base)
 
 
 def parse_args() -> argparse.Namespace:
@@ -164,6 +187,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--refcocog-root", type=Path, default=None)
     parser.add_argument("--reasonseg-root", type=Path, default=None)
     parser.add_argument("--saco-root", type=Path, default=None)
+    parser.add_argument(
+        "--instance-decoding",
+        default=None,
+        help=(
+            "Override Appendix A decoder fields as key=value,key=value, e.g. "
+            "'seed_merge_rule=pixel_and_seed,spatial_merge_area_basis=pixel' for the 2x2 "
+            "ablation of the two readings the paper leaves open. Default: PAPER_INSTANCE_DECODING_CONFIG."
+        ),
+    )
     parser.add_argument("--genai-bench-root", type=Path, default=None)
     parser.add_argument("--imgedit-root", type=Path, default=None)
     parser.add_argument("--split", default="val")
@@ -524,6 +556,8 @@ def main() -> int:
         allow_mps_reduced_dtype=args.allow_mps_reduced_dtype,
     )
     results["metadata"]["dtype"] = str(runtime_dtype).replace("torch.", "")
+    instance_decoding = parse_instance_decoding(args.instance_decoding)
+    results["metadata"]["instance_decoding"] = instance_decoding.to_dict()
     model = VisionBanana.from_pretrained(
         model_name=args.model_name,
         lora_path=args.lora_path,
@@ -531,6 +565,7 @@ def main() -> int:
         dtype=runtime_dtype,
         enable_sequential_cpu_offload=args.cpu_offload,
         quantize=args.quantize,
+        instance_decoding_config=instance_decoding,
     )
     if args.depth_prompt:
         model.training_prompts["depth"] = args.depth_prompt

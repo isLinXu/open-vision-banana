@@ -55,6 +55,12 @@ class TrainingConfig:
     batch_size: int = 1
     grad_accum: int = 4
     lr: float = 3e-5
+    # AdamW settings; the paper does not state its optimizer, these are repo choices
+    # recorded into effective_config.json for reproducibility.
+    weight_decay: float = 0.01
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    adam_eps: float = 1e-8
     max_grad_norm: float = 1.0
     drop_grad_norm: float = 0.0
     seed: int = 42
@@ -205,6 +211,12 @@ class TrainingConfig:
                 raise ValueError(f"{name} must be positive")
         if self.drop_grad_norm < 0:
             raise ValueError("drop_grad_norm must be non-negative")
+        if self.weight_decay < 0:
+            raise ValueError("weight_decay must be non-negative")
+        if not (0.0 <= self.adam_beta1 < 1.0 and 0.0 <= self.adam_beta2 < 1.0):
+            raise ValueError("adam_beta1/adam_beta2 must be in [0, 1)")
+        if self.adam_eps <= 0:
+            raise ValueError("adam_eps must be positive")
         if self.drop_grad_norm > 0 and self.drop_grad_norm <= self.max_grad_norm:
             raise ValueError("drop_grad_norm must exceed max_grad_norm when enabled")
         if self.depth_curve not in {"metric_power", "log_relative"}:
@@ -292,6 +304,8 @@ _YAML_SECTIONS = {
                  "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
                  "seed": "seed",
                  "gradient_checkpointing": "gradient_checkpointing"},
+    "optimizer": {"weight_decay": "weight_decay", "beta1": "adam_beta1", "beta2": "adam_beta2",
+                  "eps": "adam_eps"},
     "scheduler": {"type": "scheduler", "warmup_ratio": "warmup_ratio", "warmup_steps": "warmup_steps"},
     "validation": {"max_samples_per_task": "val_max_samples_per_task"},
     "flow": {"img2img_flow": "img2img_flow", "sigma": "flow_sigma",
