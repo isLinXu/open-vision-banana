@@ -270,6 +270,43 @@ def test_build_qwen_baseline_manifest_filters_gray_depth_and_upsamples_cityscape
     assert abs(audit["cityscapes_train_share"] - 0.50) < 1e-6
 
 
+def test_build_qwen_baseline_manifest_enforces_zero_shot_protocol(tmp_path: Path):
+    from scripts.build_qwen_baseline_manifest import benchmark_leak
+
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    Image.new("RGB", (16, 16), (50, 60, 70)).save(img_dir / "in.png")
+    good_rgb = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 16, 16), 2.5))[0]
+    depth_png = (good_rgb.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)
+    for sub in ("vkitti2/Scene01/depth", "hypersim/ai_001/depth", "nyu_depth_v2/train"):
+        d = tmp_path / sub
+        d.mkdir(parents=True)
+        Image.fromarray(depth_png).save(d / "d.png")
+
+    rows = [
+        {"task": "depth", "input": "images/in.png", "target": "vkitti2/Scene01/depth/d.png", "split": "train"},
+        {"task": "depth", "input": "images/in.png", "target": "hypersim/ai_001/depth/d.png", "split": "train"},
+        {"task": "depth", "input": "images/in.png", "target": "nyu_depth_v2/train/d.png", "split": "train"},
+        {"task": "referring", "input": "refcocog/train2014/x.jpg", "target": "images/in.png", "split": "train"},
+    ]
+    base = tmp_path / "base.jsonl"
+    base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    strict = build_qwen_baseline_manifest(base, tmp_path / "strict.jsonl", data_root=tmp_path)
+    assert strict["rejected_benchmark_leak_rows"] == {"vkitti": 1, "nyu": 1, "refcocog": 1}
+    assert strict["task_split_counts"] == {"depth/train": 1}
+
+    relaxed = build_qwen_baseline_manifest(
+        base, tmp_path / "relaxed.jsonl", data_root=tmp_path, allow_benchmarks=["vkitti"]
+    )
+    assert relaxed["rejected_benchmark_leak_rows"] == {"nyu": 1, "refcocog": 1}
+    assert relaxed["task_split_counts"]["depth/train"] == 2
+    # "virtual_kitti/" also contains "kitti/": an allowed corpus must not be re-flagged as KITTI
+    assert benchmark_leak({"target": "virtual_kitti/Scene01/depth/d.png"}, {"vkitti"}) is None
+    with pytest.raises(ValueError, match="allow_benchmarks"):
+        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", allow_benchmarks=["bogus"])
+
+
 def test_qwen_paper_aligned_configs_parse_cleanly():
     root = Path(__file__).resolve().parents[1]
     for name in (
@@ -283,7 +320,7 @@ def test_qwen_paper_aligned_configs_parse_cleanly():
         assert cfg.grad_accum == 32
         if "paper_aligned" in name:
             assert cfg.depth_colormaps == ["cube_edge", "plasma", "inferno", "viridis", "grayscale"]
-            assert cfg.semantic_prompt_styles == ["json_tuple", "natural", "hex"]
+            assert cfg.semantic_prompt_styles == ["json_named", "json_tuple", "natural", "hex"]
             assert cfg.semantic_color_remap_prob == 0.5
             assert cfg.aspect_preserving_crop is True
 

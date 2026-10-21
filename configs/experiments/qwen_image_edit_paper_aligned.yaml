@@ -23,7 +23,7 @@ data:
   vision_ratio: 1.0
   depth_curve: metric_power
   depth_colormaps: [cube_edge, plasma, inferno, viridis, grayscale]
-  semantic_prompt_styles: [json_tuple, natural, hex]
+  semantic_prompt_styles: [json_named, json_tuple, natural, hex]
   semantic_color_remap_prob: 0.5
   aspect_preserving_crop: true
   num_workers: 4

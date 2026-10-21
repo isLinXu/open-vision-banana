@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -43,7 +44,28 @@ def test_paper_reproduction_decoder_has_fixed_protocol() -> None:
         "bbox_expansion_factor": 5.0,
         "grouping_mode": "seed",
         "adaptive_color_tolerance": False,
+        "seed_merge_rule": "pixel_only",
     }
+
+
+def test_seed_merge_rule_switch_pixel_only_vs_pixel_and_seed() -> None:
+    """``pixel_only`` is the paper Eq.(3) rule; ``pixel_and_seed`` is an opt-in that can
+    only ever split more (never merge more) and is threaded through the config contract.
+    """
+    img = torch.zeros(8, 64, 3)
+    for x in range(64):
+        img[:, x] = torch.tensor([60.0 + 5.0 * x, 60.0, 60.0])
+    bg_mask = torch.zeros(8, 64, dtype=torch.bool)
+
+    lenient = SegmentationDecoder(seed_merge_rule="pixel_only")
+    strict = SegmentationDecoder(seed_merge_rule="pixel_and_seed")
+    n_lenient = int(lenient._seed_based_union_find(img, bg_mask).unique().numel())
+    n_strict = int(strict._seed_based_union_find(img, bg_mask).unique().numel())
+    assert n_strict >= n_lenient
+    assert strict.instance_config.to_dict()["seed_merge_rule"] == "pixel_and_seed"
+    assert RGBMapper(instance_decoding_config=strict.instance_config).seg_decoder.seed_merge_rule == "pixel_and_seed"
+    with pytest.raises(ValueError, match="seed_merge_rule"):
+        InstanceDecodingConfig(seed_merge_rule="bogus")
 
 
 def test_paper_reproduction_rgb_mapper_propagates_protocol() -> None:

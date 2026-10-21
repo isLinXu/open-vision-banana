@@ -40,6 +40,41 @@ TASK_ALIASES = {
     "metric_depth": "depth",
 }
 
+# Paper zero-shot transfer protocol: no training data from any evaluated benchmark.
+# Tables 2/4/5/6/7 evaluate Cityscapes val, RefCOCOg, ReasonSeg, NYU, iBims-1, ETH3D,
+# DIODE, KITTI, nuScenes, ScanNet, and Virtual KITTI 2. Rows whose input/target
+# paths come from these corpora are rejected unless the caller explicitly allows
+# a benchmark (e.g. Cityscapes *train* when the run is not claimed as zero-shot).
+ZERO_SHOT_BENCHMARK_PATTERNS: dict[str, tuple[str, ...]] = {
+    "vkitti": ("vkitti", "virtual_kitti", "virtualkitti"),
+    "nyu": ("nyu_depth", "nyuv2", "nyu-depth", "nyu/"),
+    "ibims": ("ibims",),
+    "eth3d": ("eth3d",),
+    "diode": ("diode",),
+    "kitti": ("kitti_raw", "kitti/", "kitti_depth", "data_depth_annotated"),
+    "nuscenes": ("nuscenes",),
+    "scannet": ("scannet/", "scannetv2", "scannet_v2"),
+    "refcocog": ("refcocog", "refcoco"),
+    "reasonseg": ("reasonseg",),
+    "sa_co": ("saco", "sa-co", "sa_co"),
+}
+
+
+def benchmark_leak(row: dict, allowed: set[str]) -> str | None:
+    """Return the benchmark name a manifest row leaks from, or None."""
+    haystack = " ".join(
+        str(row.get(k, "")) for k in ("input", "target", "image", "source", "dataset")
+    ).lower()
+    # An explicitly allowed corpus wins even if its path also contains a
+    # shorter pattern (e.g. "virtual_kitti/" also contains "kitti/").
+    for name in allowed:
+        if any(p in haystack for p in ZERO_SHOT_BENCHMARK_PATTERNS[name]):
+            return None
+    for name, patterns in ZERO_SHOT_BENCHMARK_PATTERNS.items():
+        if any(p in haystack for p in patterns):
+            return name
+    return None
+
 
 def is_valid_metric_cube_edge_target(
     target_path: Path,
@@ -88,10 +123,18 @@ def build_qwen_baseline_manifest(
     min_cityscapes_share: float = 0.50,
     filter_non_metric_depth: bool = True,
     seed: int = 42,
+    allow_benchmarks: tuple[str, ...] | list[str] = (),
 ) -> dict:
     """Build a cleaned, rebalanced manifest and return an audit summary."""
     if not 0.0 <= min_cityscapes_share < 1.0:
         raise ValueError("min_cityscapes_share must be in [0, 1)")
+    unknown = sorted(set(allow_benchmarks) - set(ZERO_SHOT_BENCHMARK_PATTERNS))
+    if unknown:
+        raise ValueError(
+            f"allow_benchmarks contains unknown names {unknown}; "
+            f"choose from {sorted(ZERO_SHOT_BENCHMARK_PATTERNS)}"
+        )
+    allowed = set(allow_benchmarks)
 
     rng = random.Random(seed)
     anchor = data_root.resolve() if data_root else base_manifest.resolve()
@@ -100,11 +143,21 @@ def build_qwen_baseline_manifest(
     base_rows = load_jsonl(base_manifest)
     kept_rows: list[dict] = []
     rejected_depth = 0
+    rejected_benchmark: dict[str, int] = {}
+
+    def leaks(row: dict) -> bool:
+        name = benchmark_leak(row, allowed)
+        if name is None:
+            return False
+        rejected_benchmark[name] = rejected_benchmark.get(name, 0) + 1
+        return True
 
     for row in base_rows:
         raw_task = row.get("task", "")
         task = TASK_ALIASES.get(raw_task, raw_task)
         row = dict(row, task=task)
+        if leaks(row):
+            continue
 
         if task == "depth":
             if metric_depth_manifest is not None:
@@ -121,11 +174,15 @@ def build_qwen_baseline_manifest(
     if metric_depth_manifest is not None:
         for row in load_jsonl(metric_depth_manifest):
             row = dict(row, task="depth", prompt=PromptBuilder.DEPTH_PROMPT)
+            if leaks(row):
+                continue
             kept_rows.append(row)
 
     if cityscapes_manifest is not None:
         for row in load_jsonl(cityscapes_manifest):
             row = dict(row, task="semantic", prompt=SEMANTIC_SEGMENTATION_PROMPT)
+            if row.get("split") == "val" or leaks(row):
+                continue
             kept_rows.append(row)
 
     # Rebalance Cityscapes train share within semantic
@@ -170,6 +227,8 @@ def build_qwen_baseline_manifest(
         "total_rows": len(kept_rows),
         "task_split_counts": task_split_counts,
         "rejected_non_metric_depth_rows": rejected_depth,
+        "rejected_benchmark_leak_rows": rejected_benchmark,
+        "allowed_benchmarks": sorted(allowed),
         "cityscapes_train_initial": len(cs_train),
         "cityscapes_train_upsampled_added": upsampled_cs_added,
         "cityscapes_train_final": final_cs_train,
@@ -192,6 +251,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cityscapes-manifest", type=Path, default=None)
     parser.add_argument("--min-cityscapes-share", type=float, default=0.50)
     parser.add_argument("--no-filter-non-metric-depth", action="store_true")
+    parser.add_argument(
+        "--allow-benchmark",
+        action="append",
+        default=[],
+        choices=sorted(ZERO_SHOT_BENCHMARK_PATTERNS),
+        help="Permit rows from this evaluated benchmark (breaks the paper zero-shot protocol).",
+    )
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -207,6 +273,7 @@ def main() -> int:
         min_cityscapes_share=args.min_cityscapes_share,
         filter_non_metric_depth=not args.no_filter_non_metric_depth,
         seed=args.seed,
+        allow_benchmarks=args.allow_benchmark,
     )
     print(json.dumps(audit, indent=2))
     return 0

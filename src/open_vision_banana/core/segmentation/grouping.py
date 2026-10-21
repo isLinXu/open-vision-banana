@@ -10,6 +10,7 @@ class GroupingMixin:
     # Class-level type declarations for attributes provided by the
     # composing SegmentationDecoder (mixin pattern).
     color_tolerance: float
+    seed_merge_rule: str = "pixel_only"
 
     @staticmethod
     def _compress_labels(labels: torch.Tensor, max_rounds: int = 24) -> torch.Tensor:
@@ -362,14 +363,17 @@ class GroupingMixin:
                 src_roots = labels[src_indices]
                 dst_roots = labels[dst_indices]
 
-                # Compare src pixel color AND src root seed against dst component's seed color
+                # Paper Eq.(3): compare src pixel color against dst component's seed color.
+                # ``pixel_and_seed`` additionally requires the two component seeds to agree,
+                # a stricter opt-in that blocks chained merges through bridging pixels.
                 src_pixels = img.reshape(N, 3)[src_indices]
-                src_seeds = seed_colors[src_roots]
                 dst_seeds = seed_colors[dst_roots]
                 pixel_dist_sq = ((src_pixels - dst_seeds) ** 2).sum(dim=-1)
-                seed_dist_sq = ((src_seeds - dst_seeds) ** 2).sum(dim=-1)
-
-                eligible = (pixel_dist_sq <= tau_sq) & (seed_dist_sq <= tau_sq)
+                eligible = pixel_dist_sq <= tau_sq
+                if getattr(self, "seed_merge_rule", "pixel_only") == "pixel_and_seed":
+                    src_seeds = seed_colors[src_roots]
+                    seed_dist_sq = ((src_seeds - dst_seeds) ** 2).sum(dim=-1)
+                    eligible = eligible & (seed_dist_sq <= tau_sq)
                 if not eligible.any():
                     continue
 
