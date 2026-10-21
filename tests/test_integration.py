@@ -275,6 +275,18 @@ class TestCityscapesLabelToRGB:
         assert torch.allclose(rgb_vec, rgb_ref, atol=1e-6), \
             "Vectorized _label_to_rgb does not match naive loop"
 
+    def test_ignore_index_is_black(self):
+        """Void / unlabeled (255) must not collapse onto bicycle."""
+        ds = self._make_dataset()
+        label = torch.full((4, 4), 255, dtype=torch.long)
+        label[0, 0] = 0  # road
+        rgb = ds._label_to_rgb(label)
+        road = torch.tensor([128, 64, 128], dtype=torch.float32) / 255.0
+        bicycle = torch.tensor([119, 11, 32], dtype=torch.float32) / 255.0
+        assert torch.allclose(rgb[:, 0, 0], road, atol=1e-6)
+        assert torch.allclose(rgb[:, 1, 1], torch.zeros(3), atol=1e-6)
+        assert not torch.allclose(rgb[:, 1, 1], bicycle, atol=1e-3)
+
 
 # ---------------------------------------------------------------------------
 # VisualizationDecoder.decode_referring

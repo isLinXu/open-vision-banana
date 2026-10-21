@@ -48,7 +48,9 @@ def test_qwen_edit_appends_packed_source_and_img_shapes():
     backend = _backend("qwen-image-edit", _Record(produce))
     noisy, context = torch.randn(B, C, H, W), torch.randn(B, C, H, W)
     out = backend.forward(noisy, torch.tensor([0.2, 0.7]), _text(), B, context_latents=context)
-    assert out.shape == (B, C, H, W)
+    # Native frame: sigma = 1 - t in, noise - x0 out, so the repo velocity is its negation.
+    torch.testing.assert_close(backend.peft_model.calls[0][1]["timestep"], torch.tensor([0.8, 0.3]))
+    torch.testing.assert_close(out, -noisy)
     packed = backend.peft_model.calls[0][1]["hidden_states"]
     torch.testing.assert_close(packed[:, :TOKENS], pack_latents(noisy, B))
     torch.testing.assert_close(packed[:, TOKENS:], pack_latents(context, B))

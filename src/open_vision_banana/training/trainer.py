@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import random
+import re
 from pathlib import Path
 
 import numpy as np
@@ -97,6 +99,22 @@ def uniform_task_prompts(dataset: Dataset) -> dict[str, str]:
     }
 
 
+_SEMANTIC_RGB_TUPLE_RE = re.compile(
+    r'"([^"]+)"\s*:\s*<\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*>'
+)
+
+
+def parse_semantic_legend_from_prompt(prompt: str) -> dict[str, tuple[int, int, int]]:
+    """Extract a ``class_name -> (R, G, B)`` mapping from a semantic legend prompt."""
+    matches = _SEMANTIC_RGB_TUPLE_RE.findall(prompt)
+    if not matches:
+        return {}
+    return {
+        name: (int(r), int(g), int(b))
+        for name, r, g, b in matches
+    }
+
+
 class ManifestVisionDataset(Dataset):
     """Load input/target pairs from a JSONL manifest for multi-task training.
 
@@ -114,11 +132,29 @@ class ManifestVisionDataset(Dataset):
         depth_curve: str = "metric_power",
         depth_log_alpha: float = 0.4,
         depth_colormap: str = "cube_edge",
+        depth_colormaps: list[str] | None = None,
+        semantic_prompt_styles: list[str] | None = None,
+        semantic_color_remap_prob: float = 0.0,
+        aspect_preserving_crop: bool = False,
+        seed: int = 42,
+        tar_index_path: Path | None = None,
+        inner_prefix: str = "SenseNova-Vision-Corpus-50M",
+        disk_cache_dir: Path | None = None,
     ):
         self.resolution = resolution
+        self.split = split
         self.depth_curve = depth_curve
         self.depth_log_alpha = depth_log_alpha
         self.depth_colormap = depth_colormap
+        self.depth_colormaps = list(depth_colormaps) if depth_colormaps else None
+        self.semantic_prompt_styles = (
+            list(semantic_prompt_styles) if semantic_prompt_styles else None
+        )
+        self.semantic_color_remap_prob = float(semantic_color_remap_prob)
+        self.aspect_preserving_crop = bool(aspect_preserving_crop)
+        self.rng = random.Random(seed)
+        self.inner_prefix = inner_prefix
+        self.disk_cache_dir = Path(disk_cache_dir) if disk_cache_dir else None
         self.samples: list[dict[str, str]] = []
         path_anchor = data_root.resolve() if data_root else manifest_path
         if "referring" in tasks:
@@ -127,6 +163,33 @@ class ManifestVisionDataset(Dataset):
                 roots.append(Path(data_root))
             if any((root / "BUILD_INCOMPLETE").exists() for root in roots):
                 raise ValueError("RES dataset build or restore is incomplete; validate before training")
+
+        # Optional indexed_gzip tar stream support (Solution 3)
+        self._tar_files: dict[str, dict[str, int]] = {}
+        self._tar_volumes: list[Path] = []
+        self._gzip_index_path: Path | None = None
+        self._tar_reader = None
+        resolved_tar_idx = Path(tar_index_path) if tar_index_path else None
+        if resolved_tar_idx is None:
+            for cand in (
+                (data_root / "tar_index.json") if data_root else None,
+                Path(manifest_path).parent / "tar_index.json",
+            ):
+                if cand is not None and cand.is_file():
+                    resolved_tar_idx = cand
+                    break
+        if resolved_tar_idx is not None and resolved_tar_idx.is_file():
+            raw_idx = json.loads(resolved_tar_idx.read_text(encoding="utf-8"))
+            self._tar_files = raw_idx.get("files", {})
+            self._tar_volumes = [Path(v["path"]) for v in raw_idx.get("volumes", [])]
+            if raw_idx.get("gzip_index"):
+                gz_cand = Path(raw_idx["gzip_index"])
+                if not gz_cand.is_file():
+                    gz_cand = resolved_tar_idx.parent / gz_cand.name
+                if gz_cand.is_file():
+                    self._gzip_index_path = gz_cand
+            elif resolved_tar_idx.with_suffix(".gzidx").is_file():
+                self._gzip_index_path = resolved_tar_idx.with_suffix(".gzidx")
 
         from open_vision_banana.data.manifest import resolve_manifest_path
 
@@ -141,9 +204,19 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
-                img_path = resolve_manifest_path(row.get("input", ""), path_anchor)
-                tgt_path = resolve_manifest_path(row.get("target", ""), path_anchor)
-                if not img_path.is_file() or not tgt_path.is_file():
+                raw_inp = row.get("input", "")
+                raw_tgt = row.get("target", "")
+                # Pure T2I generation rows may provide only "target" (or only "input"/"image")
+                if mapped == "generation":
+                    if not raw_tgt:
+                        raw_tgt = raw_inp or row.get("image", "")
+                    if not raw_inp:
+                        raw_inp = raw_tgt
+                img_path = resolve_manifest_path(raw_inp, path_anchor)
+                tgt_path = resolve_manifest_path(raw_tgt, path_anchor)
+                inp_tar_key = self._resolve_tar_key(raw_inp)
+                tgt_tar_key = self._resolve_tar_key(raw_tgt)
+                if not (img_path.is_file() or inp_tar_key) or not (tgt_path.is_file() or tgt_tar_key):
                     raise FileNotFoundError(
                         f"{manifest_path}:{_line_no}: missing input/target: {img_path}, {tgt_path}"
                     )
@@ -161,6 +234,8 @@ class ManifestVisionDataset(Dataset):
                     {
                         "image_path": str(img_path),
                         "target_path": str(tgt_path),
+                        "input_tar_key": inp_tar_key or "",
+                        "target_tar_key": tgt_tar_key or "",
                         "task": mapped,
                         "prompt": prompt,
                         **{
@@ -174,6 +249,66 @@ class ManifestVisionDataset(Dataset):
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
 
+    def _resolve_tar_key(self, rel_path: str) -> str | None:
+        if not self._tar_files or not rel_path:
+            return None
+        clean = rel_path.lstrip("./")
+        if clean in self._tar_files:
+            return clean
+        if self.inner_prefix:
+            prefixed = f"{self.inner_prefix.rstrip('/')}/{clean}"
+            if prefixed in self._tar_files:
+                return prefixed
+            prefix_slash = f"{self.inner_prefix.rstrip('/')}/"
+            if clean.startswith(prefix_slash):
+                stripped = clean[len(prefix_slash) :]
+                if stripped in self._tar_files:
+                    return stripped
+        return None
+
+    def _get_tar_reader(self):
+        if self._tar_reader is None:
+            from open_vision_banana.data.tar_dataset import (
+                IndexedTarReader,
+                SequentialTarReader,
+            )
+
+            if self._gzip_index_path and self._gzip_index_path.is_file():
+                try:
+                    self._tar_reader = IndexedTarReader(self._tar_volumes, self._gzip_index_path)
+                    return self._tar_reader
+                except ImportError:
+                    pass
+            self._tar_reader = SequentialTarReader(self._tar_volumes)
+        return self._tar_reader
+
+    def _open_pil_rgb(self, disk_path: str, tar_key: str) -> Image.Image:
+        import io
+        import os
+
+        p = Path(disk_path)
+        if p.is_file():
+            with Image.open(p) as img:
+                img.load()
+                return img.convert("RGB")
+        if tar_key and tar_key in self._tar_files:
+            if self.disk_cache_dir is not None:
+                cache_file = self.disk_cache_dir / tar_key.replace("/", os.sep)
+                if cache_file.is_file():
+                    with Image.open(cache_file) as img:
+                        img.load()
+                        return img.convert("RGB")
+            info = self._tar_files[tar_key]
+            raw_bytes = self._get_tar_reader().read_at(info["offset"], info["size"])
+            if self.disk_cache_dir is not None:
+                cache_file = self.disk_cache_dir / tar_key.replace("/", os.sep)
+                cache_file.parent.mkdir(parents=True, exist_ok=True)
+                cache_file.write_bytes(raw_bytes)
+            with Image.open(io.BytesIO(raw_bytes)) as img:
+                img.load()
+                return img.convert("RGB")
+        raise FileNotFoundError(f"Missing image on disk ({disk_path}) and in tar index ({tar_key})")
+
     def __len__(self) -> int:
         return len(self.samples)
 
@@ -183,36 +318,84 @@ class ManifestVisionDataset(Dataset):
         except Exception as exc:
             raise RuntimeError(f"Unreadable manifest sample idx={idx}: {self.samples[idx]}") from exc
 
+    def _resize_and_crop_pair(
+        self,
+        inp_img: Image.Image,
+        tgt_img: Image.Image,
+        target_resample: Image.Resampling,
+    ) -> tuple[Image.Image, Image.Image]:
+        """Resize (inp, tgt) to (resolution, resolution), optionally preserving aspect ratio."""
+        r = self.resolution
+        if not self.aspect_preserving_crop or inp_img.size == (r, r):
+            return (
+                inp_img.resize((r, r), Image.Resampling.LANCZOS),
+                tgt_img.resize((r, r), target_resample),
+            )
+        w, h = inp_img.size
+        if tgt_img.size != (w, h):
+            tgt_img = tgt_img.resize((w, h), target_resample)
+        short = min(w, h)
+        if short <= 0:
+            return (
+                inp_img.resize((r, r), Image.Resampling.LANCZOS),
+                tgt_img.resize((r, r), target_resample),
+            )
+        scale = r / float(short)
+        new_w = max(r, int(round(w * scale)))
+        new_h = max(r, int(round(h * scale)))
+        inp_scaled = inp_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        tgt_scaled = tgt_img.resize((new_w, new_h), target_resample)
+        if new_w == r and new_h == r:
+            return inp_scaled, tgt_scaled
+        if self.split == "train":
+            left = self.rng.randint(0, new_w - r)
+            top = self.rng.randint(0, new_h - r)
+        else:
+            left = (new_w - r) // 2
+            top = (new_h - r) // 2
+        box = (left, top, left + r, top + r)
+        return inp_scaled.crop(box), tgt_scaled.crop(box)
+
     def _load(self, idx: int) -> dict:
         s = self.samples[idx]
-        with Image.open(s["image_path"]) as img:
-            img.load()
-            img = img.convert("RGB").resize(
-                (self.resolution, self.resolution), Image.Resampling.LANCZOS
-            )
-            inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
         resample = (
             Image.Resampling.NEAREST
             if s["task"] in {"semantic", "referring"}
             else Image.Resampling.LANCZOS
         )
-        with Image.open(s["target_path"]) as img:
-            img.load()
-            img = img.convert("RGB").resize((self.resolution, self.resolution), resample)
-            tgt = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
-        if s["task"] == "depth" and self.depth_curve != "metric_power":
-            from open_vision_banana.core.depth_mapper import DepthRGBMapper
+        raw_inp = self._open_pil_rgb(s["image_path"], s.get("input_tar_key", ""))
+        raw_tgt = self._open_pil_rgb(s["target_path"], s.get("target_tar_key", ""))
+        img, tgt_img = self._resize_and_crop_pair(raw_inp, raw_tgt, resample)
+        inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
+        tgt = torch.from_numpy(np.asarray(tgt_img, np.float32) / 255.0).permute(2, 0, 1)
+        prompt = s["prompt"]
+        if s["task"] == "depth":
+            target_cmap = self.depth_colormap
+            if self.split == "train" and self.depth_colormaps:
+                target_cmap = self.rng.choice(self.depth_colormaps)
+            if self.depth_curve != "metric_power" or target_cmap != self.depth_colormap:
+                from open_vision_banana.core.depth_mapper import DepthRGBMapper
 
-            paper = DepthRGBMapper(colormap=self.depth_colormap)
-            alt = DepthRGBMapper(
-                colormap=self.depth_colormap,
-                curve=self.depth_curve,
-                log_alpha=self.depth_log_alpha,
-            )
-            metric = paper.rgb_to_depth(tgt.unsqueeze(0))
-            tgt = alt.depth_to_rgb(metric).squeeze(0)
+                paper = DepthRGBMapper(colormap=self.depth_colormap)
+                alt = DepthRGBMapper(
+                    colormap=target_cmap,
+                    curve=self.depth_curve,
+                    log_alpha=self.depth_log_alpha,
+                )
+                metric = paper.rgb_to_depth(tgt.unsqueeze(0))
+                tgt = alt.depth_to_rgb(metric).squeeze(0)
+            if self.split == "train" and self.depth_colormaps and target_cmap != "cube_edge":
+                prompt = (
+                    f"Generate a metric depth visualization of this image using the {target_cmap} colormap."
+                    if self.depth_curve == "metric_power"
+                    else f"Generate a relative depth map of this image using the {target_cmap} RGB palette."
+                )
+        elif s["task"] == "semantic" and self.split == "train" and (
+            self.semantic_prompt_styles or self.semantic_color_remap_prob > 0.0
+        ):
+            tgt, prompt = self._augment_semantic(tgt, prompt)
         item = {
-            "prompt": s["prompt"],
+            "prompt": prompt,
             "image": inp * 2.0 - 1.0,
             "target_rgb": tgt,
             "task": s["task"],
@@ -220,6 +403,53 @@ class ManifestVisionDataset(Dataset):
         if s["task"] == "referring":
             item.update({key: s[key] for key in ("expression", "encoding", "sample_id", "source_dataset") if key in s})
         return item
+
+    def _augment_semantic(
+        self, tgt: torch.Tensor, prompt: str
+    ) -> tuple[torch.Tensor, str]:
+        """Apply dynamic open-vocabulary prompt style and optional color remapping."""
+        from open_vision_banana.data.openvocab_semantic import (
+            NAMED_COLORS,
+            build_prompt,
+            sample_distinct_colors,
+        )
+
+        mapping = parse_semantic_legend_from_prompt(prompt)
+        if not mapping:
+            return tgt, prompt
+
+        styles = self.semantic_prompt_styles or ["json_tuple"]
+        chosen_style = self.rng.choice(styles)
+        do_remap = (
+            self.semantic_color_remap_prob > 0.0
+            and self.rng.random() < self.semantic_color_remap_prob
+        )
+        if chosen_style == "json_named" and not do_remap:
+            named_pool = set(NAMED_COLORS.values())
+            if not all(tuple(c) in named_pool for c in mapping.values()):
+                do_remap = True
+
+        if do_remap:
+            pool = list(NAMED_COLORS.values()) if chosen_style == "json_named" else None
+            if pool is not None and len(mapping) > len(pool):
+                chosen_style = "json_tuple"
+                pool = None
+            new_colors = sample_distinct_colors(
+                len(mapping), self.rng, min_distance=64.0, pool=pool
+            )
+            quantized = (tgt.permute(1, 2, 0) * 255.0).round().to(torch.int32)
+            remapped = quantized.clone()
+            new_mapping: dict[str, tuple[int, int, int]] = {}
+            for (cls_name, old_rgb), new_rgb in zip(mapping.items(), new_colors, strict=True):
+                old_t = torch.tensor(old_rgb, dtype=torch.int32)
+                mask = (quantized == old_t).all(dim=-1)
+                if mask.any():
+                    remapped[mask] = torch.tensor(new_rgb, dtype=torch.int32)
+                new_mapping[cls_name] = new_rgb
+            tgt = (remapped.float() / 255.0).permute(2, 0, 1).clamp(0.0, 1.0)
+            mapping = new_mapping
+
+        return tgt, build_prompt(chosen_style, mapping)
 
 
 def _collate_fn(batch: list[dict]) -> dict:
@@ -494,6 +724,11 @@ class Trainer:
                 data_root=data_root,
                 depth_curve=config.depth_curve,
                 depth_log_alpha=config.depth_log_alpha,
+                depth_colormaps=config.depth_colormaps,
+                semantic_prompt_styles=config.semantic_prompt_styles,
+                semantic_color_remap_prob=config.semantic_color_remap_prob,
+                aspect_preserving_crop=config.aspect_preserving_crop,
+                seed=config.seed,
             )
             for t in sorted(tasks_to_load)
         ]
@@ -511,6 +746,8 @@ class Trainer:
                 data_root=data_root,
                 depth_curve=config.depth_curve,
                 depth_log_alpha=config.depth_log_alpha,
+                aspect_preserving_crop=config.aspect_preserving_crop,
+                seed=config.seed,
             )
             for t in sorted(tasks_to_load)
         ]
@@ -534,7 +771,11 @@ class Trainer:
             if self.dist.enabled
             else None
         )
-        if config.task_sampling != "proportional" or config.task_sampling_weights:
+        if (
+            config.task_sampling != "proportional"
+            or config.task_sampling_weights
+            or config.vision_ratio < 1.0
+        ):
             groups = {}
             offset = 0
             for task, ds in zip(sorted(tasks_to_load), train_datasets, strict=True):
@@ -546,9 +787,20 @@ class Trainer:
                 if canonical in sampling_weights:
                     raise ValueError(f"Duplicate sampling task alias: {canonical}")
                 sampling_weights[canonical] = weight
+            if config.vision_ratio < 1.0 and not sampling_weights and "generation" in groups:
+                vision_tasks = [t for t in groups if t != "generation"]
+                if vision_tasks:
+                    per_vision = config.vision_ratio / len(vision_tasks)
+                    for t in vision_tasks:
+                        sampling_weights[t] = per_vision
+                    sampling_weights["generation"] = 1.0 - config.vision_ratio
             train_sampler = TaskWeightedSampler(
-                groups, strategy=config.task_sampling, weights=sampling_weights,
-                seed=config.seed, rank=self.dist.rank, world_size=self.dist.world_size,
+                groups,
+                strategy="uniform" if (config.vision_ratio < 1.0 and not config.task_sampling_weights) else config.task_sampling,
+                weights=sampling_weights,
+                seed=config.seed,
+                rank=self.dist.rank,
+                world_size=self.dist.world_size,
             )
             logger.info("Task sampling probabilities: %s", train_sampler.task_probabilities)
         train_loader = DataLoader(
@@ -760,6 +1012,18 @@ class Trainer:
         """Whether the backbone takes the source image as in-context tokens (Kontext-style)."""
         return self._edit_layout() == "kontext"
 
+    def _encode_edit_text(self, prompts, images, cfg_dropout_rate: float = 0.0):
+        if hasattr(self.backend, "encode_edit_text"):
+            return self.backend.encode_edit_text(
+                prompts, images, cfg_dropout_rate=cfg_dropout_rate
+            )
+        if self._edit_layout() == "hunyuan":
+            return self.backend.encode_hunyuan_edit(prompts, images)
+        text_cond = self.backend.encode_text(prompts, self.device, self.dtype)
+        if cfg_dropout_rate > 0 and hasattr(self.backend, "apply_cfg_dropout"):
+            return self.backend.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
+        return text_cond
+
     def _edit_layout(self) -> str | None:
         """Source-image layout of the training forward, or None for a text-to-image backbone."""
         from .edit_forward import edit_latent_layout
@@ -788,12 +1052,15 @@ class Trainer:
 
         # ── Flow matching ──────────────────────────────────────────────
         edit_layout = self._edit_layout()
+        batch_tasks = batch.get("task", ["depth"] * batch_size)
+        is_pure_generation = all(t == "generation" for t in batch_tasks)
         flow_batch = self.backend.prepare_flow_batch(
             target_latents,
             input_latents,
             batch_size,
-            # Editors see the source as conditioning and generate the target from noise.
-            img2img_flow=config.img2img_flow and edit_layout is None,
+            # Editors see the source as conditioning and generate the target from noise;
+            # pure T2I generation replay also starts from Gaussian noise.
+            img2img_flow=config.img2img_flow and edit_layout is None and not is_pure_generation,
             flow_sigma=config.flow_sigma,
             logit_normal=config.logit_normal,
             flow_shift=config.flow_shift,
@@ -804,7 +1071,7 @@ class Trainer:
 
         # ── Text encoding ──────────────────────────────────────────────
         with torch.no_grad():
-            text_cond = self.backend.encode_edit_text(
+            text_cond = self._encode_edit_text(
                 prompts, input_images, cfg_dropout_rate=config.cfg_dropout_rate
             )
 

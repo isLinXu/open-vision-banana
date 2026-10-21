@@ -10,6 +10,18 @@ class GroupingMixin:
     # Class-level type declarations for attributes provided by the
     # composing SegmentationDecoder (mixin pattern).
     color_tolerance: float
+    seed_merge_rule: str = "pixel_only"
+
+    @staticmethod
+    def _compress_labels(labels: torch.Tensor, max_rounds: int = 24) -> torch.Tensor:
+        """Pointer-jump ``labels = labels[labels]`` until convergence (exact root finding)."""
+        lut = labels.clone()
+        for _ in range(max_rounds):
+            next_lut = lut[lut]
+            if torch.equal(next_lut, lut):
+                break
+            lut = next_lut
+        return lut
 
     def _compute_adaptive_tau(self, rgb_image: torch.Tensor) -> torch.Tensor:
         """Compute adaptive color tolerance map based on local image statistics.
@@ -132,13 +144,13 @@ class GroupingMixin:
             dst_labels = labels[dst_indices]
             min_labels = torch.minimum(src_labels, dst_labels)
 
-            labels.scatter_(0, src_indices, torch.minimum(labels[src_indices], min_labels))
-            labels.scatter_(0, dst_indices, torch.minimum(labels[dst_indices], min_labels))
+            labels.scatter_reduce_(0, src_labels, min_labels, reduce="amin")
+            labels.scatter_reduce_(0, dst_labels, min_labels, reduce="amin")
+            labels.scatter_reduce_(0, src_indices, min_labels, reduce="amin")
+            labels.scatter_reduce_(0, dst_indices, min_labels, reduce="amin")
 
-        # Path compression
-        lut = labels.clone()
-        for _ in range(4):
-            lut = lut[lut]
+        # Exact path compression to convergence
+        lut = self._compress_labels(labels)
 
         labels = torch.arange(N, dtype=torch.long, device=device)
         labels[bg_mask.reshape(N)] = -1
@@ -197,56 +209,61 @@ class GroupingMixin:
             (-1, -2), (-1, 2), (1, -2), (1, 2),  # knight's move (horizontal 2)
         ]
 
-        for dy, dx in shifts:
-            shifted_img = torch.roll(img, shifts=(-dy, -dx), dims=(0, 1))
+        for _ in range(8):
+            prev_labels = labels.clone()
+            for dy, dx in shifts:
+                shifted_img = torch.roll(img, shifts=(-dy, -dx), dims=(0, 1))
 
-            # Build valid neighbor mask — handle 1px and 2px offsets
-            valid = torch.ones(H, W, dtype=torch.bool, device=device)
-            if dy == -1:
-                valid[0, :] = False
-            elif dy == -2:
-                valid[0:2, :] = False
-            elif dy == 1:
-                valid[-1, :] = False
-            elif dy == 2:
-                valid[-2:, :] = False
-            if dx == -1:
-                valid[:, 0] = False
-            elif dx == -2:
-                valid[:, 0:2] = False
-            elif dx == 1:
-                valid[:, -1] = False
-            elif dx == 2:
-                valid[:, -2:] = False
+                # Build valid neighbor mask — handle 1px and 2px offsets
+                valid = torch.ones(H, W, dtype=torch.bool, device=device)
+                if dy == -1:
+                    valid[0, :] = False
+                elif dy == -2:
+                    valid[0:2, :] = False
+                elif dy == 1:
+                    valid[-1, :] = False
+                elif dy == 2:
+                    valid[-2:, :] = False
+                if dx == -1:
+                    valid[:, 0] = False
+                elif dx == -2:
+                    valid[:, 0:2] = False
+                elif dx == 1:
+                    valid[:, -1] = False
+                elif dx == 2:
+                    valid[:, -2:] = False
 
-            valid = valid & ~bg_mask
+                dst_bg = torch.roll(bg_mask, shifts=(-dy, -dx), dims=(0, 1))
+                valid = valid & ~bg_mask & ~dst_bg
 
-            color_diff = (img - shifted_img) ** 2
-            color_dist_sq = color_diff.sum(dim=-1)
+                color_diff = (img - shifted_img) ** 2
+                color_dist_sq = color_diff.sum(dim=-1)
 
-            eligible = valid & (color_dist_sq <= tau_sq)
+                eligible = valid & (color_dist_sq <= tau_sq)
 
-            if not eligible.any():
-                continue
+                if not eligible.any():
+                    continue
 
-            # Get source and destination pixel indices (tensors, no .tolist())
-            src_y, src_x = torch.where(eligible)
-            src_indices = src_y * W + src_x
-            dst_indices = (src_y + dy) * W + (src_x + dx)
+                # Get source and destination pixel indices (tensors, no .tolist())
+                src_y, src_x = torch.where(eligible)
+                src_indices = src_y * W + src_x
+                dst_indices = (src_y + dy) * W + (src_x + dx)
 
-            # Vectorized union: scatter the minimum label to both endpoints
-            src_labels = labels[src_indices]
-            dst_labels = labels[dst_indices]
-            min_labels = torch.minimum(src_labels, dst_labels)
+                # Vectorized union: hook component roots as well as endpoints
+                src_labels = labels[src_indices]
+                dst_labels = labels[dst_indices]
+                min_labels = torch.minimum(src_labels, dst_labels)
 
-            # Scatter minimum to both src and dst
-            labels.scatter_(0, src_indices, torch.minimum(labels[src_indices], min_labels))
-            labels.scatter_(0, dst_indices, torch.minimum(labels[dst_indices], min_labels))
+                labels.scatter_reduce_(0, src_labels, min_labels, reduce="amin")
+                labels.scatter_reduce_(0, dst_labels, min_labels, reduce="amin")
+                labels.scatter_reduce_(0, src_indices, min_labels, reduce="amin")
+                labels.scatter_reduce_(0, dst_indices, min_labels, reduce="amin")
 
-        # Step 3: Path compression — propagate labels to roots via lut[lut]
-        lut = labels.clone()
-        for _ in range(4):
-            lut = lut[lut]
+            labels = self._compress_labels(labels)
+            if torch.equal(labels, prev_labels):
+                break
+
+        lut = labels
 
         # Apply compressed labels
         labels = torch.arange(N, dtype=torch.long, device=device)
@@ -311,11 +328,9 @@ class GroupingMixin:
             (-1, -2), (-1, 2), (1, -2), (1, 2),  # knight's move
         ]
 
-        for _ in range(5):  # 5 iterations until convergence
-            changed = False
+        for _ in range(12):  # Iterate until seed-anchored components converge
+            prev_labels = labels.clone()
             for dy, dx in shifts:
-                torch.roll(img, shifts=(-dy, -dx), dims=(0, 1))
-
                 valid = torch.ones(H, W, dtype=torch.bool, device=device)
                 if dy == -1:
                     valid[0, :] = False
@@ -334,7 +349,8 @@ class GroupingMixin:
                 elif dx == 2:
                     valid[:, -2:] = False
 
-                valid = valid & ~bg_mask
+                dst_bg = torch.roll(bg_mask, shifts=(-dy, -dx), dims=(0, 1))
+                valid = valid & ~bg_mask & ~dst_bg
 
                 if not valid.any():
                     continue
@@ -344,54 +360,41 @@ class GroupingMixin:
                 dst_indices = (src_y + dy) * W + (src_x + dx)
 
                 # Get current roots for src and dst
-                labels[src_indices]
+                src_roots = labels[src_indices]
                 dst_roots = labels[dst_indices]
 
-                # Compare src pixel color against dst component's seed color
+                # Paper Eq.(3): compare src pixel color against dst component's seed color.
+                # ``pixel_and_seed`` additionally requires the two component seeds to agree,
+                # a stricter opt-in that blocks chained merges through bridging pixels.
                 src_pixels = img.reshape(N, 3)[src_indices]
                 dst_seeds = seed_colors[dst_roots]
-                color_dist_sq = ((src_pixels - dst_seeds) ** 2).sum(dim=-1)
-
-                eligible = color_dist_sq <= tau_sq
+                pixel_dist_sq = ((src_pixels - dst_seeds) ** 2).sum(dim=-1)
+                eligible = pixel_dist_sq <= tau_sq
+                if getattr(self, "seed_merge_rule", "pixel_only") == "pixel_and_seed":
+                    src_seeds = seed_colors[src_roots]
+                    seed_dist_sq = ((src_seeds - dst_seeds) ** 2).sum(dim=-1)
+                    eligible = eligible & (seed_dist_sq <= tau_sq)
                 if not eligible.any():
                     continue
 
-                changed = True
-
                 eligible_src = src_indices[eligible]
                 eligible_dst = dst_indices[eligible]
-                # P0 fix: use current root labels (labels[src/dst]) not pixel indices.
-                # The old code used min(eligible_src, eligible_dst) which are raw pixel
-                # indices — this corrupts the union-find structure by assigning
-                # arbitrary pixel indices as labels instead of actual component roots.
-                eligible_src_roots = labels[eligible_src]
-                eligible_dst_roots = labels[eligible_dst]
+                eligible_src_roots = src_roots[eligible]
+                eligible_dst_roots = dst_roots[eligible]
                 min_roots = torch.minimum(eligible_src_roots, eligible_dst_roots)
 
-                # Union: scatter minimum root to both endpoints' current roots
-                labels.scatter_(0, eligible_src, torch.minimum(labels[eligible_src], min_roots))
-                labels.scatter_(0, eligible_dst, torch.minimum(labels[eligible_dst], min_roots))
+                # Union: hook both component roots and pixel indices to min_roots
+                labels.scatter_reduce_(0, eligible_src_roots, min_roots, reduce="amin")
+                labels.scatter_reduce_(0, eligible_dst_roots, min_roots, reduce="amin")
+                labels.scatter_reduce_(0, eligible_src, min_roots, reduce="amin")
+                labels.scatter_reduce_(0, eligible_dst, min_roots, reduce="amin")
 
-                # Update seeds: for merged components, use min root's seed
-                # We need to update seeds for all roots that were merged
-                merged_src = eligible_src
-                merged_dst = eligible_dst
-                for _ in range(2):
-                    # Propagate seeds to roots
-                    root_labels = labels.clone()
-                    for _ in range(4):
-                        root_labels = root_labels[root_labels]
-                    # Update seed for any component whose root changed
-                    seed_colors[merged_src] = seed_colors[root_labels[merged_src]]
-                    seed_colors[merged_dst] = seed_colors[root_labels[merged_dst]]
-
-            if not changed:
+            labels = self._compress_labels(labels)
+            seed_colors = seed_colors[labels]
+            if torch.equal(labels, prev_labels):
                 break
 
-        # Path compression
-        lut = labels.clone()
-        for _ in range(4):
-            lut = lut[lut]
+        lut = labels
 
         labels = torch.arange(N, dtype=torch.long, device=device)
         labels[bg_mask.reshape(N)] = -1

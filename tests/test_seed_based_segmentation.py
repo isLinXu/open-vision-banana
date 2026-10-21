@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -43,7 +44,28 @@ def test_paper_reproduction_decoder_has_fixed_protocol() -> None:
         "bbox_expansion_factor": 5.0,
         "grouping_mode": "seed",
         "adaptive_color_tolerance": False,
+        "seed_merge_rule": "pixel_only",
     }
+
+
+def test_seed_merge_rule_switch_pixel_only_vs_pixel_and_seed() -> None:
+    """``pixel_only`` is the paper Eq.(3) rule; ``pixel_and_seed`` is an opt-in that can
+    only ever split more (never merge more) and is threaded through the config contract.
+    """
+    img = torch.zeros(8, 64, 3)
+    for x in range(64):
+        img[:, x] = torch.tensor([60.0 + 5.0 * x, 60.0, 60.0])
+    bg_mask = torch.zeros(8, 64, dtype=torch.bool)
+
+    lenient = SegmentationDecoder(seed_merge_rule="pixel_only")
+    strict = SegmentationDecoder(seed_merge_rule="pixel_and_seed")
+    n_lenient = int(lenient._seed_based_union_find(img, bg_mask).unique().numel())
+    n_strict = int(strict._seed_based_union_find(img, bg_mask).unique().numel())
+    assert n_strict >= n_lenient
+    assert strict.instance_config.to_dict()["seed_merge_rule"] == "pixel_and_seed"
+    assert RGBMapper(instance_decoding_config=strict.instance_config).seg_decoder.seed_merge_rule == "pixel_and_seed"
+    with pytest.raises(ValueError, match="seed_merge_rule"):
+        InstanceDecodingConfig(seed_merge_rule="bogus")
 
 
 def test_paper_reproduction_rgb_mapper_propagates_protocol() -> None:
@@ -136,6 +158,28 @@ def test_seed_mode_three_blocks() -> None:
     has_green = any(c[1] > c[0] and c[1] > c[2] for c in colors)
     has_blue = any(c[2] > c[0] and c[2] > c[1] for c in colors)
     assert has_red or has_green or has_blue, "Should have blocks with distinct colors"
+
+
+def test_stage2_converges_on_large_nonconvex_instance_over_32px() -> None:
+    """A single large U-shaped instance (>100px tall, so bbox > 5x area in Stage 5)
+    must already be 1 connected component in Stage 2 without fragmenting at 32px.
+    """
+    decoder = SegmentationDecoder.paper_reproduction()
+    img = torch.zeros(256, 256, 3)
+    # Thin U-shape: left vertical bar [10:210, 10:15], right vertical bar [10:210, 200:205],
+    # bottom horizontal bar [205:210, 10:205]. Total height = 200px (>32px).
+    img[10:210, 10:15] = torch.tensor([220.0, 40.0, 40.0])
+    img[10:210, 200:205] = torch.tensor([220.0, 40.0, 40.0])
+    img[205:210, 10:205] = torch.tensor([220.0, 40.0, 40.0])
+    bg_mask = img.norm(dim=-1) < decoder.color_tolerance
+
+    for labels in (
+        decoder._union_find_grouping(img, bg_mask),
+        decoder._seed_based_union_find(img, bg_mask),
+    ):
+        fg_labels = labels[~bg_mask].unique()
+        assert len(fg_labels) == 1 and int(fg_labels[0].item()) > 0
+
 
 
 if __name__ == "__main__":

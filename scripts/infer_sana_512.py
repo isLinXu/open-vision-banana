@@ -67,6 +67,10 @@ logger = logging.getLogger(__name__)
 
 # LoRA targets matching training script
 SANA_LORA_TARGETS = [
+    "to_q",
+    "to_k",
+    "to_v",
+    "to_out.0",
     "linear",
     "proj_out",
     "conv_inverted",
@@ -304,6 +308,15 @@ def load_model_and_lora(args, device, dtype):
         if not ckpt_path.is_file():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
         logger.info("Applying LoRA adapters...")
+        ckpt = torch.load(str(ckpt_path), map_location=device)
+        lora_state = ckpt.get("lora_state_dict", ckpt)
+        adapter_cfg_path = ckpt_path.parent / "lora_adapter" / "adapter_config.json"
+        if adapter_cfg_path.is_file():
+            import copy
+            adapter_cfg = json.loads(adapter_cfg_path.read_text(encoding="utf-8"))
+            if adapter_cfg.get("target_modules"):
+                model_cfg = copy.deepcopy(model_cfg)
+                model_cfg.lora_target_modules = list(adapter_cfg["target_modules"])
         peft_model = apply_lora(
             backbone,
             config=model_cfg,
@@ -311,8 +324,6 @@ def load_model_and_lora(args, device, dtype):
             alpha=args.lora_alpha,
             use_rslora=not args.no_rslora,
         )
-        ckpt = torch.load(str(ckpt_path), map_location=device)
-        lora_state = ckpt.get("lora_state_dict", ckpt)
         peft_model.load_state_dict(lora_state, strict=False)
         step = ckpt.get("step", 0)
         val_loss = ckpt.get("best_val_loss", ckpt.get("val_loss", "N/A"))

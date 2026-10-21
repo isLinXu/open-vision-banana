@@ -443,13 +443,16 @@ class CityscapesSegDataset(BaseVisionDataset):
     def _label_to_rgb(self, label: torch.Tensor) -> torch.Tensor:
         """Vectorized label → RGB using palette gather.
 
-        Replaces the per-class Python loop with a single index_select operation.
-        Unknown label indices are clamped to the last palette entry (harmless).
+        Official ignore / void (trainId 255, and any index outside 0–18) stays
+        black. Clamping those pixels onto bicycle (class 18) was wrong: it
+        painted unlabeled regions as a real class.
         """
         palette = self._get_palette().to(label.device)  # [C, 3]
         n_cls = palette.shape[0]
-        flat = label.reshape(-1).clamp(0, n_cls - 1).long()  # [H*W]
-        rgb_flat = palette[flat]  # [H*W, 3]
+        flat = label.reshape(-1).long()
+        valid = (flat >= 0) & (flat < n_cls)
+        rgb_flat = torch.zeros(flat.shape[0], 3, device=label.device, dtype=palette.dtype)
+        rgb_flat[valid] = palette[flat[valid]]
         H, W = label.shape
         return rgb_flat.reshape(H, W, 3).permute(2, 0, 1)  # [3, H, W]
 

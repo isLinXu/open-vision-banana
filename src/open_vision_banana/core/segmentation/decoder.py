@@ -34,6 +34,10 @@ class InstanceDecodingConfig:
     # as explicit opt-ins for ablation studies.
     grouping_mode: str = "seed"
     adaptive_color_tolerance: bool = False
+    # Paper Eq.(3) compares each pixel against the component seed only
+    # (``pixel_only``). ``pixel_and_seed`` additionally requires the two
+    # component seeds to be within tau, an opt-in stricter variant.
+    seed_merge_rule: str = "pixel_only"
 
     def __post_init__(self) -> None:
         if self.color_tolerance <= 0:
@@ -48,6 +52,8 @@ class InstanceDecodingConfig:
             raise ValueError("grouping_mode must be 'adjacent' or 'seed'")
         if not isinstance(self.adaptive_color_tolerance, bool):
             raise ValueError("adaptive_color_tolerance must be boolean")
+        if self.seed_merge_rule not in {"pixel_only", "pixel_and_seed"}:
+            raise ValueError("seed_merge_rule must be 'pixel_only' or 'pixel_and_seed'")
 
     def to_dict(self) -> dict[str, float | str | bool]:
         """Return a JSON-safe decoding contract for run metadata."""
@@ -58,12 +64,14 @@ class InstanceDecodingConfig:
             "bbox_expansion_factor": self.bbox_expansion_factor,
             "grouping_mode": self.grouping_mode,
             "adaptive_color_tolerance": self.adaptive_color_tolerance,
+            "seed_merge_rule": self.seed_merge_rule,
         }
 
 
 PAPER_INSTANCE_DECODING_CONFIG = InstanceDecodingConfig(
     grouping_mode="seed",
     adaptive_color_tolerance=False,
+    seed_merge_rule="pixel_only",
 )
 
 
@@ -82,6 +90,7 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
         bbox_expansion_factor: float = 5.0,
         grouping_mode: str = "seed",
         adaptive_color_tolerance: bool = False,
+        seed_merge_rule: str = "pixel_only",
     ) -> None:
         self.instance_config = InstanceDecodingConfig(
             color_tolerance=color_tolerance,
@@ -90,11 +99,13 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
             bbox_expansion_factor=bbox_expansion_factor,
             grouping_mode=grouping_mode,
             adaptive_color_tolerance=adaptive_color_tolerance,
+            seed_merge_rule=seed_merge_rule,
         )
         self.color_tolerance = self.instance_config.color_tolerance
         self.min_area_fraction = self.instance_config.min_area_fraction
         self.erosion_threshold = self.instance_config.erosion_threshold
         self.bbox_expansion_factor = self.instance_config.bbox_expansion_factor
+        self.seed_merge_rule = self.instance_config.seed_merge_rule
 
     @classmethod
     def paper_reproduction(cls) -> SegmentationDecoder:

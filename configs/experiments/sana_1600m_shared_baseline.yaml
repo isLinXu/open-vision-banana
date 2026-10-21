@@ -1,0 +1,99 @@
+# Shared-LoRA baseline (ABLATION_BASELINE.md, card T0): one LoRA for depth, normal,
+# semantic and referring; evaluation only changes the prompt. This is the control
+# recipe of this round, not a measured best combination.
+#
+# Manifest (pass with --pair-manifest; built by the shared-baseline build_manifest.py,
+# seed 42). Source data: the SNVC train pack rows that have inputs on disk, plus
+# Rea2Seg-16K train (revision 1b2247c). Not the full SNVC corpus.
+#   train / val rows:   depth 5630 / 309, normal 4575 / 267, semantic (genseg) 4460 / 239,
+#                       referring 32136 / 537.
+#   referring pool:     SNVC gcg resampled to 16068 rows (from 9904 unique train rows, each
+#                       kept once, 6164 drawn a second time) and Rea2Seg 16068 rows, so
+#                       gcg : Rea2Seg = 1 : 1.
+#   Rea2Seg categories: gqa-seg 7985, lisa-plus 7052, spatial 799, reasonseg 232.
+#   Cityscapes genseg:  311 of 4460 semantic train rows (6.97%).
+#   Removed: 1315 rows whose input image is a RefCOCOg UMD val/test, Cityscapes val, NYU
+#   test or DIODE val image (same RGB pixels), and 143 pack rows whose image cannot be
+#   decoded. 561 Rea2Seg spatial masks stored at the original resolution were rescaled to
+#   the stored image; 7 reasonseg rows with mismatched aspect ratios were dropped.
+#   No row uses the trainer's default "150-class ... fixed training palette" prompt,
+#   and no structured-understanding or multi-view reconstruction rows are included.
+#
+# Effective batch is 32 = batch_size 4 x gradient_accumulation 8 on one GPU. The loss
+# is a per-sample mean (all task loss weights 1.0, aux losses off), so this matches
+# batch 1 x accumulation 32 sample for sample while running about 3x faster.
+#
+# flow.shift only changes SANA's timestep sampling.
+
+model:
+  name: sana-1600m
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - to_q
+    - to_k
+    - to_v
+    - to_out.0
+    - linear
+    - proj_out
+    - conv_inverted
+    - conv_point
+
+data:
+  tasks: [depth, normal, semantic, referring]
+  task_sampling: uniform
+  task_sampling_weights: {}
+  vision_ratio: 1.0
+  depth_curve: metric_power
+  num_workers: 4
+
+training:
+  steps: 30000
+  batch_size: 4
+  gradient_accumulation: 8
+  lr: 1.0e-4
+  max_grad_norm: 1.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: constant
+  warmup_ratio: 0.05
+
+validation:
+  max_samples_per_task: 40
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 3.0
+  min_snr: false
+  cfg_dropout_rate: 0.0
+
+loss:
+  task_loss_weights: {depth: 1.0, normal: 1.0, semantic: 1.0, referring: 1.0}
+  normal_angular_loss_weight: 0.0
+  depth_edge_aux_weight: 0.0
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/sana_1600m_shared_baseline
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+
+device: cuda

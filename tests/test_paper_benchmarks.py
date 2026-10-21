@@ -18,6 +18,7 @@ from open_vision_banana.evaluation.benchmark import (
     apply_depth_benchmark_protocol,
 )
 from scripts.evaluate_paper_benchmarks import (
+    evaluate_compatible,
     main,
     preflight_jobs,
     resolve_inference_steps,
@@ -296,6 +297,36 @@ def test_preflight_cli_does_not_require_model_name(tmp_path: Path, monkeypatch) 
 
     assert main() == 0
     assert output.is_file()
+
+
+def test_evaluate_compatible_drops_unknown_kwargs() -> None:
+    class OldEvaluator:
+        def evaluate(self, dataloader, task: str, seed: int = 0):
+            return {"task": task, "seed": seed, "n": dataloader}
+
+    metrics = evaluate_compatible(
+        OldEvaluator(),
+        7,
+        task="semantic",
+        seed=42,
+        depth_curve="metric_power",
+        depth_log_alpha=0.4,
+    )
+    assert metrics == {"task": "semantic", "seed": 42, "n": 7}
+
+
+def test_evaluate_compatible_keeps_var_keyword() -> None:
+    class NewEvaluator:
+        def evaluate(self, dataloader, task: str, **kwargs):
+            return {"task": task, "kwargs": kwargs}
+
+    metrics = evaluate_compatible(
+        NewEvaluator(),
+        None,
+        task="depth",
+        depth_curve="log_relative",
+    )
+    assert metrics["kwargs"]["depth_curve"] == "log_relative"
 
 
 def test_write_results_serializes_non_finite_metrics_as_null(tmp_path: Path) -> None:

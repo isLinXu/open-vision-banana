@@ -188,11 +188,16 @@ class ModelBackend:
         self.backbone = self.components.unet  # backbone stored as 'unet' for compat
         self.vae = self.components.vae
         self.pipe = getattr(self, "_pipe", None)  # Full pipe for FLUX encode_prompt
-        if edit_latent_layout(self.model_config) == "qwen21":
+        layout = edit_latent_layout(self.model_config)
+        if layout == "qwen21":
             # Its prompt encoder takes the source image; built once around the loaded parts.
             self.pipe = qwen_image21.build_pipeline(self.components)
             self._qwen21_logged = (
                 torch.distributed.is_initialized() and torch.distributed.get_rank() > 0
+            )
+        elif layout == "qwen_packed" and self.pipe is None:
+            self.pipe = qwen_image21.build_qwen_edit_pipeline(
+                self.components, self.model_config.pipeline_class
             )
 
         # Apply LoRA
@@ -461,9 +466,10 @@ class ModelBackend:
     ) -> dict[str, Any]:
         """Text condition for a training forward; editors that read the source get it here.
 
-        ``images`` is the [B, 3, H, W] source batch in [-1, 1]. Qwen-Image-2.1 drops the
-        prompt to "" with the same source image, as its pipeline's unconditional branch
-        does; text-only conditions drop through ``apply_cfg_dropout``.
+        ``images`` is the [B, 3, H, W] source batch in [-1, 1]. Qwen-Image-2.1 and
+        Qwen-Image-Edit drop the prompt to "" with the same source image, as their
+        pipelines' unconditional branches do; text-only conditions drop through
+        ``apply_cfg_dropout``.
         """
         layout = edit_latent_layout(self.model_config)
         if layout == "hunyuan":
@@ -475,7 +481,7 @@ class ModelBackend:
             text_cond = qwen_image21.encode_condition(
                 self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
-            if not self._qwen21_logged:
+            if not getattr(self, "_qwen21_logged", True):
                 self._qwen21_logged = True
                 logger.info(
                     "Qwen-Image-2.1 conditioning: source image %s -> %d Qwen3-VL visual tokens "
@@ -485,6 +491,15 @@ class ModelBackend:
                     text_cond["encoder_hidden_states"].shape[1],
                 )
             return text_cond
+        if layout == "qwen_packed" and getattr(self, "pipe", None) is not None and hasattr(
+            self.pipe, "_get_qwen_prompt_embeds"
+        ):
+            if cfg_dropout_rate > 0:
+                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
+                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            return qwen_image21.encode_qwen_edit_condition(
+                self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
+            )
         text_cond = self.encode_text(prompts, self.device, self.dtype)
         return self.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
 
@@ -657,6 +672,10 @@ class ModelBackend:
         layout: str,
     ) -> torch.Tensor:
         context_latents = context_latents.to(dtype=latents.dtype)
+        if layout == "qwen21":
+            return qwen21_edit_forward(
+                self.peft_model, latents, context_latents, timesteps, text_cond
+            )
         if layout == "channel_concat":
             return channel_concat_edit_forward(
                 self.peft_model, latents, context_latents, timesteps, text_cond, self.model_config

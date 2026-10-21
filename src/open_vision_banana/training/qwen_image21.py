@@ -1,11 +1,11 @@
-"""Source-image conditioning for Qwen-Image-2.1 (``QwenImage21Pipeline``) training.
+"""Source-image conditioning for Qwen-Image-2.1 and Qwen-Image-Edit training.
 
-The pipeline's image-editing mode gives the source image to the Qwen3-VL text encoder
-as visual tokens; the training text condition is built with the pipeline's own
-``_get_qwen_prompt_embeds`` (raw template, un-normalized last hidden state, system
-tokens dropped), which also returns the ``<|image_pad|>`` mask the transformer uses to
-place the reference latents. The VAE side lives in ``model_registry.vae_encode`` and the
-transformer forward in ``edit_forward.qwen21_edit_forward``.
+The pipelines' image-editing modes give the source image to the Qwen3-VL / Qwen2.5-VL
+text encoder as visual tokens; the training text condition is built with the pipeline's
+own ``_get_qwen_prompt_embeds`` (raw template, un-normalized last hidden state, system
+tokens dropped). For Qwen-Image-2.1 this also returns the ``<|image_pad|>`` mask the
+transformer uses to place the reference latents. The VAE side lives in
+``model_registry.vae_encode`` and the transformer forwards in ``edit_forward``.
 """
 
 from __future__ import annotations
@@ -47,6 +47,28 @@ def build_pipeline(components) -> Any:
     )
 
 
+def build_qwen_edit_pipeline(components, pipeline_class: str) -> Any | None:
+    """Build QwenImageEditPipeline / QwenImageEditPlusPipeline when processor is present."""
+    if getattr(components, "processor", None) is None:
+        return None
+    import diffusers
+
+    pipe_cls = getattr(diffusers, pipeline_class, None)
+    if pipe_cls is None:
+        return None
+    try:
+        return pipe_cls(
+            scheduler=components.scheduler,
+            vae=components.vae,
+            text_encoder=components.text_encoder,
+            tokenizer=components.tokenizer,
+            processor=components.processor,
+            transformer=components.unet,
+        )
+    except TypeError:
+        return None
+
+
 @torch.no_grad()
 def encode_condition(pipe, prompts: list[str], images: list, device, dtype) -> dict[str, Any]:
     """Prompt + source image (PIL) -> text-encoder states with the source as visual tokens.
@@ -63,3 +85,19 @@ def encode_condition(pipe, prompts: list[str], images: list, device, dtype) -> d
         prompt=prompts, image=images, device=device
     )
     return {"encoder_hidden_states": embeds.to(dtype=dtype), "image_pad_mask": image_pad_mask}
+
+
+@torch.no_grad()
+def encode_qwen_edit_condition(
+    pipe, prompts: list[str], images: list, device, dtype
+) -> dict[str, Any]:
+    """Prompt + source image (PIL) -> Qwen2.5-VL hidden states + attention mask for Qwen-Image-Edit."""
+    outputs = pipe._get_qwen_prompt_embeds(
+        prompt=prompts, image=images, device=device, dtype=dtype
+    )
+    embeds = outputs[0]
+    mask = outputs[1] if len(outputs) > 1 else None
+    result: dict[str, Any] = {"encoder_hidden_states": embeds.to(device=device, dtype=dtype)}
+    if mask is not None:
+        result["attention_mask"] = mask.to(device=device)
+    return result

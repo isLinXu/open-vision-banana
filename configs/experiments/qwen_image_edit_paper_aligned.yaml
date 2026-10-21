@@ -1,0 +1,76 @@
+# Paper-aligned Qwen-Image-Edit (2509 / base) multi-task baseline.
+#
+# Uses QwenImageEditPlusPipeline (qwen-image-edit-2509) with:
+# - Source image fed into Qwen2.5-VL visual tokens (512 max tokens, no 77-token truncation)
+#   plus 2x2 packed reference VAE latents in the native sigma = 1 - t frame.
+# - Full MMDiT attention + MLP LoRA target modules.
+# - Multi-colormap metric depth augmentation and dynamic open-vocab semantic remapping.
+
+model:
+  name: qwen-image-edit-2509
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+
+data:
+  tasks: [depth, normal, semantic, referring]
+  task_sampling: uniform
+  task_sampling_weights: {}
+  vision_ratio: 1.0
+  depth_curve: metric_power
+  depth_colormaps: [cube_edge, plasma, inferno, viridis, grayscale]
+  semantic_prompt_styles: [json_named, json_tuple, natural, hex]
+  semantic_color_remap_prob: 0.5
+  aspect_preserving_crop: true
+  num_workers: 4
+
+training:
+  steps: 30000
+  batch_size: 1
+  gradient_accumulation: 32
+  lr: 1.0e-4
+  max_grad_norm: 1.0
+  drop_grad_norm: 10.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+validation:
+  max_samples_per_task: 40
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: false
+  cfg_dropout_rate: 0.05
+
+loss:
+  task_loss_weights: {depth: 1.0, normal: 1.0, semantic: 1.0, referring: 1.0}
+  normal_angular_loss_weight: 0.0
+  depth_edge_aux_weight: 0.0
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/qwen_image_edit_2509_paper_aligned
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+
+device: cuda
