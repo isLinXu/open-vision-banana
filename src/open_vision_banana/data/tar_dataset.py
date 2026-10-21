@@ -131,6 +131,8 @@ class MultiFileReader(io.RawIOBase):
             available = self._sizes[self._current_file] - self._current_pos
             to_read = min(remaining, available)
             if to_read <= 0:
+                if self._current_file + 1 >= len(self._paths):
+                    break
                 self._open_file(self._current_file + 1)
                 continue
 
@@ -163,13 +165,14 @@ class IndexedTarReader:
     """Read files from a split tar.gz archive using indexed_gzip with a pre-built index.
 
     Requires a gzip seek index (``.gzidx`` file) produced by
-    ``scripts/build_gzip_index_snvc50m.py``.  With the index, random access
-    is O(1) – no sequential decompression needed.
+    ``scripts/build_snvc_tar_index.py`` or ``scripts/build_gzip_index_snvc50m.py``.
+    With the index, random access is O(1) – no sequential decompression needed.
     """
 
     def __init__(self, volumes: list[Path], gzip_index_path: Path) -> None:
         self.volumes = volumes
         self._raw = MultiFileReader(volumes)
+        self._lock = __import__("threading").Lock()
         from indexed_gzip import IndexedGzipFile
 
         abs_index = gzip_index_path.resolve()
@@ -184,13 +187,15 @@ class IndexedTarReader:
         logger.info("Gzip index loaded successfully")
 
     def read_at(self, offset: int, size: int) -> bytes:
-        """Read *size* bytes at decompressed *offset* (random access)."""
-        self._gz.seek(offset)
-        return self._gz.read(size)
+        """Read *size* bytes at decompressed *offset* (thread-safe random access)."""
+        with self._lock:
+            self._gz.seek(offset)
+            return self._gz.read(size)
 
     def close(self) -> None:
-        self._gz.close()
-        self._raw.close()
+        with self._lock:
+            self._gz.close()
+            self._raw.close()
 
 
 # ── Sequential gzip reader (no index needed) ─────────────────────────────
@@ -200,12 +205,9 @@ class SequentialTarReader:
     """Read files from a split tar.gz archive using sequential gzip reading.
 
     Instead of indexed_gzip (which requires a full index build), this reader
-    decompresses sequentially through the gzip stream.  Files MUST be accessed
-    in ascending offset order for efficiency – the reader simply skips forward
-    through any intervening bytes.
-
-    Thread-safe: uses a lock so multiple DataLoader workers can share one
-    reader (though sequential access is most efficient with a single worker).
+    decompresses sequentially through the gzip stream.  When an out-of-order
+    backward seek occurs (``offset < self._pos``), the stream automatically
+    resets to 0 and skips forward to ``offset``.
     """
 
     def __init__(self, volumes: list[Path]) -> None:
@@ -214,17 +216,17 @@ class SequentialTarReader:
         self._pos: int = 0  # current decompressed stream position
         self._lock = __import__("threading").Lock()
 
+    def _reset_unlocked(self) -> None:
+        self._gz.close()
+        self._raw.seek(0)
+        self._gz = gzip.GzipFile(fileobj=self._raw, mode="rb")
+        self._pos = 0
+
     def read_at(self, offset: int, size: int) -> bytes:
-        """Read *size* bytes at decompressed *offset* (sequential skip)."""
+        """Read *size* bytes at decompressed *offset*."""
         with self._lock:
             if offset < self._pos:
-                # Cannot seek backward – would need to restart the stream.
-                # This should not happen if files are sorted by offset.
-                raise RuntimeError(
-                    f"SequentialTarReader: cannot go backward from "
-                    f"pos={self._pos} to offset={offset}. "
-                    f"Ensure files are sorted by offset."
-                )
+                self._reset_unlocked()
             skip = offset - self._pos
             if skip > 0:
                 # Skip forward by reading and discarding
@@ -257,15 +259,188 @@ class SequentialTarReader:
     def reset(self) -> None:
         """Reset stream to the beginning (for new epoch)."""
         with self._lock:
-            self._gz.close()
-            self._raw.seek(0)
-            self._gz = gzip.GzipFile(fileobj=self._raw, mode="rb")
-            self._pos = 0
+            self._reset_unlocked()
 
     def close(self) -> None:
         with self._lock:
             self._gz.close()
             self._raw.close()
+
+
+# ── Single-pass Tar Header Scanner & Index Builder ───────────────────────
+
+
+def _parse_tar_size(field: bytes) -> int:
+    """Parse a 12-byte tar size field (octal ASCII or base-256 binary)."""
+    if not field:
+        return 0
+    if field[0] & 0x80:
+        # Base-256 binary big-endian encoding (GNU/POSIX extension for >8GB files)
+        value = field[0] & 0x7F
+        for byte in field[1:]:
+            value = (value << 8) | byte
+        return value
+    size_str = field.rstrip(b"\x00").rstrip(b" ")
+    return int(size_str, 8) if size_str else 0
+
+
+def _read_exact(stream: Any, n: int) -> bytes:
+    """Read exactly *n* bytes from *stream* (or fewer only on true EOF)."""
+    chunks: list[bytes] = []
+    remaining = n
+    while remaining > 0:
+        data = stream.read(min(remaining, 8 * 1024 * 1024))
+        if not data:
+            break
+        chunks.append(data)
+        remaining -= len(data)
+    return b"".join(chunks)
+
+
+def _skip_stream_bytes(stream: Any, n: int) -> int:
+    """Advance *stream* by *n* bytes and return the number of bytes skipped."""
+    skipped = 0
+    remaining = n
+    while remaining > 0:
+        data = stream.read(min(remaining, 8 * 1024 * 1024))
+        if not data:
+            break
+        skipped += len(data)
+        remaining -= len(data)
+    return skipped
+
+
+def _parse_pax_path(payload: bytes) -> str | None:
+    """Extract ``path`` from a POSIX.1-2001 PAX extended header block."""
+    pos = 0
+    total = len(payload)
+    while pos < total:
+        space = payload.find(b" ", pos)
+        if space < 0:
+            break
+        try:
+            length = int(payload[pos:space].decode("ascii"))
+        except ValueError:
+            break
+        if length <= 0 or pos + length > total:
+            break
+        record = payload[space + 1 : pos + length - 1]
+        pos += length
+        if record.startswith(b"path="):
+            return record[5:].decode("utf-8", errors="replace")
+    return None
+
+
+def build_snvc_tar_index(
+    volumes: list[Path],
+    output_index_path: Path,
+    *,
+    gzip_index_path: Path | None = None,
+    spacing_mb: int = 64,
+) -> dict[str, Any]:
+    """Scan split ``.tar.gz000~N`` volumes in ONE pass, writing ``.gzidx`` + ``tar_index.json``.
+
+    Handles POSIX USTAR prefixes (``header[345:500]``), GNU ``././@LongLink`` (``typeflag=='L'``),
+    and PAX extended headers (``typeflag=='x'``) so paths >100 characters are never truncated.
+    """
+    if not volumes:
+        raise ValueError("volumes must be a non-empty list of split tar.gz paths")
+    resolved_vols = [Path(v).resolve() for v in volumes]
+    output_index_path = Path(output_index_path).resolve()
+    output_index_path.parent.mkdir(parents=True, exist_ok=True)
+    if gzip_index_path is None:
+        gzip_index_path = output_index_path.with_suffix(".gzidx")
+    else:
+        gzip_index_path = Path(gzip_index_path).resolve()
+        gzip_index_path.parent.mkdir(parents=True, exist_ok=True)
+
+    raw = MultiFileReader(resolved_vols)
+    use_indexed_gzip = False
+    try:
+        from indexed_gzip import IndexedGzipFile
+
+        gz: Any = IndexedGzipFile(fileobj=raw, spacing=max(1, spacing_mb) * 1024 * 1024)
+        use_indexed_gzip = True
+    except ImportError:
+        gz = gzip.GzipFile(fileobj=raw, mode="rb")
+
+    entries: dict[str, dict[str, int]] = {}
+    offset = 0
+    pending_long_name: str | None = None
+
+    try:
+        while True:
+            header = _read_exact(gz, _TAR_BLOCK)
+            if not header or len(header) < _TAR_BLOCK:
+                break
+            offset += _TAR_BLOCK
+            if header == b"\x00" * _TAR_BLOCK:
+                # Consume any remaining stream bytes so indexed_gzip indexes to EOF
+                while _skip_stream_bytes(gz, 8 * 1024 * 1024) > 0:
+                    pass
+                break
+
+            size = _parse_tar_size(header[124:136])
+            typeflag = chr(header[156]) if header[156] else "\x00"
+            padded = _round_block(size)
+
+            if typeflag == "L":
+                # GNU tar LongLink: payload is the full path of the next entry
+                payload = _read_exact(gz, padded)
+                offset += len(payload)
+                pending_long_name = payload[:size].rstrip(b"\x00").decode("utf-8", errors="replace")
+                continue
+            if typeflag == "x":
+                # PAX extended header
+                payload = _read_exact(gz, padded)
+                offset += len(payload)
+                pax_path = _parse_pax_path(payload[:size])
+                if pax_path:
+                    pending_long_name = pax_path
+                continue
+
+            if pending_long_name is not None:
+                name = pending_long_name
+                pending_long_name = None
+            else:
+                base_name = header[:100].rstrip(b"\x00").decode("utf-8", errors="replace")
+                magic = header[257:262]
+                prefix = (
+                    header[345:500].rstrip(b"\x00").decode("utf-8", errors="replace")
+                    if magic == b"ustar"
+                    else ""
+                )
+                name = f"{prefix}/{base_name}" if prefix else base_name
+
+            name = name.lstrip("./")
+            if typeflag in ("0", "\x00", "") and size > 0 and name:
+                entries[name] = {"offset": offset, "size": size}
+
+            if padded > 0:
+                skipped = _skip_stream_bytes(gz, padded)
+                offset += skipped
+
+        if use_indexed_gzip:
+            gz.export_index(str(gzip_index_path))
+    finally:
+        gz.close()
+        raw.close()
+
+    index_payload = {
+        "volumes": [{"path": str(v), "size": v.stat().st_size} for v in resolved_vols],
+        "files": entries,
+        "tar_root": str(resolved_vols[0].parent),
+        "gzip_index": str(gzip_index_path) if use_indexed_gzip and gzip_index_path.is_file() else None,
+        "_meta": {
+            "decompressed_offset": offset,
+            "num_entries": len(entries),
+            "complete": True,
+        },
+    }
+    output_index_path.write_text(
+        json.dumps(index_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return index_payload
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────
@@ -335,6 +510,7 @@ class TarArchiveDataset(Dataset):
         inner_prefix: str = "SenseNova-Vision-Corpus-50M",
         disk_cache_dir: Path | None = None,
         max_samples: int | None = None,
+        data_root: Path | None = None,
     ) -> None:
         self.resolution = resolution
         self.split = split
@@ -342,6 +518,7 @@ class TarArchiveDataset(Dataset):
         self.inner_prefix = inner_prefix
         self.disk_cache_dir = disk_cache_dir
         self.tar_root = tar_root
+        self.data_root = data_root or tar_root
 
         # Load tar index
         logger.info("Loading tar index from %s", tar_index_path)
@@ -350,14 +527,23 @@ class TarArchiveDataset(Dataset):
         self._file_index: dict[str, dict] = idx["files"]
         self._volume_paths = [Path(v["path"]) for v in idx["volumes"]]
         self._gzip_index_path = Path(idx["gzip_index"]) if idx.get("gzip_index") else None
+        if self._gzip_index_path and not self._gzip_index_path.is_file():
+            alt = tar_index_path.parent / self._gzip_index_path.name
+            if alt.is_file():
+                self._gzip_index_path = alt
+        if self._gzip_index_path is None:
+            candidate = tar_index_path.with_suffix(".gzidx")
+            if candidate.is_file():
+                self._gzip_index_path = candidate
         logger.info(
-            "  %d files indexed across %d volumes",
+            "  %d files indexed across %d volumes (gzip_index=%s)",
             len(self._file_index),
             len(self._volume_paths),
+            self._gzip_index_path,
         )
 
-        # Create sequential tar reader (lazy - will be initialized on first access)
-        self._reader: SequentialTarReader | None = None
+        # Create tar reader (lazy - will be initialized on first access)
+        self._reader: IndexedTarReader | SequentialTarReader | None = None
 
         # Load manifest
         self.samples: list[dict] = []
@@ -375,8 +561,14 @@ class TarArchiveDataset(Dataset):
             split,
         )
 
-    def _get_reader(self) -> SequentialTarReader:
+    def _get_reader(self) -> IndexedTarReader | SequentialTarReader:
         if self._reader is None:
+            if self._gzip_index_path and self._gzip_index_path.is_file():
+                try:
+                    self._reader = IndexedTarReader(self._volume_paths, self._gzip_index_path)
+                    return self._reader
+                except ImportError:
+                    logger.warning("indexed_gzip not installed; falling back to SequentialTarReader")
             self._reader = SequentialTarReader(self._volume_paths)
         return self._reader
 
@@ -419,9 +611,20 @@ class TarArchiveDataset(Dataset):
         self.samples.sort(key=sort_key)
 
     def _resolve_tar_path(self, rel_path: str) -> str:
+        clean = rel_path.lstrip("./")
+        if clean in self._file_index:
+            return clean
         if self.inner_prefix:
-            return f"{self.inner_prefix}/{rel_path}"
-        return rel_path
+            prefixed = f"{self.inner_prefix.rstrip('/')}/{clean}"
+            if prefixed in self._file_index:
+                return prefixed
+            prefix_slash = f"{self.inner_prefix.rstrip('/')}/"
+            if clean.startswith(prefix_slash):
+                stripped = clean[len(prefix_slash):]
+                if stripped in self._file_index:
+                    return stripped
+            return prefixed
+        return clean
 
     def _read_from_tar(self, tar_path: str) -> bytes | None:
         info = self._file_index.get(tar_path)
@@ -434,13 +637,25 @@ class TarArchiveDataset(Dataset):
             logger.warning("Failed to read %s: %s", tar_path, e)
             return None
 
-    def _load_image_bytes(self, tar_path: str) -> bytes | None:
+    def _load_image_bytes(self, rel_path: str) -> bytes | None:
+        tar_path = self._resolve_tar_path(rel_path)
         if self.disk_cache_dir:
             cache_path = self.disk_cache_dir / tar_path.replace("/", os.sep)
             if cache_path.is_file():
                 return cache_path.read_bytes()
 
         data = self._read_from_tar(tar_path)
+
+        if data is None and self.data_root is not None:
+            # Hybrid fallback: input RGB images often live on disk outside the tar archive
+            for candidate in (
+                Path(rel_path),
+                self.data_root / rel_path.lstrip("./"),
+                self.tar_root / rel_path.lstrip("./") if self.tar_root else None,
+            ):
+                if candidate is not None and candidate.is_file():
+                    data = candidate.read_bytes()
+                    break
 
         if data and self.disk_cache_dir:
             cache_path = self.disk_cache_dir / tar_path.replace("/", os.sep)
@@ -460,21 +675,17 @@ class TarArchiveDataset(Dataset):
         task = rec["mapped_task"]
         prompt = rec["prompt"]
 
-        inp_tar = self._resolve_tar_path(rec.get("input", ""))
-        inp_data = self._load_image_bytes(inp_tar)
+        inp_rel = rec.get("input", "")
+        inp_data = self._load_image_bytes(inp_rel)
         if inp_data is None:
-            logger.warning("Cannot load input: %s (idx=%d)", inp_tar, idx)
-            inp_img = Image.new("RGB", (self.resolution, self.resolution), (0, 0, 0))
-        else:
-            inp_img = self._bytes_to_pil(inp_data)
+            raise FileNotFoundError(f"Cannot load input from tar or disk: {inp_rel} (idx={idx})")
+        inp_img = self._bytes_to_pil(inp_data)
 
-        tgt_tar = self._resolve_tar_path(rec.get("target", ""))
-        tgt_data = self._load_image_bytes(tgt_tar)
+        tgt_rel = rec.get("target", "")
+        tgt_data = self._load_image_bytes(tgt_rel)
         if tgt_data is None:
-            logger.warning("Cannot load target: %s (idx=%d)", tgt_tar, idx)
-            tgt_img = Image.new("RGB", (self.resolution, self.resolution), (0, 0, 0))
-        else:
-            tgt_img = self._bytes_to_pil(tgt_data)
+            raise FileNotFoundError(f"Cannot load target from tar or disk: {tgt_rel} (idx={idx})")
+        tgt_img = self._bytes_to_pil(tgt_data)
 
         inp_img = inp_img.convert("RGB").resize(
             (self.resolution, self.resolution), Image.Resampling.LANCZOS
@@ -748,8 +959,15 @@ class TarTargetDataset(Dataset):
         self.close()
 
 
-__all__ = ["TarArchiveDataset", "TarTargetDataset", "SequentialMultiTaskDataset",
-           "IndexedTarReader", "SequentialTarReader", "MultiFileReader"]
+__all__ = [
+    "TarArchiveDataset",
+    "TarTargetDataset",
+    "SequentialMultiTaskDataset",
+    "IndexedTarReader",
+    "SequentialTarReader",
+    "MultiFileReader",
+    "build_snvc_tar_index",
+]
 
 
 # ── Sequential multi-task dataset (no random access) ─────────────────────
