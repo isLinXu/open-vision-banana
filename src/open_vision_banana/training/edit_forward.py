@@ -1,8 +1,11 @@
 """Training forwards for instruction-editing models.
 
 Each function builds the tensor layout the official denoiser uses, then returns
-a spatial prediction of the target only. FLUX.1 Kontext stays in
-``ModelBackend.forward`` because its sigma frame is already tested there.
+a spatial prediction of the target only. The flow forwards work in their
+pipeline's native frame: ``timesteps`` is sigma (1 = pure noise) and the output is
+the transformer's ``noise - x0``; ``ModelBackend._forward_edit`` converts from and
+to the repo's flow time. FLUX.1 Kontext does the same conversion inside
+``ModelBackend.forward``.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ def edit_latent_layout(model_config) -> str | None:
         "FluxKontextPipeline": "kontext",
         "QwenImageEditPipeline": "qwen_packed",
         "QwenImageEditPlusPipeline": "qwen_packed",
+        "QwenImage21Pipeline": "qwen21",
         "LongCatImageEditPipeline": "longcat_packed",
         "Flux2KleinPipeline": "flux2_packed",
         "JoyImageEditPipeline": "joy_slots",
@@ -161,6 +165,39 @@ def _unflatten_latents(tokens: torch.Tensor, channels: int, height: int, width: 
     return tokens.transpose(1, 2).reshape(tokens.shape[0], channels, height, width)
 
 
+def qwen21_edit_forward(
+    backbone: torch.nn.Module,
+    noisy_latents: torch.Tensor,
+    context_latents: torch.Tensor,
+    timesteps: torch.Tensor,
+    text_cond: dict[str, Any],
+) -> torch.Tensor:
+    """Qwen-Image-2.1: [source tokens, target tokens], unpatched, in the repo frame.
+
+    QwenImage21Pipeline feeds sigma in [0, 1] (1 = noise) and its transformer predicts
+    ``noise - x0``. The repo's t runs 0 (noise) -> 1 (target) with velocity
+    ``target - noise``, so this feeds ``1 - t`` and negates, as the Kontext path does.
+    ``img_mask`` appends one slot per 2x2 group of target latents to the image-pad mask.
+    """
+    batch, channels, height, width = noisy_latents.shape
+    target_tokens = height * width
+    image_pad_mask = text_cond["image_pad_mask"]
+    predicted = backbone(
+        hidden_states=torch.cat(
+            [_flatten_latents(context_latents), _flatten_latents(noisy_latents)], dim=1
+        ),
+        encoder_hidden_states=text_cond["encoder_hidden_states"],
+        encoder_hidden_states_mask=None,
+        timestep=(1.0 - timesteps).to(noisy_latents.dtype),
+        img_shapes=[[(1, *context_latents.shape[-2:]), (1, height, width)]] * batch,
+        img_mask=torch.cat(
+            [image_pad_mask, image_pad_mask.new_ones(batch, target_tokens // 4)], dim=1
+        ),
+        return_dict=False,
+    )[0]
+    return -_unflatten_latents(predicted[:, -target_tokens:], channels, height, width)
+
+
 def _flux2_text_ids(text_cond: dict[str, Any], text: torch.Tensor) -> torch.Tensor:
     provided = text_cond.get("text_ids")
     if provided is not None:
@@ -189,13 +226,16 @@ def joy_edit_forward(
     timesteps: torch.Tensor,
     text_cond: dict[str, Any],
 ) -> torch.Tensor:
-    """JoyImage edit: reference slot first, noised target slot second, keep the last slot."""
+    """JoyImage edit: reference slot first, noised target slot second, keep the last slot.
+
+    The pipeline feeds the scheduler timestep, sigma * 1000.
+    """
     source_slot = context_latents.unsqueeze(1).unsqueeze(3)
     noise_slot = noisy_latents.unsqueeze(1).unsqueeze(3)
     hidden = torch.cat([source_slot, noise_slot], dim=1)
     predicted = backbone(
         hidden_states=hidden,
-        timestep=timesteps * 1000,
+        timestep=timesteps.float() * 1000,  # float32: bf16 steps by 4 above 512
         encoder_hidden_states=text_cond["encoder_hidden_states"],
         return_dict=False,
     )[0]
@@ -250,6 +290,7 @@ def hunyuan_edit_forward(
     ``text_cond['hunyuan_inputs']`` is the token batch from the model's
     preprocess. The noised target is ``images``. The source VAE latent is
     ``cond_vae_images`` at timestep 0, which is how a clean condition is marked.
+    The model's scheduler feeds ``sigma * 1000``.
     """
     prepared = text_cond.get("hunyuan_inputs")
     if not prepared:
@@ -266,7 +307,7 @@ def hunyuan_edit_forward(
         rope_image_info=prepared.get("rope_image_info"),
         images=noisy_latents,
         image_mask=prepared["image_mask"],
-        timesteps=timesteps,
+        timesteps=timesteps.float() * 1000,  # float32: bf16 steps by 4 above 512
         timesteps_index=prepared["timesteps_index"],
         cond_vae_images=context_latents,
         cond_vae_image_mask=prepared["cond_vae_image_mask"],

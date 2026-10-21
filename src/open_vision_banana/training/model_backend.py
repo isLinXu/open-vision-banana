@@ -33,6 +33,7 @@ from ..model_registry import (
 from ..model_registry import (
     vae_encode as registry_vae_encode,
 )
+from . import qwen_image21
 from .edit_forward import (
     channel_concat_edit_forward,
     edit_latent_layout,
@@ -40,6 +41,7 @@ from .edit_forward import (
     hunyuan_edit_forward,
     joy_edit_forward,
     longcat_edit_forward,
+    qwen21_edit_forward,
     qwen_edit_forward,
 )
 from .flow_matching import (
@@ -51,6 +53,15 @@ from .flow_matching import (
 from .sana_flow import native_sana_timestep
 
 logger = logging.getLogger(__name__)
+
+# Edit layouts whose training forward runs in the pipeline's native sigma frame.
+_FLOW_EDIT_FORWARDS = {
+    "qwen_packed": qwen_edit_forward,
+    "longcat_packed": longcat_edit_forward,
+    "flux2_packed": flux2_edit_forward,
+    "joy_slots": joy_edit_forward,
+    "hunyuan": hunyuan_edit_forward,
+}
 
 # bitsandbytes (0.50+) logs "MatMul8bitLt: inputs will be cast from ... to float16" on
 # every LLM.int8 forward with non-fp16 inputs. The 8-bit T5 runs every training step,
@@ -161,6 +172,8 @@ class ModelBackend:
         )
 
         # Load pipeline components
+        if quantize and edit_latent_layout(self.model_config) == "qwen21":
+            raise ValueError("Quantized loading is not implemented for Qwen-Image-2.1")
         if quantize:
             self._load_quantized(quantize)
         else:
@@ -175,6 +188,17 @@ class ModelBackend:
         self.backbone = self.components.unet  # backbone stored as 'unet' for compat
         self.vae = self.components.vae
         self.pipe = getattr(self, "_pipe", None)  # Full pipe for FLUX encode_prompt
+        layout = edit_latent_layout(self.model_config)
+        if layout == "qwen21":
+            # Its prompt encoder takes the source image; built once around the loaded parts.
+            self.pipe = qwen_image21.build_pipeline(self.components)
+            self._qwen21_logged = (
+                torch.distributed.is_initialized() and torch.distributed.get_rank() > 0
+            )
+        elif layout == "qwen_packed" and self.pipe is None:
+            self.pipe = qwen_image21.build_qwen_edit_pipeline(
+                self.components, self.model_config.pipeline_class
+            )
 
         # Apply LoRA
         logger.info(
@@ -437,6 +461,48 @@ class ModelBackend:
             },
         }
 
+    def encode_edit_text(
+        self, prompts: list[str], images: torch.Tensor, cfg_dropout_rate: float = 0.0
+    ) -> dict[str, Any]:
+        """Text condition for a training forward; editors that read the source get it here.
+
+        ``images`` is the [B, 3, H, W] source batch in [-1, 1]. Qwen-Image-2.1 and
+        Qwen-Image-Edit drop the prompt to "" with the same source image, as their
+        pipelines' unconditional branches do; text-only conditions drop through
+        ``apply_cfg_dropout``.
+        """
+        layout = edit_latent_layout(self.model_config)
+        if layout == "hunyuan":
+            return self.encode_hunyuan_edit(prompts, images)
+        if layout == "qwen21":
+            if cfg_dropout_rate > 0:
+                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
+                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            text_cond = qwen_image21.encode_condition(
+                self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
+            )
+            if not getattr(self, "_qwen21_logged", True):
+                self._qwen21_logged = True
+                logger.info(
+                    "Qwen-Image-2.1 conditioning: source image %s -> %d Qwen3-VL visual tokens "
+                    "in a %d-token condition sequence",
+                    tuple(images.shape[-2:]),
+                    int(text_cond["image_pad_mask"][0].sum()),
+                    text_cond["encoder_hidden_states"].shape[1],
+                )
+            return text_cond
+        if layout == "qwen_packed" and getattr(self, "pipe", None) is not None and hasattr(
+            self.pipe, "_get_qwen_prompt_embeds"
+        ):
+            if cfg_dropout_rate > 0:
+                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
+                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            return qwen_image21.encode_qwen_edit_condition(
+                self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
+            )
+        text_cond = self.encode_text(prompts, self.device, self.dtype)
+        return self.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
+
     # ── VAE encode/decode ──────────────────────────────────────────────────
 
     @torch.no_grad()
@@ -606,31 +672,23 @@ class ModelBackend:
         layout: str,
     ) -> torch.Tensor:
         context_latents = context_latents.to(dtype=latents.dtype)
-        if layout == "qwen_packed":
-            return qwen_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond, guidance
-            )
-        if layout == "longcat_packed":
-            return longcat_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
-        if layout == "flux2_packed":
-            return flux2_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
-        if layout == "joy_slots":
-            return joy_edit_forward(
+        if layout == "qwen21":
+            return qwen21_edit_forward(
                 self.peft_model, latents, context_latents, timesteps, text_cond
             )
         if layout == "channel_concat":
             return channel_concat_edit_forward(
                 self.peft_model, latents, context_latents, timesteps, text_cond, self.model_config
             )
-        if layout == "hunyuan":
-            return hunyuan_edit_forward(
-                self.peft_model, latents, context_latents, timesteps, text_cond
-            )
-        raise ValueError(f"No training forward for edit layout {layout}")
+        forward = _FLOW_EDIT_FORWARDS.get(layout)
+        if forward is None:
+            raise ValueError(f"No training forward for edit layout {layout}")
+        # Flow editors' pipelines noise as sigma * noise + (1 - sigma) * x0 and integrate a
+        # transformer output of noise - x0. The repo's t runs from 0 (noise) to 1 (target)
+        # with velocity x0 - noise: feed sigma = 1 - t and negate, as Kontext does.
+        extra = (guidance,) if layout == "qwen_packed" else ()
+        sigma = 1.0 - timesteps
+        return -forward(self.peft_model, latents, context_latents, sigma, text_cond, *extra)
 
     def model_timesteps(self, timesteps: torch.Tensor, batch_size: int) -> torch.Tensor:
         """Convert flow time in [0, 1] to what the backbone's timestep embedding expects.

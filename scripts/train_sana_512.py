@@ -117,7 +117,11 @@ def portable_project_path(value: Path | None) -> str | None:
 
 # Default LoRA targets for Sana transformer blocks
 SANA_LORA_TARGETS = [
-    "linear",  # attention linear proj
+    "to_q",  # self-attn & cross-attn Q
+    "to_k",  # self-attn & cross-attn K
+    "to_v",  # self-attn & cross-attn V
+    "to_out.0",  # self-attn & cross-attn output proj
+    "linear",  # time_embed linear proj
     "proj_out",  # output projection
     "conv_inverted",  # GLUMBConv inverted conv
     "conv_point",  # GLUMBConv pointwise conv
