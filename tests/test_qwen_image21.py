@@ -615,3 +615,98 @@ def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path:
     assert with_ids["task_split_counts"] == {"semantic/train": 1}
     kept = [json.loads(line) for line in (tmp_path / "b.jsonl").read_text().splitlines()]
     assert kept[0]["input"].endswith("000000000008.jpg")
+
+
+def test_paper_aligned_configs_mix_generation_replay():
+    root = Path(__file__).resolve().parents[1]
+    for name in ("qwen_image_21_paper_aligned.yaml", "qwen_image_edit_paper_aligned.yaml"):
+        cfg = load_config(config_path=root / "configs" / "experiments" / name)
+        assert "generation" in cfg.tasks
+        assert 0.0 < cfg.vision_ratio < 1.0
+        cfg.validate()
+
+
+def test_generation_replay_builder_t2i_and_edit(tmp_path: Path):
+    from scripts.build_generation_replay_manifest import build_generation_replay_manifest
+
+    imgs = tmp_path / "imgs"
+    imgs.mkdir()
+    for name in ("a.jpg", "b.jpg", "b_edit.jpg", "c.jpg"):
+        Image.new("RGB", (8, 8), (10, 20, 30)).save(imgs / name)
+
+    t2i = tmp_path / "captions.jsonl"
+    t2i.write_text(
+        "\n".join(
+            json.dumps(r)
+            for r in (
+                {"image": "imgs/a.jpg", "caption": "a photo of a cat"},
+                {"image": "imgs/missing.jpg", "caption": "gone"},
+                {"image": "imgs/c.jpg", "caption": "   "},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "gen_t2i.jsonl"
+    audit = build_generation_replay_manifest(t2i, out, kind="t2i", data_root=tmp_path)
+    assert audit["rows_written"] == 1 and audit["skipped_missing_file"] == 1
+    assert audit["skipped_missing_text"] == 1
+    row = json.loads(out.read_text().splitlines()[0])
+    assert row == {"task": "generation", "target": "imgs/a.jpg", "prompt": "a photo of a cat", "split": "train"}
+
+    edit = tmp_path / "edits.csv"
+    edit.write_text(
+        "source,target,instruction\n"
+        "imgs/b.jpg,imgs/b_edit.jpg,make the sky purple\n"
+        "imgs/a.jpg,imgs/a.jpg,identity should be dropped\n",
+        encoding="utf-8",
+    )
+    out2 = tmp_path / "gen_edit.jsonl"
+    audit2 = build_generation_replay_manifest(
+        edit, out2, kind="edit", data_root=tmp_path, val_fraction=0.5
+    )
+    assert audit2["rows_written"] == 1 and audit2["skipped_identity_pairs"] == 1
+    row2 = json.loads(out2.read_text().splitlines()[0])
+    assert row2["input"] == "imgs/b.jpg" and row2["target"] == "imgs/b_edit.jpg"
+    assert row2["prompt"] == "make the sky purple"
+
+    # --append keeps the earlier rows
+    build_generation_replay_manifest(t2i, out2, kind="t2i", data_root=tmp_path, append=True)
+    assert len(out2.read_text().splitlines()) == 2
+
+
+def test_editor_rejects_identity_generation_replay_before_loading(monkeypatch, tmp_path):
+    import open_vision_banana.training.trainer as module
+    from open_vision_banana.training.config import TrainingConfig
+
+    img = tmp_path / "x.png"
+    Image.new("RGB", (32, 32)).save(img)
+    manifest = tmp_path / "pairs.jsonl"
+    manifest.write_text(
+        json.dumps({"task": "generation", "target": "x.png", "prompt": "a cat", "split": "train"})
+        + "\n"
+        + json.dumps({"task": "depth", "input": "x.png", "target": "x.png", "split": "train"})
+        + "\n",
+        encoding="utf-8",
+    )
+    loaded = []
+    monkeypatch.setattr(module, "ModelBackend", lambda **kwargs: loaded.append(kwargs))
+    config = TrainingConfig(
+        model_name="qwen-image-2.1",
+        batch_size=1,
+        device="cpu",
+        output_dir=str(tmp_path / "out"),
+        data_dir=str(tmp_path),
+        pair_manifest=str(manifest),
+        tasks=["depth", "generation"],
+        vision_ratio=0.5,
+        num_workers=0,
+    )
+    with pytest.raises(ValueError, match="instruction editor"):
+        module.Trainer(config)
+    assert not loaded
+
+    # A text-to-image backbone may replay T2I rows (input == target is the convention).
+    assert module._reject_identity_generation_replay(
+        types.SimpleNamespace(datasets=[]), "sana-1600m"
+    ) is None

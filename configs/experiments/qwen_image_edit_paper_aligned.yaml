@@ -17,10 +17,17 @@ lora:
   rs_lora: true
 
 data:
-  tasks: [depth, normal, semantic, referring]
+  # Paper Section 2: vision-task rows are mixed into the base model's own
+  # generation/editing data; fine-tuning on vision data alone erodes generation.
+  # ``generation`` rows come from scripts/build_generation_replay_manifest.py; for
+  # this instruction-editing backbone they must be edit pairs (--kind edit), the
+  # trainer rejects identity (input == target) replay rows. ``vision_ratio`` is the
+  # total share of the four vision tasks; the paper calls its share "very low" but
+  # gives no number, so 0.5 is a LoRA-budget compromise, not a paper constant.
+  tasks: [depth, normal, semantic, referring, generation]
   task_sampling: uniform
   task_sampling_weights: {}
-  vision_ratio: 1.0
+  vision_ratio: 0.5
   depth_curve: metric_power
   depth_colormaps: [cube_edge, plasma, inferno, viridis, grayscale]
   semantic_prompt_styles: [json_named, json_tuple, natural, hex]

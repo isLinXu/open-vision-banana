@@ -260,3 +260,14 @@ GenAI-Bench 1600 条 prompt、ImgEdit 767 条指令保持「未做人类评」�
 2. **为什么所有模型（SANA、Qwen-Image-2.1）的 NYU / DIODE 度量深度闸门全部失败，而尺度对齐后 δ1 升至 0.37–0.46？**
    - **根因（训练 Target 编码与评测解码契约不一致 + Prompt 不一致）**：SNVC 训练 pack 中的 5630 条深度 target 是**逐图归一化的相对深度图（近处更亮灰度/伪彩）**，且训练 Prompt 为 `"Generate a relative depth map..."`；而 `ManifestVisionDataset` 在 `depth_curve: metric_power` 下直接原样读取 PNG，评测时 `evaluate_paper_benchmarks.py` 用论文 `metric_power`（$\lambda=-3, c=10/3$）+ `cube_edge` 逆变换解码为米数。在 `metric_power` 逆变换 $d = 10((1-u)^{-0.5}-1)$ 下，逐图归一化图像中 $u \in [0.5, 1.0]$ 的像素会被解码为 $4.14\text{m} \to \infty$，导致室内场景尺度严重膨胀（NYU AbsRel $\approx 2.0$，DIODE AbsRel $200\sim 5500$，NYU $\delta_1 \approx 0.066$，与单任务相对灰度 specialist `ovb-fix_ctrl_depth` 的 `0.066 / 1.990 / aligned 0.427` 完全一致）。
    - **已落地诊断工具**：新增 `validate_manifest_contract`（`src/open_vision_banana/data/validation.py`）与 `scripts/diagnose_shared_baseline.py`，在开训前自动拦截「无注意力 LoRA」「`max_length` 截断语义图例」「`metric_power` 混用相对深度 Prompt 或灰度/非 cube-edge 目标图」三类契约错误。
+
+## 2026-10-22 第三轮论文对齐修复记录
+
+对合并后的 `main` 重新逐项核对论文（arXiv:2604.20329v3）后落地了四项修复；前两项是方法层偏差，后两项是训练配方与零样本协议层面的补齐。
+
+1. **指代分割 Prompt 训练 / 评测再次错配（回归）**。主线合入的 RES 契约在推理端输出 `Segment {x} in solid white. Render all other pixels black.`，而 `build_rea2seg_manifest.py` 训练用的是 Fig. 4 (c)/(d) 模板并被追加了一句 `Other objects are black.`。现在三处统一为论文 Fig. 4 (c)/(d) 逐字模板（白前景 / 黑背景）：`referring_contract.BINARY_REFERRING_TEMPLATE`，`PromptBuilder.REFERRING_TEMPLATES` 恢复为论文原句，表达式去掉前导冠词避免 "The the"。旧措辞的 RES manifest 仍可加载（`is_binary_referring_prompt`），但不再生成。
+2. **Stage 5 Eq. (6) 面积基准**。论文用同一个符号 $A(\cdot)$ 写联合包围盒与两分量面积，`InstanceDecodingConfig.spatial_merge_area_basis` 默认取 `bbox`；原先的像素计数读法保留为 `pixel`（更严格、更少合并）供消融。字段已进入 `to_dict()` 契约。
+3. **零样本审计补 image-id 级排除**。RefCOCOg UMD val 图像是 COCO train2014 文件，仅按路径关键词审计拦不住 COCO 来源的语义 / 实例数据。`build_qwen_baseline_manifest.py --exclude-image-ids refs(umd).p` 现在按 COCO 文件名解析 id 并剔除，只匹配 COCO 命名（`COCO_train2014_000000xxxxxx.jpg` / 12 位数字），Hypersim / Cityscapes 帧号不会误伤。
+4. **`*_paper_aligned.yaml` 接入生成保留混训**。两份 Qwen paper_aligned 配置的 `tasks` 加入 `generation`，`vision_ratio: 0.5`（论文只说视觉数据占比 "very low"，未给数字，0.5 是 LoRA 预算下的折中，不是论文常数）。`scripts/build_generation_replay_manifest.py` 从带 caption 的图像集（`--kind t2i`）或编辑三元组（`--kind edit`）生成 `generation` 行；对 Qwen-Image-Edit / 2.1 这类以源图为条件的编辑底座，训练器会在加载模型前拒绝 `input == target` 的 T2I 式 replay 行（否则训练的是恒等重建而非生成），必须用 `--kind edit`。
+
+未在本轮解决、需要数据决策的：实例分割任务（论文五任务之一）在 paper_aligned 配置中仍缺训练数据源；SNVC 没有实例子集，COCO / LVIS 可用但要配合第 3 条按 id 剔除 RefCOCOg 评测图。
