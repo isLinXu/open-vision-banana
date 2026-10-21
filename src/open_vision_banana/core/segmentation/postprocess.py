@@ -12,6 +12,7 @@ class PostprocessMixin:
     erosion_threshold: float
     color_tolerance: float
     bbox_expansion_factor: float
+    spatial_merge_area_basis: str
 
     def _noise_pruning(self, labels: torch.Tensor, min_area: float) -> torch.Tensor:
         """Stage 3: Remove components smaller than θ_size * (H*W).
@@ -169,14 +170,18 @@ class PostprocessMixin:
         x_min.scatter_reduce_(0, label_at_pos, xs, reduce="amin")
         x_max.scatter_reduce_(0, label_at_pos, xs, reduce="amax")
 
-        # bbox_area = ((y_max - y_min + 1) * (x_max - x_min + 1)).float()  # unused
-        pixel_area = count.float()
+        # Eq. (6) writes A(S_a ∪ S_b) ≤ γ (A(S_a) + A(S_b)) with one symbol A on both
+        # sides, so the individual terms are read as bounding-box areas by default;
+        # ``spatial_merge_area_basis="pixel"`` keeps the stricter pixel-count variant.
+        if self.spatial_merge_area_basis == "bbox":
+            area = ((y_max - y_min + 1) * (x_max - x_min + 1)).float()
+        else:
+            area = count.float()
 
         # Extract data for unique_labels only
         ul = unique_labels.long()
         mc = mean_colors[ul]  # [K, 3]
-        # ba = bbox_area[ul]       # [K]  # unused, kept for reference
-        pa = pixel_area[ul]  # [K]
+        pa = area[ul]  # [K]
         ymn = y_min[ul]  # [K]
         ymx = y_max[ul]  # [K]
         xmn = x_min[ul]  # [K]
