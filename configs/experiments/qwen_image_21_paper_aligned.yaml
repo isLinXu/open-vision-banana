@@ -33,9 +33,12 @@ data:
   # ``generation`` rows come from scripts/build_generation_replay_manifest.py; for
   # this instruction-editing backbone they must be edit pairs (--kind edit), the
   # trainer rejects identity (input == target) replay rows. ``vision_ratio`` is the
-  # total share of the four vision tasks; the paper calls its share "very low" but
+  # total share of the five vision tasks; the paper calls its share "very low" but
   # gives no number, so 0.5 is a LoRA-budget compromise, not a paper constant.
-  tasks: [depth, normal, semantic, referring, generation]
+  # ``instance`` rows come from scripts/build_instance_manifest.py (COCO / LVIS,
+  # black background, one colour per instance, Fig. 3 prompt); pass RefCOCOg
+  # refs(umd).p to --exclude-image-ids so RefCOCOg val images never enter training.
+  tasks: [depth, normal, semantic, instance, referring, generation]
   task_sampling: uniform
   task_sampling_weights: {}
   vision_ratio: 0.5
@@ -72,7 +75,7 @@ flow:
   cfg_dropout_rate: 0.05
 
 loss:
-  task_loss_weights: {depth: 1.0, normal: 1.0, semantic: 1.0, referring: 1.0}
+  task_loss_weights: {depth: 1.0, normal: 1.0, semantic: 1.0, instance: 1.0, referring: 1.0}
   normal_angular_loss_weight: 0.0
   depth_edge_aux_weight: 0.0
 
