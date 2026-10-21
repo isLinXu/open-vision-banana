@@ -34,13 +34,19 @@ class PromptBuilder:
         'Generate a semantic segmentation visualization of the input. {hex_descriptions}.',
     ]
 
+    # Paper Fig. 3 phrasings. [0] (a)/(b-left): default black background is not
+    # stated. [1] (b-right) and [2] (c-right) name the background colour; Fig. 3
+    # shows it as "RGB(88, 50, 82)", "#10aa05" and "white color", so ``bg_color``
+    # takes any of those spellings (see ``format_background_color``).
     INSTANCE_TEMPLATES = [
         'Generate an instance segmentation visualization of this image. '
         'Each {object_name} is colored differently.',
+        'This image is a segmentation task derived from the input. The '
+        '{object_name} instances are each represented by a unique, solid color. '
+        'Background is {bg_color}.',
         'This image shows segmentation masks for the {object_name} from the '
         'input image. The background is set to {bg_color}. Each {object_name} '
-        'instance is represented by a solid circular mask, and a different '
-        'color is used for each mask.',
+        'is represented by a different color.',
     ]
 
     # Paper Fig. 4 wording. [0] is Fig. 4 (a) (a second object in another colour);
@@ -120,18 +126,51 @@ class PromptBuilder:
 
         raise ValueError(f"Unknown template index: {template_idx}")
 
+    INSTANCE_BACKGROUND_STYLES = ("named", "rgb", "hex")
+
+    @staticmethod
+    def format_background_color(
+        color: tuple[int, int, int] | str, style: str = "named"
+    ) -> str:
+        """Spell a background colour the way Fig. 3 does.
+
+        ``named`` -> "white color" / "black color" (falls back to RGB for colours
+        without a name), ``rgb`` -> "RGB(88, 50, 82)", ``hex`` -> "#10aa05".
+        A string is returned unchanged.
+        """
+        if isinstance(color, str):
+            return color
+        r, g, b = (int(c) for c in color)
+        if style == "rgb":
+            return f"RGB({r}, {g}, {b})"
+        if style == "hex":
+            return f"#{r:02x}{g:02x}{b:02x}"
+        if style == "named":
+            from ..data.openvocab_semantic import NAMED_COLORS
+
+            for name, rgb in NAMED_COLORS.items():
+                if rgb == (r, g, b):
+                    return f"{name} color"
+            return f"RGB({r}, {g}, {b})"
+        raise ValueError(f"Unknown background style: {style!r}")
+
     @classmethod
     def build_instance_prompt(
         cls,
         object_name: str,
-        background_color: str = "black",
+        background_color: tuple[int, int, int] | str = "black",
         template_idx: int = 0,
+        *,
+        background_style: str = "named",
     ) -> str:
-        """Build prompt for instance segmentation."""
+        """Build an instance prompt (Fig. 3). Template 0 does not mention the
+        background and so is only correct for the default black background."""
+        if template_idx == 0 and background_color not in ("black", "black color", (0, 0, 0)):
+            raise ValueError("Instance template 0 assumes a black background; use template 1 or 2")
         template = cls.INSTANCE_TEMPLATES[template_idx]
         return template.format(
             object_name=object_name,
-            bg_color=background_color,
+            bg_color=cls.format_background_color(background_color, background_style),
         )
 
     @classmethod

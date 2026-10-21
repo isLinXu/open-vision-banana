@@ -8,10 +8,14 @@ script renders that supervision from public annotations:
 
 * one row per (image, category) pair that has at least ``--min-instances``
   annotated instances;
-* target PNG: black background, each instance a distinct colour drawn from a
-  palette whose pairwise RGB distance is far above the decoder tolerance tau=14;
-  instances are painted largest-first so small objects stay on top of overlaps;
-* prompt: ``PromptBuilder.build_instance_prompt(category)`` (Fig. 3 template);
+* target PNG: each instance a distinct colour drawn from a palette whose pairwise
+  RGB distance is far above the decoder tolerance tau=14; instances are painted
+  largest-first so small objects stay on top of overlaps;
+* background / prompt: ``--background-styles`` mirrors Fig. 3, which shows a
+  default black background as well as backgrounds named as ``RGB(88, 50, 82)``,
+  ``#10aa05`` and ``white color``. Each row records ``background_color`` so the
+  decoder can be told the same colour; the prompt is the matching Fig. 3 template.
+  The default ``black`` only (template 0) matches the SA-Co evaluation prompt;
 * ambiguous supervision is skipped: COCO ``iscrowd`` regions of the category and
   LVIS categories listed in the image's ``not_exhaustive_category_ids`` (not every
   instance annotated), so the target never under-labels the prompted class.
@@ -64,9 +68,18 @@ BACKGROUND = (0, 0, 0)
 # levels, so the palette keeps a wide margin.
 MIN_COLOR_DISTANCE = 60.0
 
+# Fig. 3 background spellings. ``black`` uses template 0 (background not stated);
+# the others use the two templates that name the background colour.
+BACKGROUND_STYLES = ("black", "named", "rgb", "hex")
+# Named backgrounds that are visually plausible for a mask image (Fig. 3 uses white).
+NAMED_BACKGROUNDS = {"white": (255, 255, 255), "black": (0, 0, 0), "gray": (128, 128, 128)}
 
-def build_instance_palette(min_distance: float = MIN_COLOR_DISTANCE) -> list[tuple[int, int, int]]:
-    """Greedy, deterministic palette: 4 levels per channel, far from black and each other."""
+
+def build_instance_palette(
+    min_distance: float = MIN_COLOR_DISTANCE,
+    background: tuple[int, int, int] = BACKGROUND,
+) -> list[tuple[int, int, int]]:
+    """Greedy, deterministic palette: 4 levels per channel, far from the background and each other."""
     levels = (255, 128, 192, 64)
     candidates = [c for c in itertools.product(levels, repeat=3)]
     # Saturated colours first so the most common small instance counts get the most
@@ -74,15 +87,29 @@ def build_instance_palette(min_distance: float = MIN_COLOR_DISTANCE) -> list[tup
     candidates.sort(key=lambda c: (-(max(c) - min(c)), -sum(c)))
     palette: list[tuple[int, int, int]] = []
     for color in candidates:
-        if _dist(color, BACKGROUND) < min_distance:
+        if _dist(color, background) < min_distance:
             continue
         if all(_dist(color, chosen) >= min_distance for chosen in palette):
             palette.append(color)
     return palette
 
 
+def sample_background(style: str, rng: random.Random) -> tuple[int, int, int]:
+    """A background colour for ``style``; rgb/hex draw a muted colour far from the palette grid."""
+    if style == "black":
+        return BACKGROUND
+    if style == "named":
+        return NAMED_BACKGROUNDS[rng.choice(sorted(NAMED_BACKGROUNDS))]
+    if style in {"rgb", "hex"}:
+        # Off-grid values (e.g. 88, 50, 82 in Fig. 3) keep the background distinguishable
+        # from the 64/128/192/255 instance palette.
+        return tuple(rng.choice((16, 40, 88, 104, 152, 168, 216, 232)) for _ in range(3))  # type: ignore[return-value]
+    raise ValueError(f"Unknown background style: {style!r}")
+
+
 def _dist(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
-    return float(np.sqrt(sum((x - y) ** 2 for x, y in zip(a, b, strict=True))))
+    # int() guards against uint8 wrap-around when colours come back from an image array.
+    return float(np.sqrt(sum((int(x) - int(y)) ** 2 for x, y in zip(a, b, strict=True))))
 
 
 PALETTE = build_instance_palette()
@@ -104,16 +131,23 @@ def ann_to_mask(ann: dict, height: int, width: int) -> np.ndarray:
 
 
 def render_instance_target(
-    anns: list[dict], height: int, width: int, rng: random.Random
+    anns: list[dict],
+    height: int,
+    width: int,
+    rng: random.Random,
+    background: tuple[int, int, int] = BACKGROUND,
+    palette: list[tuple[int, int, int]] | None = None,
 ) -> tuple[np.ndarray, int]:
-    """Paint instances largest-first with distinct palette colours on black.
+    """Paint instances largest-first with distinct palette colours on ``background``.
 
     Returns the HxWx3 uint8 target and the number of instances that kept at least
     one visible pixel after occlusion by smaller instances painted on top.
     """
-    colors = PALETTE[: len(anns)]
+    palette = PALETTE if palette is None else palette
+    colors = palette[: len(anns)]
     rng.shuffle(colors)
-    target = np.zeros((height, width, 3), dtype=np.uint8)
+    target = np.empty((height, width, 3), dtype=np.uint8)
+    target[...] = np.asarray(background, dtype=np.uint8)
     masks = [ann_to_mask(ann, height, width) for ann in anns]
     order = sorted(range(len(anns)), key=lambda i: -int(masks[i].sum()))
     for color, index in zip(colors, order, strict=True):
@@ -148,12 +182,17 @@ def build_instance_manifest(
     max_rows: int | None = None,
     val_fraction: float = 0.0,
     exclude_image_ids: tuple[Path, ...] | list[Path] = (),
+    background_styles: tuple[str, ...] | list[str] = ("black",),
     seed: int = 42,
     require_images: bool = True,
 ) -> dict:
     """Render instance targets and write manifest rows; return an audit summary."""
     if fmt not in {"coco", "lvis"}:
         raise ValueError("fmt must be 'coco' or 'lvis'")
+    background_styles = tuple(background_styles) or ("black",)
+    unknown_styles = sorted(set(background_styles) - set(BACKGROUND_STYLES))
+    if unknown_styles:
+        raise ValueError(f"Unknown background styles {unknown_styles}; choose from {BACKGROUND_STYLES}")
     if min_instances < 1:
         raise ValueError("min_instances must be >= 1")
     max_instances = len(PALETTE) if max_instances is None else min(max_instances, len(PALETTE))
@@ -216,11 +255,24 @@ def build_instance_manifest(
             continue
 
         height, width = int(image["height"]), int(image["width"])
-        target, visible = render_instance_target(anns, height, width, rng)
+        bg_style = rng.choice(background_styles)
+        background = sample_background(bg_style, rng)
+        palette = PALETTE if background == BACKGROUND else build_instance_palette(background=background)
+        if len(anns) > len(palette):
+            stats["skipped_too_many_instances"] += 1
+            continue
+        target, visible = render_instance_target(anns, height, width, rng, background, palette)
         if visible < min_instances:
             stats["skipped_fully_occluded"] += 1
             continue
         name = categories[cat_id]
+        if bg_style == "black":
+            prompt = PromptBuilder.build_instance_prompt(name)
+        else:
+            prompt = PromptBuilder.build_instance_prompt(
+                name, background, rng.choice((1, 2)), background_style=bg_style
+            )
+        stats[f"background_style_{bg_style}"] += 1
         slug = "".join(ch if ch.isalnum() else "_" for ch in name.lower()).strip("_")
         target_path = targets_dir / f"{image_id:012d}_{cat_id}_{slug}.png"
         Image.fromarray(target).save(target_path, compress_level=1)
@@ -238,7 +290,8 @@ def build_instance_manifest(
                 "task": "instance",
                 "input": rel(image_path),
                 "target": rel(target_path),
-                "prompt": PromptBuilder.build_instance_prompt(name),
+                "prompt": prompt,
+                "background_color": list(background),
                 "category": name,
                 "num_instances": len(anns),
                 "source_dataset": fmt,
@@ -294,6 +347,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-rows", type=int, default=None)
     parser.add_argument("--val-fraction", type=float, default=0.0)
     parser.add_argument("--exclude-image-ids", action="append", type=Path, default=[])
+    parser.add_argument(
+        "--background-styles",
+        default="black",
+        help=(
+            "Comma-separated subset of black,named,rgb,hex sampled per row (Fig. 3 shows "
+            "all four). 'black' alone matches the SA-Co evaluation prompt."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no-require-images", action="store_true")
     return parser.parse_args()
@@ -314,6 +375,7 @@ def main() -> int:
         max_rows=args.max_rows,
         val_fraction=args.val_fraction,
         exclude_image_ids=args.exclude_image_ids,
+        background_styles=tuple(s.strip() for s in args.background_styles.split(",") if s.strip()),
         seed=args.seed,
         require_images=not args.no_require_images,
     )
