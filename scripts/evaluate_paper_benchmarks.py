@@ -23,6 +23,7 @@ back to synthetic data or RGB reconstruction metrics.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import logging
 import math
@@ -45,6 +46,13 @@ from open_vision_banana.evaluation.paper_capabilities import (  # noqa: E402
     PAPER_CAPABILITIES,
     capability_for_benchmark,
     paper_reference,
+)
+from open_vision_banana.inference.checkpoint import read_training_prompts  # noqa: E402
+from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT  # noqa: E402
+
+ADE150_SEMANTIC_MARKERS = (
+    "150-class semantic segmentation",
+    "fixed training palette",
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -214,6 +222,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
+        "--allow-semantic-palette-mismatch",
+        action="store_true",
+        help=(
+            "Allow Cityscapes eval of a LoRA whose recorded semantic prompt is the "
+            "ADE-150 / SNVC training palette. That score is not paper mIoU."
+        ),
+    )
+    parser.add_argument(
         "--preflight-only",
         action="store_true",
         help="Validate benchmark roots and splits, then write the audit without loading a model.",
@@ -259,7 +275,7 @@ def resolve_runtime_dtype(
 
 
 def resolve_inference_steps(model_name: str | None, requested: int) -> int:
-    """Keep FLUX-schnell's 1-step default, but use SANA's trained 20-step ODE."""
+    """Keep FLUX-schnell's 1-step default, but use multi-step schedules for SANA/Qwen/editors."""
     if requested != 1 or not model_name:
         return requested
     from open_vision_banana.model_registry import resolve_model_config
@@ -268,9 +284,30 @@ def resolve_inference_steps(model_name: str | None, requested: int) -> int:
         config = resolve_model_config(model_name)
     except Exception:
         return requested
-    if config.family == "sana":
+    if (
+        config.family in {"sana", "qwen-image", "qwen-image-2.1"}
+        or getattr(config, "instruction_editing", False)
+    ):
         return int(config.default_num_inference_steps or 20)
     return requested
+
+
+def evaluate_compatible(evaluator: Any, dataloader, **kwargs: Any) -> dict[str, Any]:
+    """Call ``VisionEvaluator.evaluate`` without kwargs the deploy copy rejects.
+
+    Older deploy trees lack ``depth_curve`` / ``depth_log_alpha``. Passing them
+    raises TypeError and drops the whole benchmark run.
+    """
+    params = inspect.signature(evaluator.evaluate).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return evaluator.evaluate(dataloader, **kwargs)
+    dropped = sorted(key for key in kwargs if key not in params)
+    if dropped:
+        logger.warning("VisionEvaluator.evaluate ignored unsupported kwargs: %s", dropped)
+    return evaluator.evaluate(
+        dataloader,
+        **{key: value for key, value in kwargs.items() if key in params},
+    )
 
 
 def fingerprint_dataset(dataset: Any) -> str:
@@ -465,6 +502,21 @@ def main() -> int:
             return 2
         return 0
 
+    if any(job[0] == "semantic" for job in jobs) and args.lora_path and not args.allow_semantic_palette_mismatch:
+        recorded = read_training_prompts(args.lora_path).get("semantic", "")
+        if recorded and any(marker in recorded for marker in ADE150_SEMANTIC_MARKERS):
+            raise SystemExit(
+                "LoRA semantic prompt is the ADE-150 / SNVC palette; official "
+                "Cityscapes val needs the 19-color specialist "
+                "(configs/experiments/sana_1600m_cityscapes19.yaml). Pass "
+                "--allow-semantic-palette-mismatch only for a cross-palette diagnostic."
+            )
+        if recorded and recorded != SEMANTIC_SEGMENTATION_PROMPT:
+            logger.warning(
+                "LoRA semantic prompt is not the official Cityscapes 19-color legend; "
+                "decoded mIoU may not be paper-protocol."
+            )
+
     from open_vision_banana.inference.pipeline import VisionBanana
 
     runtime_dtype = resolve_runtime_dtype(
@@ -556,7 +608,8 @@ def main() -> int:
             from open_vision_banana.data.datasets import CityscapesSegDataset
             class_color_map = CityscapesSegDataset.CITYSCAPES_COLORS
         eval_task = "generation_preservation" if benchmark == "generation" else benchmark
-        metrics = evaluator.evaluate(
+        metrics = evaluate_compatible(
+            evaluator,
             loader,
             task=eval_task,
             num_classes=19 if benchmark == "semantic" else None,

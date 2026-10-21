@@ -6,14 +6,14 @@
 
 **这不是 Table 1 复现。** 论文数字只出现在「论文」列，用来对照。本仓库用开源基座 + 公开 LoRA + 项目自定闸门，没有 Nano Banana Pro，也没有论文未公开的训练数据。
 
-最后一项在飞：FLUX.1 Kontext Hypersim EMA 的 NYU official_test（654 张，cube-edge，28 步）。2026-10-10 07:49 UTC 大约 165 / 654。JSON 写出后补第 4.2.4 节。Cityscapes / ReasonSeg / SA-Co/Gold / nuScenes / GenAI-Bench / ImgEdit 不是在排队，是数据或协议缺了，见第 6 节。
+官方 Cityscapes val（500 对 frankfurt/lindau/munster，`gtFine`）已从 ModelScope `OpenDataLab/CityScapes` 装到评测机。论文口径的 Cityscapes 数字是 SANA CS-19 15k `checkpoint-8000_best` 的 mIoU **0.266**（n=500；3000 步 specialist 是 0.177）。旧的 ADE-150 LoRA 交叉色板分数 0.024 / 0.015 只作对照。ReasonSeg / SA-Co/Gold / GenAI-Bench / ImgEdit 评测集已在评测机；nuScenes trainval 仍在下载。协议缺口见第 6 节。
 
 ---
 
 ## 1. 结论
 
-1. **2D。** 唯一完整官方划分结果是 RefCOCOg UMD val。SANA `ovb-fix_seg_plus_gcg` cIoU **0.143**，论文 0.738。Cityscapes、ReasonSeg、SA-Co/Gold 没有可引用分数。
-2. **3D 深度。** NYU、iBims-1、ETH3D、DIODE-Indoor、KITTI 都按官方划分、原生 GT 分辨率、像素加权 δ1 / AbsRel 算过了。SANA 相对灰度、SANA Hypersim 度量、FLUX.1-dev 相对灰度三条线的度量闸门全部失败：δ1 低于最佳非 oracle 平凡基线，多数 AbsRel 也被常数预测打掉。
+1. **2D。** RefCOCOg UMD val：SANA `ovb-fix_seg_plus_gcg` cIoU **0.143**，FLUX `ovb-flux3_ctrl_seg` cIoU **0.098**，论文 0.738。Cityscapes val（论文口径）：SANA `sana_1600m_cityscapes19_15k` `checkpoint-8000_best` mIoU **0.266**（3000 步 specialist 是 0.177），论文 0.699。ADE-150 LoRA 交叉色板对照仍是 SANA 0.024 / FLUX 0.015，不再当论文数字。ReasonSeg、SA-Co/Gold 没有可引用分数。
+2. **3D 深度。** NYU、iBims-1、ETH3D、DIODE-Indoor、KITTI 都按官方划分、原生 GT 分辨率、像素加权 δ1 / AbsRel 算过了。SANA 相对灰度、SANA Hypersim 度量、FLUX.1-dev 相对灰度、FLUX.1 Kontext Hypersim EMA 四条线的度量闸门全部失败。Kontext NYU δ1 **0.025** / AbsRel **3.027**，比 SANA / FLUX.1-dev 灰度还差。
 3. **3D 法向。** 只有 DIODE-Indoor。SANA `ovb-fix_ctrl_normal` 均值 **24.96°**，过了项目法向闸门，不是论文的 13.818°。FLUX.1-dev 法向均值 **91.09°**，接近随机朝向。
 4. **生成保留。** 论文是人对人胜率。这边没有 GenAI-Bench / ImgEdit 人类评估，不能报 53.5% / 47.8%。
 5. **统一模型。** 下面每条分数都来自任务 LoRA，不是同一个共享权重。不能当成论文「一个生成器切任务」的证据。
@@ -68,11 +68,14 @@ FLUX.1-dev 第一次评测修过三处，重跑分数才有效：蒸馏 transfor
 | SANA multitask depth | SANA-1600M | `ovb-fix_best3_s42` EMA step 30000 | 多任务，不是深度 specialist | NYU / DIODE 对照，不进主表 |
 | SANA normal | SANA-1600M | [khazic/ovb-fix_ctrl_normal](https://huggingface.co/khazic/ovb-fix_ctrl_normal) EMA step 30000 | 法向 RGB | DIODE-Indoor |
 | SANA referring | SANA-1600M | [khazic/ovb-fix_seg_plus_gcg](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg) adapter step 30000，无 EMA | 分割 + GCG | RefCOCOg UMD val |
+| SANA semantic（交叉色板对照） | SANA-1600M | [khazic/ovb-fix_ctrl_seg](https://huggingface.co/khazic/ovb-fix_ctrl_seg) adapter step 30000，无 EMA | SNVC ADE-150 | 官方 Cityscapes val，**不是**论文口径 |
+| SANA semantic CS-19 | SANA-1600M | 本地 `sana_1600m_cityscapes19_15k` `checkpoint-8000_best`（Best val_loss 0.0266） | 官方 CS-19 色图 | 官方 Cityscapes val（论文口径） |
+| FLUX semantic（交叉色板对照） | FLUX.1-dev | [khazic/ovb-flux3_ctrl_seg_nominsnr_15k](https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k) step 15000 | SNVC ADE-150 | 官方 Cityscapes val，**不是**论文口径 |
 | FLUX depth | FLUX.1-dev | [khazic/ovb-flux3_ctrl_depth_nominsnr_15k](https://huggingface.co/khazic/ovb-flux3_ctrl_depth_nominsnr_15k) step 15000 | 近处更亮灰度 | 5 个深度集 |
 | FLUX normal | FLUX.1-dev | [khazic/ovb-flux3_ctrl_normal_nominsnr_15k](https://huggingface.co/khazic/ovb-flux3_ctrl_normal_nominsnr_15k) step 15000 | 法向 RGB | DIODE-Indoor |
-| FLUX Kontext depth | FLUX.1-Kontext-dev | 本地 Hypersim 闸门 run EMA step 3000（`flow_loss=0.1526`） | 米制 cube-edge | NYU，进行中 |
+| FLUX Kontext depth | FLUX.1-Kontext-dev | 本地 Hypersim 闸门 run EMA step 3000（`flow_loss=0.1526`） | 米制 cube-edge | NYU Eigen + 10 m，闸门 FAIL |
 
-`ovb-flux3_ctrl_seg_nominsnr_15k` 和 `ovb-fix_ctrl_seg` 没有官方 Cityscapes `gtFine`，没有 mIoU。
+Cityscapes 数据来自 ModelScope `OpenDataLab/CityScapes` 的 `raw/gtFine_trainvaltest.zip` 和 `raw/leftImg8bit_trainvaltest.zip`，解 train+val（2975 + 500）。没有用 `cityscapes8`。
 
 ---
 
@@ -84,14 +87,25 @@ FLUX.1-dev 第一次评测修过三处，重跑分数才有效：蒸馏 transfor
 
 | 基准 | 论文 | 本仓库 | 状态 |
 |------|-----:|--------|------|
-| RefCOCOg UMD val cIoU | 0.738 | 0.143 | 已测 |
-| RefCOCOg UMD val gIoU | — | 0.158 | 已测（论文主报 cIoU） |
-| RefCOCOg Precision@0.5 | — | 0.089 | 已测 |
+| RefCOCOg UMD val cIoU | 0.738 | 0.143 / 0.098 | 已测（SANA / FLUX） |
+| RefCOCOg UMD val gIoU | — | 0.158 / 0.092 | 已测（论文主报 cIoU） |
+| RefCOCOg Precision@0.5 | — | 0.089 / 0.0006 | 已测 |
 | ReasonSeg val gIoU | 0.793 | — | 适配器已接；评测机无数据。论文分数含 Gemini 2.5 Pro 改写 |
-| Cityscapes val mIoU | 0.699 | — | 无官方 `gtFine`。不用 `cityscapes8` |
+| Cityscapes val mIoU | 0.699 | **0.266** | 已测（SANA CS-19 15k `checkpoint-8000_best`；3000 步 0.177；交叉色板对照 0.024 / 0.015） |
 | SA-Co/Gold cgF1 | 47.5 | — | 适配器已接 query JSONL 和 cgF1。无 Gold 数据。论文分数含 Gemini 存在性过滤 |
 
-RefCOCOg 细节：SANA-1600M，`ovb-fix_seg_plus_gcg` 非 EMA adapter，20 步，原生 mask，n=4896。产物：`refcocog_umd_val_fix_seg_plus_gcg_native.json`。
+RefCOCOg 细节：UMD val，每句一个样本，原生 mask，n=4896。
+
+- SANA-1600M `ovb-fix_seg_plus_gcg` 非 EMA adapter，20 步，fp32。cIoU **0.143**，gIoU 0.158，Precision@0.5 0.089。产物：`refcocog_umd_val_fix_seg_plus_gcg_native.json`。
+- FLUX.1-dev `ovb-flux3_ctrl_seg_nominsnr_15k` `checkpoint-15000_final`，20 步，4-bit，bf16。cIoU **0.098**，gIoU 0.092，Precision@0.5 0.0006，Recall 0.500。产物：`refcocog_umd_val_flux3_ctrl_seg_native.json`。这个 LoRA 是语义分割权重，不是指代 specialist；CLIP 77 token 截断也会吃掉长表达式。
+
+Cityscapes 细节：官方 val 500 对（frankfurt 267 / lindau 59 / munster 174），`labelIds → trainIds`，19 类全局混淆矩阵，512² 最近邻缩放（`--native-resolution` 对 semantic 不生效）。这是色图最近邻解码后的类 ID mIoU，不是可视化观感。Prompt 是官方 19 色 legend（`SEMANTIC_SEGMENTATION_PROMPT`）。
+
+- **论文口径（当前最好）。** SANA-1600M `sana_1600m_cityscapes19_15k` `checkpoint-8000_best/lora_adapter`，从 3000 步权重只加载 LoRA 再训到 15000，Best val_loss **0.0266**（step 8000；之后 9k–15k val 未刷新）。20 步，fp32，guidance 1.0。mIoU **0.266**，pixel acc **0.731**，n=500。大面积类：road 0.812，sky 0.819，vegetation 0.711，building 0.585，car 0.493，terrain 0.339，sidewalk 0.333，person 0.288。细/稀有类仍弱：motorcycle 0.003，truck 0.012，wall 0.023，traffic_light 0.031，rider 0.035。产物：`cityscapes_val_cityscapes19_15k.json`。
+- **3000 步对照。** 同一色板 `checkpoint-3000_best` mIoU **0.177**，pixel acc 0.572。产物：`cityscapes_val_cityscapes19.json`。
+- **交叉色板对照，不是论文口径。** SANA `ovb-fix_ctrl_seg` mIoU **0.024**。FLUX `ovb-flux3_ctrl_seg_nominsnr_15k` mIoU **0.015**。ADE-150 训、CS-19 评。产物：`cityscapes_val_fix_ctrl_seg.json`，`cityscapes_val_flux3_ctrl_seg.json`。
+
+0.266 比交叉色板 0.024 高一个数量级，比 3000 步 0.177 再涨约 50%。仍远低于论文 0.699；主导类已可辨，边界和稀有类还差。评测会拒绝 ADE-150 prompt 的 LoRA（除非 `--allow-semantic-palette-mismatch`）。
 
 ### 4.2 3D understanding — 度量深度
 
@@ -133,12 +147,17 @@ ETH3D 这条 δ1 0.292 略高于常数@3 m 的 0.272，但仍低于门槛 0.372�
 
 DIODE / iBims 的 AbsRel 到了 10³ 量级：cube-edge / 灰度解出的远处接近饱和，少数像素主导误差。aligned δ1 也只有 0.18–0.22，说明中位数对齐之后空间结构仍然弱。
 
-#### 4.2.4 FLUX.1 Kontext Hypersim EMA — 进行中
+#### 4.2.4 FLUX.1 Kontext Hypersim EMA — 已测，闸门 FAIL
 
-- 训练：3000 / 3000，`flow_loss=0.1526`，Best val_loss 仍为 `inf`（验证没选出 checkpoint）。评测用导出的 EMA adapter。
+- 训练：3000 / 3000，`flow_loss=0.1526`，Best val_loss 仍为 `inf`（验证没选出 checkpoint）。评测用 `checkpoint-3000_final/ema_adapter`。
 - 第一次 NYU：部署树路径不存在，`nyu_flux_kontext_metric_cube_native.json` 只有失败 preflight，**没有分数**。
-- 重跑：`--nyu-root .../open-vision-banana/data/benchmarks/nyu_v2/official_test`，28 步，cube-edge，prompt `Generate a metric depth visualization of this image.`
-- 进度（2026-10-10 07:49 UTC）：约 165 / 654。目标 JSON：`nyu_flux_kontext_ema_metric_cube_native.json`。闸门对照 `nyu_trivial_native.json`。
+- 有效评测：`--nyu-root .../open-vision-banana/data/benchmarks/nyu_v2/official_test`，28 步，4-bit，bf16，cube-edge，不 invert，prompt `Generate a metric depth visualization of this image.` n=654。
+
+| 数据集 | n | δ1 | AbsRel | aligned δ1 | 闸门 |
+|--------|--:|---:|-------:|-----------:|:----:|
+| NYU Eigen + 10 m | 654 | 0.025 | 3.027 | 0.431 | FAIL |
+
+闸门：`nyu_flux_kontext_ema_gate.json`。度量闸门失败（模型 δ1 0.025，要求 ≥ `constant@3m` 0.352 + 0.10 = 0.452；AbsRel 3.027 也差于该基线 0.357）。结构闸门失败（aligned δ1 0.431 < 逐图中位数 oracle 0.519）。比 SANA / FLUX.1-dev 灰度 NYU 都差。产物：`nyu_flux_kontext_ema_metric_cube_native.json`。
 
 #### 4.2.5 对照：`ovb-fix_best3_s42`（不进主表）
 
@@ -203,16 +222,15 @@ SANA 24.96° 过闸。FLUX 91.09° 和 `axis_up` 一个量级。
 
 | 能力 | 基准 | 原因 |
 |------|------|------|
-| 2D | Cityscapes val | 无官方 `gtFine`。`cityscapes8` 不是论文协议 |
-| 2D | ReasonSeg val | 评测机无 LISA/ReasonSeg。即便有数据，缺 Gemini 改写也不能对论文 0.793 |
-| 2D | SA-Co/Gold | 无官方 Gold 查询。缺 Gemini NP 过滤不能对论文 47.5 |
-| 3D | nuScenes | 适配器已返回米制 `gt_depth`（80 m）。无 LiDAR 投影 |
+| 2D | ReasonSeg val | 评测机已有 200 张 val（`paper_benchmarks/reasonseg`，jpg + mask png + `annotations.json`）。缺 Gemini 改写，不能对论文 0.793 |
+| 2D | SA-Co/Gold | 图像和三份官方标注已下。`queries.jsonl` 用 annotator A，不是三标注 oracle。缺 Gemini NP 过滤，不能对论文 47.5 |
+| 3D | nuScenes | 官方 trainval（含 val）正在下，约 290 GB。下完还要把 LiDAR 投到 `CAM_FRONT` 的 `depth/*.npy`，适配器才能算 80 m δ1 |
 | 3D | NYU / ScanNet / VKITTI 法向 | 无社区/官方法向图 |
-| 3D | Kontext NYU | 推理进行中 |
-| 生成 | GenAI-Bench / ImgEdit | 无数据，也无人评 |
+| 3D | Kontext NYU | 已测：δ1 0.025 / AbsRel 3.027，闸门 FAIL |
+| 生成 | GenAI-Bench / ImgEdit | 评测集已在评测机。论文指标是人类 pairwise，不是 CLIP/FID |
 | 统一模型 | 共享 checkpoint 五任务 | 没有同一权重的 2D+3D+生成结果 |
 
-远程有 RefCOCOg（`/comp_robot/home/xu.lin/data/paper_benchmarks/refcocog`）。FLUX 分割 LoRA 的 RefCOCOg 还没跑，等 Kontext 让出 GPU。
+远程有 RefCOCOg（`/comp_robot/home/xu.lin/data/paper_benchmarks/refcocog`）。FLUX 分割 LoRA 的 UMD val 已测，cIoU 0.098。
 
 ---
 
@@ -223,8 +241,8 @@ SANA 24.96° 过闸。FLUX 91.09° 和 `axis_up` 一个量级。
 | 4-set 深度 δ1 | 0.929 | 0.163（SANA metric） | 0.77 |
 | NYU δ1 | 0.948 | 0.155（FLUX gray） | 0.79 |
 | DIODE-Indoor 法向 mean° | 13.818 | 24.955（SANA） | +11.1° |
-| RefCOCOg cIoU | 0.738 | 0.143（SANA） | 0.60 |
-| Cityscapes mIoU | 0.699 | 无 | — |
+| RefCOCOg cIoU | 0.738 | 0.143（SANA） | 0.595 |
+| Cityscapes mIoU | 0.699 | 0.266（SANA CS-19 15k） | 0.433 |
 | SA-Co cgF1 | 47.5 | 无 | — |
 | ReasonSeg gIoU | 0.793 | 无 | — |
 | GenAI-Bench 胜率 | 53.5% | 无 | — |
@@ -239,18 +257,20 @@ SANA 24.96° 过闸。FLUX 91.09° 和 `axis_up` 一个量级。
 
 - 深度主结果：`{nyu,diode_indoor,kitti,eth3d,ibims}_{fix_ctrl_depth_ema_grayflip,hypersim_metric_cube,flux3_ctrl_depth_grayflip}_native.json`
 - 法向：`diode_indoor_fix_ctrl_normal_ema_native.json`，`diode_indoor_flux3_ctrl_normal_native.json`
-- 指代：`refcocog_umd_val_fix_seg_plus_gcg_native.json`
+- 指代：`refcocog_umd_val_fix_seg_plus_gcg_native.json`，`refcocog_umd_val_flux3_ctrl_seg_native.json`
+- 语义（论文口径）：`cityscapes_val_cityscapes19_15k.json`（当前最好）；3000 步对照 `cityscapes_val_cityscapes19.json`
+- 语义（交叉色板对照）：`cityscapes_val_fix_ctrl_seg.json`，`cityscapes_val_flux3_ctrl_seg.json`
 - 闸门 / 平凡基线：`*_gate.json`，`*_trivial_native.json`
-- 无效 Kontext 第一次：`nyu_flux_kontext_metric_cube_native.json`（路径错误，无分数）
-- 有效 Kontext（待写）：`nyu_flux_kontext_ema_metric_cube_native.json`
+- Kontext NYU（有效）：`nyu_flux_kontext_ema_metric_cube_native.json`，闸门 `nyu_flux_kontext_ema_gate.json`
+- Kontext 第一次无效：`nyu_flux_kontext_metric_cube_native.json`（路径错误，无分数）
 
 代码：`scripts/evaluate_paper_benchmarks.py`；2D/3D/生成分组见 `src/open_vision_banana/evaluation/paper_capabilities.py`。ReasonSeg / GenAI-Bench / ImgEdit 适配器在 `src/open_vision_banana/data/paper_eval_datasets.py`。nuScenes 深度现在返回 `gt_depth`。
 
 ---
 
-## 9. 补记（Kontext NYU 完成后填写）
+## 9. 补记
 
-- [ ] `nyu_flux_kontext_ema_metric_cube_native.json` 的 n、δ1、AbsRel、aligned δ1
-- [ ] `check_depth_gate.py` 对 `nyu_trivial_native.json` 的 pass/fail
-- [ ] 若 GPU 空闲：FLUX `ovb-flux3_ctrl_seg_nominsnr_15k` 的 RefCOCOg UMD val cIoU
+- [x] Kontext NYU：n=654，δ1 0.025，AbsRel 3.027，aligned δ1 0.431，闸门 FAIL
+- [x] CS-19 15k 训完：Best val_loss **0.0266**（step 8000）。官方 val mIoU **0.266** / pixel acc 0.731，JSON：`cityscapes_val_cityscapes19_15k.json`
+- [x] FLUX `ovb-flux3_ctrl_seg_nominsnr_15k` RefCOCOg UMD val：n=4896，cIoU **0.098**，gIoU 0.092，Precision@0.5 0.0006
 - [ ] 不把 CLIP/FID、cityscapes8、或失败 preflight 写进主表
