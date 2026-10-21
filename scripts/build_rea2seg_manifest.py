@@ -28,12 +28,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def referring_prompt(question: str) -> str:
-    return PromptBuilder.build_referring_prompt(
-        question.strip(),
-        color="white",
-        bg_color="black",
-        template_idx=1,
-    )
+    # The canonical white/black prompt (paper Fig. 4 (c)/(d) template); RefCOCOg and
+    # ReasonSeg evaluation build the very same string from the expression.
+    return PromptBuilder.build_referring_prompt(question)
 
 
 def mask_to_rgb(mask: np.ndarray) -> Image.Image:

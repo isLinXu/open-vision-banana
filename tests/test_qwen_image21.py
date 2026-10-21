@@ -330,7 +330,7 @@ def test_referring_prompt_and_decoder_match_white_on_black_contract():
     from open_vision_banana.inference.prompt import PromptBuilder
 
     prompt = PromptBuilder.build_referring_prompt("the red bicycle")
-    assert "the red bicycle" in prompt
+    assert "red bicycle" in prompt.casefold()
     assert "white" in prompt.lower()
     assert "black" in prompt.lower()
     assert "green" not in prompt.lower()
@@ -559,3 +559,154 @@ def test_encode_edit_text_keeps_the_other_layouts(monkeypatch):
     )
     text_only.encode_edit_text(["depth"], torch.zeros(1, 3, 8, 8), cfg_dropout_rate=0.1)
     assert calls == [("hunyuan", ["depth"]), ("text", ["depth"]), ("dropout", 0.1, 1)]
+
+
+def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path: Path):
+    """RefCOCOg val images are COCO train2014 files: the path audit passes, the id audit must not."""
+    import pickle
+
+    from scripts.build_qwen_baseline_manifest import (
+        coco_image_id_from_path,
+        load_excluded_image_ids,
+    )
+
+    assert coco_image_id_from_path("coco/train2014/COCO_train2014_000000581921.jpg") == 581921
+    assert coco_image_id_from_path("imgs/000000000042.png") == 42
+    assert coco_image_id_from_path("hypersim/ai_001/frame.0001.png") is None  # not COCO naming
+    assert coco_image_id_from_path("cityscapes/aachen_000000_000019_leftImg8bit.png") is None
+
+    img_dir = tmp_path / "coco" / "train2014"
+    img_dir.mkdir(parents=True)
+    for image_id in (7, 8, 9):
+        Image.new("RGB", (16, 16), (50, 60, 70)).save(img_dir / f"COCO_train2014_{image_id:012d}.jpg")
+    Image.new("RGB", (16, 16), (128, 64, 128)).save(tmp_path / "sem.png")
+
+    refs = tmp_path / "refs(umd).p"
+    with refs.open("wb") as handle:
+        pickle.dump(
+            [
+                {"image_id": 7, "split": "val"},
+                {"image_id": 8, "split": "train"},  # train refs are not eval images
+                {"image_id": 9, "split": "test"},
+            ],
+            handle,
+        )
+    txt = tmp_path / "more.txt"
+    txt.write_text("# comment\nCOCO_train2014_000000000008.jpg\n", encoding="utf-8")
+    assert load_excluded_image_ids([refs]) == {7, 9}
+    assert load_excluded_image_ids([refs, txt]) == {7, 8, 9}
+
+    rows = [
+        {"task": "semantic", "input": f"coco/train2014/COCO_train2014_{i:012d}.jpg", "target": "sem.png", "split": "train", "prompt": SEMANTIC_SEGMENTATION_PROMPT}
+        for i in (7, 8, 9)
+    ]
+    base = tmp_path / "base.jsonl"
+    base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    no_ids = build_qwen_baseline_manifest(base, tmp_path / "a.jsonl", data_root=tmp_path, min_cityscapes_share=0.0)
+    assert no_ids["task_split_counts"] == {"semantic/train": 3}
+    assert no_ids["rejected_benchmark_leak_rows"] == {}  # plain COCO paths are not a benchmark pattern
+
+    with_ids = build_qwen_baseline_manifest(
+        base, tmp_path / "b.jsonl", data_root=tmp_path, min_cityscapes_share=0.0, exclude_image_ids=[refs]
+    )
+    assert with_ids["rejected_excluded_image_id_rows"] == 2
+    assert with_ids["excluded_image_id_count"] == 2
+    assert with_ids["task_split_counts"] == {"semantic/train": 1}
+    kept = [json.loads(line) for line in (tmp_path / "b.jsonl").read_text().splitlines()]
+    assert kept[0]["input"].endswith("000000000008.jpg")
+
+
+def test_paper_aligned_configs_mix_generation_replay():
+    root = Path(__file__).resolve().parents[1]
+    for name in ("qwen_image_21_paper_aligned.yaml", "qwen_image_edit_paper_aligned.yaml"):
+        cfg = load_config(config_path=root / "configs" / "experiments" / name)
+        assert "generation" in cfg.tasks
+        assert 0.0 < cfg.vision_ratio < 1.0
+        cfg.validate()
+
+
+def test_generation_replay_builder_t2i_and_edit(tmp_path: Path):
+    from scripts.build_generation_replay_manifest import build_generation_replay_manifest
+
+    imgs = tmp_path / "imgs"
+    imgs.mkdir()
+    for name in ("a.jpg", "b.jpg", "b_edit.jpg", "c.jpg"):
+        Image.new("RGB", (8, 8), (10, 20, 30)).save(imgs / name)
+
+    t2i = tmp_path / "captions.jsonl"
+    t2i.write_text(
+        "\n".join(
+            json.dumps(r)
+            for r in (
+                {"image": "imgs/a.jpg", "caption": "a photo of a cat"},
+                {"image": "imgs/missing.jpg", "caption": "gone"},
+                {"image": "imgs/c.jpg", "caption": "   "},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "gen_t2i.jsonl"
+    audit = build_generation_replay_manifest(t2i, out, kind="t2i", data_root=tmp_path)
+    assert audit["rows_written"] == 1 and audit["skipped_missing_file"] == 1
+    assert audit["skipped_missing_text"] == 1
+    row = json.loads(out.read_text().splitlines()[0])
+    assert row == {"task": "generation", "target": "imgs/a.jpg", "prompt": "a photo of a cat", "split": "train"}
+
+    edit = tmp_path / "edits.csv"
+    edit.write_text(
+        "source,target,instruction\n"
+        "imgs/b.jpg,imgs/b_edit.jpg,make the sky purple\n"
+        "imgs/a.jpg,imgs/a.jpg,identity should be dropped\n",
+        encoding="utf-8",
+    )
+    out2 = tmp_path / "gen_edit.jsonl"
+    audit2 = build_generation_replay_manifest(
+        edit, out2, kind="edit", data_root=tmp_path, val_fraction=0.5
+    )
+    assert audit2["rows_written"] == 1 and audit2["skipped_identity_pairs"] == 1
+    row2 = json.loads(out2.read_text().splitlines()[0])
+    assert row2["input"] == "imgs/b.jpg" and row2["target"] == "imgs/b_edit.jpg"
+    assert row2["prompt"] == "make the sky purple"
+
+    # --append keeps the earlier rows
+    build_generation_replay_manifest(t2i, out2, kind="t2i", data_root=tmp_path, append=True)
+    assert len(out2.read_text().splitlines()) == 2
+
+
+def test_editor_rejects_identity_generation_replay_before_loading(monkeypatch, tmp_path):
+    import open_vision_banana.training.trainer as module
+    from open_vision_banana.training.config import TrainingConfig
+
+    img = tmp_path / "x.png"
+    Image.new("RGB", (32, 32)).save(img)
+    manifest = tmp_path / "pairs.jsonl"
+    manifest.write_text(
+        json.dumps({"task": "generation", "target": "x.png", "prompt": "a cat", "split": "train"})
+        + "\n"
+        + json.dumps({"task": "depth", "input": "x.png", "target": "x.png", "split": "train"})
+        + "\n",
+        encoding="utf-8",
+    )
+    loaded = []
+    monkeypatch.setattr(module, "ModelBackend", lambda **kwargs: loaded.append(kwargs))
+    config = TrainingConfig(
+        model_name="qwen-image-2.1",
+        batch_size=1,
+        device="cpu",
+        output_dir=str(tmp_path / "out"),
+        data_dir=str(tmp_path),
+        pair_manifest=str(manifest),
+        tasks=["depth", "generation"],
+        vision_ratio=0.5,
+        num_workers=0,
+    )
+    with pytest.raises(ValueError, match="instruction editor"):
+        module.Trainer(config)
+    assert not loaded
+
+    # A text-to-image backbone may replay T2I rows (input == target is the convention).
+    assert module._reject_identity_generation_replay(
+        types.SimpleNamespace(datasets=[]), "sana-1600m"
+    ) is None

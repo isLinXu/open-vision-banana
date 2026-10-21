@@ -99,6 +99,27 @@ def uniform_task_prompts(dataset: Dataset) -> dict[str, str]:
     }
 
 
+def _reject_identity_generation_replay(dataset, model_name: str) -> None:
+    """Editors condition on the source image, so a T2I-style generation row whose
+    input is its own target would train identity reconstruction, not generation.
+    Generation-preservation data for instruction editors must be edit pairs
+    (source, instruction, edited target), e.g. from
+    ``scripts/build_generation_replay_manifest.py --kind edit``.
+    """
+    identity = 0
+    for part in getattr(dataset, "datasets", [dataset]):
+        for sample in getattr(part, "samples", []):
+            if sample["task"] == "generation" and sample["image_path"] == sample["target_path"]:
+                identity += 1
+    if identity:
+        raise ValueError(
+            f"{identity} 'generation' rows use the same file as input and target, but "
+            f"'{model_name}' is an instruction editor that conditions on the input image. "
+            "Provide edit pairs (input != target) for generation replay, or drop the "
+            "'generation' task for this backbone."
+        )
+
+
 _SEMANTIC_RGB_TUPLE_RE = re.compile(
     r'"([^"]+)"\s*:\s*<\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*>'
 )
@@ -360,7 +381,7 @@ class ManifestVisionDataset(Dataset):
         s = self.samples[idx]
         resample = (
             Image.Resampling.NEAREST
-            if s["task"] in {"semantic", "referring"}
+            if s["task"] in {"semantic", "instance", "referring"}
             else Image.Resampling.LANCZOS
         )
         raw_inp = self._open_pil_rgb(s["image_path"], s.get("input_tar_key", ""))
@@ -509,8 +530,11 @@ class Trainer:
 
         # Data errors must fail before downloading/loading a large backbone.
         self.train_loader, self.val_loader = self._build_datasets()
-        if edit_latent_layout(resolve_model_config(config.model_name)) == "qwen21":
+        model_layout = edit_latent_layout(resolve_model_config(config.model_name))
+        if model_layout == "qwen21":
             qwen_image21.check_training_config(config)
+        if model_layout is not None:
+            _reject_identity_generation_replay(self.train_loader.dataset, config.model_name)
 
         # ── Model backend ──────────────────────────────────────────────
         self.backend = ModelBackend(

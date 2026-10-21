@@ -2,10 +2,10 @@
 
 From the paper (Appendix A):
 1. Background Initialization: τ=14 color tolerance
-2. Color Similarity Grouping: Union-Find with 8-connectivity
+2. Color Similarity Grouping: seed-based floodfill with 16-connectivity (Eq. 3)
 3. Noise Pruning: θ_size = 2×10⁻⁴ (0.02% of image area)
 4. Boundary Artifact Elimination: 3×3 erosion, θ_erosion=0.1
-5. Spatially Constrained Merging: γ=5.0 bounding box expansion
+5. Spatially Constrained Merging: γ=5.0 bounding box expansion (Eq. 6)
 """
 
 from __future__ import annotations
@@ -38,6 +38,10 @@ class InstanceDecodingConfig:
     # (``pixel_only``). ``pixel_and_seed`` additionally requires the two
     # component seeds to be within tau, an opt-in stricter variant.
     seed_merge_rule: str = "pixel_only"
+    # Paper Eq.(6) uses one area symbol A(.) for the union bounding box and for
+    # the two components, so ``bbox`` reads the individual terms as bounding-box
+    # areas. ``pixel`` uses pixel counts (|S_a| + |S_b|), which is stricter.
+    spatial_merge_area_basis: str = "bbox"
 
     def __post_init__(self) -> None:
         if self.color_tolerance <= 0:
@@ -54,6 +58,8 @@ class InstanceDecodingConfig:
             raise ValueError("adaptive_color_tolerance must be boolean")
         if self.seed_merge_rule not in {"pixel_only", "pixel_and_seed"}:
             raise ValueError("seed_merge_rule must be 'pixel_only' or 'pixel_and_seed'")
+        if self.spatial_merge_area_basis not in {"bbox", "pixel"}:
+            raise ValueError("spatial_merge_area_basis must be 'bbox' or 'pixel'")
 
     def to_dict(self) -> dict[str, float | str | bool]:
         """Return a JSON-safe decoding contract for run metadata."""
@@ -65,6 +71,7 @@ class InstanceDecodingConfig:
             "grouping_mode": self.grouping_mode,
             "adaptive_color_tolerance": self.adaptive_color_tolerance,
             "seed_merge_rule": self.seed_merge_rule,
+            "spatial_merge_area_basis": self.spatial_merge_area_basis,
         }
 
 
@@ -72,6 +79,7 @@ PAPER_INSTANCE_DECODING_CONFIG = InstanceDecodingConfig(
     grouping_mode="seed",
     adaptive_color_tolerance=False,
     seed_merge_rule="pixel_only",
+    spatial_merge_area_basis="bbox",
 )
 
 
@@ -91,6 +99,7 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
         grouping_mode: str = "seed",
         adaptive_color_tolerance: bool = False,
         seed_merge_rule: str = "pixel_only",
+        spatial_merge_area_basis: str = "bbox",
     ) -> None:
         self.instance_config = InstanceDecodingConfig(
             color_tolerance=color_tolerance,
@@ -100,12 +109,14 @@ class SegmentationDecoder(GroupingMixin, PostprocessMixin):
             grouping_mode=grouping_mode,
             adaptive_color_tolerance=adaptive_color_tolerance,
             seed_merge_rule=seed_merge_rule,
+            spatial_merge_area_basis=spatial_merge_area_basis,
         )
         self.color_tolerance = self.instance_config.color_tolerance
         self.min_area_fraction = self.instance_config.min_area_fraction
         self.erosion_threshold = self.instance_config.erosion_threshold
         self.bbox_expansion_factor = self.instance_config.bbox_expansion_factor
         self.seed_merge_rule = self.instance_config.seed_merge_rule
+        self.spatial_merge_area_basis = self.instance_config.spatial_merge_area_basis
 
     @classmethod
     def paper_reproduction(cls) -> SegmentationDecoder:

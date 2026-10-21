@@ -45,6 +45,7 @@ def test_paper_reproduction_decoder_has_fixed_protocol() -> None:
         "grouping_mode": "seed",
         "adaptive_color_tolerance": False,
         "seed_merge_rule": "pixel_only",
+        "spatial_merge_area_basis": "bbox",
     }
 
 
@@ -188,3 +189,36 @@ if __name__ == "__main__":
     test_seed_vs_adjacent_on_gradients()
     test_seed_mode_three_blocks()
     print("All seed-based segmentation tests passed!")
+
+
+def _two_frames() -> tuple[torch.Tensor, torch.Tensor]:
+    """Two same-coloured hollow 20x20 frames, 10 px apart vertically.
+
+    Each frame has 76 pixels in a 400-px bounding box; their union box is 50x20=1000.
+    With gamma=5 the pixel basis allows 5*(76+76)=760 < 1000 (no merge) while the
+    bounding-box basis allows 5*(400+400)=4000 >= 1000 (merge).
+    """
+    labels = torch.zeros(60, 30, dtype=torch.long)
+    for lab, y0 in ((1, 0), (2, 30)):
+        labels[y0 : y0 + 20, 0:20] = lab
+        labels[y0 + 1 : y0 + 19, 1:19] = 0
+    img = torch.zeros(60, 30, 3)
+    img[labels > 0] = torch.tensor([200.0, 40.0, 40.0])
+    return labels, img
+
+
+def test_stage5_area_basis_bbox_is_paper_default_and_pixel_is_stricter() -> None:
+    labels, img = _two_frames()
+    assert int((labels == 1).sum()) == 76 and int((labels == 2).sum()) == 76
+
+    paper = SegmentationDecoder.paper_reproduction()
+    assert paper.spatial_merge_area_basis == "bbox"
+    merged = paper._spatial_merging(labels.clone(), img)
+    assert len(merged.unique()) == 2  # background + one merged component
+
+    strict = SegmentationDecoder(spatial_merge_area_basis="pixel")
+    kept = strict._spatial_merging(labels.clone(), img)
+    assert len(kept.unique()) == 3  # background + two components
+
+    with pytest.raises(ValueError, match="spatial_merge_area_basis"):
+        SegmentationDecoder(spatial_merge_area_basis="hull")

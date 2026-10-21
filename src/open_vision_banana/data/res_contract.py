@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..referring_contract import BINARY_REFERRING_ENCODING, build_binary_referring_prompt
+from ..referring_contract import (
+    BINARY_REFERRING_ENCODING,
+    build_binary_referring_prompt,
+    is_binary_referring_prompt,
+)
 
 BINARY_RES_ENCODING = BINARY_REFERRING_ENCODING
 
@@ -31,7 +35,7 @@ def resolve_referring_prompt(row: dict[str, Any]) -> str:
     if expression is not None:
         if not prompt:
             return build_binary_referring_prompt(expression)
-        if encoding == BINARY_RES_ENCODING and prompt != build_binary_referring_prompt(expression):
+        if encoding == BINARY_RES_ENCODING and not is_binary_referring_prompt(prompt, expression):
             raise ValueError("Versioned binary RES rows require the canonical white/black prompt")
 
         def normalized(text: str) -> str:

@@ -19,7 +19,11 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from .referring_contract import BINARY_REFERRING_ENCODING, build_binary_referring_prompt
+from .referring_contract import (
+    BINARY_REFERRING_ENCODING,
+    build_binary_referring_prompt,
+    is_binary_referring_prompt,
+)
 from .referring_masks import decode_coco_segmentation
 from .res_training_view import validate_training_view, write_training_view
 
@@ -641,7 +645,7 @@ def validate_res_manifest(dataset_root: str | Path, *, write_report: bool = True
         expression = row.get("expression")
         if not isinstance(expression, str) or not expression.strip():
             raise ValueError(f"Missing RES expression at row {number}")
-        if row.get("prompt") != build_binary_referring_prompt(expression):
+        if not is_binary_referring_prompt(row.get("prompt", ""), expression):
             raise ValueError(f"Expression/prompt mismatch at row {number}")
         source, protocol, source_split = (
             row["source_dataset"],
