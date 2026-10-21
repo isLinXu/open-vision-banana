@@ -325,3 +325,23 @@ def test_cli_resume_overrides_unambiguous_yaml(tmp_path):
     config = load_config(args)
     assert config.resume == "output/checkpoint-200"
     assert config.resume_weights_only is False
+
+
+def test_optimizer_settings_are_config_fields(tmp_path):
+    from open_vision_banana.training.config import TrainingConfig, load_config
+
+    cfg = TrainingConfig()
+    assert (cfg.weight_decay, cfg.adam_beta1, cfg.adam_beta2, cfg.adam_eps) == (0.01, 0.9, 0.999, 1e-8)
+    assert {"weight_decay", "adam_beta1", "adam_beta2", "adam_eps"} <= set(cfg.to_dict())
+
+    yaml_path = tmp_path / "c.yaml"
+    yaml_path.write_text("optimizer:\n  weight_decay: 0.1\n  beta1: 0.95\n  beta2: 0.98\n  eps: 1.0e-6\n")
+    loaded = load_config(config_path=yaml_path)
+    assert (loaded.weight_decay, loaded.adam_beta1, loaded.adam_beta2, loaded.adam_eps) == (0.1, 0.95, 0.98, 1e-6)
+
+    import pytest
+
+    with pytest.raises(ValueError, match="adam_beta"):
+        TrainingConfig(adam_beta2=1.0).validate()
+    with pytest.raises(ValueError, match="weight_decay"):
+        TrainingConfig(weight_decay=-0.1).validate()
