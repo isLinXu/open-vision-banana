@@ -435,6 +435,7 @@ def validate_manifest_contract(
     """
     import json
     import re
+
     import numpy as np
     import torch
 
@@ -479,7 +480,7 @@ def validate_manifest_contract(
     legend_entry_re = re.compile(r'"[^"]+"\s*:\s*<\s*\d+\s*,\s*\d+\s*,\s*\d+\s*>')
 
     with manifest.open(encoding="utf-8") as handle:
-        for line_no, line in enumerate(handle, 1):
+        for line in handle:
             if not line.strip():
                 continue
             row = json.loads(line)
