@@ -63,6 +63,17 @@ class PromptBuilder:
     LEGACY_REFERRING_TEMPLATES = REFERRING_TEMPLATES
     BINARY_REFERRING_TEMPLATE_IDX = 1
 
+    # Fig. 4 (a)/(b): several expressions of one image, each in its own colour, on
+    # an (implicit) black background. ``{first}`` / ``{rest}`` are filled by
+    # ``build_multi_referring_prompt``.
+    MULTI_REFERRING_TEMPLATES = [
+        # (a) "...the man in pink t shirt is rendered solid white; the other man is rendered in green."
+        'A segmentation map image. The area that corresponds to {first_expr} is rendered '
+        'solid {first_color}; {rest}.',
+        # (b) "The stretching cat is rendered in green, the cat that is cleaning itself is in cyan."
+        'A segmentation map image. The {first_expr} is rendered in {first_color}, {rest}.',
+    ]
+
     DEPTH_PROMPT = 'Generate a metric depth visualization of this image.'
     NORMAL_PROMPT = 'Generate a surface normal estimation visualization of this image.'
     EDGE_PROMPT = 'This image is an edge detection map. The edges are rendered in white, the background in black.'
@@ -210,6 +221,34 @@ class PromptBuilder:
             color=color,
             other_color=other_color,
             bg_color=bg_color,
+        )
+
+    @classmethod
+    def build_multi_referring_prompt(
+        cls, pairs: list[tuple[str, str]], template_idx: int = 1
+    ) -> str:
+        """Fig. 4 (a)/(b) prompt for ``[(expression, colour_name), ...]`` (>= 2 pairs).
+
+        Template 0 keeps Fig. 4 (a)'s "the other ... is rendered in" phrasing; template 1
+        keeps Fig. 4 (b)'s ", the ... is in" phrasing. A leading article is dropped from
+        each expression because the templates supply "The"/"the".
+        """
+        if len(pairs) < 2:
+            raise ValueError("A multi-expression referring prompt needs at least two expressions")
+        exprs = [normalize_referring_expression(e) for e, _ in pairs]
+        colors = [str(c) for _, c in pairs]
+        if len(set(colors)) != len(colors):
+            raise ValueError("Each expression needs a distinct colour")
+        if template_idx == 0:
+            rest = "; ".join(f"the {e} is rendered in {c}" for e, c in zip(exprs[1:], colors[1:], strict=True))
+        elif template_idx == 1:
+            rest = ", ".join(f"the {e} is in {c}" for e, c in zip(exprs[1:], colors[1:], strict=True))
+        else:
+            raise ValueError(f"Unknown multi-referring template {template_idx}")
+        # Fig. 4 (a) keeps the expression verbatim after "corresponds to"; (b) prefixes "The".
+        first_expr = pairs[0][0].strip() if template_idx == 0 else exprs[0]
+        return cls.MULTI_REFERRING_TEMPLATES[template_idx].format(
+            first_expr=first_expr, first_color=colors[0], rest=rest
         )
 
     @classmethod

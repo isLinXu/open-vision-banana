@@ -392,3 +392,18 @@ def test_kitti_garg_crop_applies_on_resized_canvas() -> None:
     _, _, mask = apply_depth_benchmark_protocol("kitti", gt.clone(), gt)
     rows = mask[0, 0].any(dim=1).nonzero().flatten()
     assert int(rows.min()) >= int(0.40 * 512)
+
+
+def test_instance_decoding_cli_override_defaults_to_paper_and_rejects_unknown_fields() -> None:
+    import pytest
+
+    from open_vision_banana.core.segmentation import PAPER_INSTANCE_DECODING_CONFIG
+    from scripts.evaluate_paper_benchmarks import parse_instance_decoding
+
+    assert parse_instance_decoding(None) == PAPER_INSTANCE_DECODING_CONFIG
+    ablation = parse_instance_decoding("seed_merge_rule=pixel_and_seed, spatial_merge_area_basis=pixel")
+    assert ablation.seed_merge_rule == "pixel_and_seed"
+    assert ablation.spatial_merge_area_basis == "pixel"
+    assert ablation.color_tolerance == 14.0
+    with pytest.raises(ValueError, match="Unknown instance decoding field"):
+        parse_instance_decoding("tau=14")

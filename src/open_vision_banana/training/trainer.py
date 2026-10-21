@@ -381,7 +381,7 @@ class ManifestVisionDataset(Dataset):
         s = self.samples[idx]
         resample = (
             Image.Resampling.NEAREST
-            if s["task"] in {"semantic", "instance", "referring"}
+            if s["task"] in {"semantic", "instance", "referring", "referring_multi"}
             else Image.Resampling.LANCZOS
         )
         raw_inp = self._open_pil_rgb(s["image_path"], s.get("input_tar_key", ""))
@@ -621,8 +621,9 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(
             self.trainable_params,
             lr=config.lr,
-            weight_decay=0.01,
-            betas=(0.9, 0.999),
+            weight_decay=config.weight_decay,
+            betas=(config.adam_beta1, config.adam_beta2),
+            eps=config.adam_eps,
         )
         total_steps = config.steps
         warmup_steps = (config.warmup_steps if config.warmup_steps is not None
