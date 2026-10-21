@@ -1,0 +1,87 @@
+# Paper-aligned Qwen-Image-2.1 multi-task baseline.
+#
+# Addresses the four structural bottlenecks identified in the SNVC ablation:
+# 1. Base paradigm: Qwen-Image-2.1 feeds the source image into Qwen3-VL visual tokens
+#    AND 64-channel 16x reference latents (no destructive img2img linear bridge).
+# 2. Depth supervision: use with a manifest built by scripts/build_qwen_baseline_manifest.py
+#    (synthetic metric depth in cube-edge encoding, plus multi-colormap augmentation).
+# 3. Open-vocabulary semantic binding: dynamic prompt styles (json_tuple / natural / hex)
+#    plus 50% on-the-fly class color remapping so the model must read the prompt legend.
+# 4. Spatial resolution: 16x 64-channel VAE keeps 32x32=1024 tokens at 512px (4x SANA's 16x16).
+
+model:
+  name: qwen-image-2.1
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - to_q
+    - to_k
+    - to_v
+    - to_out.0
+    - img_mlp.proj
+    - img_mlp.gate_layer
+    - img_mlp.out
+
+data:
+  tasks: [depth, normal, semantic, referring]
+  task_sampling: uniform
+  task_sampling_weights: {}
+  vision_ratio: 1.0
+  depth_curve: metric_power
+  depth_colormaps: [cube_edge, plasma, inferno, viridis, grayscale]
+  semantic_prompt_styles: [json_tuple, natural, hex]
+  semantic_color_remap_prob: 0.5
+  aspect_preserving_crop: true
+  num_workers: 4
+
+training:
+  steps: 30000
+  batch_size: 1
+  gradient_accumulation: 32
+  lr: 1.0e-4
+  max_grad_norm: 1.0
+  drop_grad_norm: 10.0
+  seed: 42
+  gradient_checkpointing: true
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+validation:
+  max_samples_per_task: 40
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: false
+  cfg_dropout_rate: 0.05
+
+loss:
+  task_loss_weights: {depth: 1.0, normal: 1.0, semantic: 1.0, referring: 1.0}
+  normal_angular_loss_weight: 0.0
+  depth_edge_aux_weight: 0.0
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/qwen_image_21_paper_aligned
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+
+device: cuda

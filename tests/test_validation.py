@@ -1,5 +1,6 @@
 """Tests for dataset validation utilities."""
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -7,7 +8,12 @@ import torch
 from PIL import Image
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
-from open_vision_banana.data.validation import validate_vision_dataset
+from open_vision_banana.data.validation import (
+    validate_manifest_contract,
+    validate_vision_dataset,
+)
+from open_vision_banana.model_registry import get_model_config
+from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT
 
 
 def _write_rgb(path: Path, size: tuple[int, int], color: tuple[int, int, int]) -> None:
@@ -113,3 +119,71 @@ class TestValidateVisionDataset:
         report = validate_vision_dataset(tmp_path, task="semantic")
         assert not report.ok
         assert any("lossless PNG" in issue.message for issue in report.errors)
+
+
+class TestValidateManifestContract:
+    def test_sana_registry_includes_attention_lora_and_300_tokens(self):
+        for name in ("sana-600m", "sana-600m-512px", "sana-1600m", "sana-sprint"):
+            cfg = get_model_config(name)
+            assert cfg.text_encoder_max_length == 300
+            for attn_proj in ("to_q", "to_k", "to_v", "to_out.0"):
+                assert attn_proj in cfg.lora_target_modules
+
+    def test_catches_ffn_only_lora_and_grayscale_depth_and_relative_prompt(self, tmp_path: Path):
+        _write_rgb(tmp_path / "images" / "d.png", (32, 32), (10, 20, 30))
+        _write_rgb(tmp_path / "targets" / "d.png", (32, 32), (180, 180, 180))
+        manifest = tmp_path / "pairs.jsonl"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "task": "depth",
+                    "input": "images/d.png",
+                    "target": "targets/d.png",
+                    "split": "train",
+                    "prompt": "Generate a relative depth map.",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        report = validate_manifest_contract(
+            manifest,
+            data_root=tmp_path,
+            model_name="sana-1600m",
+            lora_targets=["linear", "proj_out", "conv_inverted", "conv_point"],
+            depth_curve="metric_power",
+        )
+        assert not report.ok
+        messages = [issue.message for issue in report.errors]
+        assert any("attention Q/K/V" in m for m in messages)
+        assert any("relative depth" in m for m in messages)
+        assert any("grayscale" in m for m in messages)
+
+    def test_catches_77_token_truncation_for_cityscapes_legend(self, tmp_path: Path):
+        _write_rgb(tmp_path / "images" / "s.png", (32, 32), (10, 20, 30))
+        _write_rgb(tmp_path / "targets" / "s.png", (32, 32), (128, 64, 128))
+        manifest = tmp_path / "pairs.jsonl"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "task": "semantic",
+                    "input": "images/s.png",
+                    "target": "targets/s.png",
+                    "split": "train",
+                    "prompt": SEMANTIC_SEGMENTATION_PROMPT,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        # flux-dev has default text_encoder_max_length=77 (CLIP truncation)
+        report_flux = validate_manifest_contract(manifest, data_root=tmp_path, model_name="flux-dev")
+        assert not report_flux.ok
+        assert any("exceed flux-dev text_encoder_max_length=77" in i.message for i in report_flux.errors)
+
+        # Fixed sana-1600m has text_encoder_max_length=300 and attention LoRA targets
+        report_sana = validate_manifest_contract(manifest, data_root=tmp_path, model_name="sana-1600m")
+        assert report_sana.ok
+        assert report_sana.stats["cityscapes_semantic_rows"] == 1
+        assert report_sana.stats["has_attention_lora"] is True
+

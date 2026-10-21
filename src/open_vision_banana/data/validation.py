@@ -398,8 +398,235 @@ def _validate_target_semantics(
     return issues, stats
 
 
+_ATTENTION_LORA_MARKERS = (
+    "to_q",
+    "to_k",
+    "to_v",
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "in_proj",
+    "img_attn_qkv",
+    "txt_attn_qkv",
+)
+
+
+def validate_manifest_contract(
+    manifest_path: str | Path,
+    *,
+    data_root: str | Path | None = None,
+    model_name: str = "sana-1600m",
+    lora_targets: list[str] | None = None,
+    depth_colormap: str = "cube_edge",
+    depth_curve: str = "metric_power",
+    max_target_samples_per_task: int = 16,
+    split: str = "train",
+) -> ValidationReport:
+    """Audit a JSONL pair manifest and model config for Vision-Banana contract bugs.
+
+    Specifically catches the failure modes observed in the SNVC shared-LoRA runs:
+    1. Model LoRA targets missing attention Q/K/V projections (e.g. SANA 42-layer
+       FFN-only LoRA cannot learn open-vocabulary prompt-to-color cross-attention).
+    2. Text encoder ``max_length`` (e.g. 77) truncating semantic RGB legends.
+    3. ``depth_curve='metric_power'`` paired with relative-depth prompts or
+       non-cube-edge / grayscale depth targets whose decoded metres explode.
+    4. Multi-prompt tasks that prevent ``uniform_task_prompts`` from recording
+       the training prompt into ``checkpoint/metadata.json``.
+    """
+    import json
+    import re
+    import numpy as np
+    import torch
+
+    from ..core.depth_mapper import DepthRGBMapper
+    from ..model_registry import resolve_model_config
+    from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT
+    from .manifest import resolve_manifest_path
+
+    manifest = Path(manifest_path)
+    report = ValidationReport(data_path=str(manifest.resolve()))
+    if not manifest.is_file():
+        report.issues.append(ValidationIssue("error", f"Manifest not found: {manifest}"))
+        return report
+
+    model_cfg = resolve_model_config(model_name)
+    effective_targets = list(lora_targets) if lora_targets is not None else list(model_cfg.lora_target_modules)
+    has_attn_lora = any(
+        any(marker in target for marker in _ATTENTION_LORA_MARKERS)
+        for target in effective_targets
+    )
+    if not has_attn_lora:
+        report.issues.append(
+            ValidationIssue(
+                "error",
+                f"LoRA target_modules {effective_targets} for '{model_name}' contain no "
+                "attention Q/K/V projections; cross-attention cannot bind prompt color legends",
+            )
+        )
+
+    max_tokens = int(getattr(model_cfg, "text_encoder_max_length", 77) or 77)
+    anchor = Path(data_root).resolve() if data_root else manifest
+    task_aliases = {"segmentation": "semantic", "seg": "semantic", "metric_depth": "depth"}
+
+    task_counts: dict[str, int] = {}
+    task_prompts: dict[str, set[str]] = {}
+    task_targets: dict[str, list[Path]] = {}
+    truncated_legend_rows = 0
+    cityscapes_semantic_rows = 0
+    ade150_semantic_rows = 0
+    relative_depth_prompt_rows = 0
+
+    legend_entry_re = re.compile(r'"[^"]+"\s*:\s*<\s*\d+\s*,\s*\d+\s*,\s*\d+\s*>')
+
+    with manifest.open(encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("split", "train") != split:
+                continue
+            raw_task = row.get("task", "")
+            task = task_aliases.get(raw_task, raw_task)
+            prompt = str(row.get("prompt") or "")
+            task_counts[task] = task_counts.get(task, 0) + 1
+            if prompt:
+                task_prompts.setdefault(task, set()).add(prompt)
+
+            tgt_rel = row.get("target", "")
+            if tgt_rel:
+                tgt_path = resolve_manifest_path(tgt_rel, anchor)
+                bucket = task_targets.setdefault(task, [])
+                if len(bucket) < max_target_samples_per_task and tgt_path.is_file():
+                    bucket.append(tgt_path)
+
+            if task == "semantic":
+                if prompt == SEMANTIC_SEGMENTATION_PROMPT:
+                    cityscapes_semantic_rows += 1
+                if "150-class" in prompt or "fixed training palette" in prompt:
+                    ade150_semantic_rows += 1
+                entries = legend_entry_re.findall(prompt)
+                # Each '"cls": <R, G, B>' entry takes ~13 subword tokens in CLIP/Gemma.
+                estimated_tokens = 12 + 13 * len(entries) if entries else len(prompt.split()) * 2
+                if estimated_tokens > max_tokens:
+                    truncated_legend_rows += 1
+
+            if task == "depth" and "relative depth" in prompt.lower():
+                relative_depth_prompt_rows += 1
+
+            report.pair_count += 1
+
+    if truncated_legend_rows > 0:
+        report.issues.append(
+            ValidationIssue(
+                "error",
+                f"{truncated_legend_rows} semantic row(s) exceed {model_name} "
+                f"text_encoder_max_length={max_tokens} and will have class RGB legends truncated",
+                str(manifest),
+            )
+        )
+
+    if ade150_semantic_rows > 0:
+        report.issues.append(
+            ValidationIssue(
+                "error",
+                f"{ade150_semantic_rows} semantic row(s) use the fixed ADE-150 palette prompt "
+                "instead of an explicit class-to-RGB legend",
+                str(manifest),
+            )
+        )
+
+    if depth_curve == "metric_power" and relative_depth_prompt_rows > 0:
+        report.issues.append(
+            ValidationIssue(
+                "error",
+                f"{relative_depth_prompt_rows} depth row(s) use a 'relative depth' prompt while "
+                "depth_curve='metric_power' expects metric depth supervision and prompt",
+                str(manifest),
+            )
+        )
+
+    if "depth" in task_prompts and len(task_prompts["depth"]) > 1:
+        report.issues.append(
+            ValidationIssue(
+                "warning",
+                f"Depth task has {len(task_prompts['depth'])} distinct prompts; "
+                "uniform_task_prompts() will not record a depth prompt in metadata.json",
+                str(manifest),
+            )
+        )
+
+    # Audit sampled depth target pixels against metric_power + depth_colormap
+    depth_paths = task_targets.get("depth", [])
+    depth_stats: dict[str, float] = {}
+    if depth_paths:
+        mapper = DepthRGBMapper(colormap=depth_colormap, curve=depth_curve)
+        maes: list[float] = []
+        gray_fracs: list[float] = []
+        medians: list[float] = []
+        p95s: list[float] = []
+        for path in depth_paths:
+            with Image.open(path) as img:
+                arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+            rgb = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
+            decoded = mapper.rgb_to_depth(rgb)
+            recon = mapper.depth_to_rgb(decoded)
+            maes.append(float((recon - rgb).abs().mean().item()))
+            channel_span = (rgb[:, 0] - rgb[:, 1]).abs() + (rgb[:, 1] - rgb[:, 2]).abs()
+            gray_fracs.append(float((channel_span < 1.0 / 255.0).float().mean().item()))
+            medians.append(float(decoded.median().item()))
+            p95s.append(float(torch.quantile(decoded.reshape(-1), 0.95).item()))
+
+        mean_mae = sum(maes) / len(maes)
+        mean_gray = sum(gray_fracs) / len(gray_fracs)
+        mean_median = sum(medians) / len(medians)
+        mean_p95 = sum(p95s) / len(p95s)
+        depth_stats = {
+            "sampled_targets": len(depth_paths),
+            "mean_roundtrip_mae": mean_mae,
+            "mean_grayscale_fraction": mean_gray,
+            "mean_decoded_median_m": mean_median,
+            "mean_decoded_p95_m": mean_p95,
+        }
+        if depth_colormap != "grayscale" and mean_gray > 0.90:
+            report.issues.append(
+                ValidationIssue(
+                    "error",
+                    f"Depth targets are grayscale ({mean_gray:.1%} achromatic pixels) "
+                    f"but depth_colormap={depth_colormap!r}; metric_power decoding will invert/explode",
+                    str(depth_paths[0]),
+                )
+            )
+        elif mean_mae > 2.0 / 255.0:
+            report.issues.append(
+                ValidationIssue(
+                    "error",
+                    f"Depth targets do not lie on the {depth_colormap!r} colormap curve "
+                    f"(mean roundtrip MAE={mean_mae:.4f} > {2.0 / 255.0:.4f})",
+                    str(depth_paths[0]),
+                )
+            )
+
+    semantic_total = task_counts.get("semantic", 0)
+    report.stats = {
+        "model_name": model_name,
+        "text_encoder_max_length": max_tokens,
+        "lora_targets": effective_targets,
+        "has_attention_lora": has_attn_lora,
+        "task_counts": task_counts,
+        "cityscapes_semantic_rows": cityscapes_semantic_rows,
+        "cityscapes_semantic_share": (
+            cityscapes_semantic_rows / semantic_total if semantic_total > 0 else 0.0
+        ),
+        "truncated_legend_rows": truncated_legend_rows,
+        "relative_depth_prompt_rows": relative_depth_prompt_rows,
+        "depth_target_audit": depth_stats,
+    }
+    return report
+
+
 __all__ = [
     "ValidationIssue",
     "ValidationReport",
+    "validate_manifest_contract",
     "validate_vision_dataset",
 ]

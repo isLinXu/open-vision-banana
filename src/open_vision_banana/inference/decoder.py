@@ -283,6 +283,15 @@ class VisualizationDecoder:
         B, _, H, W = rgb_image.shape
         device = rgb_image.device
 
+        # Canonical binary white-on-black contract matches VisionEvaluator:
+        # mean intensity > 0.5 without discarding disjoint valid regions.
+        if tuple(target_color) == (255, 255, 255) and threshold is None:
+            mask = rgb_image.mean(dim=1, keepdim=True) > 0.5
+            return {
+                "mask": mask,
+                "visualization": rgb_image,
+            }
+
         # Normalize target color to [0, 1]
         target = (
             torch.tensor(target_color, dtype=torch.float32, device=device)

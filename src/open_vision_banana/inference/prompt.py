@@ -128,14 +128,16 @@ class PromptBuilder:
         cls,
         expression: str,
         color: str = "white",
-        other_color: str = "green",
+        other_color: str = "black",
         bg_color: str = "black",
-        template_idx: int = 0,
+        template_idx: int = 1,
     ) -> str:
-        """Build prompt for referring expression segmentation."""
+        """Build prompt for referring expression segmentation (default white-on-black)."""
+        if not isinstance(expression, str) or not expression.strip():
+            raise ValueError("A nonempty expression is required for referring segmentation")
         template = cls.REFERRING_TEMPLATES[template_idx]
         return template.format(
-            expression=expression,
+            expression=expression.strip(),
             color=color,
             other_color=other_color,
             bg_color=bg_color,

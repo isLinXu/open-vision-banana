@@ -138,6 +138,28 @@ def test_seed_mode_three_blocks() -> None:
     assert has_red or has_green or has_blue, "Should have blocks with distinct colors"
 
 
+def test_stage2_converges_on_large_nonconvex_instance_over_32px() -> None:
+    """A single large U-shaped instance (>100px tall, so bbox > 5x area in Stage 5)
+    must already be 1 connected component in Stage 2 without fragmenting at 32px.
+    """
+    decoder = SegmentationDecoder.paper_reproduction()
+    img = torch.zeros(256, 256, 3)
+    # Thin U-shape: left vertical bar [10:210, 10:15], right vertical bar [10:210, 200:205],
+    # bottom horizontal bar [205:210, 10:205]. Total height = 200px (>32px).
+    img[10:210, 10:15] = torch.tensor([220.0, 40.0, 40.0])
+    img[10:210, 200:205] = torch.tensor([220.0, 40.0, 40.0])
+    img[205:210, 10:205] = torch.tensor([220.0, 40.0, 40.0])
+    bg_mask = img.norm(dim=-1) < decoder.color_tolerance
+
+    for labels in (
+        decoder._union_find_grouping(img, bg_mask),
+        decoder._seed_based_union_find(img, bg_mask),
+    ):
+        fg_labels = labels[~bg_mask].unique()
+        assert len(fg_labels) == 1 and int(fg_labels[0].item()) > 0
+
+
+
 if __name__ == "__main__":
     test_adjacent_mode_default()
     test_seed_mode_convergence()

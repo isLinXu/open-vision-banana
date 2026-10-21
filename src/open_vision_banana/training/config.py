@@ -61,6 +61,10 @@ class TrainingConfig:
     gradient_checkpointing: bool = True
     depth_curve: str = "metric_power"
     depth_log_alpha: float = 0.4
+    depth_colormaps: list[str] | None = None
+    semantic_prompt_styles: list[str] | None = None
+    semantic_color_remap_prob: float = 0.0
+    aspect_preserving_crop: bool = False
 
     # ── Scheduler ──────────────────────────────────────────────────────
     scheduler: str = "cosine"
@@ -155,14 +159,32 @@ class TrainingConfig:
                 if not isinstance(value, str) or not value.strip():
                     raise ValueError(f"{f.name} must be a non-empty string")
 
-        for name in ("tasks", "lora_targets"):
+        for name in ("tasks", "lora_targets", "depth_colormaps", "semantic_prompt_styles"):
             value = getattr(self, name)
-            if name == "lora_targets" and value is None:
+            if name in {"lora_targets", "depth_colormaps", "semantic_prompt_styles"} and value is None:
                 continue
             if not isinstance(value, list) or not value or any(
                 not isinstance(v, str) or not v.strip() for v in value
             ) or len(set(value)) != len(value):
                 raise ValueError(f"{name} must be a non-empty list of unique strings")
+        if self.depth_colormaps is not None:
+            from ..core.depth_mapper import get_available_colormaps
+
+            allowed_cmaps = set(get_available_colormaps())
+            unknown_cmaps = sorted(set(self.depth_colormaps) - allowed_cmaps)
+            if unknown_cmaps:
+                raise ValueError(f"depth_colormaps contains unknown colormaps: {unknown_cmaps}")
+        if self.semantic_prompt_styles is not None:
+            from ..data.openvocab_semantic import STYLES
+
+            unknown_styles = sorted(set(self.semantic_prompt_styles) - set(STYLES))
+            if unknown_styles:
+                raise ValueError(
+                    f"semantic_prompt_styles contains unknown styles: {unknown_styles}; "
+                    f"choose from {list(STYLES)}"
+                )
+        if not 0.0 <= self.semantic_color_remap_prob < 1.0:
+            raise ValueError("semantic_color_remap_prob must be in [0, 1)")
         self.task_loss_weights = self.parse_task_weights()
         self.task_sampling_weights = _parse_weights(
             self.task_sampling_weights, "task_sampling_weights", allow_empty=True
@@ -199,8 +221,13 @@ class TrainingConfig:
                 raise ValueError(f"{name} must be in [0, 1)")
         if not 0 < self.ema_decay < 1:
             raise ValueError("ema_decay must be in (0, 1)")
-        if self.vision_ratio != 1.0:
-            raise ValueError("vision_ratio must be 1.0: generation mixing is not implemented")
+        if not 0.0 < self.vision_ratio <= 1.0:
+            raise ValueError("vision_ratio must be in (0, 1]")
+        if self.vision_ratio != 1.0 and "generation" not in self.tasks:
+            raise ValueError(
+                "vision_ratio must be 1.0 unless 'generation' is in tasks: "
+                "generation mixing is not implemented without a generation task"
+            )
         if self.tar_index is not None:
             raise ValueError("tar_index is not implemented by the unified Trainer; use pair_manifest")
         if self.task_sampling not in {"proportional", "uniform", "sqrt"}:
@@ -256,7 +283,11 @@ _YAML_SECTIONS = {
              "max_samples_per_task": "max_samples_per_task", "resolution": "resolution",
              "task_sampling": "task_sampling", "task_sampling_weights": "task_sampling_weights",
              "task_weights": "task_sampling_weights",
-             "depth_curve": "depth_curve", "depth_log_alpha": "depth_log_alpha"},
+             "depth_curve": "depth_curve", "depth_log_alpha": "depth_log_alpha",
+             "depth_colormaps": "depth_colormaps",
+             "semantic_prompt_styles": "semantic_prompt_styles",
+             "semantic_color_remap_prob": "semantic_color_remap_prob",
+             "aspect_preserving_crop": "aspect_preserving_crop"},
     "training": {"steps": "steps", "batch_size": "batch_size", "gradient_accumulation": "grad_accum",
                  "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
                  "seed": "seed",
@@ -364,7 +395,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             if name == "ema_enabled":
                 option = "--ema"
             p.add_argument(option, dest=name, action=argparse.BooleanOptionalAction, default=None)
-        elif name in {"tasks", "lora_targets"}:
+        elif name in {"tasks", "lora_targets", "depth_colormaps", "semantic_prompt_styles"}:
             p.add_argument(option, nargs="+", default=None)
         elif name in {"task_loss_weights", "task_sampling_weights"}:
             p.add_argument(option, default=None, help="task=weight,task=weight")
