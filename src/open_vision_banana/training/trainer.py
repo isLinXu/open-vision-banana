@@ -381,7 +381,7 @@ class ManifestVisionDataset(Dataset):
         s = self.samples[idx]
         resample = (
             Image.Resampling.NEAREST
-            if s["task"] in {"semantic", "instance", "referring"}
+            if s["task"] in {"semantic", "instance", "referring", "referring_multi"}
             else Image.Resampling.LANCZOS
         )
         raw_inp = self._open_pil_rgb(s["image_path"], s.get("input_tar_key", ""))
