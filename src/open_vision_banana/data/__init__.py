@@ -47,6 +47,7 @@ from .datasets import (
     build_dataset,
     build_v3_datasets,
     load_v3_train_val_split,
+    NuScenesDepthDataset,
     nuScenesDataset,
 )
 from .generation import GenerationDataset, build_generation_dataset
@@ -57,6 +58,7 @@ from .generation_builder import (
 )
 from .manifest import fingerprint_records, read_jsonl, resolve_manifest_path
 from .mixed import HomogeneousMixedBatchSampler, MixedVisionDataset
+from .res_dataset import RESManifestDataset
 from .split import split_dataset, split_vision_datasets
 from .tar_dataset import SequentialMultiTaskDataset, TarArchiveDataset, TarTargetDataset
 from .validation import ValidationReport, validate_vision_dataset
@@ -68,6 +70,7 @@ __all__ = [
     "CityscapesSegDataset",
     "SACoInstanceDataset",
     "RefCOCOgDataset",
+    "RESManifestDataset",
     "RefCOCODataset",
     "NYUDepthDataset",
     "NYUNormalDataset",
@@ -85,6 +88,7 @@ __all__ = [
     "FlyingThings3DDataset",
     "SintelFlowDataset",
     "MapillaryVistasDataset",
+    "NuScenesDepthDataset",
     "nuScenesDataset",
     "ReasonSegDataset",
     "GenAIBenchDataset",

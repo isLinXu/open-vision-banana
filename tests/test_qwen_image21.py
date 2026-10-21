@@ -397,3 +397,165 @@ def test_aspect_preserving_crop_and_generation_ratio_config(tmp_path: Path):
     assert torch.allclose(sample["target_rgb"][:, 0, 0], torch.tensor([1.0, 0.0, 0.0]))
     assert torch.allclose(sample["target_rgb"][:, 0, 31], torch.tensor([0.0, 0.0, 1.0]))
 
+
+
+def test_build_pipeline_requires_the_processor():
+    pytest.importorskip("diffusers")
+    with pytest.raises(RuntimeError, match="Qwen3VLProcessor"):
+        qwen_image21.build_pipeline(types.SimpleNamespace(processor=None))
+
+
+def test_encode_condition_feeds_the_source_to_the_text_encoder():
+    pipe = _Pipe()
+    source = Image.new("RGB", (32, 32))
+    cond = qwen_image21.encode_condition(pipe, ["depth"], [source], "cpu", torch.float32)
+    assert pipe.calls == [(["depth"], [source])]
+    assert set(cond) == {"encoder_hidden_states", "image_pad_mask"}
+    assert cond["image_pad_mask"].sum() == 2
+
+
+def test_encode_condition_rejects_batches():
+    with pytest.raises(ValueError, match="batch_size 1"):
+        qwen_image21.encode_condition(_Pipe(), ["a", "b"], [None, None], "cpu", torch.float32)
+
+
+def test_backend_forward_routes_the_qwen21_edit_forward():
+    def backbone(**kwargs):
+        return (kwargs["hidden_states"],)
+
+    backend = _backend(module=backbone, pipe=_Pipe(), vae=_Vae())
+    latents = backend.encode_image(torch.zeros(1, 3, 32, 32))
+    cond = {
+        "encoder_hidden_states": torch.randn(1, 4, 8),
+        "image_pad_mask": torch.tensor([[False, True, True, False]]),
+    }
+    noisy = torch.randn(1, C, 2, 2)
+    out = backend.forward(noisy, torch.tensor([0.5]), cond, 1, context_latents=latents)
+    torch.testing.assert_close(out, -noisy)
+
+
+def test_cfg_dropout_blanks_the_prompt_and_keeps_the_source():
+    pipe = _Pipe()
+    backend = _backend(pipe=pipe)
+    images = torch.zeros(1, 3, 32, 32)
+    backend.encode_edit_text(["depth"], images, cfg_dropout_rate=0.0)
+    backend.encode_edit_text(["depth"], images, cfg_dropout_rate=1.0)
+    assert [call[0] for call in pipe.calls] == [["depth"], [""]]
+    assert all(len(call[1]) == 1 for call in pipe.calls)
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "resolution", "message"),
+    [(4, 512, "batch_size 1"), (1, 528, "multiple of 32"), (1, 224, "multiple of 32")],
+)
+def test_training_config_is_checked_before_loading(batch_size, resolution, message):
+    config = types.SimpleNamespace(batch_size=batch_size, resolution=resolution)
+    with pytest.raises(ValueError, match=message):
+        qwen_image21.check_training_config(config)
+    qwen_image21.check_training_config(types.SimpleNamespace(batch_size=1, resolution=512))
+
+
+def test_quantized_loading_is_refused(monkeypatch):
+    def load_pipeline(*args, **kwargs):
+        raise AssertionError("the model must not load")
+
+    monkeypatch.setattr("open_vision_banana.training.model_backend.load_pipeline", load_pipeline)
+    with pytest.raises(ValueError, match="Quantized loading"):
+        ModelBackend("qwen-image-2.1", device=torch.device("cpu"), quantize="4bit")
+
+
+class _FakeQwen21Pipeline:
+    """Stands in for diffusers.QwenImage21Pipeline in loader tests."""
+
+    def __init__(self, **modules):
+        self.modules = modules
+
+    @classmethod
+    def from_pretrained(cls, source, **kwargs):
+        return types.SimpleNamespace(
+            transformer=torch.nn.Linear(2, 2),
+            vae=torch.nn.Linear(2, 2),
+            text_encoder=torch.nn.Linear(2, 2),
+            processor="qwen3-vl-processor",
+            scheduler="scheduler",
+        )
+
+
+def test_load_pipeline_keeps_the_processor(monkeypatch):
+    diffusers = pytest.importorskip("diffusers")
+
+    from open_vision_banana.model_registry import load_pipeline
+
+    monkeypatch.setattr(diffusers, "QwenImage21Pipeline", _FakeQwen21Pipeline, raising=False)
+    components = load_pipeline(CONFIG, device="cpu", dtype=torch.float32)
+    assert components.processor == "qwen3-vl-processor"
+    assert components.scheduler == "scheduler"
+
+
+def test_build_pipeline_wraps_the_loaded_components(monkeypatch):
+    diffusers = pytest.importorskip("diffusers")
+
+    monkeypatch.setattr(diffusers, "QwenImage21Pipeline", _FakeQwen21Pipeline, raising=False)
+    parts = types.SimpleNamespace(scheduler="s", vae="v", text_encoder="t", processor="p", unet="u")
+    pipe = qwen_image21.build_pipeline(parts)
+    assert pipe.modules == {
+        "scheduler": "s",
+        "vae": "v",
+        "text_encoder": "t",
+        "processor": "p",
+        "transformer": "u",
+    }
+
+
+def test_backend_builds_the_prompt_pipeline_once(monkeypatch):
+    from open_vision_banana.training import model_backend
+
+    components = types.SimpleNamespace(unet=torch.nn.Linear(2, 2), vae=_Vae(), processor="p")
+    built = []
+    monkeypatch.setattr(model_backend, "load_pipeline", lambda config, **kwargs: components)
+    monkeypatch.setattr(model_backend, "apply_lora", lambda backbone, **kwargs: backbone)
+    monkeypatch.setattr(
+        model_backend.qwen_image21, "build_pipeline", lambda parts: built.append(parts) or "pipe"
+    )
+    backend = ModelBackend("qwen-image-2.1", device=torch.device("cpu"), dtype=torch.float32)
+    assert backend.pipe == "pipe" and built == [components]
+    assert backend._qwen21_logged is False
+
+
+def test_trainer_rejects_batches_before_loading_the_model(monkeypatch, tmp_path):
+    import open_vision_banana.training.trainer as module
+    from open_vision_banana.training.config import TrainingConfig
+
+    loaded = []
+    monkeypatch.setattr(module.Trainer, "_build_datasets", lambda self: (None, None))
+    monkeypatch.setattr(module, "ModelBackend", lambda **kwargs: loaded.append(kwargs))
+    config = TrainingConfig(
+        model_name="qwen-image-2.1", batch_size=4, device="cpu", output_dir=str(tmp_path)
+    )
+    with pytest.raises(ValueError, match="batch_size 1"):
+        module.Trainer(config)
+    assert not loaded
+
+
+def test_encode_edit_text_keeps_the_other_layouts(monkeypatch):
+    calls = []
+    hunyuan = object.__new__(ModelBackend)
+    hunyuan.model_config = get_model_config("hunyuan-image3-instruct")
+    monkeypatch.setattr(
+        ModelBackend, "encode_hunyuan_edit", lambda self, p, i: calls.append(("hunyuan", p)) or {}
+    )
+    hunyuan.encode_edit_text(["depth"], torch.zeros(1, 3, 8, 8), cfg_dropout_rate=0.5)
+
+    text_only = object.__new__(ModelBackend)
+    text_only.model_config = get_model_config("sana-1600m")
+    text_only.device, text_only.dtype = torch.device("cpu"), torch.float32
+    monkeypatch.setattr(
+        ModelBackend, "encode_text", lambda self, p, d, t: calls.append(("text", p)) or {}
+    )
+    monkeypatch.setattr(
+        ModelBackend,
+        "apply_cfg_dropout",
+        lambda self, cond, rate, n: calls.append(("dropout", rate, n)) or cond,
+    )
+    text_only.encode_edit_text(["depth"], torch.zeros(1, 3, 8, 8), cfg_dropout_rate=0.1)
+    assert calls == [("hunyuan", ["depth"]), ("text", ["depth"]), ("dropout", 0.1, 1)]

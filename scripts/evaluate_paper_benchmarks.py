@@ -65,7 +65,7 @@ DEPTH_DATASETS = {
     "eth3d": "eth3d",
     "diode": "diode",
     "kitti": "kitti",
-    "nuscenes": "nuscenes",
+    "nuscenes": "nuscenes_depth",
 }
 # Dataset adapters that can return unresized GT (``native_gt=True``).
 NATIVE_GT_DATASETS = {
@@ -80,7 +80,7 @@ NATIVE_GT_DATASETS = {
     "vkitti_normal",
     "referring",
     "reasonseg",
-    "nuscenes",
+    "nuscenes_depth",
 }
 # Extra adapter kwargs that make a benchmark match the paper's definition.
 # The paper evaluates DIODE-Indoor, not the indoor+outdoor union, and RefCOCOg
@@ -88,8 +88,7 @@ NATIVE_GT_DATASETS = {
 BENCHMARK_DATASET_KWARGS: dict[str, dict[str, Any]] = {
     "diode": {"scene_type": "indoors"},
     "diode_normal": {"scene_type": "indoors"},
-    "referring": {"protocol": "umd"},
-    "nuscenes": {"task": "depth"},
+    "referring": {"protocol": "umd", "strict": True},
 }
 NORMAL_DATASETS = {
     "nyu": "nyu_normal",
@@ -546,7 +545,7 @@ def main() -> int:
         "depth": "decoded RGB to metric depth with curve=metric_power (paper Eq.1); log_relative is an opt-in relative ablation and must not be cited as paper AbsRel; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap / nuScenes 80m cap (no paper crop) when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
         "normal": "decoded RGB to unit camera-space normals; valid pixels are finite, non-zero GT (plus DIODE mask when present); mean_angle_deg_per_image is the mean of per-image means; NYU/ScanNet/VKITTI require community normal maps and are not derived from depth; DIODE is indoors",
         "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix; official gtFine only, never cityscapes8",
-        "referring": "RefCOCOg UMD when refs(umd).p is present, else refs(g).p; ReasonSeg val uses LISA JSON-next-to-image; every sentence/query is a sample; cIoU/gIoU from polygon or RLE masks, never from bounding boxes; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
+        "referring": "RefCOCOg requires refs(umd).p with no protocol fallback and validates images, expressions, and nonempty native COCO polygon/RLE masks using pycocotools; ReasonSeg val uses LISA JSON-next-to-image; every sentence/query is a sample; cIoU/gIoU from masks, never from bounding boxes; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
         "instance": "SA-Co/Gold query JSONL when present, else color/instance pairs; cgF1 = 100 * pmF1 * IL_MCC; paper IL_MCC uses Gemini 3.1 Flash-Lite presence filtering, which this command does not invent",
         "generation": "paper GenAI-Bench / ImgEdit numbers are human pairwise win rates; this command only scores an optional CLIP/FID proxy when images exist and never writes those proxies into the paper win-rate column",
         "aggregation": "pixel-weighted across the complete selected dataset, not batch mean",

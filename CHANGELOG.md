@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **nuScenes depth benchmark**: `evaluate_paper_benchmarks.py --nuscenes-root` failed before loading any model with `TypeError: build_dataset() got multiple values for argument 'task'`, because the depth task of `nuScenesDataset` was passed as an adapter keyword while `build_dataset`'s first argument is also named `task`. The benchmark now uses a `nuscenes_depth` adapter key (`NuScenesDepthDataset`), as NYU uses `nyu_depth`.
+
+- **Expression-conditioned RES**: keep one prompt per expression, resize binary masks with nearest-neighbor interpolation, and share the versioned white/black decoding contract across training, inference and evaluation. Preserve disconnected targets and provide an explicit legacy color decoder. Strict RefCOCOg evaluation rejects incomplete annotations and declares its image range so official and portable loaders preserve the same input pixels.
+
 - **Inference prompts for LoRAs from the manifest trainers**: `scripts/train.py` (like `train_sana_512.py` / `train_flux.py`) trains depth and normal with "Generate a relative depth map. ..." / "Generate an RGB surface-normal map. ...", while `VisionBanana` and `scripts/inference.py` prompted with PromptBuilder's "Generate a metric depth visualization of this image.", which such a LoRA never saw. Unified-trainer checkpoints now record in `metadata.json` (`task_prompts`) the prompt of each task trained with a single prompt, `VisionBanana.from_pretrained` uses that record for a local LoRA, and `scripts/inference.py --prompt` sets the prompt for checkpoints without the record.
 - **SANA-frame loss terms under rectified flow (FLUX)**: the depth-edge and normal-angular aux losses rebuild the target endpoint as `sample - sigma * v`, and Min-SNR weighting takes a sigma, both in SANA's frame. `TrainingLosses` passed them rectified-flow `(t, v)` unchanged: the aux losses rebuilt the source image and penalised a correct prediction (both are enabled in `flux_3task_full_clean.yaml`), and Min-SNR was mirrored along the path (on by default). `TrainingLosses` now converts with its `family` (`FlowScheduler.to_sana_frame`: `sigma = 1 - t`, `v -> -v`). `scripts/train_flux.py` interpolates the other way round (`t` weights the source), so its Min-SNR was already right and its aux losses now only negate `v`; its `mix_rectified_flow` docstring is corrected.
 - **FLUX 13-task config quantization**: `flux_13task_multitask_30k.yaml` now sets `quantize: "4bit"` like the other flux configs, so `scripts/train.py` loads it in 4-bit instead of unquantized (`scripts/train_flux.py` always used NF4 and is unaffected).
@@ -21,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **docs/quick-start.md**: Fixed 3 broken script references and version badge (v0.4.2 → v0.5.0).
 - **Colab notebook**: Replaced placeholder GitHub URL (`github.com/user/...`) with actual repo URL.
 - **Experiment configs**: Updated all archived script references to include `archive/pre_opensource/` prefix.
+
+### Added
+
+- **Qwen-Image-2.1 LoRA training and inference**: `qwen-image-2.1` (`QwenImage21Pipeline`, diffusers>=0.41 with transformers>=5.17) trains with the source image given the way the pipeline's editing mode gives it: as Qwen3-VL visual tokens through the pipeline's own prompt encoder, and as reference latents placed before the target tokens (`edit_forward.qwen21_edit_forward`, sigma in and `noise - x0` out, converted to the repo frame). `vae_encode` / `vae_decode` handle its RGBA VAE with per-channel `latents_mean` / `latents_std`. Training takes batch size 1 (the transformer reads one token layout per batch) and a resolution that is a multiple of 32, checked before the model loads; CFG dropout blanks the prompt and keeps the source image. At inference, `output_resolution` keeps the input's area up to the model's native 1024 instead of always resizing the source to 1024 px.
+
+- **Mixed RES source audit**: reconcile C3VG/SeqTR `instances_nogoogle.json` with official RefCOCO-family expressions, shared COCO images and released native masks. Publish the equivalent source and visual audit as a supplement without duplicating training data or changing benchmark splits.
+
+- **Portable RES data pipeline**: official RefCOCO/RefCOCO+/RefCOCOg conversion, provenance and leakage audits, checksum-verified Hub bundles, public `RESManifestDataset`, native-resolution evaluation and a supervised SANA training configuration. See [RES data and evaluation](docs/res_data.md) for the pinned public release, split accounting and compatibility guidance. No trained checkpoint or benchmark accuracy is claimed.
 
 ### Changed
 

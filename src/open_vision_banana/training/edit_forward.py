@@ -53,8 +53,8 @@ def qwen_edit_forward(
 ) -> torch.Tensor:
     """Qwen-Image-Edit: pack 2x2, append the source tokens, pass ``img_shapes``.
 
-    The pipeline feeds ``scheduler_timestep / 1000``. ``timesteps`` is already
-    that unit interval. The prediction is sliced back to the target tokens.
+    The pipeline feeds ``scheduler_timestep / 1000``, i.e. sigma. The prediction is
+    sliced back to the target tokens.
     """
     batch, _, height, width = noisy_latents.shape
     packed_h, packed_w = height // 2, width // 2

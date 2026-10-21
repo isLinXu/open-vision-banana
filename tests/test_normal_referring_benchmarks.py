@@ -251,7 +251,7 @@ def test_benchmark_script_wires_normal_and_referring():
     spec.loader.exec_module(module)
     assert {"nyu_normal", "diode_normal", "normal", "vkitti_normal", "referring"} <= module.NATIVE_GT_DATASETS
     assert module.BENCHMARK_DATASET_KWARGS["diode_normal"] == {"scene_type": "indoors"}
-    assert module.BENCHMARK_DATASET_KWARGS["referring"] == {"protocol": "umd"}
+    assert module.BENCHMARK_DATASET_KWARGS["referring"] == {"protocol": "umd", "strict": True}
     parser_help = subprocess.run(
         [sys.executable, str(path), "--help"],
         capture_output=True,

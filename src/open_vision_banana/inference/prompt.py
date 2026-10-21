@@ -9,6 +9,11 @@ The paper uses various prompting styles:
 
 from __future__ import annotations
 
+from ..referring_contract import (
+    BINARY_REFERRING_ENCODING,
+    LEGACY_REFERRING_ENCODING,
+    build_binary_referring_prompt,
+)
 from ..task_prompts import (
     CITYSCAPES_RGB_LEGEND,
     SEMANTIC_GENERIC_PROMPT,
@@ -38,6 +43,14 @@ class PromptBuilder:
     ]
 
     REFERRING_TEMPLATES = [
+        'A segmentation map image. The area that corresponds to '
+        '{expression} is rendered solid {color}; all other pixels are '
+        'rendered in {other_color}.',
+        'This image shows segmentation masks from the given image. '
+        'The background is {bg_color} color. The {expression} is '
+        'represented by a solid {color}. Other objects are {other_color}.',
+    ]
+    LEGACY_REFERRING_TEMPLATES = [
         'A segmentation map image. The area that corresponds to '
         '{expression} is rendered solid {color}; the other objects are '
         'rendered in {other_color}.',
@@ -128,16 +141,38 @@ class PromptBuilder:
         cls,
         expression: str,
         color: str = "white",
-        other_color: str = "black",
+        other_color: str | None = None,
         bg_color: str = "black",
-        template_idx: int = 1,
+        template_idx: int = 0,
+        *,
+        encoding: str | None = None,
     ) -> str:
-        """Build prompt for referring expression segmentation (default white-on-black)."""
+        """Build an expression-conditioned prompt; default to white on black.
+
+        Explicit colors remain supported. ``legacy_color_distance_v1``
+        restores green other objects for historical checkpoints.
+        """
         if not isinstance(expression, str) or not expression.strip():
             raise ValueError("A nonempty expression is required for referring segmentation")
-        template = cls.REFERRING_TEMPLATES[template_idx]
+        if encoding not in (None, BINARY_REFERRING_ENCODING, LEGACY_REFERRING_ENCODING):
+            raise ValueError(f"Unknown referring encoding: {encoding!r}")
+        if other_color is None:
+            other_color = (
+                "black" if encoding == BINARY_REFERRING_ENCODING
+                or (encoding is None and color == "white") else "green"
+            )
+        if (
+            color == "white" and other_color == "black" and bg_color == "black"
+            and template_idx == 0 and encoding != LEGACY_REFERRING_ENCODING
+        ):
+            return build_binary_referring_prompt(expression)
+        templates = (
+            cls.LEGACY_REFERRING_TEMPLATES
+            if encoding == LEGACY_REFERRING_ENCODING else cls.REFERRING_TEMPLATES
+        )
+        template = templates[template_idx]
         return template.format(
-            expression=expression.strip(),
+            expression=expression,
             color=color,
             other_color=other_color,
             bg_color=bg_color,

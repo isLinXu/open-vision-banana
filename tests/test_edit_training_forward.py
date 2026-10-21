@@ -1,5 +1,6 @@
 """Training forwards for instruction editors, using stub backbones on CPU."""
 
+import pytest
 import torch
 
 from open_vision_banana.model_registry import get_model_config
@@ -67,19 +68,24 @@ def test_qwen_edit_2509_uses_the_same_packed_layout():
     assert "img_shapes" in backend.peft_model.calls[0][1]
 
 
-def test_flow_editors_feed_sigma_and_negate_the_prediction():
+@pytest.mark.parametrize(
+    ("name", "scale"),
+    [
+        ("qwen-image-edit", 1.0),
+        ("longcat-image-edit", 1.0),
+        ("flux2-klein", 1.0),
+        ("joyimage-edit", 1000.0),
+    ],
+)
+def test_flow_editors_feed_sigma_and_negate_the_prediction(name, scale):
+    # Native frame: sigma = 1 - t in, noise - x0 out, so the repo velocity is its negation.
+    backend = _backend(name, _Record(lambda _a, kw: (torch.ones_like(kw["hidden_states"]),)))
     t = torch.tensor([0.1, 0.9])
-    for name, expected in (
-        ("longcat-image-edit", 1.0 - t),
-        ("flux2-klein", 1.0 - t),
-        ("joyimage-edit", (1.0 - t) * 1000),
-    ):
-        backend = _backend(name, _Record(lambda _a, kw: (torch.ones_like(kw["hidden_states"]),)))
-        out = backend.forward(
-            torch.randn(B, C, H, W), t, _text(), B, context_latents=torch.randn(B, C, H, W)
-        )
-        torch.testing.assert_close(backend.peft_model.calls[0][1]["timestep"], expected)
-        assert torch.all(out == -1), name
+    out = backend.forward(
+        torch.randn(B, C, H, W), t, _text(), B, context_latents=torch.randn(B, C, H, W)
+    )
+    torch.testing.assert_close(backend.peft_model.calls[0][1]["timestep"], (1.0 - t) * scale)
+    torch.testing.assert_close(out, -torch.ones(B, C, H, W))
 
 
 def test_longcat_edit_marks_source_modality_two():

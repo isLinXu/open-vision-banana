@@ -23,6 +23,7 @@ from .config import VisionBananaConfig
 
 __all__ = [
     "VisionBananaConfig",
+    "RESManifestDataset",
     # Lazy imports for heavy subpackages:
     # from .core import DepthRGBMapper, NormalRGBMapper, ...
     # from .inference import VisionBanana, ...
@@ -73,6 +74,7 @@ def __getattr__(name):
         # Serving imports FastAPI lazily inside create_app().
         "create_app": ".serving.fastapi_app",
         # Data
+        "RESManifestDataset": ".data.res_dataset",
         "build_dataset": ".data.datasets",
         "SACoInstanceDataset": ".data.datasets",
         "MixedVisionDataset": ".data.mixed",

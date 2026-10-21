@@ -87,6 +87,8 @@ def uniform_task_prompts(dataset: Dataset) -> dict[str, str]:
     prompts: dict[str, set[str]] = {}
     for part in getattr(dataset, "datasets", [dataset]):
         for sample in part.samples:
+            # A single-object pilot still must not bake its expression into
+            # the checkpoint as the prompt for every future RES query.
             if sample["task"] == "referring":
                 continue
             prompts.setdefault(sample["task"], set()).add(sample["prompt"])
@@ -155,6 +157,12 @@ class ManifestVisionDataset(Dataset):
         self.disk_cache_dir = Path(disk_cache_dir) if disk_cache_dir else None
         self.samples: list[dict[str, str]] = []
         path_anchor = data_root.resolve() if data_root else manifest_path
+        if "referring" in tasks:
+            roots = [Path(manifest_path).parent]
+            if data_root is not None:
+                roots.append(Path(data_root))
+            if any((root / "BUILD_INCOMPLETE").exists() for root in roots):
+                raise ValueError("RES dataset build or restore is incomplete; validate before training")
 
         # Optional indexed_gzip tar stream support (Solution 3)
         self._tar_files: dict[str, dict[str, int]] = {}
@@ -215,6 +223,13 @@ class ManifestVisionDataset(Dataset):
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
+                if mapped == "referring":
+                    from ..data.res_contract import resolve_referring_prompt
+
+                    try:
+                        prompt = resolve_referring_prompt(row)
+                    except ValueError as exc:
+                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 self.samples.append(
                     {
                         "image_path": str(img_path),
@@ -223,6 +238,11 @@ class ManifestVisionDataset(Dataset):
                         "target_tar_key": tgt_tar_key or "",
                         "task": mapped,
                         "prompt": prompt,
+                        **{
+                            key: row[key]
+                            for key in ("expression", "encoding", "sample_id", "source_dataset")
+                            if key in row and mapped == "referring"
+                        },
                     }
                 )
 
@@ -374,12 +394,15 @@ class ManifestVisionDataset(Dataset):
             self.semantic_prompt_styles or self.semantic_color_remap_prob > 0.0
         ):
             tgt, prompt = self._augment_semantic(tgt, prompt)
-        return {
+        item = {
             "prompt": prompt,
             "image": inp * 2.0 - 1.0,
             "target_rgb": tgt,
             "task": s["task"],
         }
+        if s["task"] == "referring":
+            item.update({key: s[key] for key in ("expression", "encoding", "sample_id", "source_dataset") if key in s})
+        return item
 
     def _augment_semantic(
         self, tgt: torch.Tensor, prompt: str
@@ -430,12 +453,17 @@ class ManifestVisionDataset(Dataset):
 
 
 def _collate_fn(batch: list[dict]) -> dict:
-    return {
+    result = {
         "prompt": [b["prompt"] for b in batch],
         "image": torch.stack([b["image"] for b in batch]),
         "target_rgb": torch.stack([b["target_rgb"] for b in batch]),
         "task": [b["task"] for b in batch],
     }
+    if any(b["task"] == "referring" for b in batch):
+        for key in ("expression", "encoding", "sample_id", "source_dataset"):
+            if any(key in b for b in batch):
+                result[key] = [b.get(key) for b in batch]
+    return result
 
 
 # ── Trainer ───────────────────────────────────────────────────────────────
@@ -1179,7 +1207,7 @@ class Trainer:
             )
 
             # Text encoding
-            text_cond = self._encode_edit_text(prompts, input_images)
+            text_cond = self.backend.encode_edit_text(prompts, input_images)
 
             # Forward
             predicted = self.backend.forward(
