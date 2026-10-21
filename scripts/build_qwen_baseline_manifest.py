@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -32,7 +33,6 @@ from open_vision_banana.core.depth_mapper import DepthRGBMapper  # noqa: E402
 from open_vision_banana.data.manifest import resolve_manifest_path  # noqa: E402
 from open_vision_banana.inference.prompt import PromptBuilder  # noqa: E402
 from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT  # noqa: E402
-
 
 TASK_ALIASES = {
     "segmentation": "semantic",
@@ -74,6 +74,70 @@ def benchmark_leak(row: dict, allowed: set[str]) -> str | None:
         if any(p in haystack for p in patterns):
             return name
     return None
+
+
+# COCO file names only: COCO_train2014_000000581921.jpg or the 12-digit 000000581921.jpg.
+# Short numeric names (Hypersim frame.0001.png, Cityscapes *_000019_leftImg8bit.png)
+# deliberately do not parse, so an exclusion list cannot hit non-COCO sources.
+_COCO_IMAGE_ID_RE = re.compile(
+    r"^(?:COCO_(?:train|val|test)20\d{2}_)?(\d{12})\.(?:jpg|jpeg|png)$", re.IGNORECASE
+)
+
+
+def coco_image_id_from_path(path: str) -> int | None:
+    """Return the COCO image id encoded in a COCO-style file name, or None."""
+    match = _COCO_IMAGE_ID_RE.match(Path(str(path)).name)
+    return int(match.group(1)) if match else None
+
+
+def load_excluded_image_ids(sources: tuple[Path, ...] | list[Path]) -> set[int]:
+    """Union of image ids from RefCOCO ``refs(*).p`` pickles, JSON lists, or text files.
+
+    Pickled refs are filtered to val/test splits (the training split of a benchmark
+    is what the zero-shot protocol forbids anyway via path patterns; its evaluation
+    images are the ones that can hide inside COCO train2014). JSON files may be a
+    list of ids or a ``{"images": [{"id": ...}]}`` COCO-style dict. Text files hold
+    one id or file name per line.
+    """
+    ids: set[int] = set()
+    for source in sources:
+        source = Path(source)
+        if source.suffix == ".p":
+            import pickle
+
+            with source.open("rb") as handle:
+                refs = pickle.load(handle)
+            for ref in refs:
+                if str(ref.get("split", "val")) in {"val", "test", "testA", "testB"}:
+                    ids.add(int(ref["image_id"]))
+        elif source.suffix == ".json":
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            entries = payload.get("images", []) if isinstance(payload, dict) else payload
+            for entry in entries:
+                if isinstance(entry, dict):
+                    ids.add(int(entry["id"]))
+                else:
+                    parsed = coco_image_id_from_path(str(entry))
+                    ids.add(int(entry) if parsed is None else parsed)
+        else:
+            for line in source.read_text(encoding="utf-8").splitlines():
+                token = line.strip()
+                if not token or token.startswith("#"):
+                    continue
+                parsed = coco_image_id_from_path(token)
+                ids.add(int(token) if parsed is None else parsed)
+    return ids
+
+
+def excluded_image_leak(row: dict, excluded_ids: set[int]) -> bool:
+    """True if the row's input image carries a COCO id from an evaluation split."""
+    if not excluded_ids:
+        return False
+    for key in ("input", "image"):
+        image_id = coco_image_id_from_path(str(row.get(key, "")))
+        if image_id is not None and image_id in excluded_ids:
+            return True
+    return False
 
 
 def is_valid_metric_cube_edge_target(
@@ -124,8 +188,15 @@ def build_qwen_baseline_manifest(
     filter_non_metric_depth: bool = True,
     seed: int = 42,
     allow_benchmarks: tuple[str, ...] | list[str] = (),
+    exclude_image_ids: tuple[Path, ...] | list[Path] = (),
 ) -> dict:
-    """Build a cleaned, rebalanced manifest and return an audit summary."""
+    """Build a cleaned, rebalanced manifest and return an audit summary.
+
+    ``exclude_image_ids`` lists files of COCO image ids (see
+    ``load_excluded_image_ids``) whose rows are dropped regardless of path. RefCOCOg
+    UMD val images live inside COCO train2014, so a COCO-derived semantic/instance
+    source passes the path audit yet still leaks evaluation images without this.
+    """
     if not 0.0 <= min_cityscapes_share < 1.0:
         raise ValueError("min_cityscapes_share must be in [0, 1)")
     unknown = sorted(set(allow_benchmarks) - set(ZERO_SHOT_BENCHMARK_PATTERNS))
@@ -144,13 +215,19 @@ def build_qwen_baseline_manifest(
     kept_rows: list[dict] = []
     rejected_depth = 0
     rejected_benchmark: dict[str, int] = {}
+    excluded_ids = load_excluded_image_ids(exclude_image_ids)
+    rejected_image_ids = 0
 
     def leaks(row: dict) -> bool:
+        nonlocal rejected_image_ids
         name = benchmark_leak(row, allowed)
-        if name is None:
-            return False
-        rejected_benchmark[name] = rejected_benchmark.get(name, 0) + 1
-        return True
+        if name is not None:
+            rejected_benchmark[name] = rejected_benchmark.get(name, 0) + 1
+            return True
+        if excluded_image_leak(row, excluded_ids):
+            rejected_image_ids += 1
+            return True
+        return False
 
     for row in base_rows:
         raw_task = row.get("task", "")
@@ -228,6 +305,8 @@ def build_qwen_baseline_manifest(
         "task_split_counts": task_split_counts,
         "rejected_non_metric_depth_rows": rejected_depth,
         "rejected_benchmark_leak_rows": rejected_benchmark,
+        "rejected_excluded_image_id_rows": rejected_image_ids,
+        "excluded_image_id_count": len(excluded_ids),
         "allowed_benchmarks": sorted(allowed),
         "cityscapes_train_initial": len(cs_train),
         "cityscapes_train_upsampled_added": upsampled_cs_added,
@@ -258,6 +337,17 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(ZERO_SHOT_BENCHMARK_PATTERNS),
         help="Permit rows from this evaluated benchmark (breaks the paper zero-shot protocol).",
     )
+    parser.add_argument(
+        "--exclude-image-ids",
+        action="append",
+        type=Path,
+        default=[],
+        help=(
+            "File of COCO image ids to drop regardless of path: a RefCOCO refs(umd).p "
+            "pickle (val/test refs), a JSON list / COCO images dict, or one id per line. "
+            "Use it when a COCO-derived source may contain RefCOCOg evaluation images."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -274,6 +364,7 @@ def main() -> int:
         filter_non_metric_depth=not args.no_filter_non_metric_depth,
         seed=args.seed,
         allow_benchmarks=args.allow_benchmark,
+        exclude_image_ids=args.exclude_image_ids,
     )
     print(json.dumps(audit, indent=2))
     return 0

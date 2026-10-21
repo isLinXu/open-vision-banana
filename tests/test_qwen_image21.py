@@ -559,3 +559,59 @@ def test_encode_edit_text_keeps_the_other_layouts(monkeypatch):
     )
     text_only.encode_edit_text(["depth"], torch.zeros(1, 3, 8, 8), cfg_dropout_rate=0.1)
     assert calls == [("hunyuan", ["depth"]), ("text", ["depth"]), ("dropout", 0.1, 1)]
+
+
+def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path: Path):
+    """RefCOCOg val images are COCO train2014 files: the path audit passes, the id audit must not."""
+    import pickle
+
+    from scripts.build_qwen_baseline_manifest import (
+        coco_image_id_from_path,
+        load_excluded_image_ids,
+    )
+
+    assert coco_image_id_from_path("coco/train2014/COCO_train2014_000000581921.jpg") == 581921
+    assert coco_image_id_from_path("imgs/000000000042.png") == 42
+    assert coco_image_id_from_path("hypersim/ai_001/frame.0001.png") is None  # not COCO naming
+    assert coco_image_id_from_path("cityscapes/aachen_000000_000019_leftImg8bit.png") is None
+
+    img_dir = tmp_path / "coco" / "train2014"
+    img_dir.mkdir(parents=True)
+    for image_id in (7, 8, 9):
+        Image.new("RGB", (16, 16), (50, 60, 70)).save(img_dir / f"COCO_train2014_{image_id:012d}.jpg")
+    Image.new("RGB", (16, 16), (128, 64, 128)).save(tmp_path / "sem.png")
+
+    refs = tmp_path / "refs(umd).p"
+    with refs.open("wb") as handle:
+        pickle.dump(
+            [
+                {"image_id": 7, "split": "val"},
+                {"image_id": 8, "split": "train"},  # train refs are not eval images
+                {"image_id": 9, "split": "test"},
+            ],
+            handle,
+        )
+    txt = tmp_path / "more.txt"
+    txt.write_text("# comment\nCOCO_train2014_000000000008.jpg\n", encoding="utf-8")
+    assert load_excluded_image_ids([refs]) == {7, 9}
+    assert load_excluded_image_ids([refs, txt]) == {7, 8, 9}
+
+    rows = [
+        {"task": "semantic", "input": f"coco/train2014/COCO_train2014_{i:012d}.jpg", "target": "sem.png", "split": "train", "prompt": SEMANTIC_SEGMENTATION_PROMPT}
+        for i in (7, 8, 9)
+    ]
+    base = tmp_path / "base.jsonl"
+    base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    no_ids = build_qwen_baseline_manifest(base, tmp_path / "a.jsonl", data_root=tmp_path, min_cityscapes_share=0.0)
+    assert no_ids["task_split_counts"] == {"semantic/train": 3}
+    assert no_ids["rejected_benchmark_leak_rows"] == {}  # plain COCO paths are not a benchmark pattern
+
+    with_ids = build_qwen_baseline_manifest(
+        base, tmp_path / "b.jsonl", data_root=tmp_path, min_cityscapes_share=0.0, exclude_image_ids=[refs]
+    )
+    assert with_ids["rejected_excluded_image_id_rows"] == 2
+    assert with_ids["excluded_image_id_count"] == 2
+    assert with_ids["task_split_counts"] == {"semantic/train": 1}
+    kept = [json.loads(line) for line in (tmp_path / "b.jsonl").read_text().splitlines()]
+    assert kept[0]["input"].endswith("000000000008.jpg")
