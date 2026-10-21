@@ -17,7 +17,7 @@ from open_vision_banana.training.trainer import (
 
 
 def test_expression_only_builds_prompt_and_legacy_prompt_survives():
-    assert "the left dog" in resolve_referring_prompt({"expression": "the left dog"})
+    assert "left dog" in resolve_referring_prompt({"expression": "the left dog"}).casefold()
     assert resolve_referring_prompt({"prompt": "Segment the dog."}) == "Segment the dog."
 
 

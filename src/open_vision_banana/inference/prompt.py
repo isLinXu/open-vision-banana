@@ -13,6 +13,7 @@ from ..referring_contract import (
     BINARY_REFERRING_ENCODING,
     LEGACY_REFERRING_ENCODING,
     build_binary_referring_prompt,
+    normalize_referring_expression,
 )
 from ..task_prompts import (
     CITYSCAPES_RGB_LEGEND,
@@ -42,15 +43,10 @@ class PromptBuilder:
         'color is used for each mask.',
     ]
 
+    # Paper Fig. 4 wording. [0] is Fig. 4 (a) (a second object in another colour);
+    # [1] is Fig. 4 (c)/(d) and, with white on black, is the canonical binary
+    # contract shared by data preparation, inference and evaluation.
     REFERRING_TEMPLATES = [
-        'A segmentation map image. The area that corresponds to '
-        '{expression} is rendered solid {color}; all other pixels are '
-        'rendered in {other_color}.',
-        'This image shows segmentation masks from the given image. '
-        'The background is {bg_color} color. The {expression} is '
-        'represented by a solid {color}. Other objects are {other_color}.',
-    ]
-    LEGACY_REFERRING_TEMPLATES = [
         'A segmentation map image. The area that corresponds to '
         '{expression} is rendered solid {color}; the other objects are '
         'rendered in {other_color}.',
@@ -58,6 +54,8 @@ class PromptBuilder:
         'The background is {bg_color} color. The {expression} is '
         'represented by a solid {color}.',
     ]
+    LEGACY_REFERRING_TEMPLATES = REFERRING_TEMPLATES
+    BINARY_REFERRING_TEMPLATE_IDX = 1
 
     DEPTH_PROMPT = 'Generate a metric depth visualization of this image.'
     NORMAL_PROMPT = 'Generate a surface normal estimation visualization of this image.'
@@ -143,36 +141,33 @@ class PromptBuilder:
         color: str = "white",
         other_color: str | None = None,
         bg_color: str = "black",
-        template_idx: int = 0,
+        template_idx: int | None = None,
         *,
         encoding: str | None = None,
     ) -> str:
         """Build an expression-conditioned prompt; default to white on black.
 
-        Explicit colors remain supported. ``legacy_color_distance_v1``
-        restores green other objects for historical checkpoints.
+        With the defaults this returns ``build_binary_referring_prompt`` so the
+        prompt matches the training manifests byte for byte. Explicit colours or
+        ``template_idx`` select a Fig. 4 template; ``legacy_color_distance_v1``
+        restores the green distractor wording of historical checkpoints.
         """
-        if not isinstance(expression, str) or not expression.strip():
-            raise ValueError("A nonempty expression is required for referring segmentation")
         if encoding not in (None, BINARY_REFERRING_ENCODING, LEGACY_REFERRING_ENCODING):
             raise ValueError(f"Unknown referring encoding: {encoding!r}")
+        legacy = encoding == LEGACY_REFERRING_ENCODING
         if other_color is None:
-            other_color = (
-                "black" if encoding == BINARY_REFERRING_ENCODING
-                or (encoding is None and color == "white") else "green"
-            )
+            other_color = "green" if legacy else "black"
+        if template_idx is None:
+            template_idx = 0 if legacy else cls.BINARY_REFERRING_TEMPLATE_IDX
         if (
-            color == "white" and other_color == "black" and bg_color == "black"
-            and template_idx == 0 and encoding != LEGACY_REFERRING_ENCODING
+            color == "white" and bg_color == "black" and not legacy
+            and template_idx == cls.BINARY_REFERRING_TEMPLATE_IDX
         ):
             return build_binary_referring_prompt(expression)
-        templates = (
-            cls.LEGACY_REFERRING_TEMPLATES
-            if encoding == LEGACY_REFERRING_ENCODING else cls.REFERRING_TEMPLATES
-        )
-        template = templates[template_idx]
-        return template.format(
-            expression=expression,
+        return cls.REFERRING_TEMPLATES[template_idx].format(
+            expression=normalize_referring_expression(expression)
+            if template_idx == cls.BINARY_REFERRING_TEMPLATE_IDX
+            else expression.strip(),
             color=color,
             other_color=other_color,
             bg_color=bg_color,

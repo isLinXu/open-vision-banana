@@ -15,7 +15,7 @@ from scripts.build_rea2seg_manifest import (
 
 def test_prompt_uses_question_not_chain_of_thought():
     text = referring_prompt("the cesspit")
-    assert "the cesspit" in text
+    assert "cesspit" in text.casefold()
     assert "white" in text
     assert "black" in text
 

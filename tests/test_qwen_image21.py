@@ -330,7 +330,7 @@ def test_referring_prompt_and_decoder_match_white_on_black_contract():
     from open_vision_banana.inference.prompt import PromptBuilder
 
     prompt = PromptBuilder.build_referring_prompt("the red bicycle")
-    assert "the red bicycle" in prompt
+    assert "red bicycle" in prompt.casefold()
     assert "white" in prompt.lower()
     assert "black" in prompt.lower()
     assert "green" not in prompt.lower()

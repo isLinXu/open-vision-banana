@@ -65,7 +65,7 @@ The versioned encoding is `binary_white_black_v1`:
 
 - Foreground is RGB `(255, 255, 255)`; every other pixel is `(0, 0, 0)`.
 - Native masks are lossless RGB PNGs. COCO polygons and RLE are decoded with `pycocotools`; all valid disconnected foreground components are retained.
-- The canonical prompt is `Segment {expression} in solid white. Render all other pixels black.` The expression is stripped only when inserted into the prompt; the original annotation text remains in the record.
+- The canonical prompt is the paper's Fig. 4 (c)/(d) template with white on black: `This image shows segmentation masks from the given image. The background is black color. The {expression} is represented by a solid white.` A leading article (`the`/`a`/`an`) is dropped from the expression when it is inserted, and whitespace is stripped; the original annotation text remains in the record. Manifests built with the earlier wording (`Segment {expression} in solid white. Render all other pixels black.`) still load, but new builds and all inference/evaluation use the template above.
 - Training resizes referring targets with nearest-neighbor interpolation. Source-image resizing is unchanged.
 - Inference and evaluation share `decode_referring_mask`: mean RGB greater than `0.5` selects foreground by default. Binary decoding does not use connected-component filtering, so installing SciPy does not change this protocol.
 - Evaluation preserves native GT and resizes decoded predictions with nearest-neighbor interpolation to the original image dimensions.
@@ -147,7 +147,7 @@ res_binary_v1/
   "input": "images/coco2014/COCO_train2014_000000000001.jpg",
   "target": "targets/coco2014/000000000001_<geometry_sha256>.png",
   "expression": "the woman in the blue shirt",
-  "prompt": "Segment the woman in the blue shirt in solid white. Render all other pixels black.",
+  "prompt": "This image shows segmentation masks from the given image. The background is black color. The woman in the blue shirt is represented by a solid white.",
   "encoding": "binary_white_black_v1",
   "source_dataset": "refcoco",
   "source_protocol": "unc",
