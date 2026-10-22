@@ -57,6 +57,16 @@ in-domain, and a rebuilt manifest must use `--protocol in_domain` explicitly (st
 Goal: prove download → prepare → audit → 500 training steps → inference → one metric
 works on the real backbone with the public data. **No quality target.**
 
+One command runs all of E0 with the three machine gates in between (stops on the first failed gate;
+`--from <stage>` resumes; `--dry-run` prints every command without running):
+
+```bash
+PYTHON=$(which python) bash scripts/run_e0_smoke.sh            # download → prepare → merge → train → infer → eval
+bash scripts/run_e0_smoke.sh --dry-run                           # review the exact commands first
+bash scripts/run_e0_smoke.sh --from train                        # data already prepared
+```
+The subsections below are what the script executes, kept so each gate can be read and re-run by hand.
+
 ### E0.1 Data (small)
 ```bash
 HYPERSIM_SCENES="ai_001_001 ai_001_002" TARTANAIR_CHUNKS=1 OMNIEDIT_SHARDS=1 \

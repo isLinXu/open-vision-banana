@@ -109,6 +109,11 @@ Downloads run in the background; keep working on Stage 3 meanwhile and report pr
 
 ## Stage 3: Data — download → prepare → merge → audit
 
+> Shortcut for the E0 smoke of `exp_setting.md`: `bash scripts/run_e0_smoke.sh --dry-run` shows every
+> command of Stages 3–6 at smoke scale; without `--dry-run` it executes them with the machine gates in
+> between (`--from <stage>` resumes). Use it when the user wants the first real run with minimal ceremony;
+> otherwise walk the stages below and confirm at each decision point.
+
 All sources are public and registered in `configs/datasets/sources.tsv` (`group=train|eval|replay`); the full table, sizes and the exact per-source prepare command live in **`docs/DATASETS.md`**. Use `AskUserQuestion` to choose between:
 
 - **A. Existing prepared manifest** — the user has a `pairs.jsonl`; validate it (Stage 3.4) and go to Stage 4.
