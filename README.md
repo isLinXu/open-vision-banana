@@ -396,6 +396,8 @@ The `fix_*` depth LoRAs were trained as closer-brighter grayscale. Decode them w
 
 ## Paper Alignment Statement
 
+> Line-by-line audit against the paper text (58 checkable statements, per-item status and code locations): [`docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md`](docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md).
+
 > What "aligned with the paper" means here, and what it cannot mean. Audited on 2026-10-22 against arXiv:2604.20329v3 (Sections 2–3, Appendix A–D). Details and line references: [`docs/ABLATION_BASELINE.md`](docs/ABLATION_BASELINE.md).
 
 **Three categories, kept separate on purpose:**
