@@ -44,8 +44,18 @@ import torch
 from PIL import Image
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
+from open_vision_banana.data.depth_geometry import ray_distance_to_planar_depth
 
 logger = logging.getLogger(__name__)
+
+
+def _hypersim_module():
+    """The dedicated Hypersim preparer, importable both as a package and as a script."""
+    try:
+        from scripts import prepare_hypersim
+    except ImportError:  # run as `python scripts/prepare_synthetic_depth.py`
+        import prepare_hypersim  # type: ignore[no-redef]
+    return prepare_hypersim
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
@@ -249,19 +259,15 @@ def prepare_hypersim(raw_dir: Path, output_dir: Path, args: argparse.Namespace) 
     """
     logger.info("Preparing Hypersim synthetic depth data…")
 
-    pairs = _find_color_depth_pairs(
-        raw_dir,
-        color_patterns=["color", "rgb"],
-        depth_patterns=["depth", "depth_meters"],
-    )
-
+    # Official layout (scene_cam_XX_final_preview/*.color.jpg <-> *_geometry_hdf5/*.depth_meters.hdf5)
+    # and flat PNG/NPY exports are both handled by the dedicated Hypersim scanner.
+    pairs = _hypersim_module().find_hypersim_pairs(raw_dir)
     if not pairs:
-        # Try the specific Hypersim layout
-        pairs = []
-        for color_path in sorted(raw_dir.rglob("*color.jpg")):
-            depth_path = Path(str(color_path).replace("color.jpg", "depth_meters.png"))
-            if depth_path.exists():
-                pairs.append((color_path, depth_path))
+        pairs = _find_color_depth_pairs(
+            raw_dir,
+            color_patterns=["color", "rgb"],
+            depth_patterns=["depth", "depth_meters"],
+        )
 
     if not pairs:
         logger.error("No Hypersim color/depth pairs found in %s", raw_dir)
@@ -414,12 +420,24 @@ def _process_pairs(
             color = Image.open(color_path).convert("RGB")
             color = _resize_rgb(color, resolution)
 
-            # Load depth
-            depth = _load_depth_meters(depth_path)
-            if depth.numel() == 0:
-                logger.warning("Empty depth loaded from %s, skipping", depth_path)
-                errors += 1
-                continue
+            # Load depth. Hypersim depth_meters is ray distance; the paper's task is
+            # planar z-depth, so the Hypersim loader converts it (see depth_geometry).
+            ray_mode = getattr(args, "ray_distance", "auto")
+            focal_px = getattr(args, "focal_px", None)
+            if depth_path.suffix.lower() in {".hdf5", ".h5"}:
+                depth, _ = _hypersim_module()._load_depth_meters(
+                    depth_path, ray_distance=ray_mode, focal_px=focal_px
+                )
+            else:
+                depth = _load_depth_meters(depth_path)
+                if depth.numel() == 0:
+                    logger.warning("Empty depth loaded from %s, skipping", depth_path)
+                    errors += 1
+                    continue
+                if ray_mode == "always" or (
+                    ray_mode == "auto" and name_prefix == "hs_" and "depth_meters" in depth_path.stem.lower()
+                ):
+                    depth = ray_distance_to_planar_depth(depth, focal_px)
 
             depth = _resize_depth(depth, resolution)
 
@@ -538,6 +556,11 @@ Examples:
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be processed without writing")
     parser.add_argument("--validate", action="store_true", help="Run validate_vision_dataset() after preparation")
+    parser.add_argument(
+        "--ray-distance", choices=("auto", "always", "never"), default="auto",
+        help="Convert Euclidean ray distance to planar z-depth ('auto': Hypersim depth_meters only)",
+    )
+    parser.add_argument("--focal-px", type=float, default=None, help="Focal length in px for the conversion")
     parser.add_argument("--colormaps", type=str, default=None, help="Comma-separated colormaps for multi-colormap training")
     return parser.parse_args()
 

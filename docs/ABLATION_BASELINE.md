@@ -272,3 +272,11 @@ GenAI-Bench 1600 条 prompt、ImgEdit 767 条指令保持「未做人类评」�
 
 5. **实例分割训练数据源（COCO / LVIS）**。SNVC 没有实例子集，新增 `scripts/build_instance_manifest.py`：对每个 (image, category) 对渲染黑底、每实例一个独立颜色的 target（调色板两两 RGB 距离 ≥ 60，远大于解码器 τ=14；大实例先画、小实例覆盖在上），Prompt 用论文 Fig. 3 模板 `PromptBuilder.build_instance_prompt(category)`。跳过有歧义的监督：COCO `iscrowd` 区域所在的类别对、LVIS `not_exhaustive_category_ids` 中的类别（该类未标全）；`--exclude-image-ids refs(umd).p` 复用第 3 条按 id 剔除 RefCOCOg 评测图（COCO 2017 与 2014 的 image id 一致）。单测验证渲染出的 target 经 `SegmentationDecoder.paper_reproduction()` 五阶段解码能精确恢复实例数（含遮挡）。训练器对 `instance` target 改用 NEAREST 重采样，避免双线性在实例边界混出伪颜色。两份 paper_aligned 配置 `tasks` 加入 `instance`，论文五任务至此在训练配方中齐全。
 6. **实例 Prompt / 背景色随机化（Fig. 3 的训练分布）**。Fig. 3 六个例子用了三种句式和四种背景色写法（默认黑、`RGB(88, 50, 82)`、`#10aa05`、`white color`）。`PromptBuilder.INSTANCE_TEMPLATES` 改为 Fig. 3 的三条原句（去掉原模板里篮球例子专用的 "solid circular mask"），`format_background_color` 支持 named / rgb / hex 三种写法；`build_instance_manifest.py --background-styles black,named,rgb,hex` 按行随机背景色、按背景重建调色板（实例色距背景 ≥ 60）、同步生成对应句式的 Prompt，并在行内记录 `background_color` 供解码器使用。默认仍只用 `black`（模板 0），与 SA-Co 评测口径一致。单测验证每种背景下 target 经 `decode_instance(background_color=...)` 精确恢复实例数。
+
+## 2026-10-22 数据正确性修复：Hypersim 深度是射线距离，不是 z 深度
+
+`scripts/prepare_hypersim.py` 与 `scripts/prepare_synthetic_depth.py --dataset hypersim-depth` 此前把官方 `frame.XXXX.depth_meters.hdf5` 直接当作米制 z 深度编码。Hypersim 的 `depth_meters` 实际是**从光心出发沿像素射线的欧氏距离**；论文 §3.2 定义的深度是 "distance from the camera plane"（平面 z）。两者在 1024×768 帧的角落相差 23.3%（$\sqrt{511.5^2+383.5^2+886.81^2}/886.81 = 1.2328$），训练 target 因此带有随像素位置系统性增大的偏差，SFT 会忠实学进去，直接拖累 NYU / iBims 这类室内评测的 AbsRel。
+
+修复：新增 `src/open_vision_banana/data/depth_geometry.py`，`ray_distance_to_planar_depth` 按 $z = d\,f/\sqrt{(u-c_x)^2+(v-c_y)^2+f^2}$ 转换；焦距用 Hypersim 60° 水平 FOV 规则由宽度推出（1024 px → 886.81，与官方仓库常数一致），可用 `--focal-px` 覆盖。`--ray-distance auto`（默认）只对官方 `*.depth_meters.hdf5` 转换，`never` 用于已是平面深度的导出，`always` 强制转换。`manifest.json` 新增 `metric_depth.convention: planar_z_depth` 与 `depth_geometry` 记录转换数量与焦距规则。`prepare_synthetic_depth.py` 的 Hypersim 路径此前只查 `depth_meters.png`、从未匹配过官方 HDF5 布局，现复用 `prepare_hypersim.find_hypersim_pairs` 与同一加载器。单测验证：常深度墙面从射线距离精确恢复、无效像素（NaN/0）原样保留、两条脚本产出的 RGB target 解码后中心 ≈ 原值而角落更近。
+
+**此前用旧脚本准备的 Hypersim 深度数据需要重新生成**（`--overwrite`）；manifest 里没有 `depth_geometry` 字段的即为旧版。

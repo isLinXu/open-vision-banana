@@ -13,6 +13,13 @@ while retaining lossless metric targets for benchmark-style evaluation:
 Hypersim source layout (scanned recursively):
     .../frame.0000.color.jpg  ↔  .../frame.0000.depth_meters.hdf5
 
+Official ``depth_meters.hdf5`` holds the Euclidean ray distance from the optical
+centre, not the planar z-depth the paper's metric-depth task is defined on. By
+default (``--ray-distance auto``) HDF5 ``depth_meters`` files are converted with
+the Hypersim 60 degree-FOV focal rule before encoding; ``metric_depth/*.npy`` and
+the manifest record planar depth. Pass ``--ray-distance never`` for exports that
+are already planar, ``--focal-px`` to override the focal length.
+
 Usage:
     python scripts/prepare_hypersim.py --source /data/hypersim --output data/hypersim_depth/
     python scripts/prepare_hypersim.py --source /data/hypersim --output data/hypersim_depth/ --max-samples 500 --validate
@@ -34,6 +41,10 @@ import torch
 from PIL import Image
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
+from open_vision_banana.data.depth_geometry import (
+    hypersim_focal_px,
+    ray_distance_to_planar_depth,
+)
 from open_vision_banana.data.manifest import fingerprint_records
 from open_vision_banana.data.validation import validate_vision_dataset
 
@@ -130,12 +141,29 @@ def write_metric_depth_pairs_jsonl(output: Path) -> int:
     return len(records)
 
 
-def _load_depth_meters(depth_path: Path) -> torch.Tensor:
-    """Load a raw metric depth map as ``[1, 1, H, W]`` in metres.
+RAY_DISTANCE_MODES = ("auto", "always", "never")
 
-    Official Hypersim depth is stored in HDF5 and already uses metres. PNG
-    exports are conventionally millimetres, matching the previous converter.
+
+def is_hypersim_ray_distance(depth_path: Path) -> bool:
+    """Official ``*.depth_meters.hdf5`` files store ray distance, not z-depth."""
+    return depth_path.suffix.lower() in {".hdf5", ".h5"} and "depth_meters" in depth_path.stem.lower()
+
+
+def _load_depth_meters(
+    depth_path: Path,
+    *,
+    ray_distance: str = "auto",
+    focal_px: float | None = None,
+) -> tuple[torch.Tensor, bool]:
+    """Load a metric depth map as ``[1, 1, H, W]`` planar z-depth in metres.
+
+    Returns ``(depth, converted)``. Official Hypersim HDF5 ``depth_meters`` is
+    Euclidean ray distance and is converted to planar depth
+    (``ray_distance="auto"``); ``"always"`` / ``"never"`` force either reading.
+    PNG exports are conventionally millimetres, matching the previous converter.
     """
+    if ray_distance not in RAY_DISTANCE_MODES:
+        raise ValueError(f"ray_distance must be one of {RAY_DISTANCE_MODES}")
     suffix = depth_path.suffix.lower()
     if suffix in {".hdf5", ".h5"}:
         try:
@@ -181,7 +209,12 @@ def _load_depth_meters(depth_path: Path) -> torch.Tensor:
     if depth.ndim != 2:
         raise ValueError(f"Expected 2-D depth map, got {tuple(depth.shape)} from {depth_path}")
     depth = depth.unsqueeze(0).unsqueeze(0)
-    return depth
+    convert = ray_distance == "always" or (
+        ray_distance == "auto" and is_hypersim_ray_distance(depth_path)
+    )
+    if convert:
+        depth = ray_distance_to_planar_depth(depth, focal_px)
+    return depth, convert
 
 
 def _tensor_to_pil_rgb(tensor: torch.Tensor) -> Image.Image:
@@ -229,6 +262,7 @@ def _write_manifest(
     source_formats: dict[str, int],
     audit: dict[str, float | int],
     sample_digest: Any,
+    depth_geometry: dict[str, Any] | None = None,
 ) -> None:
     valid_pixels = int(audit["valid_pixels"])
     payload = {
@@ -256,7 +290,10 @@ def _write_manifest(
             "directory": "metric_depth",
             "dtype": "float32",
             "invalid_value": "NaN",
+            # Paper Section 3.2: depth is the distance from the camera plane (planar z).
+            "convention": "planar_z_depth",
         },
+        "depth_geometry": depth_geometry or {},
         "data_contract": {
             "sample_mapping_sha256": sample_digest.hexdigest(),
             "valid_pixels": valid_pixels,
@@ -293,6 +330,8 @@ def prepare_hypersim(
     overwrite: bool = False,
     start_index: int = 0,
     exclude_scenes: set[str] | None = None,
+    ray_distance: str = "auto",
+    focal_px: float | None = None,
 ) -> int:
     """Write RGB targets and auditable lossless metric targets under *output*."""
     pairs = find_hypersim_pairs(source, exclude_scenes=exclude_scenes)
@@ -312,6 +351,7 @@ def prepare_hypersim(
 
     mapper = DepthRGBMapper()
     written = 0
+    converted_pairs = 0
     source_formats: dict[str, int] = {}
     sample_digest = hashlib.sha256()
     audit: dict[str, float | int] = {
@@ -359,7 +399,10 @@ def prepare_hypersim(
         if resolution is not None:
             color = color.resize((resolution, resolution), Image.Resampling.LANCZOS)
 
-        raw_depth = _load_depth_meters(depth_path)
+        raw_depth, converted = _load_depth_meters(
+            depth_path, ray_distance=ray_distance, focal_px=focal_px
+        )
+        converted_pairs += int(converted)
         target_size = (
             (resolution, resolution) if resolution is not None else (color.height, color.width)
         )
@@ -391,7 +434,18 @@ def prepare_hypersim(
         source_formats=source_formats,
         audit=audit,
         sample_digest=sample_digest,
+        depth_geometry={
+            "ray_distance_mode": ray_distance,
+            "ray_distance_converted_pairs": converted_pairs,
+            "focal_px": focal_px,
+            "focal_rule": (
+                "explicit" if focal_px is not None
+                else f"hypersim_{hypersim_focal_px.__defaults__[0]:.0f}deg_hfov_from_width"
+            ),
+        },
     )
+    if converted_pairs:
+        logger.info("Converted %d Hypersim ray-distance maps to planar z-depth", converted_pairs)
     logger.info("Wrote %d pairs to %s (%d jsonl rows)", written, output.resolve(), jsonl_count)
     return written
 
@@ -442,6 +496,21 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated Hypersim scene names to skip (e.g. ai_001_001,ai_001_002)",
     )
     parser.add_argument(
+        "--ray-distance",
+        choices=RAY_DISTANCE_MODES,
+        default="auto",
+        help=(
+            "Treat source depth as Euclidean ray distance and convert to planar z-depth. "
+            "'auto' converts official Hypersim *.depth_meters.hdf5 only."
+        ),
+    )
+    parser.add_argument(
+        "--focal-px",
+        type=float,
+        default=None,
+        help="Focal length in pixels for the conversion (default: Hypersim 60 deg HFOV rule)",
+    )
+    parser.add_argument(
         "--validate",
         action="store_true",
         help="Run validate_vision_dataset() after preparation",
@@ -467,6 +536,8 @@ def main() -> int:
         overwrite=args.overwrite,
         start_index=args.start_index,
         exclude_scenes=exclude_scenes or None,
+        ray_distance=args.ray_distance,
+        focal_px=args.focal_px,
     )
     if count == 0:
         return 1
