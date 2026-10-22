@@ -11,6 +11,8 @@
 # post    : none | unzip | untar | unzip_each | untar_each | coco2014_links ; chain with '+'. Archives are kept, extraction goes to dest.
 #           coco2014_links symlinks train2017/val2017 images under train2014/COCO_train2014_*.jpg (RefCOCO refer files use 2014 names).
 #           refer_umd / refer_unc rebuild REFER instances.json + refs(umd|unc).p from parquet shards (scripts/convert_refer_parquet.py).
+#           nyu_mat converts nyu_depth_v2_labeled.mat (+ splits.mat in the same dir) to test/images + test/depths (scripts/convert_eval_sets.py).
+#           genai_prompts collects GenAI-Bench parquet prompts into prompts.jsonl.
 #
 # ---- 3D: metric depth + surface normals (paper: synthetic only) ---------------------------------
 hypersim	train	depth,normal,semantic,instance	ms	OpenDataLab/Hypersim	@hypersim_scenes	hypersim	unzip_each	3-8/scene	Hypersim Custom (research)	Official per-scene zips (HDF5). depth_meters is RAY DISTANCE: scripts/prepare_hypersim.py converts to planar z by default. Pick scenes with HYPERSIM_SCENES.
@@ -33,7 +35,8 @@ omniedit	replay	generation	ms	AI-ModelScope/OmniEdit-Filtered-1.2M	@omniedit_sha
 ultraedit	replay	generation	ms	AI-ModelScope/UltraEdit	-	ultraedit	none	1400	Apache-2.0	Full 1.4 TB; pass --only ultraedit deliberately. Prefer omniedit shards.
 blip3o-60k	replay	generation	ms	BLIP3o/BLIP3o-60k	journeyDB.tar;journeyDB.txt	blip3o_60k	untar_each	18	Apache-2.0	T2I pairs (--kind t2i). Synthetic images; only for text-to-image backbones.
 # ---- depth / normal evaluation benchmarks (eval only) -----------------------------------------
-nyu-depth-v2-labeled	eval	depth,normal	url	http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat	-	nyu_depth_v2	none	2.8	NYU (research)	1449 labelled frames incl. the 654 Eigen test split. Paper Table 6/7.
+nyu-depth-v2-splits	eval	depth,normal	url	http://horatio.cs.nyu.edu/mit/silberman/indoor_seg_sup/splits.mat	-	nyu_depth_v2	none	0.01	NYU (research)	Eigen train/test indices (795/654). Fetch BEFORE nyu-depth-v2-labeled so its nyu_mat step can split.
+nyu-depth-v2-labeled	eval	depth,normal	url	http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat	-	nyu_depth_v2	nyu_mat	2.8	NYU (research)	1449 labelled frames; nyu_mat writes test/images + test/depths (mm PNG) for NYUDepthDataset. Paper Table 6/7.
 kitti-depth	eval	depth	manual	https://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_prediction	-	kitti_depth	none	14	KITTI (CC-BY-NC-SA)	Requires KITTI account. ModelScope mirrors (Damo_XR_Lab/KITTI_Depth_Dataset) are index JSONs only.
 cityscapes	eval	semantic	manual	https://www.cityscapes-dataset.com/downloads/	-	cityscapes	none	11	Cityscapes (non-commercial)	Requires account: gtFine_trainvaltest.zip + leftImg8bit_trainvaltest.zip, then scripts/setup_cityscapes_official.py. Paper Table 2 (val). Using train breaks zero-shot.
-genai-bench	eval	generation	ms	AI-ModelScope/GenAI-Bench-1600	-	genai_bench	none	4.8	Apache-2.0	Paper Appendix D generation benchmark prompts.
+genai-bench	eval	generation	ms	AI-ModelScope/GenAI-Bench-1600	-	genai_bench	genai_prompts	4.8	Apache-2.0	Paper Appendix D generation benchmark; genai_prompts writes prompts.jsonl for GenAIBenchDataset.

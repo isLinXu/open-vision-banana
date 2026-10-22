@@ -177,6 +177,11 @@ post_step() {
     coco2014_links) coco2014_links "$dest" ;;
     refer_umd) refer_convert "$dest" umd ;;
     refer_unc) refer_convert "$dest" unc ;;
+    nyu_mat)
+      local splits=() ; [[ -f "$dest/splits.mat" ]] && splits=(--splits "$dest/splits.mat")
+      [[ ${#splits[@]} -eq 0 ]] && warn "   splits.mat not found in $dest; frames go to all/ (fetch nyu-depth-v2-splits first)"
+      run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" nyu-mat --mat "$dest/nyu_depth_v2_labeled.mat" "${splits[@]}" --out "$dest" ;;
+    genai_prompts) run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" genai-bench --parquet "$dest" --out "$dest" ;;
     unzip|unzip_each)
       for z in "$dest"/*.zip "$dest"/raw/*.zip; do
         [[ -e $z ]] || continue
