@@ -44,7 +44,7 @@ def test_registry_rows_are_well_formed_and_cover_the_paper_tasks():
         assert row["group"] in {"train", "eval", "replay"}, row["name"]
         assert row["source"] in {"ms", "hf", "url", "manual"}, row["name"]
         for step in row["post"].split("+"):
-            assert step in {"none", "unzip", "untar", "unzip_each", "untar_each", "coco2014_links"}, row["name"]
+            assert step in {"none", "unzip", "untar", "unzip_each", "untar_each", "coco2014_links", "refer_umd", "refer_unc"}, row["name"]
         assert set(row["tasks"].split(",")) <= {"depth", "normal", "semantic", "instance", "referring", "generation"}, row["name"]
     train_tasks = {t for r in rows if r["group"] == "train" for t in r["tasks"].split(",")}
     assert {"depth", "normal", "semantic", "instance", "referring"} <= train_tasks
@@ -69,7 +69,8 @@ def test_dry_run_expands_macros_without_touching_the_network(tmp_path: Path):
         env={"HYPERSIM_SCENES": "ai_001_001 ai_009_003", "TARTANAIR_CHUNKS": "3", "OMNIEDIT_SHARDS": "1"},
     )
     assert res.returncode == 0, res.stderr
-    assert "'raw/ai_001_001.zip','raw/ai_009_003.zip'" in res.stdout
+    # CLI form: "--include raw/a.zip raw/b.zip"; Python-API fallback form: "['raw/a.zip','raw/b.zip',]"
+    assert "raw/ai_001_001.zip" in res.stdout and "raw/ai_009_003.zip" in res.stdout
     assert "chunk__part000002.tar.gz" in res.stdout and "chunk__part000003" not in res.stdout
     assert "data/train-00000-of-00571.parquet" in res.stdout
     assert not any(tmp_path.iterdir())  # nothing written in dry-run
