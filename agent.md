@@ -186,7 +186,7 @@ Expected layout (created by `TrainingCallbacks.on_checkpoint`):
 ```
 output/<run_name>/
 ├── train.log                    # Training log
-├── checkpoint-step-{N}/         # Periodic checkpoints
+├── checkpoint-{N}/              # Periodic checkpoints
 │   ├── lora.pt                  # LoRA weights + optimizer state + metadata
 │   ├── lora_adapter/            # PEFT-format adapter (save_pretrained)
 │   └── metadata.json            # step, val_loss, lora_rank/alpha, model_name

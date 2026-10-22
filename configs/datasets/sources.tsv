@@ -8,7 +8,7 @@
 #           @hypersim_scenes  -> raw/<scene>.zip for each scene in $HYPERSIM_SCENES
 #           @tartanair_chunks -> chunk__partNNNNNN.tar.gz for the first $TARTANAIR_CHUNKS chunks
 #           @omniedit_shards  -> data/train-NNNNN-of-00571.parquet for the first $OMNIEDIT_SHARDS shards
-# post    : none | unzip | untar | unzip_each | untar_each | coco2014_links ; chain with '+'. Archives are kept, extraction goes to dest.
+# post    : none | unzip | untar | unzip_each | untar_each | un7z_each | coco2014_links ; chain with '+'. Archives are kept, extraction goes to dest.
 #           coco2014_links symlinks train2017/val2017 images under train2014/COCO_train2014_*.jpg (RefCOCO refer files use 2014 names).
 #           refer_umd / refer_unc rebuild REFER instances.json + refs(umd|unc).p from parquet shards (scripts/convert_refer_parquet.py).
 #           nyu_mat converts nyu_depth_v2_labeled.mat (+ splits.mat in the same dir) to test/images + test/depths (scripts/convert_eval_sets.py).
@@ -39,4 +39,16 @@ nyu-depth-v2-splits	eval	depth,normal	url	http://horatio.cs.nyu.edu/mit/silberma
 nyu-depth-v2-labeled	eval	depth,normal	url	http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat	-	nyu_depth_v2	nyu_mat	2.8	NYU (research)	1449 labelled frames; nyu_mat writes test/images + test/depths (mm PNG) for NYUDepthDataset. Paper Table 6/7.
 kitti-depth	eval	depth	manual	https://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_prediction	-	kitti_depth	none	14	KITTI (CC-BY-NC-SA)	Requires KITTI account. ModelScope mirrors (Damo_XR_Lab/KITTI_Depth_Dataset) are index JSONs only.
 cityscapes	eval	semantic	manual	https://www.cityscapes-dataset.com/downloads/	-	cityscapes	none	11	Cityscapes (non-commercial)	Requires account: gtFine_trainvaltest.zip + leftImg8bit_trainvaltest.zip, then scripts/setup_cityscapes_official.py. Paper Table 2 (val). Using train breaks zero-shot.
+# ---- remaining paper benchmarks (Table 6 depth, Table 7 normals, Table 3 instance, Appendix D editing) ----
+diode-val	eval	depth	url	http://diode-dataset.s3.amazonaws.com/val.tar.gz	-	diode	untar	2.8	DIODE (MIT)	val/{indoors,outdoor}/scene_*/scan_*/*.png + *_depth.npy + *_depth_mask.npy -> DIODEDataset. Paper Table 6 (DIODE-Indoor).
+diode-val-normals	eval	normal	url	http://diode-dataset.s3.amazonaws.com/val_normals.tar.gz	-	diode	untar	4.9	DIODE (MIT)	*_normal.npy next to the RGB -> DIODENormalDataset. Paper Table 7 (DIODE-indoor).
+eth3d-dslr-rgb	eval	depth	url	https://www.eth3d.net/data/multi_view_training_dslr_undistorted.7z	-	eth3d	un7z_each	5.9	ETH3D (CC-BY-NC-SA)	Undistorted DSLR images per scene. Needs the `7z` tool (p7zip). Paper Table 6.
+eth3d-dslr-depth	eval	depth	url	https://www.eth3d.net/data/multi_view_training_dslr_depth.7z	-	eth3d	un7z_each	0.6	ETH3D (CC-BY-NC-SA)	<scene>/ground_truth_depth/dslr_images/* raw float32 metres -> ETH3DDataset.
+imgedit-bench	eval	generation	ms	AI-ModelScope/ImgEdit	Benchmark.tar	imgedit_bench	untar_each	0.05	Apache-2.0	ImgEdit-Bench only (50 MB); the ImgEdit *train* split is deliberately not registered (it is this benchmark's source). Paper Appendix D.
+saco-gold	eval	instance	manual	https://huggingface.co/datasets/facebook/SACo-Gold	-	saco_gold	none	1	SA-Co (Meta)	Gated: accept the licence on HF, then `hf download facebook/SACo-Gold --repo-type dataset --local-dir data/raw/saco_gold`; SACoInstanceDataset reads queries.jsonl (see scripts/prepare_saco_gold_queries.py). Paper Table 3.
+ibims1	eval	depth	manual	https://www.asg.ed.tum.de/lmf/ibims1/	-	ibims1	none	0.3	iBims-1 (TUM)	TUM dataserv link requires the request form; IBimsDepthDataset reads rgb/*.png + depth/*.png (mm). Paper Table 6.
+nyu-normals	eval	normal	manual	https://github.com/baegwangbin/DSINE#evaluation	-	nyu_depth_v2/normals	none	1	NYU (research) / DSINE eval pack	The NYU .mat has no normal GT; Table 7 numbers use the community test normals shipped with DSINE's evaluation data. NYUNormalDataset reads normals/*.npy|png next to test/images.
+scannet-normals	eval	normal	manual	http://www.scan-net.org/	-	scannet	none	20	ScanNet (agreement)	Requires the ScanNet terms-of-use form; ScanNetNormalDataset reads scene/color + scene/normal. Paper Table 7.
+nuscenes	eval	depth	manual	https://www.nuscenes.org/download	-	nuscenes	none	60	nuScenes (CC-BY-NC-SA)	Account required; nuScenesDataset projects LiDAR to CAM_FRONT depth. Paper Table 6.
+vkitti2	eval	normal	manual	https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/	-	vkitti2	none	30	VKITTI2 (CC-BY-NC-SA)	Direct tar links moved (404 on 2026-10-22); VKITTI2 ships depth, not normals - VirtualKITTINormalDataset needs normals derived from depth + the per-camera intrinsics. Paper Table 7.
 genai-bench	eval	generation	ms	AI-ModelScope/GenAI-Bench-1600	-	genai_bench	genai_prompts	4.8	Apache-2.0	Paper Appendix D generation benchmark; genai_prompts writes prompts.jsonl for GenAIBenchDataset.

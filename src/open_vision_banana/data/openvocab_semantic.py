@@ -24,6 +24,7 @@ Everything is pure numpy and deterministic given the RNG.
 from __future__ import annotations
 
 import random
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -121,6 +122,33 @@ def build_prompt(style: str, mapping: Mapping[str, Color]) -> str:
             parts.append(f'"{phrase}": "{by_rgb[rgb]}"')
         return PromptBuilder.SEMANTIC_TEMPLATES[0].format(color_map="{" + ", ".join(parts) + "}")
     raise ValueError(f"Unknown style: {style!r}; choose from {STYLES}")
+
+
+_JSON_TUPLE_RE = re.compile(r'"([^"]+)"\s*:\s*<\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*>')
+_JSON_NAMED_RE = re.compile(r'"([^"]+)"\s*:\s*"([^"]+)"')
+_NATURAL_RE = re.compile(r"The (.+?) (?:are|is) represented by \((\d+), (\d+), (\d+)\)")
+_HEX_RE = re.compile(r"The (.+?) (?:is|are) #([0-9A-Fa-f]{6})")
+
+
+def parse_prompt_mapping(prompt: str) -> dict[str, Color]:
+    """Invert ``build_prompt`` for all four styles: ``phrase -> (R, G, B)``.
+
+    Returns an empty dict when no legend is recognised (e.g. the generic
+    Cityscapes-free prompt), which callers treat as "no augmentation possible".
+    """
+    tuples = _JSON_TUPLE_RE.findall(prompt)
+    if tuples:
+        return {name: (int(r), int(g), int(b)) for name, r, g, b in tuples}
+    named = _JSON_NAMED_RE.findall(prompt)
+    if named and all(color in NAMED_COLORS for _, color in named):
+        return {name: NAMED_COLORS[color] for name, color in named}
+    natural = _NATURAL_RE.findall(prompt)
+    if natural:
+        return {name: (int(r), int(g), int(b)) for name, r, g, b in natural}
+    hexes = _HEX_RE.findall(prompt)
+    if hexes:
+        return {name: (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)) for name, h in hexes}
+    return {}
 
 
 @dataclass(frozen=True)
