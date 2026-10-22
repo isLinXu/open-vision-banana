@@ -139,12 +139,12 @@ T6 在 T0 完成后就可以做，不排在 T1–T5 后面。T7 仍等 T5 和 T6
 
 ### T5 步数
 
-状态: done  
+状态: 训练 done / 结论 pending（DIODE 法向缺标注，`sqrt` 为候选）  
 依赖: T2、T3、T4
 
 按固定条件里的规则从 T1–T4 选出胜出配比，理由写入结果表。三项方向不一致时胜出就是 T1。T1 的 30k 保留为对照。`save_every: 1000` 时直接评 `checkpoint-8000` 的 online LoRA；30k 已存在则不重训。仅当 30k 的全量主表仍高于 8k，且该步学习率仍是 1e-4 时，才训到 60000。否则 60k 标 `skip`。不加步数的同时不改采样权重。
 
-完成：自动选出 `sqrt`（在 Cityscapes mIoU 和 NYU δ1 上比 uniform 高 0.003 和 0.001，但差异落在噪声内），比较 8k 与 30k 后跳过 60k（`skip`）。
+训练完成，**结论未完成**（2026-10-22 复核更正）：`sqrt` 在 Cityscapes mIoU 和 NYU δ1 上比 uniform 高 0.003 和 0.001，差异落在噪声内；DIODE 法向缺标注，预设的"三项至少两项优于且无一退步"裁决**无法执行**。按规则，裁决不成立时胜出保持 `uniform`。因此 `sqrt` 的状态是**候选、待 DIODE 法向评测**，不是胜出；辅助信号上 `sqrt` 的 RefCOCOg cIoU（0.229→0.220）和 ReasonSeg gIoU（0.209→0.186）均退步。8k 与 30k 的比较仍有效，60k 记 `skip`。多种子复核尚未做，优势的稳定性未知。
 
 产物: 胜出目录下的 `checkpoint-8000`、`checkpoint-30000`（60000 为 `skip`）
 
@@ -232,7 +232,11 @@ GenAI-Bench 1600 条 prompt、ImgEdit 767 条指令保持「未做人类评」�
 
 ## 结果表
 
-训练卡在四项主指标和末步学习率齐备前，状态保持 `doing`。specialist 按任务分行，空着的格子表示那份 LoRA 没有这项评测。DIODE 的法向标注在本轮评测机缺失，因此主表 DIODE mean° 暂缺，补列 NYU / DIODE 对齐尺度 δ1 与 ReasonSeg gIoU 供诊断。
+状态列记两件事，用 `/` 分开：**训练**（`done` = 训满计划步数）和**结论**（`done` 仅当四项主指标和末步学习率齐备；否则 `pending`）。2026-10-22 复核前这两者共用一个 `done`，掩盖了 DIODE 法向缺失导致的主表未闭环。specialist 按任务分行，空着的格子表示那份 LoRA 没有这项评测。DIODE 的法向标注在本轮评测机缺失，因此主表 DIODE mean° 暂缺，补列 NYU / DIODE 对齐尺度 δ1 与 ReasonSeg gIoU 供诊断。
+
+**深度列的监督口径（2026-10-22 复核标注）**：T1–T5、T13 以及 "SANA / FLUX 深度" specialist 的训练 target 来自旧 SNVC pack 的**逐图归一化相对深度**（见下文根因 2），而 NYU δ1 / AbsRel 按论文米制协议解码。因此这些行的米制深度分数衡量的是"相对深度监督 + 米制解码"的契约错配，**不是**模型学习绝对深度的能力；`(对齐)` 列是尺度对齐后的诊断值。Qwen T7 是否使用了同一批深度行须以其实际 manifest 为准。新公开数据管线（Hypersim 平面 z、TartanAir）全部为米制监督，并由 `Trainer` 开训前的 preflight 强制校验。
+
+**零样本口径（2026-10-22 复核标注）**：T1–T5、T13 的训练混合含 311 条 Cityscapes train 行和 232 条 Rea2Seg 行（见 `configs/experiments/sana_1600m_shared_baseline.yaml`），其 Cityscapes mIoU 与 ReasonSeg gIoU 是**域内**结果，不满足"训练阶段不使用被评基准数据"的严格零样本定义；是否泄漏 val 图像无法用现有记录证明。`build_qwen_baseline_manifest.py --protocol strict`（现为默认）会拒绝这类行，并在审计中写 `zero_shot_claim_allowed`。
 
 | Run | 状态 | 基座 | 配比 | 步数 | 末步学习率 | Cityscapes mIoU | RefCOCOg cIoU | NYU δ1 / AbsRel | NYU δ1 (对齐) | DIODE δ1 (对齐) | DIODE mean° | ReasonSeg gIoU | 共享 LoRA | 备注 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -240,15 +244,15 @@ GenAI-Bench 1600 条 prompt、ImgEdit 767 条指令保持「未做人类评」�
 | SANA 指代 | done | SANA-1600M | 仅 referring | | | | 0.143 | | | | | | 否 | 不是本控制配方 |
 | FLUX 语义 | done | FLUX.1-dev | 仅 semantic | 15000 | | | 0.098 | | | | | | 否 | 语义 LoRA 上的 cIoU，不是指代 specialist |
 | SANA 法向 | done | SANA-1600M | 仅 normal | | | | | | | | 24.96 | | 否 | |
-| SANA / FLUX 深度 | done | 见实验记录 | 仅 depth | 30000 | | | | 0.066 / 1.990 | 0.427 | 0.322 | | | 否 | 度量闸门失败（训练目标为相对灰度） |
-| T1 SANA uniform | done | SANA-1600M | uniform | 30000 | 1e-4 | 0.009–0.014 | 0.229 | 0.066 / 2.05 | 0.437 | 0.371 | 缺标注 | 0.209 | 是 | HF: `khazic/ovb-sana_1600m_shared_uniform` |
-| T2 SANA sqrt | done | SANA-1600M | sqrt | 30000 | 1e-4 | 0.012–0.015 | 0.220 | 0.067 / 1.99 | 0.453 | 0.345 | 缺标注 | 0.186 | 是 | T5 自动选出（差异在噪声内）；nuScenes δ1 0.055 / AbsRel 0.631；生成 proxy FID 388 / LPIPS 0.965 |
-| T3 SANA semantic 加重 | done | SANA-1600M | semantic 3:1:1:1 | 30000 | 1e-4 | 0.017 | 0.225 | 0.065 / 2.02 | 0.458 | 0.312 | 缺标注 | | 是 | Cityscapes 仍接近 0；HF: `khazic/ovb-sana_1600m_shared_semantic_heavy` |
-| T4 SANA depth 加重 | done | SANA-1600M | depth 3:1:1:1 | 30000 | 1e-4 | ~0.01 | 0.163 | 0.066 / 1.98 | 0.452 | 0.330 | 缺标注 | | 是 | 深度闸门失败；HF: `khazic/ovb-sana_1600m_shared_depth_heavy` |
-| T5 SANA sqrt @ 8k | done | SANA-1600M | sqrt | 8000 | 1e-4 | ~0.01 | 0.227 | 0.051 / 2.26 | 0.453 | 0.343 | 缺标注 | | 是 | 对比 30k 后 60k 记 `skip` |
-| T13 SANA Rea2Seg 等概率 | done | SANA-1600M | uniform (Rea2Seg 4类等权) | 30000 | 1e-4 | ~0.01 | 0.231 | 0.069 / 1.94 | 0.373 | 0.318 | 缺标注 | 0.193 | 是 | HF: `khazic/ovb-sana_1600m_shared_rea2seg_balanced` |
-| T7 Qwen-Image-2.1 uniform | doing | Qwen-Image-2.1 | uniform | 5000（已训满 30k，待评 30k） | 1e-4 | **0.235** | 待跑 | 0.130 / 1.37 (100张子集) | | | 缺标注 | | 是 | 5k 步已学会 Cityscapes 语义分割；HF: `khazic/ovb-qwen_image_21_shared_uniform` |
-| T7 Qwen-Image-2.1 sqrt | doing | Qwen-Image-2.1 | sqrt | 5000（6800步中断，存至6000） | 1e-4 | **0.237** | 待跑 | 0.147 / 1.45 (100张子集) | | | 缺标注 | | 是 | HF: `khazic/ovb-qwen_image_21_shared_sqrt` |
+| SANA / FLUX 深度 | 训练 done / 结论 done（相对深度监督） | 见实验记录 | 仅 depth | 30000 | | | | 0.066 / 1.990 | 0.427 | 0.322 | | | 否 | 度量闸门失败（训练目标为相对灰度，非米制监督） |
+| T1 SANA uniform | 训练 done / 结论 pending | SANA-1600M | uniform | 30000 | 1e-4 | 0.009–0.014 | 0.229 | 0.066 / 2.05 | 0.437 | 0.371 | 缺标注 | 0.209 | 是 | HF: `khazic/ovb-sana_1600m_shared_uniform` |
+| T2 SANA sqrt | 训练 done / 结论 pending | SANA-1600M | sqrt | 30000 | 1e-4 | 0.012–0.015 | 0.220 | 0.067 / 1.99 | 0.453 | 0.345 | 缺标注 | 0.186 | 是 | **候选**（T5 裁决因 DIODE 法向缺失不成立，差异在噪声内）；RefCOCOg / ReasonSeg 较 uniform 退步；nuScenes δ1 0.055 / AbsRel 0.631；生成 proxy FID 388 / LPIPS 0.965 |
+| T3 SANA semantic 加重 | 训练 done / 结论 pending | SANA-1600M | semantic 3:1:1:1 | 30000 | 1e-4 | 0.017 | 0.225 | 0.065 / 2.02 | 0.458 | 0.312 | 缺标注 | | 是 | Cityscapes 仍接近 0；HF: `khazic/ovb-sana_1600m_shared_semantic_heavy` |
+| T4 SANA depth 加重 | 训练 done / 结论 pending | SANA-1600M | depth 3:1:1:1 | 30000 | 1e-4 | ~0.01 | 0.163 | 0.066 / 1.98 | 0.452 | 0.330 | 缺标注 | | 是 | 深度闸门失败（相对深度监督）；HF: `khazic/ovb-sana_1600m_shared_depth_heavy` |
+| T5 SANA sqrt @ 8k | 训练 done / 结论 pending | SANA-1600M | sqrt | 8000 | 1e-4 | ~0.01 | 0.227 | 0.051 / 2.26 | 0.453 | 0.343 | 缺标注 | | 是 | 对比 30k 后 60k 记 `skip` |
+| T13 SANA Rea2Seg 等概率 | 训练 done / 结论 pending | SANA-1600M | uniform (Rea2Seg 4类等权) | 30000 | 1e-4 | ~0.01 | 0.231 | 0.069 / 1.94 | 0.373 | 0.318 | 缺标注 | 0.193 | 是 | HF: `khazic/ovb-sana_1600m_shared_rea2seg_balanced` |
+| T7 Qwen-Image-2.1 uniform | 训练 done (30k) / 结论 pending | Qwen-Image-2.1 | uniform | 5000（已训满 30k，待评 30k） | 1e-4 | **0.235** | 待跑 | 0.130 / 1.37 (100张子集) | | | 缺标注 | | 是 | 5k 步已学会 Cityscapes 语义分割；HF: `khazic/ovb-qwen_image_21_shared_uniform` |
+| T7 Qwen-Image-2.1 sqrt | 训练中断 (6k) / 结论 pending | Qwen-Image-2.1 | sqrt | 5000（6800步中断，存至6000） | 1e-4 | **0.237** | 待跑 | 0.147 / 1.45 (100张子集) | | | 缺标注 | | 是 | HF: `khazic/ovb-qwen_image_21_shared_sqrt` |
 | T8 FLUX.1-dev | blocked | FLUX.1-dev | — | — | — | — | — | — | — | — | — | — | 是 | CLIP 77 token 截断后 Cityscapes 19 类只剩 4 个 |
 
 ## 2026-10-20 异常根因定位与代码修复记录
