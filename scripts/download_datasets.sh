@@ -125,9 +125,12 @@ fetch_hf() {  # repo dest patterns...
 
 fetch_url() {  # url dest
   local url="$1" dest="$2" file
+  # basename of the URL path; Wayback Machine URLs embed the original URL, whose basename is kept.
   file="$dest/$(basename "${url%%\?*}")"
   if [[ -s $file && $DRY_RUN -eq 0 ]]; then log "  exists: $file"; return 0; fi
-  run curl -L --fail --retry 5 --retry-delay 5 -C - -o "$file" "$url"
+  # --retry-all-errors covers "connection reset"; --speed-* aborts stalls (<1 KB/s for 60 s) so a dead mirror fails fast
+  run curl -L --fail --retry 5 --retry-delay 5 --retry-all-errors --retry-connrefused -C - \
+    --speed-time 60 --speed-limit 1000 -o "$file" "$url"
 }
 
 coco2014_links() {  # dest: expose 2017 images under the 2014 names the RefCOCO refer files use
@@ -161,10 +164,19 @@ post_process() {  # post dest   (post may chain steps with '+', e.g. unzip_each+
   for post in "${steps[@]}"; do post_step "$post" "$dest" || return 1; done
 }
 
+refer_convert() {  # dest split_by : <root>/refer_parquet/<name> -> <root>/refer/<name>
+  local dest="$1" split_by="$2" name out
+  name="$(basename "$dest")"
+  out="$(dirname "$(dirname "$dest")")/refer/$name"
+  run "$PYTHON" "$ROOT/scripts/convert_refer_parquet.py" --input "$dest" --output "$out" --split-by "$split_by" --name "$name"
+}
+
 post_step() {
   local post="$1" dest="$2"
   case "$post" in
     coco2014_links) coco2014_links "$dest" ;;
+    refer_umd) refer_convert "$dest" umd ;;
+    refer_unc) refer_convert "$dest" unc ;;
     unzip|unzip_each)
       for z in "$dest"/*.zip "$dest"/raw/*.zip; do
         [[ -e $z ]] || continue

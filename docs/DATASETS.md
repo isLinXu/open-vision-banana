@@ -32,7 +32,7 @@ are kept and marked `*.extracted`, so re-running is idempotent and resumable.
 | `tasks` | subset of `depth, normal, semantic, instance, referring, generation` |
 | `source` | `ms` (ModelScope), `hf`, `url`, `manual` (login wall: the script prints instructions and skips) |
 | `include` | `;`-separated globs, or macros `@hypersim_scenes`, `@tartanair_chunks`, `@omniedit_shards` |
-| `post` | `unzip`, `untar`, `*_each`, `coco2014_links`, chainable with `+` |
+| `post` | `unzip`, `untar`, `*_each`, `coco2014_links`, `refer_umd` / `refer_unc`, chainable with `+` |
 
 `coco2014_links` exposes COCO 2017 images under the `train2014/COCO_train2014_*.jpg`
 names the RefCOCO `refer` files use (2017 is a re-split of 2014; image ids match).
@@ -47,10 +47,10 @@ names the RefCOCO `refer` files use (2017 is a re-split of 2014; image ids match
 | `coco2017-images` + `coco2017-instances` | instance | Fig. 3 one-class-at-a-time targets. | `scripts/build_instance_manifest.py --format coco --exclude-image-ids data/raw/refer/refcocog/refs(umd).p` |
 | `lvis-v1` | instance | 1203-class long tail on the same images. | `scripts/build_instance_manifest.py --format lvis ...` |
 | `coco-stuff` | semantic | 171 thing + stuff classes on COCO images. | `build_openvocab_semantic_manifest.py` + `--exclude-image-ids` |
-| `refcoco`, `refcoco+` | referring | Training expressions; images from `coco2017-images`. | `scripts/build_res_manifest.py` |
+| `refcoco`, `refcoco+` | referring | Training expressions from the ModelScope parquet mirrors (`swift/refcoco*`); the `refer_unc` post step rebuilds REFER `instances.json` + `refs(unc).p` with `scripts/convert_refer_parquet.py`. Images from `coco2017-images`. | `scripts/build_res_manifest.py` |
 | `omniedit` | generation (replay) | Edit triplets for the editing backbones (Section 2 mixing). | `scripts/build_generation_replay_manifest.py --kind edit` |
 | `blip3o-60k` | generation (replay) | T2I pairs; only for text-to-image backbones (the trainer rejects identity replay on editors). | `--kind t2i` |
-| `refcocog`, `reasonseg`, `nyu-depth-v2-labeled`, `genai-bench` | eval | Paper Tables 4–7 / Appendix D. `refs(umd).p` doubles as the exclusion list. | `scripts/evaluate_paper_benchmarks.py` |
+| `refcocog`, `reasonseg`, `nyu-depth-v2-labeled`, `genai-bench` | eval | Paper Tables 4–7 / Appendix D. `refcocog` is rebuilt from `swift/refcocog` (`refer_umd` post step: 42,226 / 2,573 / 5,023 refs = official UMD split); `refs(umd).p` doubles as the exclusion list. | `scripts/evaluate_paper_benchmarks.py` |
 | `kitti-depth`, `cityscapes` | eval, manual | Login walls. Cityscapes **train** in the mixture breaks the zero-shot claim for Table 2. | `scripts/setup_cityscapes_official.py` |
 
 Then assemble the training manifest:
@@ -75,3 +75,18 @@ PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_2
 | `thomas/SA-1B` | Class-agnostic masks; no category names for the Fig. 3 prompt. |
 | `OpenDataLab/Objects365` | Boxes only. |
 | `SOTA507/Mapillary_Vistas` | Login wall and tiny mirror; fetch from mapillary.com manually if a street-scene semantic source other than Cityscapes is wanted. |
+
+## Canary run (2026-10-22)
+
+A smoke test against the live sources with a 10 GB disk budget. Findings folded into the registry:
+
+| source | result | action |
+|:--|:--|:--|
+| ModelScope (`swift/refcocog`, `anyforge/lvis` val json) | OK, 2–5 MB/s, CLI and Python-API paths both exercised | — |
+| `bvisionweb1.cs.unc.edu` (REFER zips) | DNS no longer resolves | replaced by the parquet mirrors + `convert_refer_parquet.py`; Wayback copy exists but downloads at ~10 KB/s from CN |
+| `data.csail.mit.edu/.../ADEChallenge/` | 301 → 404 | path is now `.../ADEchallenge/` (lower-case c), https |
+| `calvin.inf.ed.ac.uk` (COCO-Stuff maps) | no response | maintainer mirror `calvin-vision.net` (HTTP 200, 659 MB) |
+| `images.cocodataset.org`, `horatio.cs.nyu.edu` | HTTP 200 | — |
+| `OpenDataLab/*` on ModelScope | not exercised (needs `modelscope login`) | — |
+
+`curl` now uses `--retry-all-errors --retry-connrefused` and aborts stalls below 1 KB/s for 60 s, so a dead mirror fails in about a minute instead of hanging.
