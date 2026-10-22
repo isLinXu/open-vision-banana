@@ -169,7 +169,8 @@ def sample_openvocab_semantic(
     area = label_map.size
     visible = [i for i in np.argsort(-counts) if counts[i] / area >= min_area_fraction]
     present_ids = visible[:max_present]
-    absent_pool = [i for i in range(len(class_names)) if counts[i] == 0]
+    # "" marks an unused label id (gap in the dataset's id space): never a distractor.
+    absent_pool = [i for i in range(len(class_names)) if counts[i] == 0 and class_names[i]]
     n_absent = rng.randint(0, min(max_absent, len(absent_pool)))
     absent_ids = rng.sample(absent_pool, n_absent)
 
