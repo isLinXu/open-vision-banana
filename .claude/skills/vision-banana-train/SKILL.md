@@ -147,7 +147,7 @@ PYTHONPATH=src python scripts/merge_multitask_manifest.py \
            data/prep/inst/instance.jsonl data/prep/res/pairs.jsonl data/prep/replay/omniedit.jsonl \
   --out data/merged/pairs.jsonl --val-percent 2
 PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl \
-  --output data/qwen_baseline/pairs.jsonl --data-root data/merged --min-cityscapes-share 0 \
+  --output data/qwen_baseline/pairs.jsonl --data-root data/merged \
   --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
 ```
 Read the two audit JSONs aloud to the user: `per_task_dropped` must be `{}`, every requested task needs both `train` and `val` counts, `rejected_benchmark_leak_rows` / `rejected_excluded_image_id_rows` show what the zero-shot rule removed, `rejected_non_metric_depth_rows` what failed the cube-edge check.

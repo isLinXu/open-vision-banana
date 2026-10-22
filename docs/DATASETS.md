@@ -65,7 +65,7 @@ python scripts/merge_multitask_manifest.py \
     --out data/merged/pairs.jsonl --val-percent 2
 python scripts/build_qwen_baseline_manifest.py \
     --base-manifest data/merged/pairs.jsonl --output data/qwen_baseline/pairs.jsonl \
-    --data-root data/merged --min-cityscapes-share 0 \
+    --data-root data/merged \
     --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
 PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml \
     --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline
