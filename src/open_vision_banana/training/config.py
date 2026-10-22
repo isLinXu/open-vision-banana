@@ -117,6 +117,11 @@ class TrainingConfig:
     device: str | None = None  # auto-detect if None
     resume: str | None = None  # checkpoint dir or its lora.pt
     resume_weights_only: bool = False  # LoRA only; fresh optimizer, schedule, step
+    # Manifest preflight (data/validation.validate_manifest_contract) runs before the
+    # backbone is loaded and refuses to train on contract errors (relative-depth
+    # prompts on metric targets, legends longer than the text encoder, FFN-only LoRA).
+    # Skipping is possible but recorded in effective_config.json.
+    skip_preflight: bool = False
 
     def get_dtype(self) -> torch.dtype:
         """Convert dtype string to torch.dtype."""
@@ -303,7 +308,7 @@ _YAML_SECTIONS = {
     "training": {"steps": "steps", "batch_size": "batch_size", "gradient_accumulation": "grad_accum",
                  "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
                  "seed": "seed",
-                 "gradient_checkpointing": "gradient_checkpointing"},
+                 "gradient_checkpointing": "gradient_checkpointing", "skip_preflight": "skip_preflight"},
     "optimizer": {"weight_decay": "weight_decay", "beta1": "adam_beta1", "beta2": "adam_beta2",
                   "eps": "adam_eps"},
     "scheduler": {"type": "scheduler", "warmup_ratio": "warmup_ratio", "warmup_steps": "warmup_steps"},

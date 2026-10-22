@@ -549,6 +549,7 @@ class Trainer:
         logger.info("Output: %s", config.output_dir)
 
         # Data errors must fail before downloading/loading a large backbone.
+        self.preflight_report = self._run_preflight()
         self.train_loader, self.val_loader = self._build_datasets()
         model_layout = edit_latent_layout(resolve_model_config(config.model_name))
         if model_layout == "qwen21":
@@ -621,6 +622,11 @@ class Trainer:
         effective["trainable_parameter_names"] = [
             n for n, p in self.backend.peft_model.named_parameters() if p.requires_grad
         ]
+        effective["preflight"] = {
+            "skipped": bool(config.skip_preflight),
+            "errors": [i.message for i in self.preflight_report.errors] if self.preflight_report else [],
+            "warnings": [i.message for i in self.preflight_report.warnings] if self.preflight_report else [],
+        }
         effective["sampling_rank"] = self.dist.rank
         effective["sampling_world_size"] = self.dist.world_size
         effective["sampling_probabilities"] = getattr(
@@ -1068,6 +1074,40 @@ class Trainer:
         if cfg_dropout_rate > 0 and hasattr(self.backend, "apply_cfg_dropout"):
             return self.backend.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
         return text_cond
+
+    def _run_preflight(self):
+        """Manifest contract audit (review item 2b): refuse to train on contract errors.
+
+        Runs ``validate_manifest_contract`` on the training manifest with this run's
+        model, LoRA targets and depth settings. Errors abort unless
+        ``skip_preflight`` is set, in which case they are still written to
+        ``effective_config.json`` so the run is auditable.
+        """
+        config = self.config
+        if not config.pair_manifest:
+            return None
+        from ..data.validation import validate_manifest_contract
+
+        report = validate_manifest_contract(
+            config.pair_manifest,
+            data_root=config.data_dir,
+            model_name=config.model_name,
+            lora_targets=config.lora_targets,
+            depth_colormap=(config.depth_colormaps or ["cube_edge"])[0],
+            depth_curve=config.depth_curve,
+        )
+        for issue in report.warnings:
+            logger.warning("preflight: %s", issue.message)
+        if report.errors:
+            summary = "\n".join(f"  - {i.message}" for i in report.errors)
+            if config.skip_preflight:
+                logger.error("preflight found %d error(s) but skip_preflight is set:\n%s", len(report.errors), summary)
+            else:
+                raise ValueError(
+                    f"Manifest preflight failed with {len(report.errors)} error(s); fix the data/config or set "
+                    f"training.skip_preflight (recorded in effective_config.json):\n{summary}"
+                )
+        return report
 
     def _img2img_mask(self, batch_tasks: list[str], edit_layout: str | None, device) -> torch.Tensor:
         """Per-sample flow source: True = start from input latents, False = from noise.

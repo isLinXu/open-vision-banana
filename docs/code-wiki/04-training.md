@@ -11,6 +11,7 @@ scripts/train.py
   └─ training.config.load_config(yaml) + apply_cli_overrides(argv)  → TrainingConfig（dataclass）
        └─ Trainer(config)
             ├─ ModelBackend(model_name, dtype, quantize, lora_*)      model_registry 加载 + PEFT LoRA
+            ├─ _run_preflight()                                       validate_manifest_contract；error 则拒绝开训
             ├─ _build_datasets()                                      ManifestVisionDataset × 任务 → ConcatDataset
             │     └─ TaskWeightedSampler(strategy, vision_ratio)      一个全局抽样流，按 rank 分片
             ├─ AdamW(trainable_params, lr, weight_decay, betas, eps)  + warmup/cosine scheduler
@@ -43,6 +44,7 @@ scripts/train.py
 | flow | `img2img_flow`, `flow_sigma`, `logit_normal`, `flow_shift`, `min_snr`, `min_snr_gamma`, `cfg_dropout_rate` | SANA 用 linear_flow + shift；FLUX/SD3/Qwen 用 rectified flow |
 | loss | `task_loss_weights`, `depth_edge_aux_*`, `normal_angular_loss_weight` | 辅助损失需要 `backend.decode_latents` |
 | checkpoint | `output_dir`, `save_every`, `eval_every`, `log_every`, `ema_enabled`, `ema_decay`, `ema_warmup`, `resume`, `resume_weights_only` | |
+| training | `skip_preflight` | 绕过 manifest 契约审计（error 仍记录到 `effective_config.json`） |
 | logging | `wandb`, `wandb_project`, `wandb_run_name`, `device` | |
 
 论文**写明**的只有数据侧契约（深度公式、prompt 字符串、Appendix A）；optimizer、lr、schedule、ratio、rank、分辨率全是仓库选择，`configs/experiments/*_paper_aligned.yaml` 的注释逐项标注了这一点。

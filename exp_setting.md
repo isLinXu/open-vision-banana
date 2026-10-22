@@ -58,7 +58,7 @@ then merge with `--val-percent 2` and audit with `--exclude-image-ids "data/raw/
 | `data/qwen_baseline/pairs.audit.json` | `rejected_non_metric_depth_rows` | 0 |
 | | `rejected_benchmark_leak_rows`, `rejected_excluded_image_id_rows` | reported, and the only RefCOCOg rows removed are its val/test |
 | `data/prep/hypersim/manifest.json` | `metric_depth.convention` / `tasks.normal_backfacing_frames` | `planar_z_depth` / 0 |
-| `python -c "...validate_manifest_contract(...)"` (see SKILL Stage 3.4) | summary | no `ERROR` lines |
+| `python -c "...validate_manifest_contract(...)"` (see SKILL Stage 3.4; the Trainer re-runs it at launch and aborts on errors) | summary | no `ERROR` lines |
 
 ### E0.2 Train 500 steps
 ```bash

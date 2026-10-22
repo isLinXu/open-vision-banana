@@ -257,3 +257,30 @@ def test_manifest_dataset_per_task_behaviours(tmp_path: Path):
     # 5. val split carries no augmentation: a val depth row stays cube_edge with the metric prompt
     val_depth = ManifestVisionDataset(manifest, RES, "val", {"depth"}, data_root=root, depth_colormaps=["viridis"])
     assert "viridis" not in val_depth[0]["prompt"] and "metric depth" in val_depth[0]["prompt"]
+
+
+def test_preflight_blocks_relative_depth_prompt_and_skip_is_recorded(tmp_path: Path, monkeypatch):
+    """Review item 2b: the depth-unit contract is enforced at the training entry, not only by a side script."""
+    manifest = _six_task_manifest(tmp_path)
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    for row in rows:
+        if row["task"] == "depth":
+            row["prompt"] = "Generate a relative depth map with per-image normalization."
+    bad = manifest.with_name("bad.jsonl")
+    bad.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+    monkeypatch.setattr(trainer_module, "ModelBackend", lambda **kwargs: FakeBackend(**kwargs))
+    common = dict(
+        model_name="sana-1600m", device="cpu", dtype="float32", resolution=RES, batch_size=2, steps=2, lr=1e-3,
+        data_dir=str(bad.parent), pair_manifest=str(bad), tasks=["depth", "generation"], vision_ratio=0.5,
+        num_workers=0, save_every=100, eval_every=100, log_every=1, warmup_steps=0, wandb=False,
+    )
+    with pytest.raises(ValueError, match="Manifest preflight failed"):
+        Trainer(TrainingConfig(output_dir=str(tmp_path / "blocked"), **common))
+    assert not (tmp_path / "blocked" / "effective_config.json").exists()
+
+    trainer = Trainer(TrainingConfig(output_dir=str(tmp_path / "skipped"), skip_preflight=True, **common))
+    effective = json.loads((tmp_path / "skipped" / "effective_config.json").read_text())
+    assert effective["preflight"]["skipped"] is True
+    assert any("relative" in e.lower() or "metric" in e.lower() for e in effective["preflight"]["errors"]), effective["preflight"]
+    assert trainer.preflight_report is not None and trainer.preflight_report.errors

@@ -158,7 +158,7 @@ PYTHONPATH=src python -c "
 from open_vision_banana.data.validation import validate_manifest_contract
 print(validate_manifest_contract('data/qwen_baseline/pairs.jsonl', model_name='qwen-image-2.1', data_root='data/qwen_baseline').summary())"
 ```
-It flags: no attention LoRA targets, text-length truncation of semantic legends, relative-depth prompts on metric targets, grayscale/non-cube-edge depth, multi-prompt tasks that break `uniform_task_prompts`. Fix before launching.
+It flags: no attention LoRA targets, text-length truncation of semantic legends, relative-depth prompts on metric targets, grayscale/non-cube-edge depth, multi-prompt tasks that break `uniform_task_prompts`. The same audit is **enforced inside `Trainer`** at launch (errors abort; `training.skip_preflight: true` bypasses and records the errors in `effective_config.json`) — running it here just gives you the report before the backbone download.
 
 ---
 
