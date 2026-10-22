@@ -258,6 +258,7 @@ class ManifestVisionDataset(Dataset):
                     except ValueError as exc:
                         raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 mapping = row.get("mapping") if mapped == "semantic" else None
+                background = row.get("background_color") if mapped == "instance" else None
                 self.samples.append(
                     {
                         "image_path": str(img_path),
@@ -269,6 +270,10 @@ class ManifestVisionDataset(Dataset):
                         # Builders record the exact legend; it beats re-parsing the prompt.
                         **({"mapping": {k: tuple(int(c) for c in v) for k, v in mapping.items()}}
                            if isinstance(mapping, dict) and mapping else {}),
+                        # Fig. 3 instance targets may use a non-black background; the Appendix A
+                        # decoder must be told, so it rides along to the batch (review item 6b).
+                        **({"background_color": tuple(int(c) for c in background)}
+                           if isinstance(background, (list, tuple)) and len(background) == 3 else {}),
                         **{
                             key: row[key]
                             for key in ("expression", "encoding", "sample_id", "source_dataset")
@@ -433,6 +438,8 @@ class ManifestVisionDataset(Dataset):
         }
         if s["task"] == "referring":
             item.update({key: s[key] for key in ("expression", "encoding", "sample_id", "source_dataset") if key in s})
+        if s["task"] == "instance" and "background_color" in s:
+            item["background_color"] = s["background_color"]
         return item
 
     def _augment_semantic(
@@ -494,6 +501,9 @@ def _collate_fn(batch: list[dict]) -> dict:
         for key in ("expression", "encoding", "sample_id", "source_dataset"):
             if any(key in b for b in batch):
                 result[key] = [b.get(key) for b in batch]
+    if any(b["task"] == "instance" for b in batch):
+        # default black where a row did not record one, so evaluators can index per sample
+        result["background_color"] = [tuple(b.get("background_color", (0, 0, 0))) for b in batch]
     return result
 
 
