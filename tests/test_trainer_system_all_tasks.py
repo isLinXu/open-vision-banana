@@ -38,6 +38,7 @@ from open_vision_banana.model_registry import get_model_config  # noqa: E402
 from open_vision_banana.res_manifest import build_res_manifest  # noqa: E402
 from open_vision_banana.training.config import TrainingConfig  # noqa: E402
 from open_vision_banana.training.flow_matching import FlowScheduler  # noqa: E402
+from open_vision_banana.training.model_backend import ModelBackend  # noqa: E402
 from open_vision_banana.training.trainer import ManifestVisionDataset, Trainer  # noqa: E402
 from scripts.build_generation_replay_manifest import build_generation_replay_manifest  # noqa: E402
 from scripts.build_instance_manifest import build_instance_manifest  # noqa: E402
@@ -75,6 +76,7 @@ class FakeBackend:
         self.seen_prompts: list[str] = []
         self.seen_tasks: list[str] = []
         self.forward_calls = 0
+        self.img2img_masks: list[torch.Tensor] = []
 
     @torch.no_grad()
     def encode_image(self, images: torch.Tensor) -> torch.Tensor:
@@ -86,12 +88,13 @@ class FakeBackend:
         return torch.nn.functional.interpolate(latents[:, :3], scale_factor=8, mode="nearest")
 
     def prepare_flow_batch(self, target_latents, input_latents, batch_size, img2img_flow=True, flow_sigma=0.0, logit_normal=True, flow_shift=1.0):
-        timesteps = torch.rand(batch_size)
-        noise = torch.randn_like(target_latents)
-        start = input_latents if img2img_flow else noise
-        t = timesteps.view(-1, 1, 1, 1)
-        noisy = (1 - t) * start + t * target_latents
-        return {"timesteps": timesteps, "noisy_latents": noisy, "velocity_target": target_latents - start, "noise": noise}
+        # Same per-sample contract as ModelBackend.prepare_flow_batch (bool or [B] mask).
+        out = ModelBackend.prepare_flow_batch(
+            self, target_latents, input_latents, batch_size, img2img_flow=img2img_flow,
+            flow_sigma=flow_sigma, logit_normal=logit_normal, flow_shift=flow_shift,
+        )
+        self.img2img_masks.append(out["img2img_mask"].clone())
+        return out
 
     def encode_text(self, prompts, device, dtype):
         self.seen_prompts.extend(prompts)
@@ -144,6 +147,15 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
         return backend
 
     monkeypatch.setattr(trainer_module, "ModelBackend", make_backend)
+    mask_calls: list[tuple[list[str], list[bool]]] = []
+    original_mask = Trainer._img2img_mask
+
+    def recording_mask(self, batch_tasks, edit_layout, device):
+        mask = original_mask(self, batch_tasks, edit_layout, device)
+        mask_calls.append((list(batch_tasks), mask.tolist()))
+        return mask
+
+    monkeypatch.setattr(Trainer, "_img2img_mask", recording_mask)
     config = TrainingConfig(
         model_name="sana-1600m",  # text-to-image layout: T2I generation rows are allowed
         device="cpu", dtype="float32", resolution=RES, batch_size=2, grad_accum=1, steps=12, lr=1e-3,
@@ -173,6 +185,12 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
 
     # all six tasks were trained on and the prompts the model saw carry their contracts
     assert backend.forward_calls >= 12
+    # review item 6a: on a T2I backbone (sana) with img2img_flow=True, generation rows must start
+    # from noise *per sample*; with batch 2 and vision_ratio 0.5 some batches are mixed.
+    assert mask_calls and len(backend.img2img_masks) == len(mask_calls)  # training + validation batches
+    for tasks_in_batch, mask in mask_calls:
+        assert mask == [t != "generation" for t in tasks_in_batch], (tasks_in_batch, mask)
+    assert any(len(set(t)) > 1 for t, _ in mask_calls), "fixture should produce at least one mixed batch"
     prompts = backend.seen_prompts
     assert any("metric depth" in p for p in prompts)
     assert any("surface normal" in p for p in prompts)
@@ -239,3 +257,30 @@ def test_manifest_dataset_per_task_behaviours(tmp_path: Path):
     # 5. val split carries no augmentation: a val depth row stays cube_edge with the metric prompt
     val_depth = ManifestVisionDataset(manifest, RES, "val", {"depth"}, data_root=root, depth_colormaps=["viridis"])
     assert "viridis" not in val_depth[0]["prompt"] and "metric depth" in val_depth[0]["prompt"]
+
+
+def test_preflight_blocks_relative_depth_prompt_and_skip_is_recorded(tmp_path: Path, monkeypatch):
+    """Review item 2b: the depth-unit contract is enforced at the training entry, not only by a side script."""
+    manifest = _six_task_manifest(tmp_path)
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    for row in rows:
+        if row["task"] == "depth":
+            row["prompt"] = "Generate a relative depth map with per-image normalization."
+    bad = manifest.with_name("bad.jsonl")
+    bad.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+    monkeypatch.setattr(trainer_module, "ModelBackend", lambda **kwargs: FakeBackend(**kwargs))
+    common = dict(
+        model_name="sana-1600m", device="cpu", dtype="float32", resolution=RES, batch_size=2, steps=2, lr=1e-3,
+        data_dir=str(bad.parent), pair_manifest=str(bad), tasks=["depth", "generation"], vision_ratio=0.5,
+        num_workers=0, save_every=100, eval_every=100, log_every=1, warmup_steps=0, wandb=False,
+    )
+    with pytest.raises(ValueError, match="Manifest preflight failed"):
+        Trainer(TrainingConfig(output_dir=str(tmp_path / "blocked"), **common))
+    assert not (tmp_path / "blocked" / "effective_config.json").exists()
+
+    trainer = Trainer(TrainingConfig(output_dir=str(tmp_path / "skipped"), skip_preflight=True, **common))
+    effective = json.loads((tmp_path / "skipped" / "effective_config.json").read_text())
+    assert effective["preflight"]["skipped"] is True
+    assert any("relative" in e.lower() or "metric" in e.lower() for e in effective["preflight"]["errors"]), effective["preflight"]
+    assert trainer.preflight_report is not None and trainer.preflight_report.errors

@@ -258,6 +258,7 @@ class ManifestVisionDataset(Dataset):
                     except ValueError as exc:
                         raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 mapping = row.get("mapping") if mapped == "semantic" else None
+                background = row.get("background_color") if mapped == "instance" else None
                 self.samples.append(
                     {
                         "image_path": str(img_path),
@@ -269,6 +270,10 @@ class ManifestVisionDataset(Dataset):
                         # Builders record the exact legend; it beats re-parsing the prompt.
                         **({"mapping": {k: tuple(int(c) for c in v) for k, v in mapping.items()}}
                            if isinstance(mapping, dict) and mapping else {}),
+                        # Fig. 3 instance targets may use a non-black background; the Appendix A
+                        # decoder must be told, so it rides along to the batch (review item 6b).
+                        **({"background_color": tuple(int(c) for c in background)}
+                           if isinstance(background, (list, tuple)) and len(background) == 3 else {}),
                         **{
                             key: row[key]
                             for key in ("expression", "encoding", "sample_id", "source_dataset")
@@ -433,6 +438,8 @@ class ManifestVisionDataset(Dataset):
         }
         if s["task"] == "referring":
             item.update({key: s[key] for key in ("expression", "encoding", "sample_id", "source_dataset") if key in s})
+        if s["task"] == "instance" and "background_color" in s:
+            item["background_color"] = s["background_color"]
         return item
 
     def _augment_semantic(
@@ -494,6 +501,10 @@ def _collate_fn(batch: list[dict]) -> dict:
         for key in ("expression", "encoding", "sample_id", "source_dataset"):
             if any(key in b for b in batch):
                 result[key] = [b.get(key) for b in batch]
+    if any("background_color" in b for b in batch):
+        # instance rows with a recorded Fig. 3 background; rows without one default to black
+        # so evaluators can index per sample. Batches without any such row keep the legacy keys.
+        result["background_color"] = [tuple(b.get("background_color", (0, 0, 0))) for b in batch]
     return result
 
 
@@ -538,13 +549,15 @@ class Trainer:
         )
         logger.info("Output: %s", config.output_dir)
 
-        # Data errors must fail before downloading/loading a large backbone.
+        # Data errors must fail before downloading/loading a large backbone: structural
+        # errors first (missing manifest, identity replay), then the contract preflight.
         self.train_loader, self.val_loader = self._build_datasets()
         model_layout = edit_latent_layout(resolve_model_config(config.model_name))
         if model_layout == "qwen21":
             qwen_image21.check_training_config(config)
         if model_layout is not None:
             _reject_identity_generation_replay(self.train_loader.dataset, config.model_name)
+        self.preflight_report = self._run_preflight()
 
         # ── Model backend ──────────────────────────────────────────────
         self.backend = ModelBackend(
@@ -611,6 +624,11 @@ class Trainer:
         effective["trainable_parameter_names"] = [
             n for n, p in self.backend.peft_model.named_parameters() if p.requires_grad
         ]
+        effective["preflight"] = {
+            "skipped": bool(config.skip_preflight),
+            "errors": [i.message for i in self.preflight_report.errors] if self.preflight_report else [],
+            "warnings": [i.message for i in self.preflight_report.warnings] if self.preflight_report else [],
+        }
         effective["sampling_rank"] = self.dist.rank
         effective["sampling_world_size"] = self.dist.world_size
         effective["sampling_probabilities"] = getattr(
@@ -1059,6 +1077,49 @@ class Trainer:
             return self.backend.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
         return text_cond
 
+    def _run_preflight(self):
+        """Manifest contract audit (review item 2b): refuse to train on contract errors.
+
+        Runs ``validate_manifest_contract`` on the training manifest with this run's
+        model, LoRA targets and depth settings. Errors abort unless
+        ``skip_preflight`` is set, in which case they are still written to
+        ``effective_config.json`` so the run is auditable.
+        """
+        config = self.config
+        if not config.pair_manifest:
+            return None
+        from ..data.validation import validate_manifest_contract
+
+        report = validate_manifest_contract(
+            config.pair_manifest,
+            data_root=config.data_dir,
+            model_name=config.model_name,
+            lora_targets=config.lora_targets,
+            depth_colormap=(config.depth_colormaps or ["cube_edge"])[0],
+            depth_curve=config.depth_curve,
+        )
+        for issue in report.warnings:
+            logger.warning("preflight: %s", issue.message)
+        if report.errors:
+            summary = "\n".join(f"  - {i.message}" for i in report.errors)
+            if config.skip_preflight:
+                logger.error("preflight found %d error(s) but skip_preflight is set:\n%s", len(report.errors), summary)
+            else:
+                raise ValueError(
+                    f"Manifest preflight failed with {len(report.errors)} error(s); fix the data/config or set "
+                    f"training.skip_preflight (recorded in effective_config.json):\n{summary}"
+                )
+        return report
+
+    def _img2img_mask(self, batch_tasks: list[str], edit_layout: str | None, device) -> torch.Tensor:
+        """Per-sample flow source: True = start from input latents, False = from noise.
+
+        Shared by training and validation so both see the same objective.
+        """
+        if edit_layout is not None or not self.config.img2img_flow:
+            return torch.zeros(len(batch_tasks), dtype=torch.bool, device=device)
+        return torch.tensor([t != "generation" for t in batch_tasks], dtype=torch.bool, device=device)
+
     def _edit_layout(self) -> str | None:
         """Source-image layout of the training forward, or None for a text-to-image backbone."""
         from .edit_forward import edit_latent_layout
@@ -1088,14 +1149,15 @@ class Trainer:
         # ── Flow matching ──────────────────────────────────────────────
         edit_layout = self._edit_layout()
         batch_tasks = batch.get("task", ["depth"] * batch_size)
-        is_pure_generation = all(t == "generation" for t in batch_tasks)
         flow_batch = self.backend.prepare_flow_batch(
             target_latents,
             input_latents,
             batch_size,
-            # Editors see the source as conditioning and generate the target from noise;
-            # pure T2I generation replay also starts from Gaussian noise.
-            img2img_flow=config.img2img_flow and edit_layout is None and not is_pure_generation,
+            # Per sample: editors see the source as conditioning and generate the target
+            # from noise; T2I generation-replay rows always start from Gaussian noise
+            # (their input is the target image itself); vision rows on a T2I backbone
+            # start from the input latents when img2img_flow is on.
+            img2img_flow=self._img2img_mask(batch_tasks, edit_layout, self.device),
             flow_sigma=config.flow_sigma,
             logit_normal=config.logit_normal,
             flow_shift=config.flow_shift,
@@ -1229,13 +1291,15 @@ class Trainer:
             if input_latents.shape != target_latents.shape:
                 input_latents = F.adaptive_avg_pool2d(input_latents, target_latents.shape[-2:])
 
-            # Flow matching
+            # Flow matching (same per-sample source rule as training)
             edit_layout = self._edit_layout()
             flow_batch = self.backend.prepare_flow_batch(
                 target_latents,
                 input_latents,
                 batch_size,
-                img2img_flow=self.config.img2img_flow and edit_layout is None,
+                img2img_flow=self._img2img_mask(
+                    batch.get("task", ["depth"] * batch_size), edit_layout, self.device
+                ),
                 flow_sigma=self.config.flow_sigma,
                 logit_normal=self.config.logit_normal,
                 flow_shift=self.config.flow_shift,

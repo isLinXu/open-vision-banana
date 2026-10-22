@@ -270,7 +270,10 @@ def build_instance_manifest(
                 "prompt": prompt,
                 "background_color": list(background),
                 "category": name,
-                "num_instances": len(anns),
+                # instances that kept >= 1 visible pixel after occlusion (what the target shows),
+                # not the raw annotation count (review item 6: metadata must match the render)
+                "num_instances": visible,
+                "num_annotations": len(anns),
                 "source_dataset": fmt,
                 "image_id": image_id,
             }

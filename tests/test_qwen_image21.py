@@ -262,7 +262,9 @@ def test_build_qwen_baseline_manifest_filters_gray_depth_and_upsamples_cityscape
     base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
 
     out = tmp_path / "out.jsonl"
-    audit = build_qwen_baseline_manifest(base, out, data_root=tmp_path, min_cityscapes_share=0.50)
+    # Cityscapes upsampling is an in-domain feature; strict refuses it (tested below)
+    audit = build_qwen_baseline_manifest(base, out, data_root=tmp_path, min_cityscapes_share=0.50, protocol="in_domain")
+    assert audit["protocol"] == "in_domain" and audit["zero_shot_claim_allowed"] is False
     assert audit["rejected_non_metric_depth_rows"] == 1
     assert audit["task_split_counts"]["depth/train"] == 1
     assert audit["cityscapes_train_initial"] == 1
@@ -296,15 +298,43 @@ def test_build_qwen_baseline_manifest_enforces_zero_shot_protocol(tmp_path: Path
     assert strict["rejected_benchmark_leak_rows"] == {"vkitti": 1, "nyu": 1, "refcocog": 1}
     assert strict["task_split_counts"] == {"depth/train": 1}
 
+    with pytest.raises(ValueError, match="does not permit allow_benchmarks"):
+        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", data_root=tmp_path, allow_benchmarks=["vkitti"])
     relaxed = build_qwen_baseline_manifest(
-        base, tmp_path / "relaxed.jsonl", data_root=tmp_path, allow_benchmarks=["vkitti"]
+        base, tmp_path / "relaxed.jsonl", data_root=tmp_path, allow_benchmarks=["vkitti"], protocol="in_domain"
     )
     assert relaxed["rejected_benchmark_leak_rows"] == {"nyu": 1, "refcocog": 1}
     assert relaxed["task_split_counts"]["depth/train"] == 2
     # "virtual_kitti/" also contains "kitti/": an allowed corpus must not be re-flagged as KITTI
     assert benchmark_leak({"target": "virtual_kitti/Scene01/depth/d.png"}, {"vkitti"}) is None
     with pytest.raises(ValueError, match="allow_benchmarks"):
-        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", allow_benchmarks=["bogus"])
+        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", allow_benchmarks=["bogus"], protocol="in_domain")
+
+
+def test_strict_protocol_rejects_cityscapes_train_rows_and_manifest(tmp_path: Path):
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    Image.new("RGB", (16, 16), (50, 60, 70)).save(img_dir / "in.png")
+    rows = [
+        {"task": "semantic", "input": "cityscapes/leftImg8bit/train/aachen/aachen_000000_000019_leftImg8bit.png",
+         "target": "images/in.png", "split": "train", "prompt": SEMANTIC_SEGMENTATION_PROMPT},
+        {"task": "semantic", "input": "images/in.png", "target": "images/in.png", "split": "train",
+         "prompt": 'Generate a semantic segmentation visualization image, using this color mapping: {"wall": <255, 0, 0>}.'},
+    ]
+    base = tmp_path / "base.jsonl"
+    base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    strict = build_qwen_baseline_manifest(base, tmp_path / "s.jsonl", data_root=tmp_path)
+    assert strict["rejected_benchmark_leak_rows"] == {"cityscapes": 1}
+    assert strict["task_split_counts"] == {"semantic/train": 1}
+    with pytest.raises(ValueError, match="min_cityscapes_share == 0"):
+        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", data_root=tmp_path, min_cityscapes_share=0.5)
+    with pytest.raises(ValueError, match="Cityscapes train manifest"):
+        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", data_root=tmp_path, cityscapes_manifest=base)
+    in_domain = build_qwen_baseline_manifest(base, tmp_path / "d.jsonl", data_root=tmp_path, protocol="in_domain")
+    assert in_domain["rejected_benchmark_leak_rows"] == {} and in_domain["task_split_counts"] == {"semantic/train": 2}
+    assert in_domain["zero_shot_claim_allowed"] is False
+    with pytest.raises(ValueError, match="protocol must be"):
+        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", protocol="loose")
 
 
 def test_qwen_paper_aligned_configs_parse_cleanly():
@@ -603,7 +633,10 @@ def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path:
     base = tmp_path / "base.jsonl"
     base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
 
-    no_ids = build_qwen_baseline_manifest(base, tmp_path / "a.jsonl", data_root=tmp_path, min_cityscapes_share=0.0)
+    # strict: COCO rows without an exclusion source are refused outright (review item 1b)
+    with pytest.raises(ValueError, match="carry COCO image ids but no exclude_image_ids"):
+        build_qwen_baseline_manifest(base, tmp_path / "a.jsonl", data_root=tmp_path)
+    no_ids = build_qwen_baseline_manifest(base, tmp_path / "a.jsonl", data_root=tmp_path, protocol="in_domain")
     assert no_ids["task_split_counts"] == {"semantic/train": 3}
     assert no_ids["rejected_benchmark_leak_rows"] == {}  # plain COCO paths are not a benchmark pattern
 
@@ -613,6 +646,10 @@ def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path:
     assert with_ids["rejected_excluded_image_id_rows"] == 2
     assert with_ids["excluded_image_id_count"] == 2
     assert with_ids["task_split_counts"] == {"semantic/train": 1}
+    assert with_ids["protocol"] == "strict" and with_ids["zero_shot_claim_allowed"] is True
+    assert with_ids["evaluation_image_id_overlap_by_source"] == {str(refs): 0}
+    assert with_ids["train_val_coco_image_id_overlap"] == 0
+    assert len(with_ids["manifest_sha256"]) == 64
     kept = [json.loads(line) for line in (tmp_path / "b.jsonl").read_text().splitlines()]
     assert kept[0]["input"].endswith("000000000008.jpg")
 

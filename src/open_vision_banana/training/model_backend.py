@@ -761,26 +761,44 @@ class ModelBackend:
         target_latents: torch.Tensor,
         input_latents: torch.Tensor,
         batch_size: int,
-        img2img_flow: bool = True,
+        img2img_flow: bool | torch.Tensor = True,
         flow_sigma: float = 0.0,
         logit_normal: bool = True,
         flow_shift: float = 1.0,
     ) -> dict[str, torch.Tensor]:
         """Sample timesteps, create noisy latents and velocity targets.
 
+        ``img2img_flow`` may be a bool for the whole batch or a ``[B]`` bool tensor
+        selecting *per sample* whether the flow starts from the (optionally
+        noise-mixed) input latents or from pure Gaussian noise. Mixed batches of
+        vision rows (img2img) and generation-replay rows (noise -> image) need the
+        per-sample form; a batch-wide flag would give the replay rows a zero
+        velocity target because their input and target are the same image.
+
         Returns dict with keys:
             - "timesteps": [B]
             - "noisy_latents": [B, C, H, W]
             - "velocity_target": [B, C, H, W]
             - "noise": [B, C, H, W]
+            - "img2img_mask": [B] bool, which samples started from the input
         """
         noise = torch.randn_like(target_latents)
 
-        # Determine source latents
-        if img2img_flow and input_latents is not None:
-            source_latents = input_latents
+        # Determine source latents (per sample)
+        if isinstance(img2img_flow, torch.Tensor):
+            mask = img2img_flow.to(device=target_latents.device, dtype=torch.bool).reshape(-1)
+            if mask.numel() != target_latents.shape[0]:
+                raise ValueError(f"img2img_flow mask has {mask.numel()} entries for batch {target_latents.shape[0]}")
+        else:
+            mask = torch.full((target_latents.shape[0],), bool(img2img_flow), device=target_latents.device)
+        if input_latents is None:
+            mask = torch.zeros_like(mask)
+        if mask.any():
+            img_source = input_latents
             if flow_sigma > 0:
-                source_latents = (1 - flow_sigma) * source_latents + flow_sigma * noise
+                img_source = (1 - flow_sigma) * img_source + flow_sigma * noise
+            view = mask.view(-1, *([1] * (target_latents.dim() - 1)))
+            source_latents = torch.where(view, img_source.to(noise.dtype), noise)
         else:
             source_latents = noise
 
@@ -809,6 +827,7 @@ class ModelBackend:
             "noisy_latents": noisy_latents,
             "velocity_target": velocity_target,
             "noise": noise,
+            "img2img_mask": mask,
         }
 
     # ── CFG dropout ────────────────────────────────────────────────────────

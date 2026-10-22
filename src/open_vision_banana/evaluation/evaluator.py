@@ -70,6 +70,23 @@ from .semantic import evaluate_semantic
 logger = logging.getLogger(__name__)
 
 
+def _decode_instances_with_background(seg_decoder, pred_rgb, target_rgb, backgrounds):
+    """Run ``decode_instance`` per sample with that sample's recorded background colour.
+
+    ``backgrounds`` is the collated ``background_color`` list (one RGB tuple per
+    sample) or ``None`` for the historical all-black convention.
+    """
+    if not backgrounds:
+        return seg_decoder.decode_instance(pred_rgb), seg_decoder.decode_instance(target_rgb)
+    preds: list = []
+    gts: list = []
+    for index, background in enumerate(backgrounds):
+        color = tuple(int(c) for c in background) if background is not None else (0, 0, 0)
+        preds.extend(seg_decoder.decode_instance(pred_rgb[index : index + 1], background_color=color))
+        gts.extend(seg_decoder.decode_instance(target_rgb[index : index + 1], background_color=color))
+    return preds, gts
+
+
 def _batch_bool(value: Any, index: int, default: bool) -> bool:
     """Read a scalar or batched presence label without constraining collate type."""
     if value is None:
@@ -446,8 +463,11 @@ class VisionEvaluator:
                 metrics = evaluate_semantic(pred_labels, gt_labels, num_classes if num_classes is not None else len(cmap))
 
             elif task == "instance":
-                pred_batch = seg_decoder.decode_instance(pred_rgb)
-                gt_batch = seg_decoder.decode_instance(target_rgb)
+                # Fig. 3 targets may use a non-black background (named / rgb / hex prompts);
+                # decoding with the default black would split the background into instances.
+                pred_batch, gt_batch = _decode_instances_with_background(
+                    seg_decoder, pred_rgb, target_rgb, batch.get("background_color")
+                )
                 if len(pred_batch) != len(gt_batch):
                     raise RuntimeError("Predicted and target instance batches have different sizes")
 

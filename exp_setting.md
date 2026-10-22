@@ -33,6 +33,25 @@ Pin one GPU: `export CUDA_VISIBLE_DEVICES=<idx>`; use the env's absolute python 
 
 ---
 
+## E-1 — Close the evidence gaps on existing checkpoints (evaluation only, ~1 GPU-day)
+
+Review items 3–5 (EXPERIMENT_REVIEW_2026-10-22): the old table has training-complete runs
+without conclusion-complete evaluations. No training here; everything evaluates checkpoints that
+already exist on HF.
+
+| job | checkpoint | what is missing | command |
+|:--|:--|:--|:--|
+| Qwen 30k full eval | `khazic/ovb-qwen_image_21_shared_uniform/checkpoint-30000_final` | only 5k mid-run numbers exist | `evaluate_paper_benchmarks.py --model-name qwen-image-2.1 --lora-path <ckpt> --cityscapes-root ... --nyu-root ... --refcocog-root ... --reasonseg-root ... --diode-root ...` |
+| DIODE normals for T1/T2 | `khazic/ovb-sana_1600m_shared_{uniform,sqrt}` | the third decision metric of the T5 rule | same with `--model-name sana-1600m --diode-root data/raw/diode` (needs `diode-val-normals`) |
+| Post-fix SANA control | retrain `sana_1600m_shared_baseline.yaml` (attention LoRA + 300 tokens) with the **same** manifest as T1 | old 0.009–0.017 mIoU predates the fix | rebuild the T1 manifest with `build_qwen_baseline_manifest.py --protocol in_domain` (it contains Cityscapes train), then `train.py --config configs/experiments/sana_1600m_shared_baseline.yaml`, then the same eval |
+
+Decision rule stays the pre-registered one: `sqrt` replaces `uniform` only if ≥ 2 of {Cityscapes mIoU,
+NYU δ1, DIODE mean°} improve and none regresses. Until the DIODE column is filled, `sqrt` is a
+**candidate**; status in `ABLATION_BASELINE.md` is written as `训练 done / 结论 pending`. Old SNVC
+depth numbers stay labelled "relative-depth supervision"; they are not metric-depth evidence.
+The SANA shared runs trained on Cityscapes train + Rea2Seg → their Cityscapes / ReasonSeg numbers are
+in-domain, and a rebuilt manifest must use `--protocol in_domain` explicitly (strict is the default).
+
 ## E0 — Pipeline smoke on real data (½ day)
 
 Goal: prove download → prepare → audit → 500 training steps → inference → one metric
@@ -58,7 +77,7 @@ then merge with `--val-percent 2` and audit with `--exclude-image-ids "data/raw/
 | `data/qwen_baseline/pairs.audit.json` | `rejected_non_metric_depth_rows` | 0 |
 | | `rejected_benchmark_leak_rows`, `rejected_excluded_image_id_rows` | reported, and the only RefCOCOg rows removed are its val/test |
 | `data/prep/hypersim/manifest.json` | `metric_depth.convention` / `tasks.normal_backfacing_frames` | `planar_z_depth` / 0 |
-| `python -c "...validate_manifest_contract(...)"` (see SKILL Stage 3.4) | summary | no `ERROR` lines |
+| `python -c "...validate_manifest_contract(...)"` (see SKILL Stage 3.4; the Trainer re-runs it at launch and aborts on errors) | summary | no `ERROR` lines |
 
 ### E0.2 Train 500 steps
 ```bash
@@ -209,6 +228,18 @@ Weights only: fresh AdamW / warmup / step counter; LoRA rank and targets must ma
 2. Add one row to the results table in `docs/ABLATION_BASELINE.md`: run id, data tier, steps, the T2/T4/T6/T7/App. D numbers with their protocol, and a one-line finding.
 3. Never report `_aligned` depth, FID/LPIPS, or raw-query ReasonSeg as paper-protocol numbers.
 4. If a run changes the data distribution, lr or schedule, start from `--resume-weights-only`, not a full-state resume.
+
+## Fixed since the 2026-10-22 review (so E0+ are not affected)
+
+- Mixed-batch generation replay now starts from noise per sample (train and validation); the old
+  batch-wide switch gave T2I replay rows a zero velocity target on T2I backbones.
+- Instance `background_color` rides from manifest row → batch → `decode_instance`; non-black Fig. 3
+  backgrounds are decoded correctly in evaluation. `num_instances` = visible instances.
+- `build_qwen_baseline_manifest.py` defaults to `--protocol strict` (Cityscapes rejected, COCO rows need
+  `--exclude-image-ids`, no upsampling); the audit records `zero_shot_claim_allowed`, `manifest_sha256`
+  and per-source evaluation-id overlap.
+- `Trainer` runs `validate_manifest_contract` at launch and aborts on contract errors
+  (`training.skip_preflight` records them instead).
 
 ## Known gaps to keep in mind
 

@@ -147,7 +147,7 @@ PYTHONPATH=src python scripts/merge_multitask_manifest.py \
            data/prep/inst/instance.jsonl data/prep/res/pairs.jsonl data/prep/replay/omniedit.jsonl \
   --out data/merged/pairs.jsonl --val-percent 2
 PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl \
-  --output data/qwen_baseline/pairs.jsonl --data-root data/merged --min-cityscapes-share 0 \
+  --output data/qwen_baseline/pairs.jsonl --data-root data/merged \
   --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
 ```
 Read the two audit JSONs aloud to the user: `per_task_dropped` must be `{}`, every requested task needs both `train` and `val` counts, `rejected_benchmark_leak_rows` / `rejected_excluded_image_id_rows` show what the zero-shot rule removed, `rejected_non_metric_depth_rows` what failed the cube-edge check.
@@ -158,7 +158,7 @@ PYTHONPATH=src python -c "
 from open_vision_banana.data.validation import validate_manifest_contract
 print(validate_manifest_contract('data/qwen_baseline/pairs.jsonl', model_name='qwen-image-2.1', data_root='data/qwen_baseline').summary())"
 ```
-It flags: no attention LoRA targets, text-length truncation of semantic legends, relative-depth prompts on metric targets, grayscale/non-cube-edge depth, multi-prompt tasks that break `uniform_task_prompts`. Fix before launching.
+It flags: no attention LoRA targets, text-length truncation of semantic legends, relative-depth prompts on metric targets, grayscale/non-cube-edge depth, multi-prompt tasks that break `uniform_task_prompts`. The same audit is **enforced inside `Trainer`** at launch (errors abort; `training.skip_preflight: true` bypasses and records the errors in `effective_config.json`) — running it here just gives you the report before the backbone download.
 
 ---
 

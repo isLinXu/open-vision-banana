@@ -115,7 +115,7 @@ PYTHONPATH=src python scripts/build_generation_replay_manifest.py --kind edit --
 PYTHONPATH=src python scripts/merge_multitask_manifest.py --inputs data/prep/*/pairs.jsonl data/prep/inst/instance.jsonl \
     data/prep/replay/omniedit.jsonl --out data/merged/pairs.jsonl --val-percent 2
 PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl \
-    --output data/qwen_baseline/pairs.jsonl --data-root data/merged --min-cityscapes-share 0 \
+    --output data/qwen_baseline/pairs.jsonl --data-root data/merged \
     --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
 ```
 

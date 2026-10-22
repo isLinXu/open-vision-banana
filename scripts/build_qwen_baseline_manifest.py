@@ -9,13 +9,14 @@ Solves the two data bottlenecks identified in the SNVC shared-baseline ablation:
 2. Semantic class/domain balance: Cityscapes was only 311 / 4460 (6.97%) of
    semantic train rows in the raw SNVC pack. This builder either merges an
    official Cityscapes-19 manifest or deterministically upsamples Cityscapes
-   train rows to reach ``--min-cityscapes-share`` (default 0.50), while keeping
+   train rows to reach ``--min-cityscapes-share`` (``--protocol in_domain`` only; default 0), while keeping
    validation splits strictly un-duplicated.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import re
@@ -34,6 +35,8 @@ from open_vision_banana.data.manifest import resolve_manifest_path  # noqa: E402
 from open_vision_banana.inference.prompt import PromptBuilder  # noqa: E402
 from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT  # noqa: E402
 
+PROTOCOLS = ("strict", "in_domain")
+
 TASK_ALIASES = {
     "segmentation": "semantic",
     "seg": "semantic",
@@ -46,6 +49,9 @@ TASK_ALIASES = {
 # paths come from these corpora are rejected unless the caller explicitly allows
 # a benchmark (e.g. Cityscapes *train* when the run is not claimed as zero-shot).
 ZERO_SHOT_BENCHMARK_PATTERNS: dict[str, tuple[str, ...]] = {
+    # Table 2 evaluates Cityscapes val; its *train* split is only admissible in the
+    # in-domain protocol (review item 1: the strict table used to omit it).
+    "cityscapes": ("cityscapes", "leftimg8bit", "gtfine"),
     "vkitti": ("vkitti", "virtual_kitti", "virtualkitti"),
     "nyu": ("nyu_depth", "nyuv2", "nyu-depth", "nyu/"),
     "ibims": ("ibims",),
@@ -184,19 +190,31 @@ def build_qwen_baseline_manifest(
     data_root: Path | None = None,
     metric_depth_manifest: Path | None = None,
     cityscapes_manifest: Path | None = None,
-    min_cityscapes_share: float = 0.50,
+    min_cityscapes_share: float = 0.0,
     filter_non_metric_depth: bool = True,
     seed: int = 42,
     allow_benchmarks: tuple[str, ...] | list[str] = (),
     exclude_image_ids: tuple[Path, ...] | list[Path] = (),
+    protocol: str = "strict",
 ) -> dict:
     """Build a cleaned, rebalanced manifest and return an audit summary.
 
-    ``exclude_image_ids`` lists files of COCO image ids (see
-    ``load_excluded_image_ids``) whose rows are dropped regardless of path. RefCOCOg
-    UMD val images live inside COCO train2014, so a COCO-derived semantic/instance
-    source passes the path audit yet still leaks evaluation images without this.
+    ``protocol``:
+
+    * ``"strict"`` (default) — the paper's zero-shot transfer protocol. No evaluated
+      benchmark may contribute training rows (Cityscapes train included),
+      ``allow_benchmarks`` and ``cityscapes_manifest`` are rejected,
+      ``min_cityscapes_share`` must be 0, and if any row carries a COCO image id an
+      ``exclude_image_ids`` source is **required** (RefCOCOg UMD val/test images live
+      inside COCO train2014 and pass the path audit).
+    * ``"in_domain"`` — training on benchmark-related data is allowed and recorded;
+      results built from such a manifest must not be reported as zero-shot.
+
+    The audit records the protocol, the manifest hash and, per evaluation-id source,
+    how many kept rows still intersect it (always 0 after a successful build).
     """
+    if protocol not in PROTOCOLS:
+        raise ValueError(f"protocol must be one of {sorted(PROTOCOLS)}")
     if not 0.0 <= min_cityscapes_share < 1.0:
         raise ValueError("min_cityscapes_share must be in [0, 1)")
     unknown = sorted(set(allow_benchmarks) - set(ZERO_SHOT_BENCHMARK_PATTERNS))
@@ -206,6 +224,16 @@ def build_qwen_baseline_manifest(
             f"choose from {sorted(ZERO_SHOT_BENCHMARK_PATTERNS)}"
         )
     allowed = set(allow_benchmarks)
+    if protocol == "strict":
+        if allowed:
+            raise ValueError("protocol='strict' does not permit allow_benchmarks; use protocol='in_domain'")
+        if cityscapes_manifest is not None:
+            raise ValueError("protocol='strict' does not permit a Cityscapes train manifest; use protocol='in_domain'")
+        if min_cityscapes_share > 0.0:
+            raise ValueError("protocol='strict' requires min_cityscapes_share == 0")
+    else:
+        # in-domain runs may train on Cityscapes train; keep every other benchmark rejected
+        allowed.add("cityscapes")
 
     rng = random.Random(seed)
     anchor = data_root.resolve() if data_root else base_manifest.resolve()
@@ -217,6 +245,13 @@ def build_qwen_baseline_manifest(
     rejected_benchmark: dict[str, int] = {}
     excluded_ids = load_excluded_image_ids(exclude_image_ids)
     rejected_image_ids = 0
+    if protocol == "strict" and not excluded_ids:
+        coco_rows = sum(1 for r in base_rows if coco_image_id_from_path(r.get("input", "")) is not None)
+        if coco_rows:
+            raise ValueError(
+                f"protocol='strict': {coco_rows} rows carry COCO image ids but no exclude_image_ids source "
+                "was given; pass the RefCOCOg refs(umd).p (or protocol='in_domain' to waive)"
+            )
 
     def leaks(row: dict) -> bool:
         nonlocal rejected_image_ids
@@ -299,8 +334,27 @@ def build_qwen_baseline_manifest(
         key = f"{row.get('task')}/{row.get('split')}"
         task_split_counts[key] = task_split_counts.get(key, 0) + 1
 
+    # Per-source intersection audit (review item 1c): kept rows vs each evaluation-id source,
+    # and train-vs-val image-id overlap inside the produced manifest.
+    per_source_overlap: dict[str, int] = {}
+    for source in exclude_image_ids:
+        ids = load_excluded_image_ids([source])
+        per_source_overlap[str(source)] = sum(
+            1 for r in kept_rows if (coco_image_id_from_path(r.get("input", "")) in ids)
+        )
+    train_ids = {coco_image_id_from_path(r.get("input", "")) for r in kept_rows if r.get("split") == "train"}
+    val_ids = {coco_image_id_from_path(r.get("input", "")) for r in kept_rows if r.get("split") != "train"}
+    train_ids.discard(None)
+    val_ids.discard(None)
+    manifest_sha256 = hashlib.sha256(output_manifest.read_bytes()).hexdigest()
+
     audit = {
         "output_manifest": str(output_manifest.resolve()),
+        "manifest_sha256": manifest_sha256,
+        "protocol": protocol,
+        "zero_shot_claim_allowed": protocol == "strict",
+        "evaluation_image_id_overlap_by_source": per_source_overlap,
+        "train_val_coco_image_id_overlap": len(train_ids & val_ids),
         "total_rows": len(kept_rows),
         "task_split_counts": task_split_counts,
         "rejected_non_metric_depth_rows": rejected_depth,
@@ -328,7 +382,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-root", type=Path, default=None)
     parser.add_argument("--metric-depth-manifest", type=Path, default=None)
     parser.add_argument("--cityscapes-manifest", type=Path, default=None)
-    parser.add_argument("--min-cityscapes-share", type=float, default=0.50)
+    parser.add_argument(
+        "--protocol",
+        choices=PROTOCOLS,
+        default="strict",
+        help="strict = paper zero-shot (default; no benchmark data, image-id exclusion required for COCO rows); "
+        "in_domain = allow Cityscapes train / --allow-benchmark and record that the run is not zero-shot",
+    )
+    parser.add_argument(
+        "--min-cityscapes-share", type=float, default=0.0,
+        help="in_domain only: upsample Cityscapes train to this share of semantic train rows (0 = off)",
+    )
     parser.add_argument("--no-filter-non-metric-depth", action="store_true")
     parser.add_argument(
         "--allow-benchmark",
@@ -365,6 +429,7 @@ def main() -> int:
         seed=args.seed,
         allow_benchmarks=args.allow_benchmark,
         exclude_image_ids=args.exclude_image_ids,
+        protocol=args.protocol,
     )
     print(json.dumps(audit, indent=2))
     return 0

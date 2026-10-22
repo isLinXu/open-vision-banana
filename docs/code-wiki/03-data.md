@@ -65,10 +65,10 @@ training.trainer.ManifestVisionDataset   每任务一个实例 → ConcatDataset
 [`build_qwen_baseline_manifest.py`](../../scripts/build_qwen_baseline_manifest.py)：
 - 零样本：`ZERO_SHOT_BENCHMARK_PATTERNS` 路径匹配 **加** `--exclude-image-ids refs(umd).p` 的 COCO image-id 匹配（RefCOCOg UMD val/test 的图像就在 COCO train2014 里，光靠路径拦不住）。
 - 米制深度：`is_valid_metric_cube_edge_target` 回环检查，相对深度 / 灰度 / 非 cube-edge 一律剔除。
-- `--min-cityscapes-share` 用于旧实验；公开数据管线传 `0`。
+- `--protocol strict`（默认）= 论文零样本：Cityscapes train 入拦截表、COCO 行必须给 `--exclude-image-ids`、禁止 Cityscapes 上采样；`--protocol in_domain` 允许这些并在审计里记录 `zero_shot_claim_allowed: false`。
 - 产物 `pairs.audit.json` 记录各类 rejected 计数和每任务 train/val 数。
 
-开训前最后一道闸：`data.validation.validate_manifest_contract(manifest, model_name=..., data_root=...)`，检查 LoRA 目标是否含注意力、语义图例是否会被文本编码器截断、深度 prompt 与 target 是否矛盾、`uniform_task_prompts` 冲突等。
+开训前最后一道闸：`data.validation.validate_manifest_contract(manifest, model_name=..., data_root=...)`，检查 LoRA 目标是否含注意力、语义图例是否会被文本编码器截断、深度 prompt 与 target 是否矛盾、`uniform_task_prompts` 冲突等。`Trainer.__init__` 在加载底座之前**强制**运行同一审计（`_run_preflight`）：有 error 直接拒绝开训；`training.skip_preflight: true` 可绕过，但 error 会原样写进 `effective_config.json`。
 
 ## 5. 训练期数据加载（`ManifestVisionDataset`）
 
