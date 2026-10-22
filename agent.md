@@ -71,8 +71,11 @@ export WANDB_API_KEY=<your-key>  # Only for W&B logging
 ### Key Paths
 | Item | Path |
 |---|---|
-| Project root | `/media/linxu/thinkHub/Thinking-face/open-vision-banana` |
+| Project root | the repository checkout (examples below use `/media/linxu/thinkHub/Thinking-face/open-vision-banana`; substitute your own) |
 | Source code | `src/open_vision_banana/` |
+| Dataset registry | `configs/datasets/sources.tsv` (one line per source; `scripts/download_datasets.sh` reads it) |
+| Raw downloads / prepared data | `data/raw/` (default `DATA_ROOT`) / `data/prep/`, `data/merged/`, `data/qwen_baseline/` |
+| Data pipeline guide | `docs/DATASETS.md` |
 | Training configs | `configs/` |
 | Training output | `output/<run_name>/` |
 | Scripts | `scripts/` |
@@ -81,9 +84,50 @@ export WANDB_API_KEY=<your-key>  # Only for W&B logging
 
 ---
 
-## 3. Training
+## 3. Data Pipeline (download → prepare → merge → audit)
 
-### 3.1 Unified Training Framework (Recommended)
+The paper's five tasks plus generation replay come from public sources listed in
+`configs/datasets/sources.tsv` (`group=train|eval|replay`; `eval` rows are paper
+benchmarks and are never pulled by `--group train`). Full table and per-source
+commands: `docs/DATASETS.md`.
+
+```bash
+# 1. fetch (ModelScope / HF / URL; login-walled sets print instructions)
+bash scripts/download_datasets.sh --list
+HYPERSIM_SCENES="ai_001_001 ai_001_002" OMNIEDIT_SHARDS=2 bash scripts/download_datasets.sh --group train
+bash scripts/download_datasets.sh --group eval
+
+# 2. prepare, one script per source (all write manifest-relative pairs.jsonl)
+PYTHONPATH=src python scripts/prepare_hypersim.py --source data/raw/hypersim --output data/prep/hypersim \
+    --tasks depth,normal,semantic,instance            # ray distance -> planar z; normal_cam; NYU40; instances
+PYTHONPATH=src python scripts/prepare_tartanair.py --source data/raw/tartanair --output data/prep/tartanair
+PYTHONPATH=src python scripts/build_openvocab_semantic_manifest.py --images data/raw/ade20k/ADEChallengeData2016/images/training \
+    --labels data/raw/ade20k/ADEChallengeData2016/annotations/training --classes configs/ade20k_150_classes.json \
+    --source-name ade20k --label-offset 1 --ignore-index -1 --out-dir data/prep/ade20k
+PYTHONPATH=src python scripts/build_instance_manifest.py --annotations data/raw/coco2017/annotations/instances_train2017.json \
+    --images-dir data/raw/coco2017/train2017 --targets-dir data/prep/inst/targets --output data/prep/inst/instance.jsonl \
+    --data-root data/prep/inst --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
+PYTHONPATH=src python scripts/build_res_manifest.py --annotations-root data/raw/refer --image-root data/raw/coco2017/train2014 --output-dir data/prep/res
+PYTHONPATH=src python scripts/build_generation_replay_manifest.py --kind edit --preset omniedit --records data/raw/omniedit/data \
+    --images-dir data/prep/replay/images --data-root data/prep/replay --output data/prep/replay/omniedit.jsonl
+
+# 3. merge (rebases paths, gives every task a val slice) and 4. audit (zero-shot + metric depth)
+PYTHONPATH=src python scripts/merge_multitask_manifest.py --inputs data/prep/*/pairs.jsonl data/prep/inst/instance.jsonl \
+    data/prep/replay/omniedit.jsonl --out data/merged/pairs.jsonl --val-percent 2
+PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl \
+    --output data/qwen_baseline/pairs.jsonl --data-root data/merged --min-cityscapes-share 0 \
+    --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
+```
+
+Rules the pipeline enforces (do not bypass them in ad-hoc scripts):
+- **Zero-shot**: no evaluated benchmark enters training — path patterns (`ZERO_SHOT_BENCHMARK_PATTERNS`) *and* COCO image ids (RefCOCOg UMD val/test live inside COCO train2014). Cityscapes **train** in the mixture breaks the Table 2 zero-shot claim.
+- **Metric depth only**: targets must be cube-edge metric PNGs (`is_valid_metric_cube_edge_target`); Hypersim `depth_meters` is ray distance and is converted to planar z by default.
+- **Contracts**: semantic rows carry their exact `mapping`; instance targets are black-background Fig. 3 renders; referring is the Fig. 4 (c)/(d) white/black prompt; generation replay for instruction editors must be edit pairs (the Trainer rejects identity rows).
+- **Tests that guard the chain**: `tests/test_pipeline_smoke_all_tasks.py` (scripts → merge → audit → `ManifestVisionDataset` batches for all six tasks) and `tests/test_trainer_system_all_tasks.py` (the real `Trainer` end-to-end with a CPU fake backend). Any new source must pass both.
+
+## 4. Training
+
+### 4.1 Unified Training Framework (Recommended)
 
 The project provides a **unified multi-model training framework** via `scripts/train.py`.
 This replaces the legacy model-specific scripts (`train_sana_512.py`, `train_flux.py`).
@@ -113,6 +157,24 @@ scripts/train.py
 | `TrainingLosses` | `training/losses.py` | Flow MSE + Min-SNR weighting + depth/normal aux losses |
 | `TrainingCallbacks` | `training/callbacks.py` | W&B sync, checkpoint save, best-model tracking |
 | `Trainer` | `training/trainer.py` | Gradient accumulation, EMA, validation loop |
+
+#### Paper-aligned recipe (recommended)
+```bash
+PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml \
+  --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline --wandb
+```
+`qwen_image_21_paper_aligned.yaml` / `qwen_image_edit_paper_aligned.yaml`: six tasks
+(`depth, normal, semantic, instance, referring, generation`), `vision_ratio: 0.5`
+(the paper only says the vision share is "very low"), multi-colormap depth
+augmentation, four Fig. 2 semantic prompt styles with 50 % colour remapping,
+aspect-preserving crops, rsLoRA r32/α64, AdamW 1e-4 (optimizer block is a repo
+choice, recorded in `effective_config.json`). Qwen-Image-2.1 needs `batch_size: 1`
+(raise `gradient_accumulation`) and a resolution that is a multiple of 32.
+
+Continuing from an earlier LoRA on **new data**: set `checkpoint.resume` to the
+checkpoint and `checkpoint.resume_weights_only: true` (fresh optimizer / schedule /
+step; the LoRA rank and target modules must match). Plain `resume` restores the
+full state for an interrupted run.
 
 #### SANA Training Example
 ```bash
@@ -154,7 +216,7 @@ PYTHONPATH=src python scripts/train.py \
   --batch-size 2 --resolution 256
 ```
 
-### 3.2 Legacy Training Scripts
+### 4.2 Legacy Training Scripts
 
 Preserved for backward compatibility. NOT recommended for new experiments.
 
@@ -168,7 +230,7 @@ PYTHONPATH=src python scripts/train_flux.py \
   --config configs/flux_3task_full_clean.yaml --wandb
 ```
 
-### 3.3 Hardware-Specific Launch
+### 4.3 Hardware-Specific Launch
 
 | GPU | VRAM | Command |
 |---|---|---|
@@ -179,7 +241,7 @@ PYTHONPATH=src python scripts/train_flux.py \
 | RTX 4090 | 24GB | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
 | MPS (Apple) | Unified | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
 
-### 3.4 Training Output Structure
+### 4.4 Training Output Structure
 
 Expected layout (created by `TrainingCallbacks.on_checkpoint`):
 
@@ -197,11 +259,14 @@ output/<run_name>/
 └── wandb/                       # W&B run directory (if --wandb)
 ```
 
-### 3.5 Available Config Files
+### 4.5 Available Config Files
 
 | Config | Model | Tasks | Notes |
 |---|---|---|---|
-| `sana_1600m_3task_full_clean.yaml` | SANA-1600M | depth+normal+seg | Clean 3-task |
+| `experiments/qwen_image_21_paper_aligned.yaml` | Qwen-Image-2.1 | depth+normal+semantic+instance+referring+generation | **Recommended**; paper-aligned recipe, see above |
+| `experiments/qwen_image_edit_paper_aligned.yaml` | Qwen-Image-Edit-2509 | same six | Editing backbone; replay must be edit pairs |
+| `experiments/qwen_image_21_shared_baseline.yaml` / `_shared_smoke.yaml` | Qwen-Image-2.1 | depth+normal+semantic+referring | Vision-only ablation baseline / smoke |
+| `sana_1600m_3task_full_clean.yaml` | SANA-1600M | depth+normal+seg | Clean 3-task (legacy T2I backbone) |
 | `sana_1600m_5task.yaml` | SANA-1600M | depth+normal+seg | SNVC-50M dataset (named "5task" historically, 3 tasks active) |
 | `flux_3task_full_clean.yaml` | FLUX.1-dev (12B) | depth+normal+seg | Quantized 4-bit |
 | `sana_snvc50m_3task.yaml` | SANA-1600M | 3 tasks | SNVC-50M dataset |
@@ -210,9 +275,9 @@ output/<run_name>/
 
 ---
 
-## 4. Inference
+## 5. Inference
 
-### 4.1 Python API
+### 5.1 Python API
 
 ```python
 from open_vision_banana.inference.pipeline import VisionBanana
@@ -233,7 +298,7 @@ result = model.predict(image=input_tensor, task="semantic", class_color_map=colo
 result = model.predict(image=input_tensor, task="referring", expression="the red car")
 ```
 
-### 4.2 CLI Inference
+### 5.2 CLI Inference
 
 ```bash
 # Single image
@@ -260,22 +325,22 @@ PYTHONPATH=src python scripts/infer_sana_512.py \
   --num-inference-steps 20 --output-dir output/infer_sana
 ```
 
-### 4.3 Supported Tasks for Inference
+### 5.3 Supported Tasks for Inference
 
 | Task | CLI `--task` | Required Args | Output Keys | E2E Verified |
 |---|---|---|---|---|
 | Depth | `depth` | — | `rgb_output`, `depth` | ✅ |
 | Normal | `normal` | — | `rgb_output`, `normal` | ✅ |
 | Semantic Seg | `semantic` | `--class-map` (optional) | `rgb_output`, `mask` | ✅ |
-| Instance Seg | `instance` | `--object-name` | `rgb_output`, `instances` | ⚠️ Code exists, limited testing |
-| Referring Seg | `referring` | `--expression` (required) | `rgb_output`, `mask` | ⚠️ Code exists, limited testing |
+| Instance Seg | `instance` | `--object-name` | `rgb_output`, `instances` | ✅ Decoder + training data pipeline tested (Appendix A round trips); no released checkpoint |
+| Referring Seg | `referring` | `--expression` (required) | `rgb_output`, `mask` | ✅ Fig. 4 contract shared by data/inference/eval; RefCOCOg cIoU 0.16–0.23 measured on early LoRAs |
 | Edge | `edge` | — | `rgb_output`, `edge_mask` | ⚠️ Mapper code, not training-verified |
 | Optical Flow | `flow` | — | `rgb_output`, `flow` | ⚠️ Mapper code, not training-verified |
 | Keypoint | `keypoint` | — | `rgb_output`, `keypoints` | ⚠️ Mapper code, not training-verified |
 | Object Detection | `object_detection` | — | `rgb_output`, `bboxes` | ⚠️ Mapper code, not training-verified |
 | Depth Edge | `depth_edge` | — | `rgb_output`, `edge_mask` | ⚠️ Mapper code, not training-verified |
 
-### 4.4 Inference Optimization Presets
+### 5.4 Inference Optimization Presets
 
 | Preset | VRAM | Speed | Quality | Key Options |
 |---|---|---|---|---|
@@ -287,9 +352,9 @@ PYTHONPATH=src python scripts/infer_sana_512.py \
 
 ---
 
-## 5. Evaluation
+## 6. Evaluation
 
-### 5.1 CLI Evaluation
+### 6.1 CLI Evaluation
 
 ```bash
 # Evaluate depth on a dataset
@@ -318,7 +383,7 @@ PYTHONPATH=src python scripts/evaluate.py \
   --max-batches 5
 ```
 
-### 5.2 Python Evaluation API
+### 6.2 Python Evaluation API
 
 ```python
 from open_vision_banana.evaluation.evaluator import VisionEvaluator
@@ -347,7 +412,23 @@ metrics = evaluator.evaluate(
 # edge:      F1, precision, recall, ODS
 ```
 
-### 5.3 Evaluation Task → Dataset Mapping
+### 6.3 Evaluation Task → Dataset Mapping
+
+Paper benchmarks (`scripts/evaluate_paper_benchmarks.py`; `--instance-decoding key=value`
+overrides the Appendix A decoder for ablations). Downloaded layouts via
+`bash scripts/download_datasets.sh --group eval`; login-walled sets print instructions.
+
+| Paper table | Benchmark | Dataset class | Registry row / source |
+|---|---|---|---|
+| T2 | Cityscapes val (19 cls, mIoU) | `CityscapesSegDataset` | `cityscapes` (manual) + `setup_cityscapes_official.py` |
+| T3 | SA-Co/Gold (cgF1, Gemini 3.1 Flash-Lite presence) | `SACoInstanceDataset` | `saco-gold` (HF gated, manual) |
+| T4 | RefCOCOg UMD val (cIoU) | `RefCOCOgDataset(protocol="umd")` | `refcocog` (parquet → REFER) |
+| T5 | ReasonSeg val (gIoU, Gemini 2.5 Pro rewrite) | `ReasonSegDataset` | `reasonseg` |
+| T6 | NYU / iBims-1 / ETH3D / DIODE-Indoor / KITTI / nuScenes depth | `NYUDepthDataset`, `IBimsDepthDataset`, `ETH3DDataset`, `DIODEDataset`, `KITTIDataset`, `nuScenesDataset` | `nyu-depth-v2-*`, `ibims1` (manual), `eth3d-dslr-*`, `diode-val`, `kitti-depth` (manual), `nuscenes` (manual) |
+| T7 | NYUv2 / DIODE-indoor / ScanNet / VKitti normals | `NYUNormalDataset`, `DIODENormalDataset`, `ScanNetNormalDataset`, `VirtualKITTINormalDataset` | `nyu-normals` (manual), `diode-val-normals`, `scannet-normals` (manual), `vkitti2` (manual; normals must be derived from depth) |
+| App. D | GenAI-Bench / ImgEdit-Bench (paper: human win rate; repo: FID/LPIPS proxy only) | `GenAIBenchDataset`, `ImgEditDataset` | `genai-bench`, `imgedit-bench` |
+
+Legacy `scripts/evaluate.py --task` keys:
 
 | `--task` | Dataset Key | Expected Data Format |
 |---|---|---|
@@ -365,7 +446,7 @@ metrics = evaluator.evaluate(
 
 ---
 
-## 6. Key Source Code Architecture
+## 7. Key Source Code Architecture
 
 ```
 src/open_vision_banana/
@@ -397,6 +478,13 @@ src/open_vision_banana/
 │   ├── normal_aux_loss.py       # Normal angular loss
 │   └── sana_flow.py             # Min-SNR weight computation
 │
+├── data/                        # Dataset adapters + pipeline helpers
+│   ├── hypersim.py              # normal_cam / NYU40 / instance channels -> paper RGB targets
+│   ├── depth_geometry.py        # Hypersim ray distance -> planar z (60° HFOV focal rule)
+│   ├── instance_palette.py      # ≥60-apart instance colours shared by COCO/LVIS + Hypersim builders
+│   ├── openvocab_semantic.py    # Fig. 2 prompt styles, sampler, parse_prompt_mapping
+│   └── res_contract.py / res_dataset.py  # binary RES rows
+├── referring_contract.py        # Fig. 4 (c)/(d) template shared by data, inference, evaluation
 ├── evaluation/                  # Metrics for all 10 tasks
 │   ├── evaluator.py             # VisionEvaluator (unified runner)
 │   ├── depth.py, normal.py, semantic.py, instance.py, ...
@@ -409,7 +497,7 @@ src/open_vision_banana/
 
 ---
 
-## 7. Model Registry
+## 8. Model Registry
 
 The `model_registry.py` is the central abstraction for multi-model support.
 
@@ -440,7 +528,9 @@ from open_vision_banana.model_registry import (
 
 ---
 
-## 8. Data Preparation
+## 9. Data Preparation (legacy helpers)
+
+The current pipeline is Section 3; this section keeps the RES-specific guide and the older per-dataset helpers.
 
 ### RES manifests and evaluation
 
@@ -460,14 +550,14 @@ python scripts/download_data.py --dataset hypersim-depth --output data/hypersim/
 # Validate before training
 python scripts/validate_dataset.py --data-path data/hypersim_depth/ --task depth
 
-# Build manifest datasets (for training)
+# Legacy manifest builders (SNVC-50M is no longer the recommended source; see Section 3)
 python scripts/build_v3_dataset.py          # Build v3 multi-task dataset
 python scripts/build_snvc50m_manifest.py    # Build SNVC-50M manifest
 ```
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 The independent `RES Contract` workflow runs on Python 3.10–3.12 for paths used by RES (or by manual dispatch), without model downloads or private local data. It checks RES lint/format/types, source builds, training conditioning, inference and native evaluation; `.coveragerc-res` measures the new RES protocol/data modules only. Use `.github/workflows/res.yml` to reproduce these checks locally. RES work should preserve other tasks' loading and metric behavior and leave general CI, performance drivers and unrelated tests unchanged; existing whole-repository failures are reported separately.
 
@@ -488,7 +578,7 @@ pytest tests/ --cov=src/open_vision_banana --cov-report=term-missing
 
 ---
 
-## 10. Git Conventions
+## 11. Git Conventions
 
 - **Commit format**: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, etc.)
 - **Branch**: `main`
@@ -497,11 +587,24 @@ pytest tests/ --cov=src/open_vision_banana --cov-report=term-missing
 
 ---
 
-## 11. Quick Reference Commands
+## 12. Quick Reference Commands
 
 ```bash
+# === DATA (Section 3) ===
+bash scripts/download_datasets.sh --list
+HYPERSIM_SCENES="ai_001_001 ai_001_002" bash scripts/download_datasets.sh --group train
+PYTHONPATH=src python scripts/merge_multitask_manifest.py --inputs data/prep/*/pairs.jsonl --out data/merged/pairs.jsonl
+PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl \
+    --output data/qwen_baseline/pairs.jsonl --data-root data/merged --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
+
 # === TRAINING ===
-# SANA 3-task
+# Paper-aligned six-task recipe (recommended)
+PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml \
+    --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline --wandb
+# Resume on new data from an earlier LoRA (fresh optimizer/schedule)
+PYTHONPATH=src python scripts/train.py --config <yaml> --resume output/<run>/checkpoint-<N> --resume-weights-only
+
+# SANA 3-task (legacy T2I backbone)
 PYTHONPATH=src python scripts/train.py --config configs/sana_1600m_3task_full_clean.yaml --wandb
 
 # FLUX 3-task
@@ -512,7 +615,10 @@ PYTHONPATH=src python scripts/train.py --config configs/flux_3task_full_clean.ya
 PYTHONPATH=src python scripts/inference.py --image input.jpg --task depth --lora-path output/lora
 
 # === EVALUATION ===
-# Depth evaluation with SOTA comparison
+# Paper benchmarks (Tables 2-7); --instance-decoding ablates the Appendix A decoder readings
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-image-2.1 --lora-path output/<run>/checkpoint-<N>_best \
+    --nyu-root data/raw/nyu_depth_v2 --refcocog-root data/raw/refer/refcocog --reasonseg-root data/raw/reasonseg
+# Depth evaluation with SOTA comparison (legacy entry point)
 PYTHONPATH=src python scripts/evaluate.py --task depth --data-path /data/eval --compare-sota
 
 # === TESTING ===

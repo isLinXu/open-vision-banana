@@ -65,6 +65,12 @@ Vision Banana demonstrates that **state-of-the-art visual understanding can emer
 | Object Detection | Colored bounding box per class | ✅ |
 | Depth Edge Detection | Depth discontinuity → white edges | ✅ |
 
+The first five rows are the paper's tasks and have a verified public-data pipeline
+(download → prepare → merge → zero-shot audit → `Trainer`, see
+[`docs/DATASETS.md`](docs/DATASETS.md)) plus a sixth `generation` task for the
+paper's generation-preservation mixing. The remaining rows have RGB encoders /
+decoders and inference wiring but no curated training source in this repository.
+
 ---
 
 ## Architecture
@@ -214,24 +220,46 @@ python scripts/infer_sana_512.py \
 
 For supervised referring expression segmentation, see the [RES data and evaluation guide](docs/res_data.md): validated RefCOCO-family data, a versioned binary mask contract, a pinned Hugging Face release, and native-resolution evaluation.
 
-### Unified Training Framework
+### Paper-aligned recipe (recommended)
 
-The project provides a **unified multi-model training framework** via `scripts/train.py`,
-supporting all registered models (SANA, FLUX, SD3, etc.) and multi-task training (depth, normal, segmentation, etc.).
+The paper's regime is instruction-tuning a *natively image-conditioned* generator on
+its own generation/editing data mixed with a low share of vision-task data. The
+closest open backbones are Qwen-Image-2.1 / Qwen-Image-Edit (source image enters as
+VLM visual tokens + reference latents). Starting from public data:
 
 ```bash
-# SANA-1600M multi-task training
+bash scripts/download_datasets.sh --group train                 # Hypersim, TartanAir, ADE20K, COCO+LVIS, RefCOCO(+), OmniEdit
+# ... per-source prepare scripts, then merge + zero-shot audit (docs/DATASETS.md)
+PYTHONPATH=src python scripts/train.py \
+  --config configs/experiments/qwen_image_21_paper_aligned.yaml \
+  --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline --wandb
+```
+
+The recipe trains six tasks (`depth, normal, semantic, instance, referring, generation`)
+with `vision_ratio: 0.5`, multi-colormap depth targets, all four Fig. 2 semantic prompt
+styles with on-the-fly colour remapping, the Fig. 3 / Fig. 4 instance and referring
+prompts, aspect-preserving crops and rsLoRA r32/α64. Every run writes
+`effective_config.json`; values the paper does not state (optimizer, lr, ratio, …) are
+marked as repository choices in the config comments.
+
+### Unified Training Framework
+
+`scripts/train.py` is one entry point for all registered models (Qwen-Image, SANA,
+FLUX, SD3, instruction editors) and any task mixture:
+
+```bash
+# SANA-1600M 3-task (text-to-image backbone; the original SNVC ablation baseline)
 PYTHONPATH=src python scripts/train.py \
   --config configs/sana_1600m_3task_full_clean.yaml --wandb
 
-# FLUX.1-dev multi-task training
-PYTHONPATH=src python scripts/train.py \
-  --config configs/flux_3task_full_clean.yaml --wandb
-
 # Override any config parameter via CLI
 PYTHONPATH=src python scripts/train.py \
-  --config configs/sana_1600m_3task_full_clean.yaml \
+  --config configs/experiments/qwen_image_21_paper_aligned.yaml \
   --steps 10000 --lr 5e-5 --output-dir output/custom_run
+
+# Continue from an earlier LoRA on new data (fresh optimizer / schedule / step)
+PYTHONPATH=src python scripts/train.py --config <yaml> \
+  --resume output/<run>/checkpoint-<N> --resume-weights-only
 ```
 
 The framework consists of modular components:
@@ -568,12 +596,25 @@ open-vision-banana/
 │   │   ├── tuner.py             # Legacy InstructionTuner
 │   │   ├── trainer_interface.py # 5 backends (Native/DDP/FSDP/DeepSpeed/Accelerate)
 │   │   └── ...
-│   ├── evaluation/              # Metrics, trivial baselines, depth/normal gates
+│   ├── evaluation/              # Metrics, paper benchmark protocols, depth/normal gates
 │   ├── export/                  # ONNX + TorchScript export
-│   └── data/                    # Dataset loaders
+│   ├── referring_contract.py    # Fig. 4 (c)/(d) referring prompt shared by data / inference / eval
+│   └── data/                    # Dataset adapters + pipeline helpers
+│       ├── hypersim.py          # Hypersim normals / NYU40 semantics / instances -> paper RGB targets
+│       ├── depth_geometry.py    # Hypersim ray distance -> planar z-depth
+│       ├── instance_palette.py  # Instance colours (>= 60 apart) for COCO/LVIS + Hypersim builders
+│       └── openvocab_semantic.py# Fig. 2 prompt styles, sampler, prompt -> mapping parser
 ├── configs/                     # Training & experiment configs
-├── scripts/                     # Training, inference, evaluation scripts
-├── tests/                       # 1000+ tests across 79 files
+│   ├── experiments/*_paper_aligned.yaml   # Six-task paper-aligned recipes (Qwen-Image-2.1 / -Edit)
+│   └── datasets/sources.tsv     # Dataset registry read by scripts/download_datasets.sh
+├── docs/DATASETS.md             # download -> prepare -> merge -> audit -> train
+├── scripts/                     # Training, inference, evaluation, data pipeline scripts
+│   ├── download_datasets.sh     # One-command fetch from ModelScope / HF / URL
+│   ├── prepare_hypersim.py      # depth + normal + semantic + instance from one Hypersim scene
+│   ├── build_instance_manifest.py / build_res_manifest.py / build_generation_replay_manifest.py
+│   ├── merge_multitask_manifest.py / build_qwen_baseline_manifest.py   # merge + zero-shot audit
+│   └── evaluate_paper_benchmarks.py       # Tables 2-7 protocols
+├── tests/                       # 1500+ tests across 126 files (incl. pipeline smoke + Trainer system tests)
 ├── docker/                      # CPU/GPU Docker images
 └── notebooks/                   # Colab demo
 ```
