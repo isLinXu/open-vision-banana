@@ -1,4 +1,4 @@
-"""Camera-geometry helpers for turning renderer depth into paper-style z-depth.
+"""Camera-geometry helpers: renderer depth -> paper z-depth, and depth -> paper normals.
 
 The paper (Section 3.2) defines depth as "the physical metric distance from the
 camera plane to the observed object", i.e. planar z-depth. Hypersim's
@@ -16,7 +16,9 @@ other widths.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
+import numpy as np
 import torch
 
 HYPERSIM_HORIZONTAL_FOV_DEG = 60.0
@@ -58,3 +60,87 @@ def ray_distance_to_planar_depth(
 
 
 __all__ = ["HYPERSIM_HORIZONTAL_FOV_DEG", "hypersim_focal_px", "ray_distance_to_planar_depth"]
+
+
+# --------------------------------------------------------------------------- normals from depth
+# VKITTI2 default pinhole (1242 x 375): intrinsic.txt lists the same values per frame.
+VKITTI2_DEFAULT_INTRINSICS = (725.0087, 725.0087, 620.5, 187.0)
+VKITTI2_DEPTH_CM_INVALID = 65535  # far plane / sky marker in the uint16 centimetre PNGs
+
+
+def read_vkitti_intrinsics(path: str | Path) -> dict[tuple[int, int], tuple[float, float, float, float]]:
+    """Parse VKITTI2 ``intrinsic.txt`` (``frame cameraID K[0,0] K[1,1] K[0,2] K[1,2]``).
+
+    Returns ``{(frame, camera): (fx, fy, cx, cy)}``; the header line is skipped.
+    """
+    table: dict[tuple[int, int], tuple[float, float, float, float]] = {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) < 6 or not parts[0].lstrip("-").isdigit():
+            continue
+        frame, camera = int(parts[0]), int(parts[1])
+        table[(frame, camera)] = tuple(float(v) for v in parts[2:6])  # type: ignore[assignment]
+    return table
+
+
+def depth_to_normals(
+    depth: np.ndarray,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+    *,
+    valid: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Planar z-depth ``[H, W]`` (metres) -> unit normals ``[H, W, 3]`` in the paper's camera frame.
+
+    Points are unprojected with the OpenCV pinhole convention (x right, y down,
+    z forward), tangents are central differences, the normal is their cross
+    product oriented towards the camera (``n . (-p) > 0``), and the result is
+    rotated into the paper frame (+x right, +y up, +z out of the image plane
+    towards the viewer): ``(x, y, z) -> (x, -y, -z)``. Pixels whose own depth or
+    any 4-neighbour is invalid are reported invalid and set to zero.
+    """
+    z = np.asarray(depth, dtype=np.float64)
+    if z.ndim != 2:
+        raise ValueError(f"depth must be [H, W], got {z.shape}")
+    h, w = z.shape
+    ok = np.isfinite(z) & (z > 0)
+    if valid is not None:
+        ok &= np.asarray(valid, dtype=bool)
+    v, u = np.mgrid[0:h, 0:w].astype(np.float64)
+    x = (u - cx) / fx * z
+    y = (v - cy) / fy * z
+    points = np.stack([x, y, z], axis=-1)
+
+    # central differences with one-sided fallback at the border
+    def grad(arr: np.ndarray, axis: int) -> np.ndarray:
+        return np.gradient(arr, axis=axis, edge_order=1)
+
+    du = np.stack([grad(points[..., i], 1) for i in range(3)], axis=-1)
+    dv = np.stack([grad(points[..., i], 0) for i in range(3)], axis=-1)
+    normal = np.cross(du, dv)
+    norm = np.linalg.norm(normal, axis=-1, keepdims=True)
+    normal = np.where(norm > 1e-12, normal / np.clip(norm, 1e-12, None), 0.0)
+    # orient towards the camera: flip where n . p > 0 (p points from camera to surface)
+    flip = (normal * points).sum(axis=-1) > 0
+    normal[flip] *= -1.0
+    # neighbour validity (gradients mix neighbouring pixels)
+    nb_ok = ok.copy()
+    nb_ok[1:, :] &= ok[:-1, :]
+    nb_ok[:-1, :] &= ok[1:, :]
+    nb_ok[:, 1:] &= ok[:, :-1]
+    nb_ok[:, :-1] &= ok[:, 1:]
+    nb_ok &= norm[..., 0] > 1e-12
+    paper = np.stack([normal[..., 0], -normal[..., 1], -normal[..., 2]], axis=-1).astype(np.float32)
+    paper[~nb_ok] = 0.0
+    return paper, nb_ok
+
+
+def load_vkitti_depth_png(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
+    """VKITTI2 ``depth_*.png`` (uint16 centimetres, 65535 = far/sky) -> metres + valid mask."""
+    from PIL import Image
+
+    raw = np.asarray(Image.open(path)).astype(np.float64)
+    valid = raw < VKITTI2_DEPTH_CM_INVALID
+    return (raw / 100.0).astype(np.float32), valid
