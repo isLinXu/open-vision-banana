@@ -272,6 +272,18 @@ PYTHONPATH=src python scripts/train_flux.py \
 
 ### Data Preparation
 
+One-command fetch of every public source in the paper-aligned recipe (registry:
+`configs/datasets/sources.tsv`; details and the download → prepare → train path in
+[`docs/DATASETS.md`](docs/DATASETS.md)):
+
+```bash
+bash scripts/download_datasets.sh --list              # registered sources, grouped train / eval / replay
+bash scripts/download_datasets.sh --group train       # Hypersim, TartanAir, ADE20K, COCO+LVIS, RefCOCO(+), ...
+bash scripts/download_datasets.sh --only omniedit     # generation replay shards
+```
+
+Legacy per-dataset helpers:
+
 ```bash
 # List all supported datasets
 python scripts/download_data.py --list

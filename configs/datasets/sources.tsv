@@ -1,0 +1,38 @@
+# One line per dataset; tab-separated. Lines starting with '#' are ignored.
+# name	group	tasks	source	locator	include	dest	post	size_gb	license	note
+#
+# group   : train | eval | replay  (eval = paper benchmark, never train on it)
+# source  : ms (ModelScope) | hf (Hugging Face) | url (direct http) | manual (login required; prints instructions)
+# locator : repo id for ms/hf, URL for url/manual
+# include : ';'-separated glob patterns for ms/hf (or '-' for everything). Macros expanded by the script:
+#           @hypersim_scenes  -> raw/<scene>.zip for each scene in $HYPERSIM_SCENES
+#           @tartanair_chunks -> chunk__partNNNNNN.tar.gz for the first $TARTANAIR_CHUNKS chunks
+#           @omniedit_shards  -> data/train-NNNNN-of-00571.parquet for the first $OMNIEDIT_SHARDS shards
+# post    : none | unzip | untar | unzip_each | untar_each | coco2014_links ; chain with '+'. Archives are kept, extraction goes to dest.
+#           coco2014_links symlinks train2017/val2017 images under train2014/COCO_train2014_*.jpg (RefCOCO refer files use 2014 names).
+#
+# ---- 3D: metric depth + surface normals (paper: synthetic only) ---------------------------------
+hypersim	train	depth,normal,semantic,instance	ms	OpenDataLab/Hypersim	@hypersim_scenes	hypersim	unzip_each	3-8/scene	Hypersim Custom (research)	Official per-scene zips (HDF5). depth_meters is RAY DISTANCE: scripts/prepare_hypersim.py converts to planar z by default. Pick scenes with HYPERSIM_SCENES.
+tartanair	train	depth,semantic	ms	potpree/tartanair	@tartanair_chunks	tartanair	untar_each	3/chunk	Apache-2.0 (mirror; original CC-BY-4.0)	Outdoor + indoor synthetic, planar z-depth .npy. Chunk count via TARTANAIR_CHUNKS.
+# ---- 2D: semantic segmentation (open vocabulary) -----------------------------------------------
+ade20k	train	semantic	url	http://data.csail.mit.edu/places/ADEChallenge/ADEChallengeData2016.zip	-	ade20k	unzip	0.9	ADE20K (research)	150 classes, 20k train. Not an evaluated benchmark -> safe for zero-shot.
+ade20k-ms	train	semantic	ms	OpenDataLab/ADE20K_2016	raw/ADE20k.zip	ade20k_full	unzip	6.0	ADE20K (research)	Full ADE20K (3k+ classes) mirror; alternative to ade20k.
+# ---- 2D: instance segmentation (COCO / LVIS; RefCOCOg val images live in COCO train -> run build_qwen_baseline_manifest --exclude-image-ids) ----
+coco2017-images	train	instance,semantic,referring	ms	anyforge/lvis	train2017.zip;val2017.zip	coco2017	unzip_each+coco2014_links	20.2	CC-BY-4.0	COCO 2017 train+val images (also shared by LVIS and RefCOCO).
+coco2017-instances	train	instance	url	http://images.cocodataset.org/annotations/annotations_trainval2017.zip	-	coco2017	unzip	0.25	CC-BY-4.0	instances_train2017.json for scripts/build_instance_manifest.py --format coco
+lvis-v1	train	instance	ms	anyforge/lvis	lvis_v1_train.json.zip;lvis_v1_val.json.zip	lvis	unzip_each	0.4	CC-BY-4.0	1203 classes over COCO 2017 images -> build_instance_manifest.py --format lvis
+coco-stuff	train	semantic	url	http://calvin.inf.ed.ac.uk/wp-content/uploads/data/cocostuffdataset/stuffthingmaps_trainval2017.zip	-	coco_stuff	unzip	0.7	CC-BY-4.0	171-class PNG label maps for COCO 2017 images.
+# ---- 2D: referring expression segmentation -----------------------------------------------------
+refcoco	train	referring	url	https://bvisionweb1.cs.unc.edu/licheng/referit/data/refcoco.zip	-	refer/refcoco	unzip	0.02	BSD	refs(unc).p + instances.json; images from coco2017-images (train2014 ids == 2017 ids)
+refcoco+	train	referring	url	https://bvisionweb1.cs.unc.edu/licheng/referit/data/refcoco+.zip	-	refer/refcoco+	unzip	0.02	BSD	
+refcocog	eval	referring	url	https://bvisionweb1.cs.unc.edu/licheng/referit/data/refcocog.zip	-	refer/refcocog	unzip	0.02	BSD	refs(umd).p: PAPER BENCHMARK (val) and the id list for --exclude-image-ids. Do not train on it.
+reasonseg	eval	referring	ms	yiqunchen/ReasonSeg	val.zip;test.zip	reasonseg	unzip_each	1.5	Apache-2.0	Paper benchmark (val gIoU). train.zip deliberately excluded.
+# ---- generation-preservation replay (Section 2 mixing) -----------------------------------------
+omniedit	replay	generation	ms	AI-ModelScope/OmniEdit-Filtered-1.2M	@omniedit_shards	omniedit	none	5/shard	Apache-2.0	Edit triplets (parquet) for build_generation_replay_manifest.py --kind edit. Shard count via OMNIEDIT_SHARDS.
+ultraedit	replay	generation	ms	AI-ModelScope/UltraEdit	-	ultraedit	none	1400	Apache-2.0	Full 1.4 TB; pass --only ultraedit deliberately. Prefer omniedit shards.
+blip3o-60k	replay	generation	ms	BLIP3o/BLIP3o-60k	journeyDB.tar;journeyDB.txt	blip3o_60k	untar_each	18	Apache-2.0	T2I pairs (--kind t2i). Synthetic images; only for text-to-image backbones.
+# ---- depth / normal evaluation benchmarks (eval only) -----------------------------------------
+nyu-depth-v2-labeled	eval	depth,normal	url	http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat	-	nyu_depth_v2	none	2.8	NYU (research)	1449 labelled frames incl. the 654 Eigen test split. Paper Table 6/7.
+kitti-depth	eval	depth	manual	https://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_prediction	-	kitti_depth	none	14	KITTI (CC-BY-NC-SA)	Requires KITTI account. ModelScope mirrors (Damo_XR_Lab/KITTI_Depth_Dataset) are index JSONs only.
+cityscapes	eval	semantic	manual	https://www.cityscapes-dataset.com/downloads/	-	cityscapes	none	11	Cityscapes (non-commercial)	Requires account: gtFine_trainvaltest.zip + leftImg8bit_trainvaltest.zip, then scripts/setup_cityscapes_official.py. Paper Table 2 (val). Using train breaks zero-shot.
+genai-bench	eval	generation	ms	AI-ModelScope/GenAI-Bench-1600	-	genai_bench	none	4.8	Apache-2.0	Paper Appendix D generation benchmark prompts.
