@@ -1095,7 +1095,9 @@ class Trainer:
             data_root=config.data_dir,
             model_name=config.model_name,
             lora_targets=config.lora_targets,
-            depth_colormap=(config.depth_colormaps or ["cube_edge"])[0],
+            # Stored depth targets are always cube-edge metric PNGs; ``depth_colormaps`` is the
+            # training-time re-encoding list and must not change what the storage contract is.
+            depth_colormap="cube_edge",
             depth_curve=config.depth_curve,
         )
         for issue in report.warnings:

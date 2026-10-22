@@ -68,7 +68,7 @@ Expected: `done: N fetched, 0 failed`. Hypersim zips must pass `unzip -t`.
 Prepare exactly as `docs/DATASETS.md` lists (Hypersim with `--tasks depth,normal,semantic,instance`),
 then merge with `--val-percent 2` and audit with `--exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"`.
 
-**Gates (read from the audit JSONs, abort if violated):**
+**Gates** — run `python scripts/check_experiment_gates.py data --merged-audit data/merged/pairs.audit.json --final-manifest data/qwen_baseline/pairs.jsonl --hypersim-manifest data/prep/hypersim/manifest.json --model-name qwen-image-2.1`; exit code 1 = abort. The table is what it checks:
 
 | file | field | required |
 |:--|:--|:--|
@@ -86,9 +86,9 @@ PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_2
   --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline \
   --steps 500 --warmup-steps 50 --save-every 250 --eval-every 250 --output-dir "$RUN" --print-effective-config
 ```
-Check `$RUN/effective_config.json`: `tasks` = six, `vision_ratio` = 0.5, `task_sampling_probabilities`
-≈ generation 0.5 / others 0.1, `optimizer` block present, `batch_size` 1. Loss must be finite at every log;
-`checkpoint-250`, `checkpoint-500_final` and a `_best` directory must exist.
+Then `python scripts/check_experiment_gates.py run --run-dir "$RUN" --vision-ratio 0.5` (tasks = six,
+`vision_ratio` 0.5, sampling probabilities generation 0.5 / others 0.1, preflight not skipped and error-free,
+optimizer block recorded, `checkpoint-250`, `_best` and `500_final` present, finite val losses).
 
 ### E0.3 Inference + one metric per family
 ```bash
@@ -100,8 +100,9 @@ PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-ima
   --nyu-root data/raw/nyu_depth_v2 --refcocog-root data/raw/refer/refcocog --max-samples 50 \
   --output-json "$RUN/eval_smoke.json"
 ```
-Pass criterion: outputs decode (depth map not constant, referring mask non-empty on ≥ 1 sample), the JSON
-has finite `AbsRel` / `cIoU`. Values themselves are irrelevant at 500 steps.
+Pass criterion: outputs decode (depth map not constant, referring mask non-empty on ≥ 1 sample) and
+`python scripts/check_experiment_gates.py eval --eval-json "$RUN/eval_smoke.json" --require AbsRel,cIoU`
+passes (present and finite). Values themselves are irrelevant at 500 steps.
 
 ---
 
