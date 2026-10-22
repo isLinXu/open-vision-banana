@@ -289,3 +289,113 @@ def test_prepare_synthetic_depth_hypersim_path_finds_hdf5_and_converts(tmp_path:
     assert centre == pytest.approx(4.0, abs=0.05) and corner < 3.6
     corner_raw, centre_raw = decoded_corner_and_centre("never")
     assert corner_raw == pytest.approx(centre_raw, abs=0.05)
+
+
+class TestHypersimMultiTaskExport:
+    """One scene -> depth + normal + semantic + instance rows (paper tasks 1-4)."""
+
+    @staticmethod
+    def _scene(tmp_path: Path, *, flip_normals: bool = False) -> Path:
+        h5py = pytest.importorskip("h5py")
+        geo = tmp_path / "raw" / "ai_001_001" / "images" / "scene_cam_00_geometry_hdf5"
+        prev = tmp_path / "raw" / "ai_001_001" / "images" / "scene_cam_00_final_preview"
+        geo.mkdir(parents=True)
+        prev.mkdir()
+        H, W = 32, 64
+        Image.new("RGB", (W, H), (90, 90, 90)).save(prev / "frame.0000.color.jpg")
+        depth = np.full((H, W), 4.0, np.float32)
+        normal = np.zeros((H, W, 3), np.float32)
+        normal[..., 2] = 1.0  # a wall facing the camera
+        normal[:8, :, :] = (0.0, 1.0, 0.0)  # ceiling strip facing up
+        if flip_normals:
+            normal[..., 2] *= -1
+        normal[H - 2 :, :, :] = np.nan  # invalid rows
+        semantic = np.full((H, W), 1, np.int32)  # wall
+        semantic[:8, :] = 22  # ceiling
+        semantic[16:, :32] = 5  # two chairs (ids below), each ~16x16 px
+        semantic[16:, 32:] = 5
+        semantic[8:10, :] = -1  # unlabelled strip
+        instance = np.full((H, W), -1, np.int32)
+        instance[16:, :32] = 7
+        instance[16:, 32:] = 8
+        instance[semantic == 1] = 1
+        instance[semantic == 22] = 2
+        for name, arr in (
+            ("depth_meters", depth), ("normal_cam", normal), ("semantic", semantic), ("semantic_instance", instance)
+        ):
+            with h5py.File(geo / f"frame.0000.{name}.hdf5", "w") as handle:
+                handle.create_dataset("dataset", data=arr)
+        return tmp_path / "raw"
+
+    def test_four_tasks_from_one_frame(self, tmp_path: Path):
+        from open_vision_banana.core.normal_mapper import NormalRGBMapper
+        from open_vision_banana.core.segmentation import SegmentationDecoder
+        from open_vision_banana.data.hypersim import INVALID_NORMAL_RGB
+        from open_vision_banana.training.trainer import ManifestVisionDataset, parse_semantic_legend_from_prompt
+
+        raw = self._scene(tmp_path)
+        out = tmp_path / "prepared"
+        assert prepare_hypersim(raw, out, tasks=("depth", "normal", "semantic", "instance"), semantic_variants=2) == 1
+        rows = [json.loads(line) for line in (out / "pairs.jsonl").read_text().splitlines()]
+        by_task = {}
+        for row in rows:
+            by_task.setdefault(row["task"], []).append(row)
+        # instance: one row per class present (wall, ceiling, chair) -> 3
+        assert {k: len(v) for k, v in by_task.items()} == {"metric_depth": 1, "normal": 1, "semantic": 2, "instance": 3}
+        manifest = json.loads((out / "manifest.json").read_text())
+        assert manifest["tasks"]["rows_per_task"] == {"depth": 1, "normal": 1, "semantic": 2, "instance": 3}
+        assert manifest["tasks"]["normal_backfacing_frames"] == 0
+
+        # normal: wall pixel decodes to (0,0,1), ceiling to (0,1,0), invalid rows are the grey marker
+        normal_png = np.asarray(Image.open(out / by_task["normal"][0]["target"]).convert("RGB"))
+        rgb = torch.from_numpy(normal_png).permute(2, 0, 1).float().unsqueeze(0) / 255.0
+        decoded = NormalRGBMapper().rgb_to_normal(rgb)[0]
+        assert torch.allclose(decoded[:, 12, 40], torch.tensor([0.0, 0.0, 1.0]), atol=0.02)
+        assert torch.allclose(decoded[:, 2, 20], torch.tensor([0.0, 1.0, 0.0]), atol=0.02)
+        assert tuple(normal_png[31, 0]) == INVALID_NORMAL_RGB
+        assert by_task["normal"][0]["prompt"] == "Generate a surface normal estimation visualization of this image."
+
+        # semantic: prompt legend colours match the painted target; unlabelled strip is black
+        sem_row = by_task["semantic"][0]
+        legend = parse_semantic_legend_from_prompt(sem_row["prompt"]) if sem_row["style"] == "json_tuple" else None
+        sem_png = np.asarray(Image.open(out / sem_row["target"]).convert("RGB"))
+        assert {"wall", "ceiling", "chair"} <= set(sem_row["mapping"])
+        assert tuple(sem_png[12, 40]) == tuple(sem_row["mapping"]["wall"])
+        # unlabelled pixels take the prompt's "background" colour (Fig. 2 convention)
+        assert tuple(sem_png[9, 5]) == tuple(sem_row["mapping"]["background"])
+        if legend:
+            assert legend["wall"] == tuple(sem_row["mapping"]["wall"])
+
+        # instance: chair row has 2 instances the Appendix A decoder recovers; catch-alls are skipped
+        inst_rows = {r["category"]: r for r in by_task["instance"]}
+        assert set(inst_rows) == {"wall", "ceiling", "chair"}
+        assert inst_rows["wall"]["num_instances"] == 1
+        chair = inst_rows["chair"]
+        assert chair["num_instances"] == 2 and chair["prompt"].endswith("Each chair is colored differently.")
+        inst_png = np.asarray(Image.open(out / chair["target"]).convert("RGB"))
+        rgb = torch.from_numpy(inst_png).permute(2, 0, 1).float().unsqueeze(0) / 255.0
+        assert len(SegmentationDecoder.paper_reproduction().decode_instance(rgb)[0]) == 2
+
+        # and every row loads through the trainer dataset
+        for task in ("depth", "normal", "semantic", "instance"):
+            ds = ManifestVisionDataset(out / "pairs.jsonl", 32, "train", {task}, data_root=out)
+            assert len(ds) == len(by_task["metric_depth" if task == "depth" else task])
+            sample = ds[0]
+            assert sample["task"] == task and sample["target_rgb"].shape == (3, 32, 32)
+
+    def test_flipped_export_is_detected_and_fixable(self, tmp_path: Path):
+        raw = self._scene(tmp_path, flip_normals=True)
+        out = tmp_path / "flipped"
+        prepare_hypersim(raw, out, tasks=("depth", "normal"))
+        assert json.loads((out / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"] == 1
+        out2 = tmp_path / "fixed"
+        prepare_hypersim(raw, out2, tasks=("depth", "normal"), normal_flip="z")
+        from open_vision_banana.core.normal_mapper import NormalRGBMapper
+
+        png = np.asarray(Image.open(next((out2 / "normal_targets").glob("*.png"))).convert("RGB"))
+        decoded = NormalRGBMapper().rgb_to_normal(torch.from_numpy(png).permute(2, 0, 1).float().unsqueeze(0) / 255.0)[0]
+        assert decoded[2, 12, 40] > 0.98
+
+    def test_unknown_task_rejected(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="Unknown Hypersim tasks"):
+            prepare_hypersim(tmp_path, tmp_path / "o", tasks=("depth", "flow"))

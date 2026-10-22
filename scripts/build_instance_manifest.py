@@ -42,7 +42,6 @@ Example::
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import random
 import sys
@@ -56,42 +55,27 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
+from open_vision_banana.data.instance_palette import (  # noqa: E402
+    BACKGROUND,
+    MIN_COLOR_DISTANCE,
+    PALETTE,
+    build_instance_palette,
+    color_distance,
+)
 from open_vision_banana.inference.prompt import PromptBuilder  # noqa: E402
 from scripts.build_qwen_baseline_manifest import (  # noqa: E402
     coco_image_id_from_path,
     load_excluded_image_ids,
 )
 
-BACKGROUND = (0, 0, 0)
-# Minimum pairwise distance between instance colours and from the background. The
-# decoder merges colours within tau=14 (Appendix A); generated images drift by a few
-# levels, so the palette keeps a wide margin.
-MIN_COLOR_DISTANCE = 60.0
+_dist = color_distance  # re-exported for tests / callers that used the old name
+__all__ = ["BACKGROUND", "MIN_COLOR_DISTANCE", "PALETTE", "build_instance_palette", "_dist"]
 
 # Fig. 3 background spellings. ``black`` uses template 0 (background not stated);
 # the others use the two templates that name the background colour.
 BACKGROUND_STYLES = ("black", "named", "rgb", "hex")
 # Named backgrounds that are visually plausible for a mask image (Fig. 3 uses white).
 NAMED_BACKGROUNDS = {"white": (255, 255, 255), "black": (0, 0, 0), "gray": (128, 128, 128)}
-
-
-def build_instance_palette(
-    min_distance: float = MIN_COLOR_DISTANCE,
-    background: tuple[int, int, int] = BACKGROUND,
-) -> list[tuple[int, int, int]]:
-    """Greedy, deterministic palette: 4 levels per channel, far from the background and each other."""
-    levels = (255, 128, 192, 64)
-    candidates = [c for c in itertools.product(levels, repeat=3)]
-    # Saturated colours first so the most common small instance counts get the most
-    # separable colours.
-    candidates.sort(key=lambda c: (-(max(c) - min(c)), -sum(c)))
-    palette: list[tuple[int, int, int]] = []
-    for color in candidates:
-        if _dist(color, background) < min_distance:
-            continue
-        if all(_dist(color, chosen) >= min_distance for chosen in palette):
-            palette.append(color)
-    return palette
 
 
 def sample_background(style: str, rng: random.Random) -> tuple[int, int, int]:
@@ -106,13 +90,6 @@ def sample_background(style: str, rng: random.Random) -> tuple[int, int, int]:
         return tuple(rng.choice((16, 40, 88, 104, 152, 168, 216, 232)) for _ in range(3))  # type: ignore[return-value]
     raise ValueError(f"Unknown background style: {style!r}")
 
-
-def _dist(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
-    # int() guards against uint8 wrap-around when colours come back from an image array.
-    return float(np.sqrt(sum((int(x) - int(y)) ** 2 for x, y in zip(a, b, strict=True))))
-
-
-PALETTE = build_instance_palette()
 
 
 def ann_to_mask(ann: dict, height: int, width: int) -> np.ndarray:
