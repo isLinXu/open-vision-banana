@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -1524,31 +1525,88 @@ class DIODENormalDataset(BaseVisionDataset):
 
 
 class VirtualKITTINormalDataset(DIODENormalDataset):
-    """Virtual KITTI 2 surface-normal adapter.
+    """Virtual KITTI 2 surface-normal adapter (paper Table 7 "VKitti").
 
-    VKITTI2 does not ship surface normals. This pairs each ``rgb/`` frame with
-    a sibling ``normal/`` or ``normals/`` map that is already in the paper's
-    camera frame (``.npy`` vectors or paper-encoded PNG). It does not derive
-    normals from depth.
+    VKITTI2 ships depth, not normals. Two layouts are accepted:
+
+    * ``<scene>/frames/rgb/Camera_X/rgb_NNNNN.jpg`` with a sibling ``normal/`` or
+      ``normals/`` directory of pre-computed maps in the paper frame (``.npy`` /
+      paper-encoded PNG) — used as-is;
+    * the stock layout with ``<scene>/frames/depth/Camera_X/depth_NNNNN.png``
+      (uint16 **centimetres**, 65535 = sky/far) — normals are **derived from depth**
+      with the per-frame intrinsics from ``<scene>/intrinsic.txt`` (falling back to
+      the VKITTI2 default pinhole) via ``depth_geometry.depth_to_normals``; sky and
+      depth-discontinuity pixels are invalid.
     """
 
+    _FRAME_RE = re.compile(r"(\d+)$")
+
     def _scan(self) -> None:
+
+        self._intrinsics_cache: dict[Path, dict] = {}
         for rgb_dir in sorted(self.root_dir.rglob("rgb")):
             normal_dir = rgb_dir.parent / "normal"
             if not normal_dir.exists():
                 normal_dir = rgb_dir.parent / "normals"
-            if not normal_dir.exists():
-                continue
+            depth_dir = rgb_dir.parent / "depth"
             for image_path in sorted(rgb_dir.rglob("*")):
                 if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
                     continue
-                normal_path = find_matching_file(
-                    normal_dir,
-                    image_path.stem,
-                    (".png", ".npy"),
+                if normal_dir.exists():
+                    normal_path = find_matching_file(normal_dir, image_path.stem, (".png", ".npy"))
+                    if normal_path is not None:
+                        self.samples.append({"image": image_path, "target": normal_path})
+                        continue
+                if not depth_dir.exists():
+                    continue
+                camera = image_path.parent.name if image_path.parent != rgb_dir else ""
+                depth_name = image_path.stem.replace("rgb", "depth", 1) + ".png"
+                depth_path = depth_dir / camera / depth_name if camera else depth_dir / depth_name
+                if not depth_path.is_file():
+                    continue
+                scene_dir = rgb_dir.parent.parent  # <scene>/<variation>/frames/rgb -> <scene>/<variation>
+                intrinsic_file = scene_dir / "intrinsic.txt"
+                frame_match = self._FRAME_RE.search(image_path.stem)
+                cam_match = self._FRAME_RE.search(camera)
+                self.samples.append(
+                    {
+                        "image": image_path,
+                        "target": None,
+                        "depth": depth_path,
+                        "intrinsic_file": intrinsic_file if intrinsic_file.is_file() else None,
+                        "frame": int(frame_match.group(1)) if frame_match else 0,
+                        "camera": int(cam_match.group(1)) if cam_match else 0,
+                    }
                 )
-                if normal_path is not None:
-                    self.samples.append({"image": image_path, "target": normal_path})
+        if self.samples and all(sample.get("target") is None for sample in self.samples):
+            logger.info("VKITTI2: deriving normals from depth for %d frames (no normal/ directory found)", len(self.samples))
+
+    def _intrinsics_for(self, sample: dict) -> tuple[float, float, float, float]:
+        from .depth_geometry import VKITTI2_DEFAULT_INTRINSICS, read_vkitti_intrinsics
+
+        path = sample.get("intrinsic_file")
+        if path is None:
+            return VKITTI2_DEFAULT_INTRINSICS
+        table = self._intrinsics_cache.get(path)
+        if table is None:
+            table = read_vkitti_intrinsics(path)
+            self._intrinsics_cache[path] = table
+        return table.get((sample["frame"], sample["camera"]), VKITTI2_DEFAULT_INTRINSICS)
+
+    def __getitem__(self, idx: int) -> dict:
+        sample = self.samples[idx]
+        if sample.get("target") is not None:
+            return super().__getitem__(idx)
+        from .depth_geometry import depth_to_normals, load_vkitti_depth_png
+
+        depth_m, depth_valid = load_vkitti_depth_png(sample["depth"])
+        normal_np, valid_np = depth_to_normals(depth_m, *self._intrinsics_for(sample), valid=depth_valid)
+        normal = torch.from_numpy(normal_np).permute(2, 0, 1).float()
+        valid = torch.from_numpy(valid_np)
+        return {
+            "image": self._load_image(sample["image"]),
+            **_pack_normal_sample(self, normal, valid),
+        }
 
 
 class BlendedMVSDepthDataset(BaseVisionDataset):
@@ -2715,9 +2773,10 @@ class VirtualKITTIDataset(BaseVisionDataset):
           Scene01/  ... Scene06/
             frames/
               rgb/         ← RGB images (*.jpg)
-              depth/       ← Depth maps (*.png, uint16 mm)
+              depth/       ← Depth maps (*.png, uint16 centimetres, 65535 = sky)
 
-    Depth values are in meters (uint16 PNG: depth_mm / 1000.0).
+    Depth values are in meters (uint16 PNG: depth_cm / 100.0); sky pixels are NaN
+    before encoding and zero in the RGB target.
     """
 
     TASK_TYPE = "depth"
@@ -2733,8 +2792,12 @@ class VirtualKITTIDataset(BaseVisionDataset):
             if not rgb_dir.exists() or not depth_dir.exists():
                 continue
             for img_path in sorted(rgb_dir.rglob("*.jpg")):
-                depth_name = img_path.stem + ".png"
-                depth_path = depth_dir / depth_name
+                # stock layout: rgb/Camera_0/rgb_00000.jpg <-> depth/Camera_0/depth_00000.png
+                relative = img_path.relative_to(rgb_dir)
+                depth_name = img_path.stem.replace("rgb", "depth", 1) + ".png"
+                depth_path = depth_dir / relative.parent / depth_name
+                if not depth_path.exists():
+                    depth_path = depth_dir / relative.parent / (img_path.stem + ".png")
                 if depth_path.exists():
                     self.samples.append({"image": img_path, "target": depth_path})
 
@@ -2742,10 +2805,10 @@ class VirtualKITTIDataset(BaseVisionDataset):
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
 
-        depth_img = Image.open(sample["target"])
-        depth = _pil_to_tensor(depth_img).float()
-        if depth.max() > 1.0:
-            depth = depth / 1000.0
+        # VKITTI2 depth PNGs are uint16 *centimetres*; 65535 marks sky / beyond the far plane.
+        raw = torch.from_numpy(np.asarray(Image.open(sample["target"])).astype(np.float32))
+        depth = (raw / 100.0).unsqueeze(0)
+        depth = torch.where(raw.unsqueeze(0) >= 65535, torch.full_like(depth, float("nan")), depth)
 
         depth = torch.nn.functional.interpolate(
             depth.unsqueeze(0),
@@ -2753,7 +2816,7 @@ class VirtualKITTIDataset(BaseVisionDataset):
             mode="nearest",
         ).squeeze(0)
 
-        target_rgb = self.depth_mapper.depth_to_rgb(depth.unsqueeze(0)).squeeze(0)
+        target_rgb = self.depth_mapper.depth_to_rgb(torch.nan_to_num(depth, nan=0.0).unsqueeze(0)).squeeze(0)
         prompt = PromptBuilder.build_depth_prompt()
         return {"prompt": prompt, "image": image, "target_rgb": target_rgb}
 

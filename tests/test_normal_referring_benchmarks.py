@@ -106,13 +106,16 @@ def test_scannet_color_path_still_pairs(tmp_path):
     assert len(ScanNetNormalDataset(tmp_path, resolution=8)) == 1
 
 
-def test_vkitti_pairs_rgb_with_sibling_normal_and_ignores_depth(tmp_path):
+def test_vkitti_prefers_sibling_normal_over_depth_derivation(tmp_path):
     rgb = tmp_path / "Scene01" / "clone" / "frames" / "rgb" / "Camera_0"
     normal = tmp_path / "Scene01" / "clone" / "frames" / "normal" / "Camera_0"
     depth = tmp_path / "Scene01" / "clone" / "frames" / "depth" / "Camera_0"
     _rgb(rgb / "00000.jpg", (5, 7))
     _rgb(depth / "00000.png", (5, 7))
-    assert len(VirtualKITTINormalDataset(tmp_path, split="val", resolution=4)) == 0
+    # VKITTI2 ships no normals: with only depth present the dataset derives them (see
+    # tests/test_vkitti_normals_from_depth.py); a sibling normal/ map takes precedence.
+    derived = VirtualKITTINormalDataset(tmp_path, split="val", resolution=4)
+    assert len(derived) == 1 and derived.samples[0]["target"] is None
     normal.mkdir(parents=True)
     array = np.zeros((5, 7, 3), dtype=np.float32)
     array[..., 2] = 1

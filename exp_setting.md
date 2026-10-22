@@ -212,7 +212,7 @@ Weights only: fresh AdamW / warmup / step counter; LoRA rank and targets must ma
 
 ## Known gaps to keep in mind
 
-- VKITTI normals (T7) need a depth → normal derivation step; not evaluated yet.
+- VKITTI normals (T7) are derived from VKITTI2 depth + `intrinsic.txt` by `VirtualKITTINormalDataset` (no normal GT ships); the derivation is exact on analytic planes but inherits the renderer's depth discretisation (1 cm) at grazing angles — report it as such.
 - SA-Co cgF1 and ReasonSeg's rewrite need a Gemini key; without it the scripts fall back to diagnostics and say so.
 - iBims-1, ScanNet, nuScenes, KITTI, Cityscapes are login/request-walled; the registry prints the instructions.
 - Generation preservation here is a proxy; the paper's metric is a human pairwise study.

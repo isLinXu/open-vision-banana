@@ -425,7 +425,7 @@ overrides the Appendix A decoder for ablations). Downloaded layouts via
 | T4 | RefCOCOg UMD val (cIoU) | `RefCOCOgDataset(protocol="umd")` | `refcocog` (parquet → REFER) |
 | T5 | ReasonSeg val (gIoU, Gemini 2.5 Pro rewrite) | `ReasonSegDataset` | `reasonseg` |
 | T6 | NYU / iBims-1 / ETH3D / DIODE-Indoor / KITTI / nuScenes depth | `NYUDepthDataset`, `IBimsDepthDataset`, `ETH3DDataset`, `DIODEDataset`, `KITTIDataset`, `nuScenesDataset` | `nyu-depth-v2-*`, `ibims1` (manual), `eth3d-dslr-*`, `diode-val`, `kitti-depth` (manual), `nuscenes` (manual) |
-| T7 | NYUv2 / DIODE-indoor / ScanNet / VKitti normals | `NYUNormalDataset`, `DIODENormalDataset`, `ScanNetNormalDataset`, `VirtualKITTINormalDataset` | `nyu-normals` (manual), `diode-val-normals`, `scannet-normals` (manual), `vkitti2` (manual; normals must be derived from depth) |
+| T7 | NYUv2 / DIODE-indoor / ScanNet / VKitti normals | `NYUNormalDataset`, `DIODENormalDataset`, `ScanNetNormalDataset`, `VirtualKITTINormalDataset` | `nyu-normals` (manual), `diode-val-normals`, `scannet-normals` (manual), `vkitti2` (manual; normals derived from depth + intrinsics by the dataset) |
 | App. D | GenAI-Bench / ImgEdit-Bench (paper: human win rate; repo: FID/LPIPS proxy only) | `GenAIBenchDataset`, `ImgEditDataset` | `genai-bench`, `imgedit-bench` |
 
 Legacy `scripts/evaluate.py --task` keys:
