@@ -76,6 +76,7 @@ Record the choices; they drive Stages 2–4.
 python --version                                # ≥ 3.10
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 pip show open-vision-banana || pip install -e ".[all]"
+python -c "import peft, accelerate, diffusers, wandb"           # training deps (missing -> ~35 test failures, not a baseline)
 python -c "import h5py, pyarrow, pycocotools, ijson, modelscope" # data pipeline deps
 export HF_ENDPOINT=https://hf-mirror.com
 export WANDB_API_KEY=<key>                      # only with --wandb
