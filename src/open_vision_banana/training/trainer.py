@@ -128,14 +128,18 @@ _SEMANTIC_RGB_TUPLE_RE = re.compile(
 
 
 def parse_semantic_legend_from_prompt(prompt: str) -> dict[str, tuple[int, int, int]]:
-    """Extract a ``class_name -> (R, G, B)`` mapping from a semantic legend prompt."""
+    """Extract a ``class_name -> (R, G, B)`` mapping from a semantic legend prompt.
+
+    Understands all four Fig. 2 styles (RGB-tuple JSON, named-colour JSON, natural
+    language, hex); previously only ``<R, G, B>`` tuples were recognised, so
+    natural/hex rows were silently never restyled or colour-remapped.
+    """
     matches = _SEMANTIC_RGB_TUPLE_RE.findall(prompt)
-    if not matches:
-        return {}
-    return {
-        name: (int(r), int(g), int(b))
-        for name, r, g, b in matches
-    }
+    if matches:
+        return {name: (int(r), int(g), int(b)) for name, r, g, b in matches}
+    from ..data.openvocab_semantic import parse_prompt_mapping
+
+    return parse_prompt_mapping(prompt)
 
 
 class ManifestVisionDataset(Dataset):
@@ -253,6 +257,7 @@ class ManifestVisionDataset(Dataset):
                         prompt = resolve_referring_prompt(row)
                     except ValueError as exc:
                         raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
+                mapping = row.get("mapping") if mapped == "semantic" else None
                 self.samples.append(
                     {
                         "image_path": str(img_path),
@@ -261,6 +266,9 @@ class ManifestVisionDataset(Dataset):
                         "target_tar_key": tgt_tar_key or "",
                         "task": mapped,
                         "prompt": prompt,
+                        # Builders record the exact legend; it beats re-parsing the prompt.
+                        **({"mapping": {k: tuple(int(c) for c in v) for k, v in mapping.items()}}
+                           if isinstance(mapping, dict) and mapping else {}),
                         **{
                             key: row[key]
                             for key in ("expression", "encoding", "sample_id", "source_dataset")
@@ -416,7 +424,7 @@ class ManifestVisionDataset(Dataset):
         elif s["task"] == "semantic" and self.split == "train" and (
             self.semantic_prompt_styles or self.semantic_color_remap_prob > 0.0
         ):
-            tgt, prompt = self._augment_semantic(tgt, prompt)
+            tgt, prompt = self._augment_semantic(tgt, prompt, s.get("mapping"))
         item = {
             "prompt": prompt,
             "image": inp * 2.0 - 1.0,
@@ -428,7 +436,7 @@ class ManifestVisionDataset(Dataset):
         return item
 
     def _augment_semantic(
-        self, tgt: torch.Tensor, prompt: str
+        self, tgt: torch.Tensor, prompt: str, mapping: dict | None = None
     ) -> tuple[torch.Tensor, str]:
         """Apply dynamic open-vocabulary prompt style and optional color remapping."""
         from open_vision_banana.data.openvocab_semantic import (
@@ -437,7 +445,7 @@ class ManifestVisionDataset(Dataset):
             sample_distinct_colors,
         )
 
-        mapping = parse_semantic_legend_from_prompt(prompt)
+        mapping = dict(mapping) if mapping else parse_semantic_legend_from_prompt(prompt)
         if not mapping:
             return tgt, prompt
 

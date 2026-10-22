@@ -194,6 +194,14 @@ post_step() {
         [[ -e $marker && $DRY_RUN -eq 0 ]] && continue
         run unzip -q -o "$z" -d "$dest" && run touch "$marker"
       done ;;
+    un7z|un7z_each)
+      have 7z || { warn "   7z not found (brew install p7zip / apt install p7zip-full); archives kept unextracted"; return 0; }
+      for a in "$dest"/*.7z; do
+        [[ -e $a ]] || continue
+        local marker="$a.extracted"
+        [[ -e $marker && $DRY_RUN -eq 0 ]] && continue
+        run 7z x -y -o"$dest" "$a" >/dev/null && run touch "$marker"
+      done ;;
     untar|untar_each)
       for t in "$dest"/*.tar "$dest"/*.tar.gz "$dest"/*.tgz; do
         [[ -e $t ]] || continue

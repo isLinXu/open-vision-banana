@@ -44,13 +44,15 @@ def test_registry_rows_are_well_formed_and_cover_the_paper_tasks():
         assert row["group"] in {"train", "eval", "replay"}, row["name"]
         assert row["source"] in {"ms", "hf", "url", "manual"}, row["name"]
         for step in row["post"].split("+"):
-            assert step in {"none", "unzip", "untar", "unzip_each", "untar_each", "coco2014_links", "refer_umd", "refer_unc", "nyu_mat", "genai_prompts"}, row["name"]
+            assert step in {"none", "unzip", "untar", "unzip_each", "untar_each", "coco2014_links", "refer_umd", "refer_unc", "nyu_mat", "genai_prompts", "un7z", "un7z_each"}, row["name"]
         assert set(row["tasks"].split(",")) <= {"depth", "normal", "semantic", "instance", "referring", "generation"}, row["name"]
     train_tasks = {t for r in rows if r["group"] == "train" for t in r["tasks"].split(",")}
     assert {"depth", "normal", "semantic", "instance", "referring"} <= train_tasks
     assert any(r["group"] == "replay" for r in rows)
     # Paper benchmarks must never be in the train group
-    for name in ("refcocog", "reasonseg", "nyu-depth-v2-labeled", "kitti-depth", "cityscapes", "genai-bench"):
+    for name in ("refcocog", "reasonseg", "nyu-depth-v2-labeled", "kitti-depth", "cityscapes", "genai-bench",
+                 "diode-val", "diode-val-normals", "eth3d-dslr-depth", "imgedit-bench", "saco-gold", "ibims1",
+                 "scannet-normals", "nuscenes", "vkitti2", "nyu-normals"):
         assert next(r for r in rows if r["name"] == name)["group"] == "eval"
 
 
