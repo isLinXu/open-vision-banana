@@ -561,9 +561,14 @@ python scripts/build_snvc50m_manifest.py    # Build SNVC-50M manifest
 
 The independent `RES Contract` workflow runs on Python 3.10–3.12 for paths used by RES (or by manual dispatch), without model downloads or private local data. It checks RES lint/format/types, source builds, training conditioning, inference and native evaluation; `.coveragerc-res` measures the new RES protocol/data modules only. Use `.github/workflows/res.yml` to reproduce these checks locally. RES work should preserve other tasks' loading and metric behavior and leave general CI, performance drivers and unrelated tests unchanged; existing whole-repository failures are reported separately.
 
+Expected state on `main` (2026-10-22, all extras installed: `peft accelerate diffusers wandb h5py pyarrow pycocotools ijson scipy`): **the whole suite passes**; `tests/test_onnx_export.py` skips without `onnx`. If you see ~35 failures, the environment is missing `peft` / `accelerate` / `diffusers` / `wandb` — install them (a PyPI mirror such as `UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` helps in CN) instead of treating them as a baseline. GitHub Actions is currently blocked by the account's billing notice, so local runs are the authoritative signal.
+
 ```bash
 # Run all tests (tests/ is a flat directory — no subdirectories)
-pytest tests/
+PYTHONPATH=src:. pytest tests/ -q
+
+# The three tests that guard the data -> training chain (run after any data/trainer change)
+PYTHONPATH=src:. pytest tests/test_pipeline_smoke_all_tasks.py tests/test_trainer_system_all_tasks.py tests/test_download_datasets_script.py -q
 
 # Run tests by name pattern
 pytest tests/ -k "core"           # Core algorithm tests

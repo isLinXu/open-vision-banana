@@ -115,7 +115,9 @@ class TestEvaluateBatch:
             task="depth",
         )
         assert len(metrics) > 0
-        assert all(isinstance(v, float) for v in metrics.values())
+        # numeric metrics are floats / ints; depth_curve and depth_units are provenance strings
+        assert {"depth_curve", "depth_units"} <= set(metrics)
+        assert all(isinstance(v, (float, int)) for k, v in metrics.items() if k not in ("depth_curve", "depth_units"))
 
     def test_normal_batch_eval(self):
         class MockModel:

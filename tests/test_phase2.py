@@ -453,5 +453,9 @@ class TestVisionEvaluatorRouting:
         metrics = ev.evaluate(_FakeLoader(), task="depth")
         assert "AbsRel" in metrics
         assert "RMSE" in metrics
-        for v in metrics.values():
-            assert v >= 0.0 and torch.isfinite(torch.tensor(v))
+        # protocol provenance rides along as strings (depth_curve / depth_units); check numbers only
+        assert metrics["depth_curve"] == "metric_power" and metrics["depth_units"] == "metres"
+        for key, v in metrics.items():
+            if isinstance(v, str):
+                continue
+            assert v >= 0.0 and torch.isfinite(torch.tensor(float(v))), key
