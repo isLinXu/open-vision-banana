@@ -153,7 +153,7 @@ class EvalPipeline:
         if not prompt:
             logger.warning("No contract prompt for task '%s'; using fallback", task)
             fallback = {
-                "depth": "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
+                "depth": "Generate a metric depth visualization of this image.",
                 "normal": "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry.",
                 "semantic": "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries.",
             }

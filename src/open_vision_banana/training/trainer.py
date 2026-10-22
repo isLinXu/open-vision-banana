@@ -68,7 +68,9 @@ TASK_ALIASES = {
 }
 
 TASK_PROMPTS = {
-    "depth": "Generate a relative depth map. Preserve object boundaries and encode continuous relative depth with the training color map.",
+    # Paper Section 3.2: the depth task is metric. A row without a prompt must not fall
+    # back to a relative-depth instruction while its target is cube-edge metric depth.
+    "depth": "Generate a metric depth visualization of this image.",
     "normal": "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry.",
     "semantic": "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries.",
     "structure": "Generate a binary structural edge map. Use a black background and thin white edges aligned to visible scene boundaries.",

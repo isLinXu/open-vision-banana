@@ -8,7 +8,15 @@ while retaining lossless metric targets for benchmark-style evaluation:
       images/     ← RGB input images
       targets/    ← depth encoded as RGB (DepthRGBMapper)
       metric_depth/ ← float32 metric depth maps (NaN marks invalid pixels)
+      normal_targets/   ← --tasks normal: camera-space normals as RGB (paper frame)
+      semantic_targets/ ← --tasks semantic: open-vocabulary NYU40 colour maps (+ prompt per row)
+      instance_targets/ ← --tasks instance: one black-background target per class present
+      pairs.jsonl   ← one row per (frame, task); the unified Trainer's input
       manifest.json ← mapper parameters and data-quality audit
+
+``--tasks depth,normal,semantic,instance`` (default: depth) reads the sibling
+``*.normal_cam.hdf5`` / ``*.semantic.hdf5`` / ``*.semantic_instance.hdf5`` of each
+frame, so one downloaded scene feeds four of the paper's five tasks.
 
 Hypersim source layout (scanned recursively):
     .../frame.0000.color.jpg  ↔  .../frame.0000.depth_meters.hdf5
@@ -31,6 +39,7 @@ import argparse
 import hashlib
 import json
 import logging
+import random
 import re
 import sys
 from pathlib import Path
@@ -45,6 +54,13 @@ from open_vision_banana.data.depth_geometry import (
     hypersim_focal_px,
     ray_distance_to_planar_depth,
 )
+from open_vision_banana.data.hypersim import (
+    instance_targets,
+    normal_backfacing_fraction,
+    normal_to_target,
+    semantic_sample,
+)
+from open_vision_banana.data.instance_palette import PALETTE
 from open_vision_banana.data.manifest import fingerprint_records
 from open_vision_banana.data.validation import validate_vision_dataset
 
@@ -92,6 +108,34 @@ def _depth_candidates(color_path: Path) -> list[Path]:
                 swapped_parent / f"{color_path.stem}{suffix}" for suffix in DEPTH_EXTS
             )
     return candidates
+
+
+HYPERSIM_TASKS = ("depth", "normal", "semantic", "instance")
+
+
+def geometry_sibling(depth_path: Path, channel: str) -> Path | None:
+    """``.../frame.0000.depth_meters.hdf5`` -> ``.../frame.0000.<channel>.hdf5`` if present."""
+    if "depth_meters" not in depth_path.name:
+        return None
+    candidate = depth_path.with_name(depth_path.name.replace("depth_meters", channel))
+    return candidate if candidate.is_file() else None
+
+
+def load_hdf5_array(path: Path) -> np.ndarray:
+    """The single dataset of a Hypersim HDF5 file as a NumPy array."""
+    try:
+        import h5py
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Reading Hypersim HDF5 requires h5py") from exc
+    with h5py.File(path, "r") as handle:
+        dataset = handle.get("dataset")
+        if dataset is None:
+            found: list = []
+            handle.visititems(lambda _n, v: found.append(v) if isinstance(v, h5py.Dataset) else None)
+            if len(found) != 1:
+                raise ValueError(f"Expected one dataset in {path}, found {len(found)}")
+            dataset = found[0]
+        return np.array(dataset)
 
 
 def find_hypersim_pairs(
@@ -263,6 +307,7 @@ def _write_manifest(
     audit: dict[str, float | int],
     sample_digest: Any,
     depth_geometry: dict[str, Any] | None = None,
+    tasks_summary: dict[str, Any] | None = None,
 ) -> None:
     valid_pixels = int(audit["valid_pixels"])
     payload = {
@@ -294,6 +339,7 @@ def _write_manifest(
             "convention": "planar_z_depth",
         },
         "depth_geometry": depth_geometry or {},
+        "tasks": tasks_summary or {"tasks": ["depth"]},
         "data_contract": {
             "sample_mapping_sha256": sample_digest.hexdigest(),
             "valid_pixels": valid_pixels,
@@ -321,6 +367,92 @@ def _write_manifest(
     )
 
 
+def _export_extra_tasks(
+    depth_path: Path,
+    stem: str,
+    out_img: Path,
+    tasks: tuple[str, ...],
+    dirs: dict[str, Path],
+    counts: dict[str, int],
+    skipped: dict[str, int],
+    rng: random.Random,
+    *,
+    semantic_variants: int,
+    normal_flip: str,
+    overwrite: bool,
+    on_low_facing,
+) -> list[dict[str, Any]]:
+    """Write normal / semantic / instance targets for one frame; return manifest rows."""
+    records: list[dict[str, Any]] = []
+    image_rel = Path("images") / out_img.name
+    if "normal" in tasks:
+        src = geometry_sibling(depth_path, "normal_cam")
+        if src is None:
+            skipped["normal"] += 1
+        else:
+            out = dirs["normal"] / f"{stem}.png"
+            if overwrite or not out.exists():
+                normal = load_hdf5_array(src)
+                backfacing = normal_backfacing_fraction(normal)
+                if backfacing > 0.1:
+                    logger.warning("%s: %.0f%% of normals point away from the camera; check --normal-flip",
+                                   src.name, 100 * backfacing)
+                    on_low_facing()
+                target, _valid = normal_to_target(normal, flip=normal_flip)
+                Image.fromarray(target).save(out)
+            records.append({
+                "task": "normal", "input": image_rel.as_posix(),
+                "target": (Path("normal_targets") / out.name).as_posix(), "split": "train",
+                "target_kind": "hypersim_normal_cam_rgb", "prompt": PROMPTS["normal"],
+            })
+            counts["normal"] += 1
+    needs_semantic = "semantic" in tasks or "instance" in tasks
+    semantic = None
+    if needs_semantic:
+        sem_src = geometry_sibling(depth_path, "semantic")
+        if sem_src is None:
+            for t in ("semantic", "instance"):
+                if t in tasks:
+                    skipped[t] += 1
+        else:
+            semantic = load_hdf5_array(sem_src)
+    if semantic is not None and "semantic" in tasks:
+        for variant in range(semantic_variants):
+            out = dirs["semantic"] / f"{stem}_v{variant}.png"
+            sample = semantic_sample(semantic, rng)
+            if overwrite or not out.exists():
+                Image.fromarray(sample.target_rgb).save(out)
+            records.append({
+                "task": "semantic", "input": image_rel.as_posix(),
+                "target": (Path("semantic_targets") / out.name).as_posix(), "split": "train",
+                "source": "hypersim", "prompt": sample.prompt, "style": sample.style,
+                "mapping": {k: list(v) for k, v in sample.mapping.items()},
+            })
+            counts["semantic"] += 1
+    if semantic is not None and "instance" in tasks:
+        inst_src = geometry_sibling(depth_path, "semantic_instance")
+        if inst_src is None:
+            skipped["instance"] += 1
+        else:
+            for item in instance_targets(semantic, load_hdf5_array(inst_src), rng, palette=PALETTE):
+                slug = item.class_name.replace(" ", "_")
+                out = dirs["instance"] / f"{stem}_{slug}.png"
+                if overwrite or not out.exists():
+                    Image.fromarray(item.target).save(out)
+                records.append({
+                    "task": "instance", "input": image_rel.as_posix(),
+                    "target": (Path("instance_targets") / out.name).as_posix(), "split": "train",
+                    "prompt": item.prompt, "category": item.class_name,
+                    "num_instances": item.num_instances, "background_color": [0, 0, 0],
+                    "source_dataset": "hypersim",
+                })
+                counts["instance"] += 1
+    return records
+
+
+PROMPTS = {"normal": "Generate a surface normal estimation visualization of this image."}
+
+
 def prepare_hypersim(
     source: Path,
     output: Path,
@@ -332,8 +464,29 @@ def prepare_hypersim(
     exclude_scenes: set[str] | None = None,
     ray_distance: str = "auto",
     focal_px: float | None = None,
+    tasks: tuple[str, ...] | list[str] = ("depth",),
+    semantic_variants: int = 1,
+    normal_flip: str = "none",
+    seed: int = 42,
 ) -> int:
     """Write RGB targets and auditable lossless metric targets under *output*."""
+    tasks = tuple(tasks)
+    unknown_tasks = sorted(set(tasks) - set(HYPERSIM_TASKS))
+    if unknown_tasks:
+        raise ValueError(f"Unknown Hypersim tasks {unknown_tasks}; choose from {HYPERSIM_TASKS}")
+    extra_dirs = {
+        "normal": output / "normal_targets",
+        "semantic": output / "semantic_targets",
+        "instance": output / "instance_targets",
+    }
+    for task, directory in extra_dirs.items():
+        if task in tasks:
+            directory.mkdir(parents=True, exist_ok=True)
+    extra_records: list[dict[str, Any]] = []
+    extra_counts: dict[str, int] = {t: 0 for t in HYPERSIM_TASKS if t != "depth"}
+    skipped_missing_channel: dict[str, int] = {t: 0 for t in extra_counts}
+    low_facing = [0]
+    rng = random.Random(seed)
     pairs = find_hypersim_pairs(source, exclude_scenes=exclude_scenes)
     if not pairs:
         logger.error("No color/depth pairs found under %s", source)
@@ -377,6 +530,13 @@ def prepare_hypersim(
             f"{stem}\0{color_path.relative_to(source)}\0{depth_path.relative_to(source)}\n".encode()
         )
 
+        extra_records.extend(
+            _export_extra_tasks(
+                depth_path, stem, out_img, tasks, extra_dirs, extra_counts, skipped_missing_channel,
+                rng, semantic_variants=semantic_variants, normal_flip=normal_flip, overwrite=overwrite,
+                on_low_facing=lambda: low_facing.__setitem__(0, low_facing[0] + 1),
+            )
+        )
         if out_img.exists() and out_tgt.exists() and out_metric.exists() and not overwrite:
             stored_metric = torch.from_numpy(np.load(out_metric)).float().unsqueeze(0).unsqueeze(0)
             stored_depth = torch.where(
@@ -424,6 +584,11 @@ def prepare_hypersim(
             logger.info("Processed %d / %d pairs", offset + 1, len(pairs))
 
     jsonl_count = write_metric_depth_pairs_jsonl(output)
+    if extra_records:
+        with (output / "pairs.jsonl").open("a", encoding="utf-8") as handle:
+            for record in extra_records:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        jsonl_count += len(extra_records)
     _write_manifest(
         output,
         source=source,
@@ -434,6 +599,14 @@ def prepare_hypersim(
         source_formats=source_formats,
         audit=audit,
         sample_digest=sample_digest,
+        tasks_summary={
+            "tasks": list(tasks),
+            "rows_per_task": {"depth": written, **{t: c for t, c in extra_counts.items() if t in tasks}},
+            "skipped_missing_channel": {t: c for t, c in skipped_missing_channel.items() if t in tasks},
+            "semantic_variants": semantic_variants,
+            "normal_flip": normal_flip,
+            "normal_backfacing_frames": low_facing[0],
+        },
         depth_geometry={
             "ray_distance_mode": ray_distance,
             "ray_distance_converted_pairs": converted_pairs,
@@ -511,6 +684,17 @@ def parse_args() -> argparse.Namespace:
         help="Focal length in pixels for the conversion (default: Hypersim 60 deg HFOV rule)",
     )
     parser.add_argument(
+        "--tasks",
+        default="depth",
+        help="Comma-separated subset of depth,normal,semantic,instance (default: depth)",
+    )
+    parser.add_argument("--semantic-variants", type=int, default=1, help="Colour mappings sampled per frame")
+    parser.add_argument(
+        "--normal-flip", choices=("none", "z", "yz"), default="none",
+        help="Axis flip for normal_cam exports not in the paper's +x right / +y up / +z out frame",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
         "--validate",
         action="store_true",
         help="Run validate_vision_dataset() after preparation",
@@ -538,6 +722,10 @@ def main() -> int:
         exclude_scenes=exclude_scenes or None,
         ray_distance=args.ray_distance,
         focal_px=args.focal_px,
+        tasks=tuple(t.strip() for t in args.tasks.split(",") if t.strip()),
+        semantic_variants=args.semantic_variants,
+        normal_flip=args.normal_flip,
+        seed=args.seed,
     )
     if count == 0:
         return 1

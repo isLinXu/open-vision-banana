@@ -44,7 +44,7 @@ def test_registry_rows_are_well_formed_and_cover_the_paper_tasks():
         assert row["group"] in {"train", "eval", "replay"}, row["name"]
         assert row["source"] in {"ms", "hf", "url", "manual"}, row["name"]
         for step in row["post"].split("+"):
-            assert step in {"none", "unzip", "untar", "unzip_each", "untar_each", "coco2014_links", "refer_umd", "refer_unc"}, row["name"]
+            assert step in {"none", "unzip", "untar", "unzip_each", "untar_each", "coco2014_links", "refer_umd", "refer_unc", "nyu_mat", "genai_prompts"}, row["name"]
         assert set(row["tasks"].split(",")) <= {"depth", "normal", "semantic", "instance", "referring", "generation"}, row["name"]
     train_tasks = {t for r in rows if r["group"] == "train" for t in r["tasks"].split(",")}
     assert {"depth", "normal", "semantic", "instance", "referring"} <= train_tasks
@@ -97,9 +97,10 @@ def test_local_url_fetch_unzip_and_coco2014_links_are_idempotent(tmp_path: Path)
     assert first.returncode == 0, first.stderr
     assert "1 fetched, 1 need manual download, 0 failed" in first.stderr
     link = root / "coco2017" / "train2014" / "COCO_train2014_000000581921.jpg"
-    assert link.is_symlink() and link.resolve().name == "000000581921.jpg"
+    original = root / "coco2017" / "train2017" / "000000581921.jpg"
+    assert link.is_file() and (link.is_symlink() or link.stat().st_ino == original.stat().st_ino)
     assert (root / "coco2017" / "train2017.zip.extracted").exists()
 
     second = _run("--registry", str(registry), "--root", str(root), "--only", "mini-coco")
     assert second.returncode == 0, second.stderr
-    assert "exists:" in second.stderr and "0 new symlinks" in second.stdout
+    assert "exists:" in second.stderr and "0 new links" in second.stdout

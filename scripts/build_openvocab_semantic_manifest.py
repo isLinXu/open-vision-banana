@@ -16,7 +16,13 @@ Example (ADE20K SceneParse150: labels are 0=other, 1..150 = classes):
         --source-name ade20k --label-offset 1 --ignore-index -1 \
         --out-dir data/openvocab_semantic_ade20k --variants 2
 
-``--classes`` is a JSON list of class names (index = label - label_offset).
+COCO-Stuff (stuffthingmaps PNG value = COCO id - 1, 255 = unlabelled, 11 unused ids):
+        --images data/raw/coco2017/train2017 --labels data/raw/coco_stuff/train2017 \
+        --classes configs/coco_stuff_182_labels.json --source-name coco_stuff \
+        --label-offset 0 --ignore-index 255 --out-dir data/openvocab_semantic_cocostuff
+
+``--classes`` is a JSON list of class names (index = label - label_offset); an
+empty string keeps a gap in the id space and ignores those pixels.
 Pixels whose (label - label_offset) is ``--ignore-index`` or out of range are
 painted with the background color.
 
@@ -65,7 +71,13 @@ def split_for(stem: str, val_fraction: float) -> str:
     return "val" if bucket < val_fraction * 10_000 else "train"
 
 
-def load_labels(path: Path, offset: int, ignore_index: int | None, num_classes: int) -> np.ndarray:
+def load_labels(
+    path: Path,
+    offset: int,
+    ignore_index: int | None,
+    num_classes: int,
+    unused_indices: frozenset[int] = frozenset(),
+) -> np.ndarray:
     with Image.open(path) as img:
         raw = np.asarray(img).astype(np.int64)
     if raw.ndim == 3:  # RGB-encoded label PNGs are not supported; need class indices
@@ -74,6 +86,10 @@ def load_labels(path: Path, offset: int, ignore_index: int | None, num_classes: 
     bad = (labels < 0) | (labels >= num_classes)
     if ignore_index is not None:
         bad |= labels == ignore_index
+    # Class lists may keep gaps as "" so raw label ids stay addressable (COCO-Stuff's
+    # 182-slot id space has 11 unused ids); those pixels are ignored.
+    for index in unused_indices:
+        bad |= labels == index
     labels[bad] = -1
     return labels
 
@@ -99,7 +115,8 @@ def main() -> int:
     assert_not_benchmark(args.source_name, args.allow_benchmark_source)
     class_names = json.loads(args.classes.read_text(encoding="utf-8"))
     if not isinstance(class_names, list) or not all(isinstance(n, str) for n in class_names):
-        raise SystemExit("--classes must be a JSON list of strings")
+        raise SystemExit("--classes must be a JSON list of strings ('' marks an unused label id)")
+    unused_indices = frozenset(i for i, n in enumerate(class_names) if not n)
 
     images = sorted(f for f in args.images.rglob("*") if f.suffix.lower() in IMAGE_SUFFIXES)
     if args.max_images:
@@ -119,7 +136,7 @@ def main() -> int:
             if not label_path.is_file():
                 skipped += 1
                 continue
-            labels = load_labels(label_path, args.label_offset, args.ignore_index, len(class_names))
+            labels = load_labels(label_path, args.label_offset, args.ignore_index, len(class_names), unused_indices)
             split = split_for(image_path.stem, args.val_fraction)
             for variant in range(args.variants):
                 # Seed from (global seed, image, variant): reproducible and order-independent.

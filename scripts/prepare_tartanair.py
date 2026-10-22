@@ -32,6 +32,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -209,8 +210,38 @@ def prepare_tartanair(
         if (idx + 1) % 100 == 0:
             logger.info("Processed %d / %d pairs", idx + 1, len(pairs))
 
-    logger.info("Wrote %d pairs to %s", written, output.resolve())
+    rows = write_depth_pairs_jsonl(output)
+    logger.info("Wrote %d pairs to %s (%d pairs.jsonl rows)", written, output.resolve(), rows)
     return written
+
+
+def write_depth_pairs_jsonl(output: Path) -> int:
+    """Rewrite ``pairs.jsonl`` (manifest-relative paths) from every images/targets pair.
+
+    Same contract as ``prepare_hypersim.write_metric_depth_pairs_jsonl``: the unified
+    Trainer only consumes ``pair_manifest`` files, so a bare images/ + targets/ layout
+    is not loadable without this.
+    """
+    records = []
+    for image_path in sorted((output / "images").glob("*.png")):
+        target_path = output / "targets" / image_path.name
+        if not target_path.is_file():
+            continue
+        records.append(
+            {
+                "task": "depth",
+                "input": image_path.relative_to(output).as_posix(),
+                "target": target_path.relative_to(output).as_posix(),
+                "split": "train",
+                "target_kind": "tartanair_metric_rgb",
+                "prompt": "Generate a metric depth visualization of this image.",
+            }
+        )
+    (output / "pairs.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + ("\n" if records else ""),
+        encoding="utf-8",
+    )
+    return len(records)
 
 
 def parse_args() -> argparse.Namespace:

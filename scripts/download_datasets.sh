@@ -151,9 +151,14 @@ for split2017, split2014 in (("train2017", "train2014"), ("val2017", "train2014"
             continue
         link = dst / f"COCO_train2014_{int(img.stem):012d}.jpg"
         if not link.exists():
-            os.symlink(os.path.relpath(img, dst), link)
+            # Hard link: resolves inside train2014/, which build_res_manifest's
+            # traversal guard requires (a symlink to ../train2017 would be rejected).
+            try:
+                os.link(img, link)
+            except OSError:  # cross-device: fall back to a relative symlink
+                os.symlink(os.path.relpath(img, dst), link)
             made += 1
-print(f"coco2014_links: {made} new symlinks under {root / 'train2014'}")
+print(f"coco2014_links: {made} new links under {root / 'train2014'}")
 PY
 }
 
@@ -177,6 +182,11 @@ post_step() {
     coco2014_links) coco2014_links "$dest" ;;
     refer_umd) refer_convert "$dest" umd ;;
     refer_unc) refer_convert "$dest" unc ;;
+    nyu_mat)
+      local splits=() ; [[ -f "$dest/splits.mat" ]] && splits=(--splits "$dest/splits.mat")
+      [[ ${#splits[@]} -eq 0 ]] && warn "   splits.mat not found in $dest; frames go to all/ (fetch nyu-depth-v2-splits first)"
+      run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" nyu-mat --mat "$dest/nyu_depth_v2_labeled.mat" "${splits[@]}" --out "$dest" ;;
+    genai_prompts) run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" genai-bench --parquet "$dest" --out "$dest" ;;
     unzip|unzip_each)
       for z in "$dest"/*.zip "$dest"/raw/*.zip; do
         [[ -e $z ]] || continue
