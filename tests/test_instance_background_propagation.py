@@ -94,6 +94,7 @@ def test_manifest_background_rides_from_row_to_batch(tmp_path: Path):
     assert "background_color" not in items[4]
     batch = _collate_fn(items)
     assert batch["background_color"] == [*BACKGROUNDS.values(), (0, 0, 0)]  # legacy row defaults to black
+    assert "background_color" not in _collate_fn([items[4]])  # all-legacy batches keep the historical keys
     # and every target still decodes to exactly one instance through the evaluator path
     decoder = SegmentationDecoder.paper_reproduction()
     for rgb, bg in zip(batch["target_rgb"], batch["background_color"], strict=True):

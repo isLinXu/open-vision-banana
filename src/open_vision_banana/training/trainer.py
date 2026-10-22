@@ -501,8 +501,9 @@ def _collate_fn(batch: list[dict]) -> dict:
         for key in ("expression", "encoding", "sample_id", "source_dataset"):
             if any(key in b for b in batch):
                 result[key] = [b.get(key) for b in batch]
-    if any(b["task"] == "instance" for b in batch):
-        # default black where a row did not record one, so evaluators can index per sample
+    if any("background_color" in b for b in batch):
+        # instance rows with a recorded Fig. 3 background; rows without one default to black
+        # so evaluators can index per sample. Batches without any such row keep the legacy keys.
         result["background_color"] = [tuple(b.get("background_color", (0, 0, 0))) for b in batch]
     return result
 
@@ -548,14 +549,15 @@ class Trainer:
         )
         logger.info("Output: %s", config.output_dir)
 
-        # Data errors must fail before downloading/loading a large backbone.
-        self.preflight_report = self._run_preflight()
+        # Data errors must fail before downloading/loading a large backbone: structural
+        # errors first (missing manifest, identity replay), then the contract preflight.
         self.train_loader, self.val_loader = self._build_datasets()
         model_layout = edit_latent_layout(resolve_model_config(config.model_name))
         if model_layout == "qwen21":
             qwen_image21.check_training_config(config)
         if model_layout is not None:
             _reject_identity_generation_replay(self.train_loader.dataset, config.model_name)
+        self.preflight_report = self._run_preflight()
 
         # ── Model backend ──────────────────────────────────────────────
         self.backend = ModelBackend(
