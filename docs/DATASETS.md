@@ -37,30 +37,43 @@ are kept and marked `*.extracted`, so re-running is idempotent and resumable.
 `coco2014_links` exposes COCO 2017 images under the `train2014/COCO_train2014_*.jpg`
 names the RefCOCO `refer` files use (2017 is a re-split of 2014; image ids match).
 
-## What each source is for
+## What each source is for, and the script that turns it into training rows
 
-| name | tasks | why this one | next step |
-|:--|:--|:--|:--|
-| `hypersim` | depth, normal, semantic, instance | Synthetic indoor; one source covers four tasks. `depth_meters.hdf5` is **ray distance** — `prepare_hypersim.py` converts to planar z by default. | `scripts/prepare_hypersim.py --source data/raw/hypersim --output data/hypersim` |
-| `tartanair` | depth, semantic | Synthetic outdoor / long range (planar z `.npy`); covers the KITTI / nuScenes domain without touching those benchmarks. | `scripts/prepare_tartanair.py` |
-| `ade20k` | semantic | 150 natural class names, not an evaluated benchmark. | `scripts/build_openvocab_semantic_manifest.py` |
-| `coco2017-images` + `coco2017-instances` | instance | Fig. 3 one-class-at-a-time targets. | `scripts/build_instance_manifest.py --format coco --exclude-image-ids data/raw/refer/refcocog/refs(umd).p` |
-| `lvis-v1` | instance | 1203-class long tail on the same images. | `scripts/build_instance_manifest.py --format lvis ...` |
-| `coco-stuff` | semantic | 171 thing + stuff classes on COCO images. | `build_openvocab_semantic_manifest.py` + `--exclude-image-ids` |
-| `refcoco`, `refcoco+` | referring | Training expressions from the ModelScope parquet mirrors (`swift/refcoco*`); the `refer_unc` post step rebuilds REFER `instances.json` + `refs(unc).p` with `scripts/convert_refer_parquet.py`. Images from `coco2017-images`. | `scripts/build_res_manifest.py` |
-| `omniedit` | generation (replay) | Edit triplets for the editing backbones (Section 2 mixing). | `scripts/build_generation_replay_manifest.py --kind edit` |
-| `blip3o-60k` | generation (replay) | T2I pairs; only for text-to-image backbones (the trainer rejects identity replay on editors). | `--kind t2i` |
-| `refcocog`, `reasonseg`, `nyu-depth-v2-labeled`, `genai-bench` | eval | Paper Tables 4–7 / Appendix D. `refcocog` is rebuilt from `swift/refcocog` (`refer_umd` post step: 42,226 / 2,573 / 5,023 refs = official UMD split); `refs(umd).p` doubles as the exclusion list. | `scripts/evaluate_paper_benchmarks.py` |
-| `kitti-depth`, `cityscapes` | eval, manual | Login walls. Cityscapes **train** in the mixture breaks the zero-shot claim for Table 2. | `scripts/setup_cityscapes_official.py` |
+| name | tasks | preparation (all write manifest-relative `pairs.jsonl`) |
+|:--|:--|:--|
+| `hypersim` | depth, normal, semantic, instance | `python scripts/prepare_hypersim.py --source data/raw/hypersim --output data/prep/hypersim --tasks depth,normal,semantic,instance` — ray distance → planar z, `normal_cam` → paper frame (back-facing check), NYU40 → Fig. 2 open-vocab prompts, `semantic_instance` → one Fig. 3 target per class |
+| `tartanair` | depth | `python scripts/prepare_tartanair.py --source data/raw/tartanair --output data/prep/tartanair` |
+| `ade20k` | semantic | `python scripts/build_openvocab_semantic_manifest.py --images data/raw/ade20k/ADEChallengeData2016/images/training --labels .../annotations/training --classes configs/ade20k_150_classes.json --source-name ade20k --label-offset 1 --ignore-index -1 --out-dir data/prep/ade20k` |
+| `coco-stuff` | semantic | same script with `--labels data/raw/coco_stuff/train2017 --classes configs/coco_stuff_182_labels.json --label-offset 0 --ignore-index 255 --source-name coco_stuff` (11 unused ids are `""` in the list and ignored) |
+| `coco2017-images` + `coco2017-instances` | instance | `python scripts/build_instance_manifest.py --annotations data/raw/coco2017/annotations/instances_train2017.json --images-dir data/raw/coco2017/train2017 --targets-dir data/prep/instance_coco/targets --output data/prep/instance_coco/instance.jsonl --data-root data/prep/instance_coco --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"` |
+| `lvis-v1` | instance | same with `--format lvis --annotations data/raw/lvis/lvis_v1_train.json --images-dir data/raw/coco2017` |
+| `refcoco`, `refcoco+`, `refcocog` | referring | `python scripts/build_res_manifest.py --annotations-root data/raw/refer --image-root data/raw/coco2017/train2014 --output-dir data/prep/res` — RefCOCOg val/test images are excluded from every train pool; the builder also emits the official eval rows |
+| `omniedit` | generation (replay) | `python scripts/build_generation_replay_manifest.py --kind edit --preset omniedit --records data/raw/omniedit/data --images-dir data/prep/replay/images --data-root data/prep/replay --output data/prep/replay/omniedit.jsonl` |
+| `blip3o-60k` | generation (replay, T2I backbones only) | `... --kind t2i --records data/raw/blip3o_60k/journeyDB.tar --captions-file data/raw/blip3o_60k/journeyDB.txt --images-dir ...` |
+| `nyu-depth-v2-splits` + `nyu-depth-v2-labeled` | eval | post step `nyu_mat` writes `test/images` + `test/depths` (Eigen 654) for `NYUDepthDataset` |
+| `genai-bench` | eval | post step `genai_prompts` writes `prompts.jsonl` for `GenAIBenchDataset` |
+| `refcocog`, `reasonseg` | eval | `RefCOCOgDataset(protocol="umd")`, `ReasonSegDataset` read the downloaded layouts directly |
+| `kitti-depth`, `cityscapes` | eval, manual | `scripts/prepare_kitti_metric.py`, `scripts/setup_cityscapes_official.py` after a manual download |
 
-Then assemble the training manifest:
+Then merge (paths are rebased to the merged file; tasks without a val split get
+`--val-percent`), run the zero-shot / metric-depth audit, and train:
 
 ```bash
+python scripts/merge_multitask_manifest.py \
+    --inputs data/prep/hypersim/pairs.jsonl data/prep/tartanair/pairs.jsonl data/prep/ade20k/pairs.jsonl \
+             data/prep/instance_coco/instance.jsonl data/prep/res/pairs.jsonl data/prep/replay/omniedit.jsonl \
+    --out data/merged/pairs.jsonl --val-percent 2
 python scripts/build_qwen_baseline_manifest.py \
-    --base-manifest data/combined_pairs.jsonl --output data/qwen_baseline/pairs.jsonl \
-    --data-root data --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
-PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml
+    --base-manifest data/merged/pairs.jsonl --output data/qwen_baseline/pairs.jsonl \
+    --data-root data/merged --min-cityscapes-share 0 \
+    --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
+PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml \
+    --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline
 ```
+
+`tests/test_pipeline_smoke_all_tasks.py` runs this exact chain on tiny fixtures in
+the downloaded layouts and asserts that all six paper_aligned tasks come out of the
+Trainer's `ManifestVisionDataset` + `TaskWeightedSampler` as batches.
 
 ## Sources surveyed and rejected
 
