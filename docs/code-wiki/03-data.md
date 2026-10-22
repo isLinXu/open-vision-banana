@@ -68,6 +68,8 @@ training.trainer.ManifestVisionDataset   每任务一个实例 → ConcatDataset
 - `--protocol strict`（默认）= 论文零样本：Cityscapes train 入拦截表、COCO 行必须给 `--exclude-image-ids`、禁止 Cityscapes 上采样；`--protocol in_domain` 允许这些并在审计里记录 `zero_shot_claim_allowed: false`。
 - 产物 `pairs.audit.json` 记录各类 rejected 计数和每任务 train/val 数。
 
+`scripts/check_experiment_gates.py data|run|eval` 把 `exp_setting.md` 的闸门表编码成 PASS/WARN/FAIL（退出码 1 = 不得开训）；`merge` 的 val 划分按**图像**（COCO 文件名按 image id）分组，同一图像的行不会跨 train/val。
+
 开训前最后一道闸：`data.validation.validate_manifest_contract(manifest, model_name=..., data_root=...)`，检查 LoRA 目标是否含注意力、语义图例是否会被文本编码器截断、深度 prompt 与 target 是否矛盾、`uniform_task_prompts` 冲突等。`Trainer.__init__` 在加载底座之前**强制**运行同一审计（`_run_preflight`）：有 error 直接拒绝开训；`training.skip_preflight: true` 可绕过，但 error 会原样写进 `effective_config.json`。
 
 ## 5. 训练期数据加载（`ManifestVisionDataset`）

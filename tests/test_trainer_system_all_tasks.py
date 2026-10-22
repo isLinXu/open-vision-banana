@@ -284,3 +284,44 @@ def test_preflight_blocks_relative_depth_prompt_and_skip_is_recorded(tmp_path: P
     assert effective["preflight"]["skipped"] is True
     assert any("relative" in e.lower() or "metric" in e.lower() for e in effective["preflight"]["errors"]), effective["preflight"]
     assert trainer.preflight_report is not None and trainer.preflight_report.errors
+
+
+def test_experiment_gates_pass_on_the_six_task_run(tmp_path: Path, monkeypatch):
+    """exp_setting.md gates, machine-checked (scripts/check_experiment_gates.py) on the real artefacts."""
+    from scripts.check_experiment_gates import check_data, check_eval, check_run
+
+    manifest = _six_task_manifest(tmp_path)
+    tasks = ["depth", "normal", "semantic", "instance", "referring", "generation"]
+    data_report = check_data(
+        merged_audit=tmp_path / "merged" / "pairs.audit.json", final_manifest=manifest,
+        hypersim_manifest=tmp_path / "prep" / "hypersim" / "manifest.json", tasks=tasks, model_name="sana-1600m",
+    )
+    assert not data_report.failed, data_report.render()
+
+    monkeypatch.setattr(trainer_module, "ModelBackend", lambda **kwargs: FakeBackend(**kwargs))
+    run_dir = tmp_path / "run"
+    config = TrainingConfig(
+        model_name="sana-1600m", device="cpu", dtype="float32", resolution=RES, batch_size=2, steps=4, lr=1e-3,
+        output_dir=str(run_dir), data_dir=str(manifest.parent), pair_manifest=str(manifest), tasks=tasks,
+        vision_ratio=0.5, task_sampling="uniform", num_workers=0, save_every=2, eval_every=2, log_every=1,
+        warmup_steps=0, ema_enabled=True, ema_warmup=1, min_snr=False, wandb=False,
+    )
+    Trainer(config).train()
+    run_report = check_run(run_dir=run_dir, tasks=tasks, vision_ratio=0.5)
+    assert not run_report.failed, run_report.render()
+
+    (tmp_path / "eval.json").write_text(json.dumps({"nyu": {"AbsRel": 0.31, "delta_1.25": 0.52}, "refcocog": {"cIoU": 0.4}}))
+    eval_report = check_eval(eval_json=tmp_path / "eval.json", required_metrics=["AbsRel", "cIoU"])
+    assert not eval_report.failed, eval_report.render()
+    (tmp_path / "bad.json").write_text(json.dumps({"nyu": {"AbsRel": "nan"}}))
+    assert check_eval(eval_json=tmp_path / "bad.json", required_metrics=["AbsRel", "cIoU"]).failed
+
+    # a non-strict manifest fails the data gate
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    audit = json.loads(manifest.with_suffix(".audit.json").read_text())
+    loose = tmp_path / "loose" / "pairs.jsonl"
+    loose.parent.mkdir()
+    loose.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    loose.with_suffix(".audit.json").write_text(json.dumps({**audit, "protocol": "in_domain", "zero_shot_claim_allowed": False}))
+    assert any(r.name == "final.protocol_strict" for r in check_data(
+        merged_audit=None, final_manifest=loose, hypersim_manifest=None, tasks=tasks, model_name="sana-1600m").failed)

@@ -150,7 +150,12 @@ PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest da
   --output data/qwen_baseline/pairs.jsonl --data-root data/merged \
   --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
 ```
-Read the two audit JSONs aloud to the user: `per_task_dropped` must be `{}`, every requested task needs both `train` and `val` counts, `rejected_benchmark_leak_rows` / `rejected_excluded_image_id_rows` show what the zero-shot rule removed, `rejected_non_metric_depth_rows` what failed the cube-edge check.
+Then run the machine gate and paste its table to the user:
+```bash
+PYTHONPATH=src python scripts/check_experiment_gates.py data --merged-audit data/merged/pairs.audit.json \
+  --final-manifest data/qwen_baseline/pairs.jsonl --hypersim-manifest data/prep/hypersim/manifest.json --model-name qwen-image-2.1
+```
+Exit code 1 = do not launch. Also read out: `rejected_benchmark_leak_rows` / `rejected_excluded_image_id_rows` (what the zero-shot rule removed), `rejected_non_metric_depth_rows` (what failed the cube-edge check), and `protocol` / `zero_shot_claim_allowed`.
 
 ### 3.4 Validate before training
 ```bash
@@ -230,7 +235,7 @@ grep -E "step=|loss=" "${RUN_DIR}/train.log" | tail -5
 tr '\r' '\n' < "${RUN_DIR}/train.log" | grep -oE "[0-9]+/[0-9]+" | tail -1
 nvidia-smi
 ```
-Also check `${RUN_DIR}/effective_config.json` once (sampling probabilities, task sample counts, optimizer block).
+Once the first checkpoint exists: `PYTHONPATH=src python scripts/check_experiment_gates.py run --run-dir "${RUN_DIR}" --vision-ratio <value>` (tasks, sampling probabilities, preflight, optimizer block, checkpoints, finite val losses). After evaluation: `... eval --eval-json <json> --require AbsRel,cIoU`.
 
 **Checkpoint layout** (`TrainingCallbacks.on_checkpoint`):
 ```

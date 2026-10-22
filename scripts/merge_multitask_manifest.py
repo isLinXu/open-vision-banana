@@ -25,9 +25,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import random
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -38,6 +39,23 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_vision_banana.data.manifest import resolve_manifest_path  # noqa: E402
 
 PATH_KEYS = ("input", "target", "image")
+
+
+_COCO_ID_RE = re.compile(r"^(?:COCO_(?:train|val|test)20\d\d_)?0*(\d{1,12})\.(?:jpg|jpeg|png)$", re.IGNORECASE)
+
+
+def _image_hash(rel_input: str, out_dir: Path) -> int:
+    """Stable per-image hash used as the split key.
+
+    COCO-style file names hash by their image id (so copies of the same COCO image
+    under different directories share a split); everything else by resolved path.
+    """
+    name = Path(rel_input).name
+    match = _COCO_ID_RE.match(name)
+    key = f"coco:{int(match.group(1))}" if match else str(
+        (out_dir / rel_input).resolve() if not Path(rel_input).is_absolute() else Path(rel_input)
+    )
+    return int(hashlib.sha1(key.encode("utf-8")).hexdigest()[:12], 16)
 
 
 def _rebase(path: Path, out_dir: Path, absolute: bool) -> str:
@@ -96,7 +114,6 @@ def merge_manifests(
                 by_task[task].append(row)
                 stats[task]["valid"] += 1
 
-    rng = random.Random(seed)
     out_rows: list[dict] = []
     total_before = total_after = 0
     for task in sorted(by_task):
@@ -106,9 +123,21 @@ def merge_manifests(
             step = len(rows) / cap  # even strided subsample
             rows = [rows[int(i * step)] for i in range(cap)]
         if val_percent > 0 and not any(r.get("split") == "val" for r in rows):
-            n_val = max(1, int(round(len(rows) * val_percent / 100.0))) if len(rows) > 1 else 0
-            for index in rng.sample(range(len(rows)), n_val):
-                rows[index]["split"] = "val"
+            # Image-grouped, deterministic: every row of the same input image (across tasks and
+            # instance classes) lands in the same split, so val loss never sees a training image.
+            n_val = 0
+            if len(rows) > 1:
+                keyed = sorted(rows, key=lambda r: _image_hash(r["input"], out_dir))
+                for row in keyed:
+                    if _image_hash(row["input"], out_dir) % 10_000 < int(val_percent * 100):
+                        row["split"] = "val"
+                        n_val += 1
+                if n_val == 0:  # tiny tasks: guarantee one val image
+                    keyed[0]["split"] = "val"
+                    n_val = 1
+                if n_val == len(rows):  # ...and one train image
+                    keyed[-1]["split"] = "train"
+                    n_val -= 1
             stats[task]["val_assigned"] = n_val
         for row in rows:
             row.setdefault("split", "train")
