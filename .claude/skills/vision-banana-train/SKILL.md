@@ -1,524 +1,335 @@
 ---
 name: vision-banana-train
-description: One-stop guided Open-Vision-Banana workflow — environment setup, model selection, data preparation, training config, background training, loss monitoring, evaluation, and inference. TRIGGER when the user wants to train a vision model (depth/normal/segmentation) with Open-Vision-Banana, run a full training pipeline, evaluate vision tasks, or asks to "训练视觉模型" / "用 vision banana 做训练" / "train a vision LoRA". SKIP for general questions about the codebase or non-training tasks.
+description: One-stop guided Open-Vision-Banana workflow — environment setup, model selection, public-data download and preparation (six paper tasks), paper-aligned training config, background training, loss monitoring, paper-benchmark evaluation, and inference. TRIGGER when the user wants to train a vision model (depth/normal/semantic/instance/referring) with Open-Vision-Banana, run the full data → training pipeline, evaluate against the paper's benchmarks, or asks to "训练视觉模型" / "用 vision banana 做训练" / "train a vision LoRA". SKIP for general questions about the codebase or non-training tasks.
 ---
 
 # Open-Vision-Banana One-Stop Vision Training Workflow
 
-Guide the user through a complete Open-Vision-Banana run: **environment setup → model selection → data preparation → training config → background training → loss monitoring → evaluation → inference**.
+Guide the user through a complete run: **environment → backbone → data (download → prepare → merge → audit) → training config → background training → monitoring → evaluation → inference**.
 
 The core of this skill is **interactive guidance**: at every key decision point use `AskUserQuestion` and never make irreversible assumptions on the user's behalf.
 
-The working directory is the repo root (`/media/linxu/thinkHub/Thinking-face/open-vision-banana`). All commands must prefix `PYTHONPATH=src` to ensure correct imports.
+The working directory is the repository root. All Python commands must prefix `PYTHONPATH=src`.
 
-> **Conda environment**: All commands run under `conda activate llama` (Python 3.10+, torch 2.7.1+cu128). When launching background jobs, use the full conda python path: `/home/linxu/anaconda3/envs/llama/bin/python`.
+> **Environment**: the repo's Python environment (conda `llama` on the lab machine; any Python ≥ 3.10 env with `pip install -e ".[all]"` elsewhere). For background jobs use the environment's **absolute python path** (`which python` after activation), not bare `python`.
 
-> **HuggingFace mirror**: Always set `export HF_ENDPOINT=https://hf-mirror.com` for model downloads in mainland China.
+> **Mirrors**: `export HF_ENDPOINT=https://hf-mirror.com` for Hugging Face; ModelScope sources need `modelscope login` once for `OpenDataLab/*` datasets (Hypersim, ADE20K full).
 
-> **Artifacts directory**: Training outputs go to `output/<run_name>/`. Generated configs, logs, and evaluation results should be organized under `output/`. Do NOT scatter files in the repo root.
+> **Artifacts**: training outputs go to `output/<run_name>/`; raw data to `data/raw/` (`DATA_ROOT`), prepared manifests to `data/prep/`, `data/merged/`, `data/qwen_baseline/`. Do NOT scatter files in the repo root.
 
-> **Language**: communicate with the user in whatever language they request, or otherwise follow the active language setting/preference.
+> **Honesty**: unofficial reimplementation. Everything the paper *states* is implemented one-to-one (README "Paper Alignment Statement"); the paper's base model, data and human study are closed, so **paper benchmark numbers are not a target** and must never be presented as expected results.
+
+> **Language**: communicate in whatever language the user requests, otherwise follow the active language setting.
 
 ---
 
 ## Progress board (show only when progress changes)
 
-This workflow has many stages, so the user must always be able to see **where we are**: which steps are done, which is in progress, and which remain.
+Render the **progress board** only when a step marker changes (`[ ]` / `[~]` / `[x]` / `[-]`) or when the user asks for status. Never repeat it on routine log polling.
 
-**Rule:** Render the **progress board** only when the board state changes, or when the user explicitly asks for status/progress. A board state changes when any step marker changes (`[ ]` / `[~]` / `[x]` / `[-]`). Do **not** repeat the board on routine status updates, repeated confirmations, log polling, or consecutive messages within the same stage if the markers are unchanged.
+Markers: `[x]` done · `[~]` in progress · `[ ]` not started · `[-]` skipped.
 
-Use these markers:
-- `[x]` done
-- `[~]` in progress (the step you are working on right now)
-- `[ ]` not started
-- `[-]` skipped (e.g. evaluation when the user chose "training only")
-
-Render it as a compact checklist inside a fenced code block. **Always wrap the entire progress board in triple backticks** (use `text` as the info string, or no info string) so Markdown preserves every line break and marker exactly. **The board's language must follow the active conversation language / the user's request.**
+Always wrap the board in a fenced code block so line breaks survive; its language follows the conversation.
 
 ```
 进度看板
-[x] 0. 确认整体流程（范围 / 执行方式）
+[x] 0. 确认整体流程（范围 / 底座 / 任务）
 [x] 1. 环境准备
-[~] 2. 模型选择与下载
-[ ] 3. 数据准备
+[~] 2. 底座模型选择与下载
+[ ] 3. 数据：下载 → 预处理 → 合并 → 零样本审计
 [ ] 4. 训练配置
 [ ] 5. 启动训练
-[ ] 6. 效果评估
+[ ] 6. 论文基准评估
 [ ] 7. 推理验证
 ```
 
-Guidelines:
-- Mark steps `[-]` instead of dropping them when they don't apply to the chosen flow (e.g. "training only" skips 6 & 7).
-- After Stage 0, adapt the board to the chosen branch (mark skipped steps `[-]`) and keep that shape for the rest of the run.
-- Do **not** render the board as plain paragraph text or as Markdown task-list checkboxes (`- [x] ...`); both can change the intended layout or marker semantics.
-- Keep it terse — one line per step. When the board is shown, put it at the **top** of your message, then continue with the actual content / question below it.
-- Update markers as soon as a step's status changes; show the updated board once at that transition, and never show a stale board.
+- Mark steps `[-]` instead of dropping them when they do not apply (e.g. "training only" skips 6 & 7).
+- Put the board at the **top** of the message when shown, then the actual content.
 
 ---
 
 ## Stage 0: Confirm the overall flow
 
-Before doing anything, use a **single `AskUserQuestion` call that asks all three of the most important branches together** (one question object each, in the same call) so the user can settle the whole shape of the run in one step:
+One `AskUserQuestion` call with three questions:
 
-1. **Flow scope**:
-   - Training only (data prep + config + training)
-   - Full flow (also includes evaluation + inference validation)
+1. **Flow scope** — training only (data + config + training) / full flow (+ evaluation + inference).
 
-2. **Model backbone** — which generative model to use as the backbone:
-   - **SANA-1600M** (recommended, 1.6B params, fits 24GB VRAM) → `sana-1600m`
-   - **FLUX.1-dev** (12B params, requires 4-bit quantization for 24GB) → `flux-dev`
-   - **Other registered models** (z-image, qwen-image, lumina2, chroma) → registered but NOT training-verified
-   - **Instruction editors** `flux-kontext`, `qwen-image-edit`, `qwen-image-edit-2509`, `longcat-image-edit`, `flux2-klein`, `joyimage-edit`, `joyimage-edit-plus`, `instruct-pix2pix`, `sdxl-instruct-pix2pix`, `hunyuan-image3-instruct`, `hunyuan-image3-instruct-distil` have a training forward. The diffusers ones execute on the official classes at tiny width. HunyuanImage-3.0-Instruct calls `prepare_model_inputs` and the published forward; a full fine-tune of that 80B checkpoint has not been run. Qwen and Joy text encoding does not insert vision-language image tokens. `hunyuan-image` is text-to-image.
+2. **Backbone**:
+   - **Qwen-Image-2.1** (`qwen-image-2.1`, recommended) — natively image-conditioned (source image as Qwen3-VL visual tokens + reference latents), the closest open analogue of the paper's editor base. `batch_size` must be 1 (use `gradient_accumulation`), resolution a multiple of 32.
+   - **Qwen-Image-Edit-2509** (`qwen-image-edit-2509`) — editing backbone; generation replay must be **edit pairs**.
+   - **SANA-1600M** (`sana-1600m`) — text-to-image backbone, 24 GB friendly; the original ablation baseline (semantic/depth were weak in that regime, see `docs/ABLATION_BASELINE.md`).
+   - **FLUX.1-dev** (`flux-dev`) — 12B, needs 4-bit quantization.
+   - Other registered models/editors exist but are not training-verified.
 
-3. **Vision tasks** — which tasks to train on:
-   - **3-task mixture** (depth + normal + segmentation) — recommended default
-   - **Single task** (depth only, normal only, or seg only)
-   - **Custom task mixture** (user-specified combination)
+3. **Tasks**:
+   - **Paper six-task mixture** (recommended): `depth, normal, semantic, instance, referring, generation` — the `generation` rows are the paper's generation-preservation mixing.
+   - Vision-only subset (e.g. depth + normal + semantic) — note that the paper warns pure vision fine-tuning erodes generation.
+   - Single task.
 
-Record the user's choices and branch the later stages accordingly.
+Record the choices; they drive Stages 2–4.
 
 ---
 
 ## Stage 1: Environment setup
 
-Verify the environment is ready:
+```bash
+python --version                                # ≥ 3.10
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+pip show open-vision-banana || pip install -e ".[all]"
+python -c "import h5py, pyarrow, pycocotools, ijson, modelscope" # data pipeline deps
+export HF_ENDPOINT=https://hf-mirror.com
+export WANDB_API_KEY=<key>                      # only with --wandb
+nvidia-smi
+```
 
-1. **Check conda environment**:
-   ```bash
-   conda activate llama
-   python --version  # Should be 3.10+
-   python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
-   ```
-
-2. **Check project installation**:
-   ```bash
-   cd /media/linxu/thinkHub/Thinking-face/open-vision-banana
-   pip show open-vision-banana  # Check if installed
-   # If not installed:
-   pip install -e ".[all]"
-   ```
-
-3. **Set required environment variables**:
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
-   export WANDB_API_KEY=<your-key>  # Only for W&B logging
-   ```
-
-4. **Check GPU availability**:
-   ```bash
-   nvidia-smi
-   ```
-   Read each GPU's **VRAM usage** and **utilization**. Treat a GPU as **free** when its VRAM usage is near-empty (e.g. ≲ 1 GB) and utilization is low.
-
-   - **No free GPU:** tell the user which GPUs are busy and use `AskUserQuestion` to let them choose: wait, share, or specify a particular index.
-   - **Multiple free GPUs:** use `AskUserQuestion` to ask single-card vs multi-card.
-   - **Record the chosen GPU index** and reuse it via `CUDA_VISIBLE_DEVICES=<idx>` for all subsequent commands.
+GPU rule: a GPU is **free** when VRAM use is ≲ 1 GB and utilisation is low. No free GPU → `AskUserQuestion` (wait / share / pick index). Multiple free → ask single vs multi-card. Pin the choice with `CUDA_VISIBLE_DEVICES=<idx>` for every GPU command.
 
 ---
 
-## Stage 2: Model selection & download
+## Stage 2: Backbone selection & download
 
-Use `AskUserQuestion` to confirm the model choice (defaulting to the recommendation from Stage 0).
+Confirm with `AskUserQuestion` (default = Stage 0 choice). Check the local cache first and **verify completeness** (expected size, all `*.safetensors`, no `*.incomplete`).
 
-1. **Check if model is already available locally**:
-   ```bash
-   # Check HF cache
-   ls ~/.cache/huggingface/hub/ | grep -i "<model_keyword>"
-   # Or check custom path
-   ls /media/linxu/thinkHub/ckpts/<model_path>/
-   ```
+```bash
+HF_ENDPOINT=https://hf-mirror.com hf download <model_id> --local-dir <path>     # HF
+modelscope download --model <model_id> --local_dir <path>                       # ModelScope
+```
 
-2. **Verify completeness, not just existence.** A cached directory can exist while being incomplete. Verify:
-   - Total size is in the expected GB range
-   - All `*.safetensors` shards are present
-   - No `*.incomplete` files
+| Alias | Hub id |
+|---|---|
+| `qwen-image-2.1` | `Qwen/Qwen-Image-2.1` |
+| `qwen-image-edit-2509` | `Qwen/Qwen-Image-Edit-2509` |
+| `sana-1600m` | `Efficient-Large-Model/Sana_1600M_512px_diffusers` |
+| `flux-dev` | `black-forest-labs/FLUX.1-dev` |
 
-3. **If not present locally**, confirm the **download source**:
-   - **HuggingFace Hub** (via mirror)
-   - **ModelScope** (often faster in mainland China)
-
-   Then start a download task in the background:
-   ```bash
-   # HuggingFace (via mirror)
-   HF_ENDPOINT=https://hf-mirror.com huggingface-cli download <model_id> --local-dir <path>
-
-   # ModelScope
-   modelscope download --model <model_id> --local_dir <path>
-   ```
-
-   **Model → HF Path mapping** (from `model_registry.py`):
-   | Alias | HF Path |
-   |---|---|
-   | `sana-1600m` | `Efficient-Large-Model/Sana_1600M_512px_diffusers` |
-   | `flux-dev` | `black-forest-labs/FLUX.1-dev` |
-   | `sana-600m` | `Efficient-Large-Model/SANA_600M_1024px_diffusers` |
-   | `z-image` | `Tongyi-MAI/Z-Image` |
-   | `qwen-image` | `Qwen/Qwen-Image` |
-   | `lumina2` | `Alpha-VLLM/Lumina-Image-2.0` |
-   | `chroma` | `lodestones/Chroma1-HD` |
-
-   Keep advancing the config work while it downloads, and report download progress periodically (interval ≤ 100 seconds).
+Downloads run in the background; keep working on Stage 3 meanwhile and report progress every ≤ 100 s.
 
 ---
 
-## Stage 3: Data preparation
+## Stage 3: Data — download → prepare → merge → audit
 
-The project uses **RGB parameterization** for vision tasks — all tasks are encoded as RGB images:
-- **Depth**: power transform + Hilbert/spectral colormap → RGB
-- **Normal**: linear (x,y,z) → (R,G,B) mapping
-- **Segmentation**: color palette encoding
+All sources are public and registered in `configs/datasets/sources.tsv` (`group=train|eval|replay`); the full table, sizes and the exact per-source prepare command live in **`docs/DATASETS.md`**. Use `AskUserQuestion` to choose between:
 
-Use `AskUserQuestion` to ask about the data source:
+- **A. Existing prepared manifest** — the user has a `pairs.jsonl`; validate it (Stage 3.4) and go to Stage 4.
+- **B. Fresh public-data build** (default) — the steps below.
+- **C. Custom data** — rows `{"task", "input", "target", "prompt", "split"}` with manifest-relative paths; targets must follow the RGB contracts (`core/`); run Stage 3.4.
 
-### Option A: Use existing training data
-Check if training data is already prepared:
+### 3.1 Download
 ```bash
-# Check for v3 multi-task dataset
-ls data/v3_multitask/ 2>/dev/null
-# Check for SNVC-50M
-ls /media/linxu/datasets/SN-VC-50M/ 2>/dev/null
-# Check for pair manifests
-ls data/pair_manifests/ 2>/dev/null
+bash scripts/download_datasets.sh --list
+# first run: small footprint (~50 GB); scale with the env knobs later
+HYPERSIM_SCENES="ai_001_001 ai_001_002 ai_001_003 ai_001_004" TARTANAIR_CHUNKS=1 OMNIEDIT_SHARDS=2 \
+  bash scripts/download_datasets.sh --group train
+bash scripts/download_datasets.sh --group eval      # paper benchmarks; login-walled ones print instructions
 ```
+Ask before pulling > 100 GB. Hypersim scenes are 2–8 GB each; COCO images 20 GB; OmniEdit 5 GB/shard.
 
-### Option B: Build a new dataset
+### 3.2 Prepare (one script per source; each writes a manifest-relative `pairs.jsonl`)
 ```bash
-# Build v3 multi-task dataset
-PYTHONPATH=src python scripts/build_v3_dataset.py
-
-# Build SNVC-50M manifest
-PYTHONPATH=src python scripts/build_snvc50m_manifest.py
-
-# Validate dataset before training
-PYTHONPATH=src python scripts/validate_dataset.py --data-path <path> --task <task>
+PYTHONPATH=src python scripts/prepare_hypersim.py --source data/raw/hypersim --output data/prep/hypersim --tasks depth,normal,semantic,instance
+PYTHONPATH=src python scripts/prepare_tartanair.py --source data/raw/tartanair --output data/prep/tartanair
+PYTHONPATH=src python scripts/build_openvocab_semantic_manifest.py --images data/raw/ade20k/ADEChallengeData2016/images/training \
+  --labels data/raw/ade20k/ADEChallengeData2016/annotations/training --classes configs/ade20k_150_classes.json \
+  --source-name ade20k --label-offset 1 --ignore-index -1 --out-dir data/prep/ade20k
+PYTHONPATH=src python scripts/build_instance_manifest.py --annotations data/raw/coco2017/annotations/instances_train2017.json \
+  --images-dir data/raw/coco2017/train2017 --targets-dir data/prep/inst/targets --output data/prep/inst/instance.jsonl \
+  --data-root data/prep/inst --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
+PYTHONPATH=src python scripts/build_res_manifest.py --annotations-root data/raw/refer --image-root data/raw/coco2017/train2014 --output-dir data/prep/res
+PYTHONPATH=src python scripts/build_generation_replay_manifest.py --kind edit --preset omniedit --records data/raw/omniedit/data \
+  --images-dir data/prep/replay/images --data-root data/prep/replay --output data/prep/replay/omniedit.jsonl
 ```
+Non-negotiables: Hypersim `depth_meters` is **ray distance** (the script converts to planar z by default); generation replay for Qwen editors must be edit pairs (`--kind edit`; the Trainer rejects identity rows); `--exclude-image-ids refs(umd).p` keeps RefCOCOg val images out of COCO-derived training rows.
 
-### Option C: Use custom data
-Ask for the data file path(s) and task type. The data should follow the pair manifest format:
-- Each entry: `{image_path, target_path, task}` or tar-based streaming format
+### 3.3 Merge + zero-shot audit
+```bash
+PYTHONPATH=src python scripts/merge_multitask_manifest.py \
+  --inputs data/prep/hypersim/pairs.jsonl data/prep/tartanair/pairs.jsonl data/prep/ade20k/pairs.jsonl \
+           data/prep/inst/instance.jsonl data/prep/res/pairs.jsonl data/prep/replay/omniedit.jsonl \
+  --out data/merged/pairs.jsonl --val-percent 2
+PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl \
+  --output data/qwen_baseline/pairs.jsonl --data-root data/merged --min-cityscapes-share 0 \
+  --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
+```
+Read the two audit JSONs aloud to the user: `per_task_dropped` must be `{}`, every requested task needs both `train` and `val` counts, `rejected_benchmark_leak_rows` / `rejected_excluded_image_id_rows` show what the zero-shot rule removed, `rejected_non_metric_depth_rows` what failed the cube-edge check.
+
+### 3.4 Validate before training
+```bash
+PYTHONPATH=src python -c "
+from open_vision_banana.data.validation import validate_manifest_contract
+print(validate_manifest_contract('data/qwen_baseline/pairs.jsonl', model_name='qwen-image-2.1', data_root='data/qwen_baseline').summary())"
+```
+It flags: no attention LoRA targets, text-length truncation of semantic legends, relative-depth prompts on metric targets, grayscale/non-cube-edge depth, multi-prompt tasks that break `uniform_task_prompts`. Fix before launching.
 
 ---
 
 ## Stage 4: Training configuration
 
-### 4.1 Select a base config
+### 4.1 Base config
 
-Based on the model and tasks chosen in Stage 0, select the appropriate config:
-
-| Config | Model | Tasks | Notes |
+| Config | Backbone | Tasks | Notes |
 |---|---|---|---|
-| `sana_1600m_3task_full_clean.yaml` | SANA-1600M | depth+normal+seg | Clean 3-task (recommended for SANA) |
-| `flux_3task_full_clean.yaml` | FLUX.1-dev (12B) | depth+normal+seg | Quantized 4-bit |
-| `sana_1600m_5task.yaml` | SANA-1600M | depth+normal+seg | SNVC-50M dataset |
-| `sana_snvc50m_3task.yaml` | SANA-1600M | 3 tasks | SNVC-50M dataset |
-| `training_mps.yaml` | SANA | depth | MPS (Apple Silicon) |
+| `configs/experiments/qwen_image_21_paper_aligned.yaml` | Qwen-Image-2.1 | six | **Recommended**; paper-aligned recipe |
+| `configs/experiments/qwen_image_edit_paper_aligned.yaml` | Qwen-Image-Edit-2509 | six | editing backbone |
+| `configs/experiments/qwen_image_21_shared_baseline.yaml` | Qwen-Image-2.1 | depth+normal+semantic+referring | vision-only ablation |
+| `configs/sana_1600m_3task_full_clean.yaml` | SANA-1600M | depth+normal+seg | legacy T2I |
+| `configs/flux_3task_full_clean.yaml` | FLUX.1-dev | depth+normal+seg | 4-bit |
 
 ### 4.2 Print key parameters for confirmation
 
-Show the user a table of key config parameters:
-
-| Parameter | Value | Source |
+| Parameter | paper_aligned value | Source |
 |---|---|---|
-| `model_name` | `sana-1600m` or `flux-dev` | Stage 0 |
-| `flow_type` | `linear_flow` (SANA) / `rectified_flow` (FLUX) | Config |
-| `resolution` | 512 | Config |
-| `batch_size` | 4 | Config |
-| `gradient_accumulation` | 32 | Config (YAML field; CLI: `--grad-accum`) |
-| `lora_rank` | 32 | Config |
-| `lora_alpha` | 64 | Config |
-| `rslora` | true | Config |
-| `lr` | 3e-5 | Config |
-| `steps` | 5000 | Config |
-| `tasks` | depth, normal, seg | Config |
-| `data_dir` | `<path>` | Stage 3 |
-| `output_dir` | `output/<run_name>` | Config |
+| `model.name` | `qwen-image-2.1` | Stage 0 |
+| `data.tasks` | depth, normal, semantic, instance, referring, generation | Stage 0 |
+| `data.vision_ratio` | 0.5 (paper: "very low", no number → repo choice) | config |
+| `data.depth_colormaps` | cube_edge, plasma, inferno, viridis, grayscale | paper §3.2 |
+| `data.semantic_prompt_styles` / `semantic_color_remap_prob` | json_named, json_tuple, natural, hex / 0.5 | paper Fig. 2 |
+| `data.aspect_preserving_crop` | true | repo choice |
+| `model.resolution` | 512 (multiple of 32) | repo choice |
+| `training.batch_size` × `gradient_accumulation` | 1 × 32 | Qwen constraint |
+| `lora.rank` / `alpha` / `rs_lora` | 32 / 64 / true | repo choice |
+| `training.lr` / `optimizer` | 1e-4 / AdamW wd 0.01 β(0.9, 0.999) | repo choice |
+| `training.steps` | 30000 | repo choice |
+| `checkpoint.output_dir` | `output/<run_name>` | — |
+
+State explicitly which values are paper constants and which are repository choices.
 
 ### 4.3 Ask for adjustments
 
-Use `AskUserQuestion` to ask whether any parameters need adjusting:
-- Learning rate, steps, batch size
-- LoRA rank/alpha
-- Resolution
-- Output directory name
-
-**CLI override syntax** (no need to edit yaml):
+`AskUserQuestion` for lr / steps / accumulation / rank / resolution / run name. CLI overrides (no yaml edits):
 ```bash
-PYTHONPATH=src python scripts/train.py \
-  --config configs/<base>.yaml \
-  --steps 10000 --lr 5e-5 --output-dir output/custom_run \
-  --batch-size 2 --resolution 256
+PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml \
+  --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline \
+  --steps 10000 --lr 5e-5 --output-dir output/<run_name> --print-effective-config
 ```
+Always run `--print-effective-config` once and show the result before launching.
 
 ---
 
 ## Stage 5: Launch training
 
-### 5.1 Generate run directory
 ```bash
-TS=$(date +%Y%m%d_%H%M)
-RUN_ID="<model>_<tasks>_${TS}"
-RUN_DIR="output/${RUN_ID}"
-mkdir -p "${RUN_DIR}"
+TS=$(date +%Y%m%d_%H%M); RUN_ID="<model>_<tasks>_${TS}"; RUN_DIR="output/${RUN_ID}"; mkdir -p "${RUN_DIR}"
+PY=$(which python)
+
+# single GPU
+CUDA_VISIBLE_DEVICES=<idx> PYTHONPATH=src nohup "$PY" scripts/train.py \
+  --config configs/experiments/qwen_image_21_paper_aligned.yaml \
+  --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline \
+  --output-dir "${RUN_DIR}" --wandb > "${RUN_DIR}/train.log" 2>&1 &
+
+# multi GPU (LoRA gradients are all-reduced; no FSDP/DeepSpeed in the unified trainer)
+CUDA_VISIBLE_DEVICES=<i,j> PYTHONPATH=src nohup "$PY" -m torch.distributed.run --nproc_per_node=2 scripts/train.py \
+  --config ... --output-dir "${RUN_DIR}" > "${RUN_DIR}/train.log" 2>&1 &
 ```
 
-### 5.2 Start training in background
-
+**Monitor** every ≤ 100 s; each report must include run state **and** current loss:
 ```bash
-# Single GPU
-CUDA_VISIBLE_DEVICES=<idx> nohup /home/linxu/anaconda3/envs/llama/bin/python scripts/train.py \
-  --config configs/<selected>.yaml \
-  --wandb > "${RUN_DIR}/train.log" 2>&1 &
-
-# Multi-GPU (DDP)
-CUDA_VISIBLE_DEVICES=<idx0,idx1> nohup /home/linxu/anaconda3/envs/llama/bin/python -m torch.distributed.run \
-  --nproc_per_node=2 scripts/train.py \
-  --config configs/<selected>.yaml \
-  --wandb > "${RUN_DIR}/train.log" 2>&1 &
-```
-
-### 5.3 Monitor training
-
-**Periodically check status** (interval ≤ 100 seconds):
-
-```bash
-# Check process is alive
 pgrep -af "scripts/train.py"
-
-# Tail training log
 tail -20 "${RUN_DIR}/train.log"
-
-# Extract latest loss (logged every logging_steps)
 grep -E "step=|loss=" "${RUN_DIR}/train.log" | tail -5
-
-# Check GPU usage
-nvidia-smi
-
-# Check W&B (if --wandb)
-# Visit https://wandb.ai/<entity>/<project>
-```
-
-**Progress extraction** — from tqdm progress-bar lines:
-```bash
-# Current step / total steps
 tr '\r' '\n' < "${RUN_DIR}/train.log" | grep -oE "[0-9]+/[0-9]+" | tail -1
+nvidia-smi
 ```
+Also check `${RUN_DIR}/effective_config.json` once (sampling probabilities, task sample counts, optimizer block).
 
-**Each status report must include BOTH the current run state AND the current loss.**
-
-### 5.4 Checkpoint structure
-
-Training outputs (created by `TrainingCallbacks.on_checkpoint`):
+**Checkpoint layout** (`TrainingCallbacks.on_checkpoint`):
 ```
 output/<run_name>/
+├── effective_config.json
 ├── train.log
-├── checkpoint-step-{N}/
-│   ├── lora.pt                  # LoRA weights + optimizer state + metadata
-│   ├── lora_adapter/            # PEFT-format adapter (save_pretrained)
-│   └── metadata.json            # step, val_loss, lora_rank/alpha, model_name
-├── checkpoint-step-{N}_best/    # Best model (by validation loss)
-│   ├── lora.pt
-│   ├── lora_adapter/
-│   └── metadata.json
-└── wandb/                       # W&B run directory (if --wandb)
+├── checkpoint-{N}/          lora.pt (LoRA + optimizer + scheduler + EMA + step), lora_adapter/, metadata.json
+├── checkpoint-{N}_best/     best validation (EMA weights when EMA is on)
+└── checkpoint-{N}_final/
 ```
 
-### 5.5 Resume from checkpoint
-
-If training is interrupted:
+**Resume**:
 ```bash
-PYTHONPATH=src python scripts/train.py \
-  --config configs/<selected>.yaml \
-  --resume output/<run_name>/checkpoint-step-{N}/lora.pt
+# interrupted run: full state
+PYTHONPATH=src python scripts/train.py --config <yaml> --resume output/<run>/checkpoint-<N>
+# new data / new schedule from an earlier LoRA: weights only (rank + target modules must match)
+PYTHONPATH=src python scripts/train.py --config <yaml> --resume output/<run>/checkpoint-<N> --resume-weights-only
 ```
+`steps` is absolute: a full-state resume from step 5000 with `steps: 30000` runs 25 000 more.
 
 ---
 
-## Stage 6: Evaluation (optional, if user chose full flow)
+## Stage 6: Evaluation (full flow only)
 
-After training completes, evaluate the best checkpoint.
-
-### 6.1 Qualitative evaluation (visualization)
+Use the **paper protocols** via `scripts/evaluate_paper_benchmarks.py` on the `_best` checkpoint. Only evaluate benchmarks whose data the user actually has (Stage 3.1 `--group eval`; login-walled sets print instructions).
 
 ```bash
-# SANA multi-task visualization
-PYTHONPATH=src python scripts/infer_sana_512.py \
-  --data-dir <dataset_dir> --pair-manifest <pairs.jsonl> \
-  --checkpoint output/<run_name>/checkpoint-step-{N}_best/lora.pt \
-  --model-name sana-1600m --lora-rank 32 --lora-alpha 64 \
-  --output-dir output/eval_<run_name>/
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
+  --model-name qwen-image-2.1 --lora-path output/<run>/checkpoint-<N>_best \
+  --nyu-root data/raw/nyu_depth_v2 --diode-root data/raw/diode \
+  --refcocog-root data/raw/refer/refcocog --reasonseg-root data/raw/reasonseg \
+  --output-json output/eval_<run>/paper_benchmarks.json
+# Appendix A decoder ablation (two readings the paper leaves open)
+#   --instance-decoding seed_merge_rule=pixel_and_seed,spatial_merge_area_basis=pixel
 ```
 
-### 6.2 Quantitative evaluation (metrics)
+| Paper table | Benchmark | Metric | Needs |
+|---|---|---|---|
+| T2 | Cityscapes val | mIoU (19 classes, one fixed prompt) | manual download + `setup_cityscapes_official.py` |
+| T3 | SA-Co/Gold | cgF1 (Gemini 3.1 Flash-Lite presence filter) | gated HF download + `GEMINI_API_KEY` |
+| T4 / T5 | RefCOCOg UMD val / ReasonSeg val | cIoU / gIoU (ReasonSeg: Gemini 2.5 Pro single-turn rewrite) | `refcocog`, `reasonseg` rows |
+| T6 | NYU, iBims-1, ETH3D, DIODE, KITTI, nuScenes | AbsRel, δ1 — metric, **no scale alignment, no intrinsics** | NYU/DIODE/ETH3D direct; others manual |
+| T7 | NYUv2, DIODE, ScanNet, VKitti normals | mean / median angular error | DIODE direct; others manual |
+| App. D | GenAI-Bench / ImgEdit-Bench | paper: human win rate; repo: FID/LPIPS **proxy only** | `scripts/evaluate_generation_preservation.py` |
 
-```bash
-# Depth evaluation
-PYTHONPATH=src python scripts/evaluate.py \
-  --task depth --data-path <eval_data> \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt \
-  --output-json output/eval_<run_name>/depth_metrics.json
-
-# Normal evaluation
-PYTHONPATH=src python scripts/evaluate.py \
-  --task normal --data-path <eval_data> \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt
-
-# Semantic segmentation
-PYTHONPATH=src python scripts/evaluate.py \
-  --task semantic --num-classes 19 \
-  --data-path <cityscapes_path> \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt
-
-# Compare against paper SOTA
-PYTHONPATH=src python scripts/evaluate.py \
-  --task depth --data-path <eval_data> --compare-sota
-
-# Quick smoke test (limit batches)
-PYTHONPATH=src python scripts/evaluate.py \
-  --task normal --data-path <eval_data> --max-batches 5
-
-# Distributed evaluation (multi-GPU)
-PYTHONPATH=src torchrun --nproc_per_node=<n> scripts/evaluate.py \
-  --task depth --data-path <eval_data> --ddp
-```
-
-**Metrics by task**:
-- depth: AbsRel, SqRel, RMSE, logRMSE, δ1, δ2, δ3
-- normal: Mean Angular Error (°), Cosine Similarity, RMSE
-- semantic: mIoU, pixel accuracy
-- instance: cgF1, cIoU
-- referring: cIoU, gIoU
-- edge: F1, precision, recall, ODS
-
-### 6.3 Evaluation dataset mapping
-
-| `--task` | Dataset Key | Expected Format |
-|---|---|---|
-| `depth` | `hypersim-depth` | RGB + depth maps |
-| `normal` | `normal` | RGB + normal maps |
-| `semantic` | `cityscapes` | RGB + segmentation masks |
-| `instance` | `sa-co` | RGB + instance annotations |
-| `referring` | `refcocog` | RGB + expression + mask |
+Report `AbsRel_aligned` / `delta_1.25_aligned` only as diagnostics — they are not the paper protocol. Qualitative grids: `scripts/infer_sana_512.py` (SANA) or `scripts/inference.py --image-dir`.
 
 ---
 
 ## Stage 7: Inference validation (optional)
 
-Load the trained checkpoint for inference on custom images.
-
-### 7.1 Single image inference
-
 ```bash
-# Depth estimation
-PYTHONPATH=src python scripts/inference.py \
-  --image <input.jpg> --task depth \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt \
-  --output-dir output/infer_<run_name>/
-
-# Normal estimation
-PYTHONPATH=src python scripts/inference.py \
-  --image <input.jpg> --task normal \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt
-
-# Semantic segmentation
-PYTHONPATH=src python scripts/inference.py \
-  --image <input.jpg> --task semantic \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt
+PYTHONPATH=src python scripts/inference.py --image <input.jpg> --task depth \
+  --model-name qwen-image-2.1 --lora-path output/<run>/checkpoint-<N>_best --output-dir output/infer_<run>/
+PYTHONPATH=src python scripts/inference.py --image <input.jpg> --task referring --expression "the red car" --lora-path ...
+PYTHONPATH=src python scripts/inference.py --image <input.jpg> --task instance --object-name dog --lora-path ...
 ```
-
-### 7.2 Batch inference
-
-```bash
-PYTHONPATH=src python scripts/inference.py \
-  --image-dir <path_to_images> --task depth \
-  --lora-path output/<run_name>/checkpoint-step-{N}_best/lora.pt
-```
-
-### 7.3 Python API
-
-```python
-from open_vision_banana.inference.pipeline import VisionBanana
-
-model = VisionBanana.from_pretrained(
-    model_name="sana-1600m",  # or "flux-dev"
-    lora_path="output/<run_name>/checkpoint-step-{N}_best/lora.pt",
-    device="cuda",
-)
-
-result = model.predict(image=input_tensor, task="depth")
-# result keys: "rgb_output", "depth", "visualization", etc.
-```
-
-### 7.4 Inference optimization presets
-
-| Preset | VRAM | Key Options |
-|---|---|---|
-| `balanced` | ~16 GB | float16 + model_cpu_offload + VAE slicing |
-| `speed` | ~20 GB | float16 + torch.compile + VAE tiling |
-| `memory` | ~8 GB | float16 + sequential offload + INT8 mappers |
-| `quality` | ~40 GB | bfloat16 + max-autotune compile |
+Python API: `VisionBanana.from_pretrained(model_name=..., lora_path=...).predict(image=tensor, task="depth")`.
+Keep `model_name` identical across train / eval / inference; the checkpoint's recorded task prompts are reused automatically (referring always rebuilds from the current expression).
 
 ---
 
 ## Final summary (end of the whole workflow)
 
-When all chosen stages are finished, give a concise closing summary and then **stop**. The summary may include ONLY:
-
-- the produced artifacts (checkpoint directory, best model path, evaluation results);
-- the training result (total steps / final loss / best val_loss / runtime);
-- the evaluation result (metrics by task, comparison with paper SOTA if available);
-- the inference output paths (visualization images);
-- the ready-to-run commands for future inference.
-
-**Do NOT propose or offer any follow-up work** — no suggestions about further training, hyperparameter tuning, deployment, or anything similar. Simply describe what was produced and stop.
+Give a concise closing summary and **stop**. Include only: produced artifacts (run dir, `_best` path, `effective_config.json`, eval JSON), training result (steps / final loss / best val loss / runtime), evaluation results **labelled with the protocol used** and without comparing to paper numbers as targets, inference output paths, and ready-to-run commands. **Do NOT propose follow-up work.**
 
 ---
 
 ## General requirements
 
-- Ask first with `AskUserQuestion` at every irreversible or ambiguous decision; do not assume.
-- **Confirm before every config change or training launch** — print key parameters as a table AND call `AskUserQuestion` to get explicit confirmation.
-- Run **long-running** commands (model download, training) **in the background + report periodically** (interval ≤ 100 seconds). Evaluation and inference are usually quick and do NOT need background.
-- **Detect GPU status once before running and pin the free device(s)** (see Stage 1). Reuse the same index for all GPU commands via `CUDA_VISIBLE_DEVICES`.
-- **All commands must prefix `PYTHONPATH=src`** to ensure correct module imports.
-- **Use conda python path for background jobs**: `/home/linxu/anaconda3/envs/llama/bin/python` (not just `python`).
-- **Keep `model_name` consistent across train / inference / evaluation.** A mismatch produces errors or silent failures.
-- Never destroy existing checkpoints or data files; always use new directories for new runs.
-- **Honest boundaries**: This is an unofficial reimplementation. Paper-matching SOTA has NOT been achieved. Not all models/tasks are equally verified.
+- Ask first with `AskUserQuestion` at every irreversible or ambiguous decision.
+- Confirm before every config change or launch: print the parameter table **and** ask.
+- Long-running commands (downloads > 1 GB, training) run in the background with periodic reports (≤ 100 s). Evaluation and inference usually do not.
+- Pin the GPU once (`CUDA_VISIBLE_DEVICES`) and reuse it.
+- Prefix `PYTHONPATH=src`; use the env's absolute python for background jobs.
+- Never bypass the zero-shot audit or the metric-depth filter with ad-hoc manifests; never put `group=eval` sources into training.
+- Never destroy existing checkpoints or data; new runs get new directories.
+- Honest boundaries: unofficial reimplementation; paper-matching numbers are not a goal; generation preservation is only a proxy here.
 
 ---
 
-## Quick reference commands
+## Quick reference
 
 ```bash
-# === ENVIRONMENT ===
-conda activate llama
-export HF_ENDPOINT=https://hf-mirror.com
+# DATA
+bash scripts/download_datasets.sh --list
+HYPERSIM_SCENES="ai_001_001 ai_001_002" bash scripts/download_datasets.sh --group train
+PYTHONPATH=src python scripts/prepare_hypersim.py --source data/raw/hypersim --output data/prep/hypersim --tasks depth,normal,semantic,instance
+PYTHONPATH=src python scripts/merge_multitask_manifest.py --inputs data/prep/*/pairs.jsonl --out data/merged/pairs.jsonl
+PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl --output data/qwen_baseline/pairs.jsonl --data-root data/merged --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
 
-# === TRAINING (SANA 3-task) ===
-PYTHONPATH=src python scripts/train.py --config configs/sana_1600m_3task_full_clean.yaml --wandb
+# TRAIN
+PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline --wandb
+PYTHONPATH=src python scripts/train.py --config <yaml> --resume output/<run>/checkpoint-<N> --resume-weights-only
 
-# === TRAINING (FLUX 3-task) ===
-PYTHONPATH=src python scripts/train.py --config configs/flux_3task_full_clean.yaml --wandb
+# EVAL / INFER
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-image-2.1 --lora-path output/<run>/checkpoint-<N>_best --nyu-root data/raw/nyu_depth_v2 --refcocog-root data/raw/refer/refcocog
+PYTHONPATH=src python scripts/inference.py --image input.jpg --task depth --model-name qwen-image-2.1 --lora-path output/<run>/checkpoint-<N>_best
 
-# === BACKGROUND TRAINING ===
-CUDA_VISIBLE_DEVICES=0 nohup /home/linxu/anaconda3/envs/llama/bin/python scripts/train.py \
-  --config configs/sana_1600m_3task_full_clean.yaml --wandb > output/train.log 2>&1 &
-
-# === RESUME TRAINING ===
-PYTHONPATH=src python scripts/train.py --config configs/<yaml> --resume output/<run>/checkpoint-step-N/lora.pt
-
-# === INFERENCE ===
-PYTHONPATH=src python scripts/inference.py --image input.jpg --task depth --lora-path output/<run>/checkpoint-step-N_best/lora.pt
-
-# === EVALUATION ===
-PYTHONPATH=src python scripts/evaluate.py --task depth --data-path <data> --compare-sota
-
-# === TESTING ===
-pytest tests/ -k "core"
-pytest tests/ -k "training"
-
-# === MONITORING ===
-pgrep -af "scripts/train.py"
-tail -20 output/<run>/train.log
-nvidia-smi
+# TESTS that guard the pipeline
+PYTHONPATH=src:. pytest tests/test_pipeline_smoke_all_tasks.py tests/test_trainer_system_all_tasks.py tests/test_download_datasets_script.py -q
 ```
