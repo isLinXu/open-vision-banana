@@ -137,6 +137,7 @@ class NormalAccumulator:
     valid_pixels: int = 0
     image_count: int = 0
     image_mean_sum: float = 0.0
+    image_median_sum: float = 0.0
 
     def __post_init__(self) -> None:
         if self.angles is None:
@@ -177,9 +178,10 @@ class NormalAccumulator:
             self.valid_pixels += int(selected.numel())
             self.image_count += 1
             self.image_mean_sum += selected.mean().item()
+            self.image_median_sum += selected.median().item()
             self.angles.append(selected.detach().cpu())
 
-    def compute(self) -> dict[str, float | int]:
+    def compute(self) -> dict[str, float | int | str]:
         angles = torch.cat(self.angles) if self.angles else torch.empty(0)
         n = max(self.valid_pixels, 1)
         mean_angle = self.angle_sum / n
@@ -187,7 +189,10 @@ class NormalAccumulator:
         acc_11 = float((angles < 11.25).float().mean()) if angles.numel() else 0.0
         acc_22 = float((angles < 22.5).float().mean()) if angles.numel() else 0.0
         acc_30 = float((angles < 30).float().mean()) if angles.numel() else 0.0
+        # Paper Table 7 does not say whether "mean"/"median" are pixel-weighted over the
+        # dataset or averaged per image; both readings are reported (audit R3).
         per_image = self.image_mean_sum / self.image_count if self.image_count else float("nan")
+        per_image_median = self.image_median_sum / self.image_count if self.image_count else float("nan")
         return {
             "mean_angle_deg": self.angle_sum / n,
             "median_angle_deg": median_angle,
@@ -201,6 +206,8 @@ class NormalAccumulator:
             "30° Accuracy": acc_30,
             "valid_pixels": self.valid_pixels,
             "mean_angle_deg_per_image": per_image,
+            "median_angle_deg_per_image": per_image_median,
+            "aggregation": "pixel_weighted (mean_angle_deg / median_angle_deg) and per_image (…_per_image)",
             "images": self.image_count,
         }
 
