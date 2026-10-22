@@ -38,6 +38,7 @@ from open_vision_banana.model_registry import get_model_config  # noqa: E402
 from open_vision_banana.res_manifest import build_res_manifest  # noqa: E402
 from open_vision_banana.training.config import TrainingConfig  # noqa: E402
 from open_vision_banana.training.flow_matching import FlowScheduler  # noqa: E402
+from open_vision_banana.training.model_backend import ModelBackend  # noqa: E402
 from open_vision_banana.training.trainer import ManifestVisionDataset, Trainer  # noqa: E402
 from scripts.build_generation_replay_manifest import build_generation_replay_manifest  # noqa: E402
 from scripts.build_instance_manifest import build_instance_manifest  # noqa: E402
@@ -75,6 +76,7 @@ class FakeBackend:
         self.seen_prompts: list[str] = []
         self.seen_tasks: list[str] = []
         self.forward_calls = 0
+        self.img2img_masks: list[torch.Tensor] = []
 
     @torch.no_grad()
     def encode_image(self, images: torch.Tensor) -> torch.Tensor:
@@ -86,12 +88,13 @@ class FakeBackend:
         return torch.nn.functional.interpolate(latents[:, :3], scale_factor=8, mode="nearest")
 
     def prepare_flow_batch(self, target_latents, input_latents, batch_size, img2img_flow=True, flow_sigma=0.0, logit_normal=True, flow_shift=1.0):
-        timesteps = torch.rand(batch_size)
-        noise = torch.randn_like(target_latents)
-        start = input_latents if img2img_flow else noise
-        t = timesteps.view(-1, 1, 1, 1)
-        noisy = (1 - t) * start + t * target_latents
-        return {"timesteps": timesteps, "noisy_latents": noisy, "velocity_target": target_latents - start, "noise": noise}
+        # Same per-sample contract as ModelBackend.prepare_flow_batch (bool or [B] mask).
+        out = ModelBackend.prepare_flow_batch(
+            self, target_latents, input_latents, batch_size, img2img_flow=img2img_flow,
+            flow_sigma=flow_sigma, logit_normal=logit_normal, flow_shift=flow_shift,
+        )
+        self.img2img_masks.append(out["img2img_mask"].clone())
+        return out
 
     def encode_text(self, prompts, device, dtype):
         self.seen_prompts.extend(prompts)
@@ -144,6 +147,15 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
         return backend
 
     monkeypatch.setattr(trainer_module, "ModelBackend", make_backend)
+    mask_calls: list[tuple[list[str], list[bool]]] = []
+    original_mask = Trainer._img2img_mask
+
+    def recording_mask(self, batch_tasks, edit_layout, device):
+        mask = original_mask(self, batch_tasks, edit_layout, device)
+        mask_calls.append((list(batch_tasks), mask.tolist()))
+        return mask
+
+    monkeypatch.setattr(Trainer, "_img2img_mask", recording_mask)
     config = TrainingConfig(
         model_name="sana-1600m",  # text-to-image layout: T2I generation rows are allowed
         device="cpu", dtype="float32", resolution=RES, batch_size=2, grad_accum=1, steps=12, lr=1e-3,
@@ -173,6 +185,12 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
 
     # all six tasks were trained on and the prompts the model saw carry their contracts
     assert backend.forward_calls >= 12
+    # review item 6a: on a T2I backbone (sana) with img2img_flow=True, generation rows must start
+    # from noise *per sample*; with batch 2 and vision_ratio 0.5 some batches are mixed.
+    assert mask_calls and len(backend.img2img_masks) == len(mask_calls)  # training + validation batches
+    for tasks_in_batch, mask in mask_calls:
+        assert mask == [t != "generation" for t in tasks_in_batch], (tasks_in_batch, mask)
+    assert any(len(set(t)) > 1 for t, _ in mask_calls), "fixture should produce at least one mixed batch"
     prompts = backend.seen_prompts
     assert any("metric depth" in p for p in prompts)
     assert any("surface normal" in p for p in prompts)

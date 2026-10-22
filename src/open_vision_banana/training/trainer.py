@@ -1059,6 +1059,15 @@ class Trainer:
             return self.backend.apply_cfg_dropout(text_cond, cfg_dropout_rate, len(prompts))
         return text_cond
 
+    def _img2img_mask(self, batch_tasks: list[str], edit_layout: str | None, device) -> torch.Tensor:
+        """Per-sample flow source: True = start from input latents, False = from noise.
+
+        Shared by training and validation so both see the same objective.
+        """
+        if edit_layout is not None or not self.config.img2img_flow:
+            return torch.zeros(len(batch_tasks), dtype=torch.bool, device=device)
+        return torch.tensor([t != "generation" for t in batch_tasks], dtype=torch.bool, device=device)
+
     def _edit_layout(self) -> str | None:
         """Source-image layout of the training forward, or None for a text-to-image backbone."""
         from .edit_forward import edit_latent_layout
@@ -1088,14 +1097,15 @@ class Trainer:
         # ── Flow matching ──────────────────────────────────────────────
         edit_layout = self._edit_layout()
         batch_tasks = batch.get("task", ["depth"] * batch_size)
-        is_pure_generation = all(t == "generation" for t in batch_tasks)
         flow_batch = self.backend.prepare_flow_batch(
             target_latents,
             input_latents,
             batch_size,
-            # Editors see the source as conditioning and generate the target from noise;
-            # pure T2I generation replay also starts from Gaussian noise.
-            img2img_flow=config.img2img_flow and edit_layout is None and not is_pure_generation,
+            # Per sample: editors see the source as conditioning and generate the target
+            # from noise; T2I generation-replay rows always start from Gaussian noise
+            # (their input is the target image itself); vision rows on a T2I backbone
+            # start from the input latents when img2img_flow is on.
+            img2img_flow=self._img2img_mask(batch_tasks, edit_layout, self.device),
             flow_sigma=config.flow_sigma,
             logit_normal=config.logit_normal,
             flow_shift=config.flow_shift,
@@ -1229,13 +1239,15 @@ class Trainer:
             if input_latents.shape != target_latents.shape:
                 input_latents = F.adaptive_avg_pool2d(input_latents, target_latents.shape[-2:])
 
-            # Flow matching
+            # Flow matching (same per-sample source rule as training)
             edit_layout = self._edit_layout()
             flow_batch = self.backend.prepare_flow_batch(
                 target_latents,
                 input_latents,
                 batch_size,
-                img2img_flow=self.config.img2img_flow and edit_layout is None,
+                img2img_flow=self._img2img_mask(
+                    batch.get("task", ["depth"] * batch_size), edit_layout, self.device
+                ),
                 flow_sigma=self.config.flow_sigma,
                 logit_normal=self.config.logit_normal,
                 flow_shift=self.config.flow_shift,
