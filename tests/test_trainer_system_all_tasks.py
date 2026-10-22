@@ -21,8 +21,10 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # share fixtures with the smoke test
 
+import numpy as np
 import pytest
 import torch
+from PIL import Image
 from torch import nn
 
 h5py = pytest.importorskip("h5py")
@@ -162,7 +164,8 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
         output_dir=str(tmp_path / "out"), data_dir=str(manifest.parent), pair_manifest=str(manifest),
         tasks=["depth", "normal", "semantic", "instance", "referring", "generation"],
         vision_ratio=0.5, task_sampling="uniform",
-        depth_colormaps=["cube_edge", "viridis"], semantic_prompt_styles=["json_named", "json_tuple", "natural", "hex"],
+        depth_colormaps=["viridis"],  # single entry so the augmented prompt is deterministic
+        semantic_prompt_styles=["json_named", "json_tuple", "natural", "hex"],
         semantic_color_remap_prob=0.5, aspect_preserving_crop=True,
         num_workers=0, save_every=6, eval_every=6, log_every=1, warmup_steps=2, ema_enabled=True, ema_warmup=1,
         min_snr=False, cfg_dropout_rate=0.1, wandb=False,
@@ -199,8 +202,10 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
     assert any(p == "make the sky purple" for p in prompts)
     semantic_prompts = [p for p in prompts if parse_prompt_mapping(p)]
     assert semantic_prompts and any(("wall" in p or "chair" in p) for p in semantic_prompts)
-    # depth colormap augmentation reached the prompt
-    assert any("viridis" in p for p in prompts)
+    # depth colormap augmentation: every depth *train* sample is re-encoded to viridis (val stays cube-edge)
+    depth_train = ManifestVisionDataset(manifest, RES, "train", {"depth"}, data_root=manifest.parent, depth_colormaps=["viridis"])
+    assert all("viridis" in depth_train[i]["prompt"] for i in range(len(depth_train)))
+    assert all("viridis" not in p or "depth" in p.lower() for p in prompts)
     # loss was finite and a checkpoint + metadata were produced
     checkpoints = sorted((tmp_path / "out").glob("checkpoint-*"))
     assert checkpoints, list((tmp_path / "out").iterdir())
@@ -221,23 +226,37 @@ def test_manifest_dataset_per_task_behaviours(tmp_path: Path):
         colors = {tuple((sample["target_rgb"][:, y, x] * 255).round().int().tolist()) for y in range(24) for x in range(24)}
         assert len(colors) <= 12, (task, len(colors))  # no interpolated intermediate colours
 
-    # 2. semantic restyle + remap now reaches natural/hex rows too (mapping comes from the manifest row)
-    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
-    sem_rows = [r for r in rows if r["task"] == "semantic"]
-    assert any(r.get("style") in ("natural", "hex") for r in sem_rows), "fixture should include non-tuple styles"
-    ds = ManifestVisionDataset(manifest, RES, "train", {"semantic"}, data_root=root,
+    # 2. semantic restyle + remap reaches natural/hex rows too (mapping comes from the manifest row)
+    from open_vision_banana.data.openvocab_semantic import build_prompt
+
+    mapping = {"wall": (255, 0, 0), "chair": (0, 128, 255), "background": (64, 64, 64)}
+    target = np.empty((RES, RES, 3), np.uint8)
+    target[...] = mapping["background"]
+    target[: RES // 2] = mapping["wall"]
+    target[RES // 2 :, : RES // 2] = mapping["chair"]
+    (tmp_path / "sem").mkdir()
+    Image.fromarray(target).save(tmp_path / "sem" / "t.png")
+    Image.new("RGB", (RES, RES), (90, 90, 90)).save(tmp_path / "sem" / "in.png")
+    mini = tmp_path / "sem" / "pairs.jsonl"
+    mini.write_text(
+        "\n".join(
+            json.dumps({"task": "semantic", "input": "in.png", "target": "t.png", "split": "train",
+                        "prompt": build_prompt(style, mapping), "style": style,
+                        "mapping": {k: list(v) for k, v in mapping.items()}})
+            for style in ("natural", "hex")
+        ) + "\n"
+    )
+    ds = ManifestVisionDataset(mini, RES, "train", {"semantic"}, data_root=mini.parent,
                                semantic_prompt_styles=["json_tuple"], semantic_color_remap_prob=1.0, seed=3)
-    for index, sample_meta in enumerate(ds.samples):
-        if parse_prompt_mapping(sample_meta["prompt"]) and ("hex" in sample_meta["prompt"] or "#" in sample_meta["prompt"] or "represented by (" in sample_meta["prompt"]):
-            sample = ds[index]
-            new_mapping = parse_prompt_mapping(sample["prompt"])
-            assert new_mapping and "<" in sample["prompt"], sample["prompt"]  # restyled to json_tuple
-            # target pixels follow the new legend
-            px = tuple((sample["target_rgb"][:, 2, 2] * 255).round().int().tolist())
-            assert px in set(new_mapping.values()), (px, new_mapping)
-            break
-    else:
-        pytest.fail("no natural/hex semantic row was restyled")
+    for index in range(len(ds)):
+        sample = ds[index]
+        new_mapping = parse_prompt_mapping(sample["prompt"])
+        assert new_mapping and "<" in sample["prompt"], sample["prompt"]  # restyled to json_tuple
+        assert set(new_mapping) == set(mapping)
+        px_wall = tuple((sample["target_rgb"][:, 2, 2] * 255).round().int().tolist())
+        px_chair = tuple((sample["target_rgb"][:, RES - 3, 2] * 255).round().int().tolist())
+        assert px_wall == new_mapping["wall"] and px_chair == new_mapping["chair"], (px_wall, px_chair, new_mapping)
+        assert new_mapping["wall"] != mapping["wall"] or new_mapping["chair"] != mapping["chair"]  # remapped
 
     # 3. aspect-preserving crop keeps the pair in sync (input and target cropped identically)
     ds = ManifestVisionDataset(manifest, RES, "val", {"instance"}, data_root=root, aspect_preserving_crop=True)
