@@ -80,3 +80,7 @@ checkpoint:
 
 device: cuda
 resume: null
+
+loss:
+  # pinned 2026-10-22: TrainingConfig default at the time this config was written (paper-aligned default is now all 1.0 / min_snr off)
+  task_loss_weights: {depth: 2.5, normal: 2.0, semantic: 0.5}

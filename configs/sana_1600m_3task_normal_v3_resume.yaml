@@ -64,3 +64,7 @@ checkpoint:
 
 device: cuda
 resume: output/sana_1600m_v5full_3task_normal_v2/checkpoint-5500_best/lora.pt
+
+loss:
+  # pinned 2026-10-22: TrainingConfig default at the time this config was written (paper-aligned default is now all 1.0 / min_snr off)
+  task_loss_weights: {depth: 2.5, normal: 2.0, semantic: 0.5}

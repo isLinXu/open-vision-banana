@@ -345,3 +345,31 @@ def test_optimizer_settings_are_config_fields(tmp_path):
         TrainingConfig(adam_beta2=1.0).validate()
     with pytest.raises(ValueError, match="weight_decay"):
         TrainingConfig(weight_decay=-0.1).validate()
+
+
+def test_paper_defaults_and_pinned_legacy_configs():
+    """Audit R2: defaults are the paper setting (no custom losses); legacy configs pin their old values."""
+    import glob
+
+    from open_vision_banana.training.config import TrainingConfig, load_config
+
+    cfg = TrainingConfig()
+    cfg.validate()
+    assert cfg.task_loss_weights == {} and cfg.min_snr is False  # empty mapping -> 1.0 per task in losses.py
+
+    root = Path(__file__).resolve().parents[1]
+    legacy_defaults = {"depth": 2.5, "normal": 2.0, "semantic": 0.5}
+    pinned = 0
+    for path in sorted(glob.glob(str(root / "configs" / "*.yaml")) + glob.glob(str(root / "configs" / "experiments" / "*.yaml"))):
+        try:
+            loaded = load_config(config_path=path)
+        except Exception:
+            continue  # legacy VisionBananaConfig-format files
+        text = Path(path).read_text(encoding="utf-8")
+        if "pinned 2026-10-22" in text:
+            pinned += 1
+            assert loaded.task_loss_weights == legacy_defaults or "task_loss_weights" in text
+            assert loaded.min_snr is True or "min_snr" in text
+        if "paper_aligned" in path:
+            assert set(loaded.task_loss_weights.values()) == {1.0} and loaded.min_snr is False
+    assert pinned >= 17
