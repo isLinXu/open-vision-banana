@@ -2,7 +2,8 @@
 # One-command dataset fetcher driven by configs/datasets/sources.tsv.
 #
 #   bash scripts/download_datasets.sh --list
-#   bash scripts/download_datasets.sh --group train                 # everything needed to start training
+#   bash scripts/download_datasets.sh --group train                 # vision-task training sources (not replay)
+#   bash scripts/download_datasets.sh --only omniedit                # generation replay, fetched by name
 #   bash scripts/download_datasets.sh --only hypersim,coco2017-images,coco2017-instances,lvis-v1,refcoco,omniedit
 #   bash scripts/download_datasets.sh --task depth --dry-run
 #   DATA_ROOT=/data/ovb HYPERSIM_SCENES="ai_001_001 ai_001_002" bash scripts/download_datasets.sh --only hypersim

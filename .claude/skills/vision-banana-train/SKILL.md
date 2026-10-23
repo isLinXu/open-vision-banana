@@ -124,8 +124,9 @@ All sources are public and registered in `configs/datasets/sources.tsv` (`group=
 ```bash
 bash scripts/download_datasets.sh --list
 # first run: small footprint (~50 GB); scale with the env knobs later
-HYPERSIM_SCENES="ai_001_001 ai_001_002 ai_001_003 ai_001_004" TARTANAIR_CHUNKS=1 OMNIEDIT_SHARDS=2 \
+HYPERSIM_SCENES="ai_001_001 ai_001_002 ai_001_003 ai_001_004" TARTANAIR_CHUNKS=1 \
   bash scripts/download_datasets.sh --group train
+OMNIEDIT_SHARDS=2 bash scripts/download_datasets.sh --only omniedit   # generation replay is group replay
 bash scripts/download_datasets.sh --group eval      # paper benchmarks; login-walled ones print instructions
 ```
 Ask before pulling > 100 GB. Hypersim scenes are 2–8 GB each; COCO images 20 GB; OmniEdit 5 GB/shard.
@@ -334,6 +335,7 @@ Give a concise closing summary and **stop**. Include only: produced artifacts (r
 # DATA
 bash scripts/download_datasets.sh --list
 HYPERSIM_SCENES="ai_001_001 ai_001_002" bash scripts/download_datasets.sh --group train
+bash scripts/download_datasets.sh --only omniedit   # generation replay is group replay
 PYTHONPATH=src python scripts/prepare_hypersim.py --source data/raw/hypersim --output data/prep/hypersim --tasks depth,normal,semantic,instance
 PYTHONPATH=src python scripts/merge_multitask_manifest.py --inputs data/prep/*/pairs.jsonl --out data/merged/pairs.jsonl
 PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl --output data/qwen_baseline/pairs.jsonl --data-root data/merged --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"
