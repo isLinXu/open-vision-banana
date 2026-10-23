@@ -24,9 +24,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
-import json
 import logging
-import math
 import platform
 import sys
 from pathlib import Path
@@ -51,6 +49,8 @@ from open_vision_banana.evaluation.paper_capabilities import (  # noqa: E402
     capability_for_benchmark,
     paper_reference,
 )
+from open_vision_banana.evaluation.results_io import write_metrics_csv, write_results  # noqa: E402
+from open_vision_banana.evaluation.shards import SHARDABLE_BENCHMARKS, shard_range  # noqa: E402
 from open_vision_banana.inference.checkpoint import read_training_prompts  # noqa: E402
 from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT  # noqa: E402
 
@@ -258,6 +258,17 @@ def parse_args() -> argparse.Namespace:
         help="Also score a closer=brighter luminance map after median scale (relative_delta_1.25_aligned).",
     )
     parser.add_argument("--max-samples", type=int, default=None)
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help=(
+            "Score one contiguous block of each benchmark (with --shard-index) and store the raw "
+            "accumulator sums; scripts/merge_eval_shards.py adds the blocks back into one result. "
+            "Seeds stay those of the unsharded run. Depth, semantic and referring jobs only."
+        ),
+    )
+    parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument(
         "--allow-semantic-palette-mismatch",
         action="store_true",
@@ -474,24 +485,6 @@ def preflight_jobs(
     return {"ok": all(record["ok"] for record in records), "jobs": records}
 
 
-def _json_safe(value: Any) -> Any:
-    """Convert non-finite metric values to JSON null without hiding them."""
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {key: _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, tuple):
-        return [_json_safe(item) for item in value]
-    return value
-
-
-def write_results(path: Path, results: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_json_safe(results), indent=2, allow_nan=False), encoding="utf-8")
-
-
 def main() -> int:
     args = parse_args()
     if not args.preflight_only and not args.model_name:
@@ -502,6 +495,13 @@ def main() -> int:
     jobs = build_jobs(args)
     if not jobs:
         raise SystemExit("No benchmark roots supplied")
+    if not 0 <= args.shard_index < args.num_shards:
+        raise SystemExit(f"--shard-index must be in [0, --num-shards={args.num_shards})")
+    unshardable = sorted({job[0] for job in jobs} - SHARDABLE_BENCHMARKS)
+    if args.num_shards > 1 and unshardable:
+        raise SystemExit(
+            f"--num-shards supports {sorted(SHARDABLE_BENCHMARKS)} jobs, not {unshardable}"
+        )
 
     preflight = preflight_jobs(jobs, split=args.split, resolution=args.resolution)
     results: dict[str, Any] = {
@@ -647,6 +647,19 @@ def main() -> int:
             logger.info("%s: %s", key, record["blocked"])
             continue
         selected = select_dataset(dataset, args.max_samples)
+        job_seed = args.seed
+        if args.num_shards > 1:
+            block = shard_range(len(selected), args.num_shards, args.shard_index, args.batch_size)
+            record["shard"] = {
+                "index": args.shard_index,
+                "count": args.num_shards,
+                "start": block.start,
+                "stop": block.stop,
+                "of_samples": len(selected),
+            }
+            selected = Subset(selected, block)
+            # the evaluator seeds batch i with seed + i, so the block keeps the unsharded seeds
+            job_seed = args.seed + block.start // args.batch_size
         loader = DataLoader(
             selected,
             batch_size=args.batch_size,
@@ -666,7 +679,7 @@ def main() -> int:
             class_color_map=class_color_map,
             num_inference_steps=args.num_inference_steps,
             strength=args.strength,
-            seed=args.seed,
+            seed=job_seed,
             guidance_scale=args.guidance_scale,
             dataset_name=name,
             native_resolution=native,
@@ -682,21 +695,14 @@ def main() -> int:
             metrics["formal_imgedit"] = False
         record["samples"] = len(selected)
         record["decoded_metrics"] = metrics
+        if args.num_shards > 1:
+            record["accumulator_states"] = getattr(evaluator, "last_accumulator_states", None)
         results["benchmarks"][key] = record
         logger.info("%s: %s", key, metrics)
 
     write_results(args.output_json, results)
     if args.output_csv is not None:
-        import csv
-        args.output_csv.parent.mkdir(parents=True, exist_ok=True)
-        with args.output_csv.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.writer(handle)
-            writer.writerow(["benchmark", "dataset", "metric", "value"])
-            for key, record in results["benchmarks"].items():
-                benchmark, dataset = key.split("/", 1)
-                for metric, value in record["decoded_metrics"].items():
-                    if isinstance(value, (int, float)):
-                        writer.writerow([benchmark, dataset, metric, value])
+        write_metrics_csv(args.output_csv, results)
     return 0
 
 
