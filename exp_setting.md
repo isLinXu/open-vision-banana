@@ -330,7 +330,7 @@ Weights only: fresh AdamW / warmup / step counter; LoRA rank and targets must ma
 ## Known gaps to keep in mind
 
 - VKITTI normals (T7) are derived from VKITTI2 depth + `intrinsic.txt` by `VirtualKITTINormalDataset` (no normal GT ships); the derivation is exact on analytic planes but inherits the renderer's depth discretisation (1 cm) at grazing angles — report it as such.
-- SA-Co cgF1 and ReasonSeg's rewrite need a Gemini key; without it the scripts fall back to diagnostics and say so (bookkeeping rule 6).
+- SA-Co cgF1 and ReasonSeg's rewrite need a Gemini key; without it the scripts fall back to diagnostics and say so (bookkeeping rule 6). SA-Co/Gold *annotations* come from ModelScope without a gate (`saco-gold`); the *images* still need a free Roboflow account or Meta's SA-1B form (`saco-gold-images`).
 - The inference protocol (steps, guidance, seed, scoring resolution) is a repository choice — the paper gives none — and is therefore pinned in E1.3 rather than derived from the paper.
 - iBims-1, ScanNet, nuScenes, KITTI, Cityscapes are login/request-walled; the registry prints the instructions.
 - Generation preservation here is a proxy; the paper's metric is a human pairwise study.

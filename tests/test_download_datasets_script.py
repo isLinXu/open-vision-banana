@@ -51,7 +51,7 @@ def test_registry_rows_are_well_formed_and_cover_the_paper_tasks():
     assert any(r["group"] == "replay" for r in rows)
     # Paper benchmarks must never be in the train group
     for name in ("refcocog", "reasonseg", "nyu-depth-v2-labeled", "kitti-depth", "cityscapes", "genai-bench",
-                 "diode-val", "diode-val-normals", "eth3d-dslr-depth", "imgedit-bench", "saco-gold", "ibims1",
+                 "diode-val", "diode-val-normals", "eth3d-dslr-depth", "imgedit-bench", "saco-gold", "saco-gold-images", "ibims1",
                  "scannet-normals", "nuscenes", "vkitti2", "nyu-normals"):
         assert next(r for r in rows if r["name"] == name)["group"] == "eval"
 
@@ -106,3 +106,15 @@ def test_local_url_fetch_unzip_and_coco2014_links_are_idempotent(tmp_path: Path)
     second = _run("--registry", str(registry), "--root", str(root), "--only", "mini-coco")
     assert second.returncode == 0, second.stderr
     assert "exists:" in second.stderr and "0 new links" in second.stdout
+
+
+def test_whole_repo_ms_row_without_include_dry_runs(tmp_path: Path):
+    """A ModelScope row with include='-' (whole repo) must not trip `set -u` on the empty pattern array (bash 3.2)."""
+    res = subprocess.run(
+        ["bash", str(SCRIPT), "--only", "saco-gold", "--dry-run"],
+        capture_output=True, text=True, cwd=ROOT, env={**os.environ, "DATA_ROOT": str(tmp_path)},
+    )
+    assert res.returncode == 0, res.stderr
+    combined = res.stdout + res.stderr  # log lines go to stderr, commands to stdout
+    assert "unbound variable" not in combined
+    assert "facebook/SACo-Gold" in combined and "0 failed" in combined

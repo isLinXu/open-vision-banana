@@ -240,8 +240,9 @@ while IFS=$'\t' read -r name group tasks source locator include dest post size l
   patterns=()
   while IFS= read -r line; do [[ -n $line ]] && patterns+=("$line"); done < <(expand_include "$include")
   if { case "$source" in
-         ms)  fetch_ms "$locator" "$target" "${patterns[@]}" ;;
-         hf)  fetch_hf "$locator" "$target" "${patterns[@]}" ;;
+         # ${arr[@]+"${arr[@]}"}: bash 3.2 + set -u treats an empty array as unbound
+         ms)  fetch_ms "$locator" "$target" ${patterns[@]+"${patterns[@]}"} ;;
+         hf)  fetch_hf "$locator" "$target" ${patterns[@]+"${patterns[@]}"} ;;
          url) fetch_url "$locator" "$target" ;;
          *)   echo "unknown source '$source'" >&2; false ;;
        esac; } && post_process "$post" "$target"; then
