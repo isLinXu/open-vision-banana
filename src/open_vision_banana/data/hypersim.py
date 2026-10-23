@@ -9,10 +9,11 @@ Coordinate frame: Hypersim's camera space is OpenGL-style right-handed (+x right
 +y up, +z towards the viewer / out of the image plane), which is exactly the
 frame the paper states for its normal encoding, so ``normal_cam`` maps through
 ``NormalRGBMapper`` without any axis flip. ``normal_backfacing_fraction`` measures
-how many valid normals point clearly away from the camera (n_z < -0.1). Visible
-surfaces cannot face away, so for a correctly oriented frame this is ~0 (floors
-and ceilings sit near n_z = 0, which is why a "facing" test would be too strict);
-the preparer warns when it exceeds 0.1, the signature of a flipped z axis.
+how many valid normals point clearly away from the camera along their own view ray
+(n . -ray < -0.1). Visible surfaces cannot face away, so for a correctly oriented
+frame this is ~0; the preparer warns when it exceeds 0.1, the signature of a flipped
+axis. The optical axis alone is not enough: off-axis pixels of the 60 degree camera
+see oblique walls with n_z down to about -0.5.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import torch
 
 from ..core.normal_mapper import NormalRGBMapper
 from ..inference.prompt import PromptBuilder
+from .depth_geometry import hypersim_focal_px
 from .openvocab_semantic import OpenVocabSample, sample_openvocab_semantic
 
 # NYU40 label set used by Hypersim's semantic.hdf5 (id 1..40; 0 / -1 unlabelled).
@@ -40,20 +42,32 @@ INSTANCE_EXCLUDED_CLASSES = frozenset({"other structure", "other furniture", "ot
 INVALID_NORMAL_RGB = (128, 128, 128)  # the encoding of the zero vector; evaluators mask invalid GT anyway
 
 
-BACKFACING_Z = -0.1
+BACKFACING_COS = -0.1
 
 
-def normal_backfacing_fraction(normal: np.ndarray) -> float:
-    """Fraction of valid normals with n_z < -0.1 (pointing away from the camera)."""
-    valid = np.isfinite(normal).all(axis=-1) & (np.linalg.norm(normal, axis=-1) > 1e-6)
+def normal_backfacing_fraction(normal: np.ndarray, focal_px: float | None = None) -> float:
+    """Fraction of valid normals facing away from the camera: n . -ray < -0.1.
+
+    Rays use pixel centres in this camera frame (looking along -z, +y up, image rows down);
+    ``focal_px`` defaults to the Hypersim 60 degree rule for the frame width.
+    """
+    normal = np.asarray(normal, dtype=np.float32)
+    norm = np.linalg.norm(normal, axis=-1)
+    valid = np.isfinite(normal).all(axis=-1) & (norm > 1e-6)
     if not valid.any():
         return 0.0
-    unit_z = normal[..., 2][valid] / np.linalg.norm(normal[valid], axis=-1)
-    return float((unit_z < BACKFACING_Z).mean())
+    height, width = normal.shape[:2]
+    focal = hypersim_focal_px(width) if focal_px is None else float(focal_px)
+    # pixel-centre ray offsets, as in ray_distance_to_planar_depth; towards the camera is (-u, v, 1)
+    us = ((np.arange(width) - (width - 1) / 2.0) / focal).astype(np.float32)[None, :]
+    vs = ((np.arange(height) - (height - 1) / 2.0) / focal).astype(np.float32)[:, None]
+    dot = -us * normal[..., 0] + vs * normal[..., 1] + normal[..., 2]
+    facing = dot / (norm * np.sqrt(us**2 + vs**2 + 1.0))
+    return float((facing[valid] < BACKFACING_COS).mean())
 
 
-def normal_to_target(normal: np.ndarray, *, flip: str = "none") -> tuple[np.ndarray, float]:
-    """``[H, W, 3]`` camera-space normals -> uint8 RGB target and valid fraction.
+def flip_normals(normal: np.ndarray, flip: str = "none") -> np.ndarray:
+    """Float32 copy of ``[H, W, 3]`` normals in the paper frame.
 
     ``flip`` is an escape hatch for exports in another frame: ``"z"`` negates n_z,
     ``"yz"`` negates n_y and n_z (OpenCV-style camera to the paper frame).
@@ -67,6 +81,15 @@ def normal_to_target(normal: np.ndarray, *, flip: str = "none") -> tuple[np.ndar
         n[..., 1:] *= -1
     elif flip != "none":
         raise ValueError("flip must be none, z or yz")
+    return n
+
+
+def normal_to_target(normal: np.ndarray, *, flip: str = "none") -> tuple[np.ndarray, float]:
+    """``[H, W, 3]`` camera-space normals -> uint8 RGB target and valid fraction.
+
+    ``flip`` as in ``flip_normals``.
+    """
+    n = flip_normals(normal, flip)
     norm = np.linalg.norm(n, axis=-1, keepdims=True)
     valid = np.isfinite(norm[..., 0]) & (norm[..., 0] > 1e-6)
     n = np.where(valid[..., None], n / np.clip(norm, 1e-6, None), 0.0)
@@ -158,6 +181,7 @@ __all__ = [
     "NYU40_CLASSES",
     "InstanceTarget",
     "instance_targets",
+    "flip_normals",
     "normal_backfacing_fraction",
     "normal_to_target",
     "nyu40_to_label_index",
