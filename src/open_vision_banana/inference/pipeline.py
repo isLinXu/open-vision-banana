@@ -163,6 +163,7 @@ class VisionBanana:
         height: int = 1024,
         width: int = 1024,
         seed: int | None = None,
+        guidance_scale: float = 0.0,
         prompt: str | None = None,
         diagnostics_callback: Callable[[dict], None] | None = None,
         referring_encoding: str | None = None,
@@ -180,6 +181,8 @@ class VisionBanana:
                 Defaults to white (255, 255, 255).
             background_color: Background color for instance segmentation.
             num_inference_steps: Denoising steps (1 for schnell).
+            guidance_scale: Classifier-free guidance scale (0.0 = off). The paper does not
+                state its inference settings; record the value used (see exp_setting.md).
             strength: Img2img noise strength (0, 1]. Lower → closer to input.
             height: Output image height (t2i only).
             width: Output image width (t2i only).
@@ -233,6 +236,7 @@ class VisionBanana:
             prompt=prompt,
             image=image,
             num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
             strength=strength,
             height=height,
             width=width,

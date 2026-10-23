@@ -85,6 +85,7 @@ NATIVE_GT_DATASETS = {
     "referring",
     "reasonseg",
     "nuscenes_depth",
+    "cityscapes",
 }
 # Extra adapter kwargs that make a benchmark match the paper's definition.
 # The paper evaluates DIODE-Indoor, not the indoor+outdoor union, and RefCOCOg
@@ -212,8 +213,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--num-inference-steps", type=int, default=1)
-    parser.add_argument("--strength", type=float, default=0.85)
+    # Inference protocol. The paper states none of these; exp_setting.md pins the values a run
+    # must use, and every value is written to results["metadata"]["inference_protocol"].
+    parser.add_argument("--num-inference-steps", type=int, default=1,
+                        help="denoising steps (default 1 is a smoke setting, not an evaluation setting)")
+    parser.add_argument("--guidance-scale", type=float, default=0.0, help="classifier-free guidance scale (0 = off)")
+    parser.add_argument("--strength", type=float, default=0.85,
+                        help="img2img noise strength; ignored by instruction-editor layouts that start from noise")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--depth-colormap",
@@ -576,10 +582,20 @@ def main() -> int:
     results["metadata"]["invert_depth"] = bool(args.invert_depth)
     results["metadata"]["depth_prompt"] = args.depth_prompt
     results["metadata"]["relative_luminance"] = bool(args.relative_luminance)
+    results["metadata"]["inference_protocol"] = {
+        "num_inference_steps": args.num_inference_steps,
+        "guidance_scale": args.guidance_scale,
+        "strength": args.strength,
+        "seed": args.seed,
+        "canvas_resolution": args.resolution,
+        "native_resolution_scoring": bool(args.native_resolution),
+        "note": "The paper does not state inference settings; these are the repository values for this run "
+                "(exp_setting.md E1.3). num_inference_steps=1 is a smoke setting and must not be reported as a result.",
+    }
     results["metadata"]["protocol"] = {
         "depth": "decoded RGB to metric depth with curve=metric_power (paper Eq.1); log_relative is an opt-in relative ablation and must not be cited as paper AbsRel; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap / nuScenes 80m cap (no paper crop) when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
         "normal": "decoded RGB to unit camera-space normals; valid pixels are finite, non-zero GT (plus DIODE mask when present); mean_angle_deg_per_image is the mean of per-image means; NYU/ScanNet require community normal maps; VKITTI2 ships no normals, so VirtualKITTINormalDataset derives them from its centimetre depth + intrinsic.txt in the paper frame (used only to build GT, never as model input); DIODE is indoors",
-        "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix; official gtFine only, never cityscapes8",
+        "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix; official gtFine only, never cityscapes8; with --native-resolution the canvas is decoded first and the label map nearest-upsampled to the 2048x1024 GT (interpolating RGB would blend boundary colours into phantom classes)",
         "referring": "RefCOCOg requires refs(umd).p with no protocol fallback and validates images, expressions, and nonempty native COCO polygon/RLE masks using pycocotools; ReasonSeg val uses LISA JSON-next-to-image; every sentence/query is a sample; cIoU/gIoU from masks, never from bounding boxes; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
         "instance": "SA-Co/Gold query JSONL when present, else color/instance pairs; cgF1 = 100 * pmF1 * IL_MCC; paper IL_MCC uses Gemini 3.1 Flash-Lite presence filtering, which this command does not invent",
         "generation": "paper GenAI-Bench / ImgEdit numbers are human pairwise win rates; this command only scores an optional CLIP/FID proxy when images exist and never writes those proxies into the paper win-rate column",
@@ -591,7 +607,7 @@ def main() -> int:
         # default is ``val`` for the paper gate; callers may explicitly run
         # the official train split when that data is present.
         split = args.split
-        native = args.native_resolution and benchmark in {"depth", "normal", "referring"}
+        native = args.native_resolution and benchmark in {"depth", "normal", "referring", "semantic"}
         if native and dataset_key not in NATIVE_GT_DATASETS:
             raise SystemExit(
                 f"--native-resolution is not implemented for dataset {dataset_key!r}; "
@@ -651,6 +667,7 @@ def main() -> int:
             num_inference_steps=args.num_inference_steps,
             strength=args.strength,
             seed=args.seed,
+            guidance_scale=args.guidance_scale,
             dataset_name=name,
             native_resolution=native,
             depth_colormap=args.depth_colormap,

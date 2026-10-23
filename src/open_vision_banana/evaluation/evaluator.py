@@ -226,6 +226,7 @@ class VisionEvaluator:
         num_inference_steps: int = 1,
         strength: float = 0.85,
         seed: int | None = None,
+        guidance_scale: float = 0.0,
         dataset_name: str | None = None,
         native_resolution: bool = False,
         depth_colormap: str = "cube_edge",
@@ -354,6 +355,7 @@ class VisionEvaluator:
                     num_inference_steps=num_inference_steps,
                     strength=strength,
                     seed=None if seed is None else seed + batch_idx,
+                    guidance_scale=guidance_scale,
                     **res_kwargs,
                 )
             except ValueError as exc:
@@ -452,12 +454,29 @@ class VisionEvaluator:
                         "class_color_map is required for semantic evaluation. "
                         "Pass it as an argument or include it in the dataloader batch."
                     )
-                pred_labels = seg_decoder.decode_semantic(pred_rgb, cmap)
-                gt_labels = batch.get("gt_labels")
-                if gt_labels is None:
-                    gt_labels = seg_decoder.decode_semantic(target_rgb, cmap)
+                if native_resolution:
+                    if "gt_labels_native" not in batch:
+                        raise ValueError(
+                            "native_resolution=True needs a dataset that returns "
+                            "'gt_labels_native' (e.g. CityscapesSegDataset(native_gt=True))"
+                        )
+                    gt_labels = batch["gt_labels_native"].to(self.device)
+                    # Decode on the model canvas, then nearest-upsample the *label map* to the GT
+                    # size. Interpolating the RGB canvas would blend neighbouring class colours at
+                    # boundaries into a third, spurious class under nearest-colour decoding.
+                    pred_labels = seg_decoder.decode_semantic(pred_rgb, cmap)
+                    if pred_labels.shape[-2:] != gt_labels.shape[-2:]:
+                        pred_labels = torch.nn.functional.interpolate(
+                            pred_labels.float().reshape(pred_labels.shape[0], 1, *pred_labels.shape[-2:]),
+                            size=gt_labels.shape[-2:], mode="nearest",
+                        ).long().reshape(pred_labels.shape[0], *gt_labels.shape[-2:])
                 else:
-                    gt_labels = gt_labels.to(self.device)
+                    pred_labels = seg_decoder.decode_semantic(pred_rgb, cmap)
+                    gt_labels = batch.get("gt_labels")
+                    if gt_labels is None:
+                        gt_labels = seg_decoder.decode_semantic(target_rgb, cmap)
+                    else:
+                        gt_labels = gt_labels.to(self.device)
                 if semantic_accumulator is not None:
                     semantic_accumulator.update(pred_labels, gt_labels)
                 metrics = evaluate_semantic(pred_labels, gt_labels, num_classes if num_classes is not None else len(cmap))
@@ -771,6 +790,7 @@ class VisionEvaluator:
         referring_encoding: str | None = None,
         referring_target_color: tuple[int, int, int] = (255, 255, 255),
         referring_threshold: float | None = None,
+        guidance_scale: float = 0.0,
     ) -> torch.Tensor:
         """Run model inference and return a [B, 3, H, W] RGB tensor in [0, 1].
 
@@ -788,6 +808,9 @@ class VisionEvaluator:
                 strength=strength,
                 seed=seed,
             )
+            if guidance_scale:
+                # Do not add new default kwargs to third-party predict APIs.
+                predict_kwargs["guidance_scale"] = guidance_scale
             if task == "semantic":
                 if class_color_map is None:
                     raise ValueError("class_color_map required for semantic segmentation predict()")
