@@ -82,14 +82,16 @@ class TrainingConfig:
     flow_sigma: float = 0.0
     logit_normal: bool = True
     flow_shift: float = 1.0  # SANA flow shift
-    min_snr: bool = True
+    # Paper (Section 2): "without specialized architectures or custom training losses".
+    # Defaults therefore mean "plain flow-matching loss, equal task weights". Older
+    # configs that relied on the previous defaults (min_snr on, depth 2.5 / normal 2.0 /
+    # semantic 0.5) have those values pinned explicitly in their YAML (2026-10-22).
+    min_snr: bool = False
     min_snr_gamma: float = 5.0
     cfg_dropout_rate: float = 0.1
 
     # ── Loss ───────────────────────────────────────────────────────────
-    task_loss_weights: dict[str, float] = field(
-        default_factory=lambda: {"depth": 2.5, "normal": 2.0, "semantic": 0.5}
-    )
+    task_loss_weights: dict[str, float] = field(default_factory=dict)  # empty = 1.0 for every task
     depth_edge_aux_weight: float = 0.0
     depth_edge_aux_gradient_weight: float = 0.25
     depth_edge_aux_edge_weight: float = 2.0
@@ -139,7 +141,8 @@ class TrainingConfig:
 
     def parse_task_weights(self) -> dict[str, float]:
         """Return normalized loss weights, independent of sampling weights."""
-        return _parse_weights(self.task_loss_weights, "task_loss_weights")
+        # Empty mapping = the paper setting (every task weighted 1.0; losses.py falls back to 1.0).
+        return _parse_weights(self.task_loss_weights, "task_loss_weights", allow_empty=True)
 
     def validate(self) -> None:
         """Normalize and reject invalid effective values before loading a model."""

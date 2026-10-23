@@ -12,12 +12,12 @@
 | A. 任务编码/解码（§3.1、§3.2、Eq.1–6） | 22 | 21 | 1 | 0 | 0 |
 | B. Prompt 原文（Fig. 2/3/4、§1） | 9 | 9 | 0 | 0 | 0 |
 | C. 评测协议与指标（§3、附录 B、Table 1–7） | 17 | 14 | 2 | 1 | 0 |
-| D. 数据与训练规则（§2、§3.2） | 8 | 4 | 3 | 1 | 0 |
+| D. 数据与训练规则（§2、§3.2） | 8 | 5 | 2 | 1 | 0 |
 | E. 生成保留（§2、附录 D） | 2 | 0 | 1 | 1 | 0 |
-| **合计** | **58** | **48** | **7** | **3** | **0** |
+| **合计** | **58** | **49** | **6** | **3** | **0** |
 
-- **方法层一致度：83%（48/58）完全一致，95%（55/58）至少部分一致，0 处实现错误。**
-- 三处"缺失"全部源于论文闭源要素（Nano Banana Pro、in-house 标注、人工成对评测），**不可在开源实现中补齐**；七处"部分一致"中六处是论文给了定性描述但未给出可核对的数值/实现细节，仓库做了记录在案的选择。
+- **方法层一致度：84%（49/58）完全一致，95%（55/58）至少部分一致，0 处实现错误。**（R2 落地后更新）
+- 三处"缺失"全部源于论文闭源要素（Nano Banana Pro、in-house 标注、人工成对评测），**不可在开源实现中补齐**；六处"部分一致"全部是论文给了定性描述但未给出可核对的数值/实现细节，仓库做了记录在案的选择。
 - 论文**完全没有**训练细节章节：无优化器、学习率、步数、batch、分辨率、微调方式（全参/LoRA）、损失函数、混合比例数值、推理步数。这些在仓库里全部是"仓库选择"，不构成一致性偏差，但也**无法声称与论文一致**。
 - 因此"100% 一致"在定义上不可达：论文可核对的 58 条中 47 条逐字/逐值一致；不可核对的部分（闭源模型、内部数据、人工评测、未公开的训练配方）无论实现成何种样子都无法判定一致。
 
@@ -58,7 +58,7 @@
 | A13 | Eq.5 3×3 腐蚀，保留比 < 0.1 剪枝 | `postprocess.py` L82、L104 | 3×3 全 1 核；`ratio < 0.1` | ✅ |
 | A14 | Eq.6 均色距离 ≤ τ 且合并 bbox 面积 ≤ γ·(A_a+A_b)，γ=5.0 | `postprocess.py` L176–205；`spatial_merge_area_basis="bbox"` 默认 | bbox 口径；γ=5.0；像素口径可选消融 | ✅（论文 A(·) 未定义，取 bbox 读法并保留另一读法） |
 | A15 | 背景色 C_bg 预定义（附录 A） | manifest `background_color` → batch → `decode_instance(background_color=)`（#42） | 逐样本传递 | ✅ |
-| A16 | 指代分割后处理"straightforward"（附录 A 首句） | `core/referring.py` `decode_referring_mask` | `binary_white_black_v1`：mean RGB > 0.5；保留所有连通域 | 🟡 论文未给阈值；仓库选择已版本化 |
+| A16 | 指代分割后处理"straightforward"（附录 A 首句） | `core/referring.py` `decode_referring_mask`，`BINARY_REFERRING_THRESHOLD=0.5` | mean RGB > 0.5；保留所有连通域；评测 metadata 已写明（R4） | 🟡 论文未给阈值；仓库选择已版本化并记录 |
 | A17 | 深度训练用 GT 米制深度编码（p.10） | `prepare_hypersim.py`（射线距离→平面 z）、`prepare_tartanair.py` | 米制、平面 z | ✅ |
 | A18 | "distance from the camera plane"（p.9） | `depth_geometry.ray_distance_to_planar_depth` | Hypersim 射线距离已转换 | ✅ |
 | A19 | 法向 trunc(…)×255 | `hypersim.py` L74 用 `round()` | 量化方式差 ≤1 灰阶 | 🟡 可忽略（论文 trunc 语义更接近 clamp；取整方式未明示） |
@@ -97,7 +97,7 @@
 | C9 | 深度评测**无尺度对齐**（Table 6 为 metric） | 主指标 raw；`*_aligned` 另列为诊断 | ✅ |
 | C10 | 深度截断/裁剪协议 | NYU 10 m + Eigen crop，KITTI 80 m + Garg crop，ETH3D/nuScenes 80 m | 🟡 论文未写；仓库采用社区标准协议 |
 | C11 | 法向四数据集 NYUv2/DIODE-indoor/ScanNet/VKitti，mean/median 角误差（Table 7） | 四个 Dataset 类（VKITTI 由深度推导，#41）；`normal.py` mean/median | ✅ |
-| C12 | 法向聚合口径 | `mean_angle_deg_per_image` = 逐图均值再平均 | 🟡 论文未写逐像素/逐图；仓库选逐图并记录在 metadata |
+| C12 | 法向聚合口径 | 像素加权与逐图两种均值/中位数同时输出（R3） | 🟡 论文未写逐像素/逐图；两种口径都报告并在 metadata 注明 |
 | C13 | Table 1 "average of 4 datasets" 口径（NYU+ETH3D+DIODE+KITTI；法向四集） | `paper_capabilities.py` 记录口径；脚本输出各集，平均需手算 | ✅（口径记录一致） |
 | C14 | 零样本：评测基准训练集不进训练（p.4、p.5、p.11、p.13） | `build_qwen_baseline_manifest --protocol strict`（默认）：路径 + COCO image-id 双审计，含 Cityscapes train | ✅ |
 | C15 | DIODE 只用 Indoor（Table 6/7） | `evaluate_paper_benchmarks.py` L93 `scene_type: indoors` | ✅ |
@@ -111,7 +111,7 @@
 | D1 | 3D 任务只用渲染引擎合成数据，"zero real-world depth data"（p.11） | 训练深度源 = Hypersim + TartanAir（均合成）；注册表 `group=train` 无真实深度 | ✅ |
 | D2 | 2D 任务用 in-house 模型对网图的标注（p.4） | COCO/LVIS/ADE20K/RefCOCO 人工标注公开数据 | ⬜ 不可获得；替代源已记录 |
 | D3 | 混入 NBP 自身训练数据，比例"very low"（p.4） | `vision_ratio=0.5`（即 50% 生成 replay）；replay 源为 OmniEdit/BLIP3o 而非底座自身数据 | 🟡 中等：机制一致（混合），比例无数值可核；数据源必然不同 |
-| D4 | "without … custom training losses"（p.4） | paper_aligned：`task_loss_weights` 全 1.0、`normal_angular_loss_weight=0`、`depth_edge_aux_weight=0`、`min_snr: false`；但 `TrainingConfig` **默认值**是 depth 2.5 / normal 2.0 / semantic 0.5 且 `min_snr=True` | 🟡 轻微：论文配方在 yaml 中一致，dataclass 默认值不一致（见建议 R2） |
+| D4 | "without … custom training losses"（p.4） | paper_aligned：`task_loss_weights` 全 1.0、`normal_angular_loss_weight=0`、`depth_edge_aux_weight=0`、`min_snr: false`；`TrainingConfig` 默认值现亦为空映射（=1.0）与 `min_snr=False`（R2 已做） | ✅ |
 | D5 | "lightweight instruction-tuning"（p.3） | rsLoRA r32/α64 | 🟡 论文未定义"lightweight"的具体形式（全参低 lr 还是 adapter） |
 | D6 | 基座 Nano Banana Pro | Qwen-Image-2.1 / Qwen-Image-Edit（原生图像条件） | ⬜ 闭源，不可获得 |
 | D7 | 语义训练支持四种 prompt 风格（p.6） | 四风格 + 训练期随机重写与换色 | ✅ |
@@ -133,14 +133,14 @@
 | 优先级 | 项 | 建议 |
 |:-:|:--|:--|
 | R1 | A2 立方体顶点顺序 | **已闭合**（本次审计中从 PDF 提取 Fig. 5 图像核对，顺序与标注米数均一致），无需修改。 |
-| R2 | D4 默认损失权重 | 理想做法是把 `TrainingConfig.task_loss_weights` 默认改为全 1.0、`min_snr` 默认 `False`，使"不写就等于论文"。**本次未改**：`configs/flux_*`、`paper_reproduction_baseline.yaml` 等 8 份旧配置依赖当前默认值（depth 2.5 / normal 2.0 / semantic 0.5），直接改默认会静默改变它们的复现。应先把默认值显式写进这些 yaml，再切默认。paper_aligned 配置已显式写全 1.0 / 0 / false，不受影响。 |
-| R3 | C12 法向聚合 | 在 `evaluate_paper_benchmarks.py` 同时输出逐像素与逐图两种均值，报告时注明；论文 Table 7 口径不明，两者都给可避免误比。 |
-| R4 | A16 指代阈值 | 保持 `binary_white_black_v1`，但在 `evaluate_paper_benchmarks.py` metadata 中写明阈值 0.5 与"保留全部连通域"，与论文"straightforward"的空白对应。 |
+| R2 | D4 默认损失权重 | **已完成**：先把当时的默认值（depth 2.5 / normal 2.0 / semantic 0.5、`min_snr: true`）显式写进 17 份依赖默认值的 TrainingConfig 格式 yaml（标注 `pinned 2026-10-22`，前后有效值逐字节一致），再把 `TrainingConfig` 默认改为空映射（= 每任务 1.0）与 `min_snr=False`。测试同时断言新默认与 pin。 |
+| R3 | C12 法向聚合 | **已完成**：`NormalAccumulator` 同时输出像素加权（`mean_angle_deg` / `median_angle_deg`）与逐图（`*_per_image`，新增 `median_angle_deg_per_image`）两种口径，并带 `aggregation` 说明；评测脚本 protocol metadata 写明 Table 7 未固定口径。 |
+| R4 | A16 指代阈值 | **已完成**：`core/referring.BINARY_REFERRING_THRESHOLD = 0.5` 显式常量；评测脚本 protocol metadata 写明"mean RGB > 0.5 强度阈值、保留全部连通域、论文仅称 straightforward 未给阈值、0.5 为仓库选择"。 |
 | R5 | 文档陈旧 | `evaluate_paper_benchmarks.py` protocol 字符串曾写 "VKITTI … not derived from depth"；本次已改为与 #41 一致。 |
 | R6 | C17 基线 | 不建议在仓库内复跑 SAM 3 / DA3 等基线；继续引用论文表格并标明出处即可。 |
 
 ## 5. 最终一致性结论
 
-- **可核对项**：58 条中 48 条完全一致（83%），7 条部分一致，3 条缺失，**0 条实现错误**。部分一致项全部是论文留白处（阈值、聚合口径、截断协议、取整方式、混合比例数值、"lightweight"的形式、生成代理）的记录在案选择，没有一条会改变论文已写明的数值行为。
+- **可核对项**：58 条中 49 条完全一致（84%），6 条部分一致，3 条缺失，**0 条实现错误**。部分一致项全部是论文留白处（阈值、聚合口径、截断协议、取整方式、混合比例数值、"lightweight"的形式、生成代理）的记录在案选择，没有一条会改变论文已写明的数值行为。
 - **不可核对项**：基座模型、内部数据、训练配方、人工评测。仓库对这些项的处理方式（Qwen-Image-2.1、公开数据、LoRA、代理指标）全部显式标注为"非论文"，没有伪装成一致。
-- **综合判断**：在"论文写明的方法层"达到 **≈95% 一致（55/58 至少部分一致，无错误）**；"100% 一致"对本论文不成立——不是因为实现缺陷，而是论文的可核对信息本身不覆盖训练过程与基座。R2–R4 为可选的整洁性修改，不影响任何已写明的论文行为。
+- **综合判断**：在"论文写明的方法层"达到 **≈95% 一致（55/58 至少部分一致，无错误）**；"100% 一致"对本论文不成立——不是因为实现缺陷，而是论文的可核对信息本身不覆盖训练过程与基座。R1–R5 已全部落地；剩余 6 处部分一致均为论文留白，无进一步可核对的修改项。

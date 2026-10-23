@@ -135,6 +135,11 @@ def test_normal_per_image_mean_differs_from_pixel_weighted():
     assert metrics["images"] == 2
     assert metrics["mean_angle_deg"] == pytest.approx(90.0 / 101)
     assert metrics["mean_angle_deg_per_image"] == pytest.approx(45.0)
+    # audit R3: both aggregations are reported; pixel-weighted median is 0 (100 of 101 pixels exact),
+    # per-image median averages the two image medians (0 and 90)
+    assert metrics["median_angle_deg"] == pytest.approx(0.0)
+    assert metrics["median_angle_deg_per_image"] == pytest.approx(45.0)
+    assert "pixel_weighted" in metrics["aggregation"] and "per_image" in metrics["aggregation"]
 
 
 def test_trivial_normals_and_gate():
