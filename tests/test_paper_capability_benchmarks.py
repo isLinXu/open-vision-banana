@@ -26,7 +26,12 @@ from open_vision_banana.evaluation.paper_capabilities import (
     PAPER_CAPABILITIES,
     capability_for_benchmark,
 )
-from scripts.evaluate_paper_benchmarks import build_jobs, preflight_jobs, selected_benchmarks
+from scripts.evaluate_paper_benchmarks import (
+    NATIVE_GT_DATASETS,
+    build_jobs,
+    preflight_jobs,
+    selected_benchmarks,
+)
 
 
 def test_capability_groups_match_paper_axes() -> None:
@@ -73,6 +78,20 @@ def test_build_jobs_wires_paper_roots(tmp_path: Path) -> None:
     assert ("instance", "saco") in keys
     assert ("generation", "genai_bench") in keys
     assert ("generation", "imgedit") in keys
+
+
+
+def test_every_native_resolution_job_has_a_native_adapter_key(tmp_path: Path) -> None:
+    # --native-resolution covers depth, normal, referring and semantic jobs; each job's adapter
+    # key must be in NATIVE_GT_DATASETS or the run exits before scoring (Cityscapes did).
+    roots = ("nyu", "ibims", "eth3d", "diode", "kitti", "nuscenes", "scannet", "vkitti")
+    roots += ("cityscapes", "refcocog", "reasonseg", "saco", "genai_bench", "imgedit")
+    fields = {f"{name}_root": tmp_path / name for name in roots}
+    fields |= {"benchmark": "all", "depth_root": None, "normal_root": None}
+    jobs = build_jobs(type("Args", (), fields)())
+    native = [job for job in jobs if job[0] in {"depth", "normal", "referring", "semantic"}]
+    assert {(bench, name) for bench, name, _root, _key in native} >= {("semantic", "cityscapes")}
+    assert [job for job in native if job[3] not in NATIVE_GT_DATASETS] == []
 
 
 def test_reasonseg_loads_lisa_json_and_polygon(tmp_path: Path) -> None:

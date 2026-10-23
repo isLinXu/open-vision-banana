@@ -86,7 +86,7 @@ NATIVE_GT_DATASETS = {
     "referring",
     "reasonseg",
     "nuscenes_depth",
-    "cityscapes",
+    "semantic",  # the Cityscapes job's adapter key (build_jobs: semantic/cityscapes)
 }
 # Extra adapter kwargs that make a benchmark match the paper's definition.
 # The paper evaluates DIODE-Indoor, not the indoor+outdoor union, and RefCOCOg
