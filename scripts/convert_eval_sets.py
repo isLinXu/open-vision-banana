@@ -94,17 +94,20 @@ def convert_genai_bench(parquet: Path, out: Path, *, prompt_columns: tuple[str, 
         raise FileNotFoundError(f"no parquet under {parquet}")
     seen: dict[str, dict] = {}
     for shard in shards:
-        schema_names = set(pq.ParquetFile(shard).schema_arrow.names)
-        column = next((c for c in prompt_columns if c in schema_names), None)
+        # GenAI-Bench-1600 capitalises its columns ("Prompt", "Tags"), the pairwise sets do not
+        names = {name.lower(): name for name in pq.ParquetFile(shard).schema_arrow.names}
+        column = next((names[c.lower()] for c in prompt_columns if c.lower() in names), None)
         if column is None:
             continue
-        extra = [c for c in ("basic_skills", "advanced_skills", "task", "instruct_prompt", "vote_type") if c in schema_names]
+        extra = [names[c] for c in ("basic_skills", "advanced_skills", "task", "instruct_prompt", "vote_type") if c in names]
         table = pq.read_table(shard, columns=[column, *extra]).to_pylist()
         for row in table:
             prompt = str(row.get(column) or "").strip()
             if prompt and prompt not in seen:
                 seen[prompt] = {"id": f"genai_{len(seen):05d}", "prompt": prompt, "source_shard": shard.name,
                                 **{k: row[k] for k in extra if row.get(k) is not None}}
+    if not seen:
+        raise ValueError(f"no prompts under {parquet}: no non-empty value in a column named one of {prompt_columns}")
     out.mkdir(parents=True, exist_ok=True)
     with (out / "prompts.jsonl").open("w", encoding="utf-8") as handle:
         for row in seen.values():

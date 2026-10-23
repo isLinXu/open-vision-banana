@@ -73,3 +73,22 @@ def test_genai_bench_parquet_to_prompts_jsonl(tmp_path: Path):
     # because the paper metric is a human pairwise study; prompts feed the generation proxy)
     ds = GenAIBenchDataset(tmp_path / "gb", split="test", resolution=32)
     assert len(ds) == 2 and ds.samples[1]["prompt"] == "two cats wearing hats"
+
+
+def test_genai_bench_1600_capitalised_columns(tmp_path: Path):
+    # the ModelScope / HF GenAI-Bench-1600 shards: Index, Prompt, Tags, HumanRatings, one image per model
+    shards = tmp_path / "data"
+    shards.mkdir()
+    rows = [{"Index": 0, "Prompt": "A baker pulling bread out of an oven.", "HumanRatings": {"SDXL_Base": [3]}}]
+    pq.write_table(pa.Table.from_pylist(rows), shards / "train-00000-of-00012.parquet")
+    assert convert_genai_bench(shards, tmp_path / "gb")["prompts"] == 1
+    assert GenAIBenchDataset(tmp_path / "gb", split="val", resolution=32).samples[0]["prompt"].startswith("A baker")
+
+
+def test_genai_bench_without_a_prompt_column_fails(tmp_path: Path):
+    shards = tmp_path / "data"
+    shards.mkdir()
+    pq.write_table(pa.Table.from_pylist([{"question": "q"}]), shards / "train-00000-of-00001.parquet")
+    with pytest.raises(ValueError, match="no prompts"):
+        convert_genai_bench(shards, tmp_path / "gb")
+    assert not (tmp_path / "gb" / "prompts.jsonl").exists()
