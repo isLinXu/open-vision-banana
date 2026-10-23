@@ -118,6 +118,29 @@ def test_coco_rows_render_targets_the_paper_decoder_recovers(tmp_path: Path):
     assert len(instances) == 3
 
 
+def test_images_outside_the_data_root_get_manifest_relative_paths(tmp_path: Path, monkeypatch):
+    # E0 layout: COCO images under data/raw, targets and manifest under data/prep/inst (cwd-relative)
+    from open_vision_banana.data.manifest import resolve_manifest_path
+
+    monkeypatch.chdir(tmp_path)
+    ann_path, images_dir = _write_coco(tmp_path / "raw")
+    prep = Path("prep") / "inst"
+    build_instance_manifest(
+        ann_path.relative_to(tmp_path),
+        images_dir.relative_to(tmp_path),
+        prep / "targets",
+        prep / "instance.jsonl",
+        data_root=prep,
+        val_fraction=0.0,
+    )
+    rows = [json.loads(line) for line in (prep / "instance.jsonl").read_text().splitlines()]
+    assert rows and all(row["input"].startswith("../../raw/") for row in rows)
+    assert all(row["target"].startswith("targets/") for row in rows)
+    for row in rows:
+        assert resolve_manifest_path(row["input"], prep / "instance.jsonl").is_file()
+        assert resolve_manifest_path(row["target"], prep / "instance.jsonl").is_file()
+
+
 def test_lvis_format_skips_not_exhaustive_and_honours_image_id_exclusion(tmp_path: Path):
     ann_path, images_dir = _write_coco(tmp_path, lvis=True)
     refs = tmp_path / "refs(umd).p"

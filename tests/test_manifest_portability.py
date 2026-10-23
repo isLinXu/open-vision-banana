@@ -7,7 +7,11 @@ from pathlib import Path
 
 from PIL import Image
 
-from open_vision_banana.data.manifest import fingerprint_records, resolve_manifest_path
+from open_vision_banana.data.manifest import (
+    fingerprint_records,
+    relative_manifest_path,
+    resolve_manifest_path,
+)
 from scripts.archive.pre_opensource.normalize_dataset_manifests import normalize_dataset
 
 
@@ -58,3 +62,30 @@ def test_normalize_dataset_rewrites_absolute_paths_and_adds_fingerprint(tmp_path
     assert manifest["pairs_written"] == 1
     assert len(manifest["dataset_fingerprint"]) == 64
     assert manifest["path_policy"] == "manifest-relative"
+
+
+def test_relative_manifest_path_round_trips_inside_and_outside_the_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = Path("prep") / "inst"
+    (root / "targets").mkdir(parents=True)
+    (Path("raw") / "coco").mkdir(parents=True)
+    for path, expected in (
+        (root / "targets" / "a.png", "targets/a.png"),
+        (Path("raw") / "coco" / "b.jpg", "../../raw/coco/b.jpg"),
+        ((tmp_path / "raw" / "coco" / "b.jpg"), "../../raw/coco/b.jpg"),
+    ):
+        path.touch()
+        rel = relative_manifest_path(path, root)
+        assert rel == expected
+        assert resolve_manifest_path(rel, root).resolve() == path.resolve()
+
+
+def test_relative_manifest_path_keeps_a_symlinked_tree_logical(tmp_path, monkeypatch):
+    elsewhere = tmp_path / "mnt" / "coco"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "c.jpg").touch()
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "raw" / "coco").symlink_to(elsewhere)
+    (tmp_path / "prep" / "inst").mkdir(parents=True)
+    rel = relative_manifest_path(tmp_path / "raw" / "coco" / "c.jpg", tmp_path / "prep" / "inst")
+    assert rel == "../../raw/coco/c.jpg"  # not the physical ../../mnt/coco path

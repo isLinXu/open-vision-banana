@@ -64,6 +64,55 @@ def test_omniedit_parquet_shards_with_embedded_images(tmp_path: Path):
         build_generation_replay_manifest(shards, tmp_path / "x.jsonl", kind="edit", preset="omniedit")
 
 
+def test_cwd_relative_images_dir_inside_the_data_root(tmp_path: Path, monkeypatch):
+    # run_e0_smoke.sh passes relative paths: --images-dir data/prep/replay/images --data-root data/prep/replay
+    monkeypatch.chdir(tmp_path)
+    shards = Path("omniedit") / "data"
+    shards.mkdir(parents=True)
+    row = {
+        "omni_edit_id": "oe_0",
+        "task": "color",
+        "src_img": {"bytes": _png_bytes((10, 20, 30)), "path": "0_src.png"},
+        "edited_img": {"bytes": _png_bytes((200, 20, 30)), "path": "0_edit.png"},
+        "edited_prompt_list": ["make the sky purple"],
+        "width": 16,
+        "height": 16,
+    }
+    pq.write_table(pa.Table.from_pylist([row]), shards / "train-00000-of-00001.parquet")
+    replay = Path("prep") / "replay"
+    build_generation_replay_manifest(
+        shards,
+        replay / "omniedit.jsonl",
+        kind="edit",
+        preset="omniedit",
+        data_root=replay,
+        images_dir=replay / "images",
+        val_fraction=0.0,
+    )
+    [written] = [json.loads(line) for line in (replay / "omniedit.jsonl").read_text().splitlines()]
+    assert written["input"].startswith("images/") and written["target"].startswith("images/")
+    assert (replay / written["input"]).is_file() and (replay / written["target"]).is_file()
+
+
+def test_record_paths_relative_to_the_data_root_are_kept(tmp_path: Path, monkeypatch):
+    data = tmp_path / "data"
+    (data / "imgs").mkdir(parents=True)
+    for name in ("a.png", "b.png"):
+        Image.new("RGB", (8, 8)).save(data / "imgs" / name)
+    records = data / "records.jsonl"
+    records.write_text(
+        json.dumps({"source": "imgs/a.png", "target": "imgs/b.png", "instruction": "x"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)  # cwd is not the data root
+    audit = build_generation_replay_manifest(
+        records, data / "replay.jsonl", kind="edit", data_root=data, val_fraction=0.0
+    )
+    [written] = [json.loads(line) for line in (data / "replay.jsonl").read_text().splitlines()]
+    assert audit["rows_written"] == 1
+    assert (written["input"], written["target"]) == ("imgs/a.png", "imgs/b.png")
+
+
 def test_webdataset_tar_and_captions_sidecar(tmp_path: Path):
     tar_path = tmp_path / "shard.tar"
     with tarfile.open(tar_path, "w") as tar:
