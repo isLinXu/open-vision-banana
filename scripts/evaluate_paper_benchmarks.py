@@ -29,6 +29,7 @@ import logging
 import math
 import platform
 import sys
+from collections.abc import Container
 from pathlib import Path
 from typing import Any
 
@@ -430,14 +431,32 @@ def build_jobs(args: argparse.Namespace) -> list[tuple[str, str, Path, str]]:
     return jobs
 
 
+def optional_normal_jobs(args: argparse.Namespace) -> set[tuple[str, str]]:
+    """Normal jobs that ``--benchmark all`` derives from ``--nyu-root`` / ``--diode-root``.
+
+    The official NYU and DIODE depth downloads carry no normal maps, so such a job may come up
+    empty and is then skipped. Normals stay required when asked for: ``--benchmark normal`` or
+    ``3d``, or any ``--normal-root``.
+    """
+    if args.benchmark != "all" or args.normal_root is not None:
+        return set()
+    depth_roots = {"nyu": args.nyu_root, "diode": args.diode_root}
+    return {("normal", name) for name, root in depth_roots.items() if root is not None}
+
+
 def preflight_jobs(
     jobs: list[tuple[str, str, Path, str]],
     *,
     split: str,
     resolution: int,
+    optional: Container[tuple[str, str]] = frozenset(),
 ) -> dict[str, Any]:
-    """Check requested benchmark adapters before allocating model resources."""
+    """Check requested benchmark adapters before allocating model resources.
+
+    An ``optional`` job whose adapter finds no pairs goes to ``skipped`` instead of failing.
+    """
     records: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     for benchmark, name, root, dataset_key in jobs:
         dataset_split = split
         root = root.expanduser()
@@ -461,6 +480,10 @@ def preflight_jobs(
                     **BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
                 )
                 record["samples"] = len(dataset)
+                if len(dataset) == 0 and (benchmark, name) in optional:
+                    record["skipped"] = f"no {benchmark} pairs under {root}"
+                    skipped.append(record)
+                    continue
                 if len(dataset) == 0:
                     record["error"] = (
                         "Adapter found no usable pairs. Verify the dataset layout and requested split."
@@ -471,7 +494,7 @@ def preflight_jobs(
             except Exception as exc:
                 record["error"] = f"Adapter initialization failed: {type(exc).__name__}: {exc}"
         records.append(record)
-    return {"ok": all(record["ok"] for record in records), "jobs": records}
+    return {"ok": all(record["ok"] for record in records), "jobs": records, "skipped": skipped}
 
 
 def _json_safe(value: Any) -> Any:
@@ -503,7 +526,13 @@ def main() -> int:
     if not jobs:
         raise SystemExit("No benchmark roots supplied")
 
-    preflight = preflight_jobs(jobs, split=args.split, resolution=args.resolution)
+    preflight = preflight_jobs(
+        jobs, split=args.split, resolution=args.resolution, optional=optional_normal_jobs(args)
+    )
+    skipped = {(record["benchmark"], record["dataset"]): record for record in preflight["skipped"]}
+    for (benchmark, name), record in skipped.items():
+        logger.warning("%s/%s skipped: %s", benchmark, name, record["skipped"])
+    jobs = [job for job in jobs if (job[0], job[1]) not in skipped]
     results: dict[str, Any] = {
         "metadata": {
             "evaluation_mode": "decoded_task_metrics",
@@ -518,6 +547,9 @@ def main() -> int:
             "num_inference_steps": args.num_inference_steps,
             "strength": args.strength,
             "seed": args.seed,
+            "skipped_benchmarks": [
+                f"{record['benchmark']}/{record['dataset']}" for record in preflight["skipped"]
+            ],
             "python": platform.python_version(),
             "torch": torch.__version__,
             "capability": args.benchmark,
