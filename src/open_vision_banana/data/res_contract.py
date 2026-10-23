@@ -12,6 +12,7 @@ from ..referring_contract import (
     BINARY_REFERRING_ENCODING,
     build_binary_referring_prompt,
     is_binary_referring_prompt,
+    normalize_referring_expression,
 )
 
 BINARY_RES_ENCODING = BINARY_REFERRING_ENCODING
@@ -41,7 +42,9 @@ def resolve_referring_prompt(row: dict[str, Any]) -> str:
         def normalized(text: str) -> str:
             return " ".join(text.casefold().split())
 
-        if normalized(expression) not in normalized(prompt):
+        # the template drops a leading article ("a pink box" -> "The pink box ..."), so compare
+        # the expression as the template writes it
+        if normalized(normalize_referring_expression(expression)) not in normalized(prompt):
             raise ValueError("RES prompt does not contain its expression")
     if not prompt:
         raise ValueError("RES requires an expression or a complete per-sample prompt")

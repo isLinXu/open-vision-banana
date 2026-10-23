@@ -315,6 +315,15 @@ def test_referring_prompt_is_the_paper_template_everywhere():
     assert resolve_referring_prompt({"expression": "the red car"}) == expected
     assert "The the" not in expected
 
+    # The template drops "a"/"an" as well; the canonical prompt of such an expression must load.
+    pink = build_binary_referring_prompt("a pink plastic box which is rectangle")
+    assert "The pink plastic box which is rectangle is represented" in pink
+    row = {"expression": "a pink plastic box which is rectangle", "prompt": pink}
+    assert resolve_referring_prompt({**row, "encoding": BINARY_REFERRING_ENCODING}) == pink
+    assert resolve_referring_prompt(row) == pink
+    with pytest.raises(ValueError, match="does not contain"):
+        resolve_referring_prompt({"expression": "a cat", "prompt": "Paint the dog white."})
+
     # Pre-template manifests stay loadable but are not re-emitted.
     old = "Segment the red car in solid white. Render all other pixels black."
     assert is_binary_referring_prompt(old, "the red car")
