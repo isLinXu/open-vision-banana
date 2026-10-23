@@ -58,7 +58,10 @@ gpu_flag = pytest.mark.skipif(
 
 @pytest.fixture
 def device() -> torch.device:
-    return torch.device("cuda" if _cuda_available() else "cpu")
+    # Indexed: tensors report cuda:0, and device("cuda") != device("cuda:0").
+    if _cuda_available():
+        return torch.device("cuda", torch.cuda.current_device())
+    return torch.device("cpu")
 
 
 @pytest.fixture
