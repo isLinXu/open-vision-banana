@@ -80,9 +80,10 @@ else
     DECOMPRESSOR="gzip -dc"
 fi
 
-# Detect whether tar supports --wildcards (GNU tar requires it; BSD/macOS tar rejects it)
+# Detect whether tar supports --wildcards (GNU tar requires it; BSD/macOS tar rejects it).
+# A string test, not `| grep -q`: grep's early exit SIGPIPEs tar, which pipefail reports as failure.
 USE_WILDCARDS=false
-if tar --help 2>&1 | grep -q -- "--wildcards"; then
+if [[ "$(tar --help 2>&1)" == *--wildcards* ]]; then
     USE_WILDCARDS=true
 fi
 
