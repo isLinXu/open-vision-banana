@@ -28,7 +28,7 @@
 - [ ] `export HF_ENDPOINT=https://hf-mirror.com`；`modelscope login`（OpenDataLab 的 Hypersim / ADE20K）
 - [ ] `PYTHONPATH=src:. pytest tests/ -q` → 预期 **1611 passed**（约 35 个失败 = 缺上面的包，不是基线）
 - [ ] 记下 `git rev-parse HEAD`、`pip freeze > env.txt`、`nvidia-smi`，放进 `output/_environment/`——报告的"复现信息"节直接引用
-- [ ] 申请 `GEMINI_API_KEY`（T3/T5 协议内评测需要）和 HF `facebook/SACo-Gold` 授权（gated）；两者都可能等几天，**今天就提**
+- [ ] 申请 `GEMINI_API_KEY`（T3/T5 协议内评测需要）；SA-Co/Gold **标注**已可从 ModelScope 匿名下载（`bash scripts/download_datasets.sh --only saco-gold`，474 MB，PR #65），**图像**需注册免费 Roboflow 账号（MetaCLIP 6 子集）或填 Meta SA-1B 表单（`sa_co_gold.tar`）——Roboflow 当天可拿，Meta 表单可能等几天，**今天就提**
 
 ---
 
@@ -215,7 +215,8 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 | 风险 | 影响 | 预案 |
 |:--|:--|:--|
 | Gemini API 不可用 / 版本漂移 | T3、T5 只能报诊断值 | 规则 3；报告明示；pmF1 仍可报 |
-| SA-Co Gold 授权未批 | E3、T3 用 COCO val 实例代替 | E3 已写 fallback；模型卡注明 |
+| SA-Co Gold 图像拿不到（Roboflow / Meta 表单） | E3、T3 用 COCO val 实例代替 | 标注已有（ModelScope）；E3 已写 fallback；模型卡注明 |
+| SA-Co 三人标注 oracle 协议未实现 | cgF1 偏悲观、与论文不可比 | 新 issue（三 pass oracle）在 E1 评测前完成 |
 | Qwen-Image-2.1 显存 > 80 GB | E1 跑不起 | `gradient_checkpointing`、分辨率 448（32 倍数）、或切 Qwen-Image-Edit-2509 |
 | E1 内部标准未达 | 不是失败 | 写进 §6；检查 E-0 → E1 的提升是否仍显著 |
 | 下载源失效 | 管线中断 | 注册表换镜像即可（已有先例：UNC、ADE20K、COCO-Stuff） |
