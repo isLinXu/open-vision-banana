@@ -62,6 +62,7 @@ from open_vision_banana.data.instance_palette import (  # noqa: E402
     build_instance_palette,
     color_distance,
 )
+from open_vision_banana.data.manifest import relative_manifest_path  # noqa: E402
 from open_vision_banana.inference.prompt import PromptBuilder  # noqa: E402
 from scripts.build_qwen_baseline_manifest import (  # noqa: E402
     coco_image_id_from_path,
@@ -196,8 +197,11 @@ def build_instance_manifest(
     stats = defaultdict(int)
     rows: list[dict] = []
     pairs_per_image: dict[int, int] = defaultdict(int)
-    anchor = data_root.resolve() if data_root else None
     targets_dir.mkdir(parents=True, exist_ok=True)
+
+    def rel(path: Path) -> str:
+        # relative to --data-root even when the image lives outside it (data/raw vs data/prep)
+        return str(path) if data_root is None else relative_manifest_path(path, data_root)
 
     for (image_id, cat_id), anns in sorted(by_image_cat.items()):
         image = images.get(image_id)
@@ -253,14 +257,6 @@ def build_instance_manifest(
         slug = "".join(ch if ch.isalnum() else "_" for ch in name.lower()).strip("_")
         target_path = targets_dir / f"{image_id:012d}_{cat_id}_{slug}.png"
         Image.fromarray(target).save(target_path, compress_level=1)
-
-        def rel(path: Path) -> str:
-            if anchor is None:
-                return str(path)
-            try:
-                return str(path.resolve().relative_to(anchor))
-            except ValueError:
-                return str(path)
 
         rows.append(
             {

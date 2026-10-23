@@ -52,6 +52,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import random
 import sys
 import tarfile
@@ -62,6 +63,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from open_vision_banana.data.manifest import relative_manifest_path  # noqa: E402
 
 PRESETS = {
     "omniedit": {"source_key": "src_img", "target_key": "edited_img", "instruction_key": "edited_prompt_list"},
@@ -204,17 +206,19 @@ def _materialize(value: Any, images_dir: Path | None, stem: str) -> str | None:
     out = images_dir / f"{stem}{suffix}"
     if not out.exists():
         out.write_bytes(payload)
-    return str(out)
+    # absolute, so _relative rewrites it against --data-root whatever the cwd-relative --images-dir
+    return os.path.abspath(out)
 
 
 def _relative(path_str: str, data_root: Path | None) -> str:
+    """Absolute paths (files this script wrote, absolute records) relative to ``data_root``.
+
+    A relative path from a record is already relative to the records' anchor and is kept.
+    """
     path = Path(path_str)
-    if data_root is not None and path.is_absolute():
-        try:
-            return str(path.resolve().relative_to(data_root.resolve()))
-        except ValueError:
-            return str(path)
-    return str(path)
+    if data_root is None or not path.is_absolute():
+        return path_str
+    return relative_manifest_path(path, data_root)
 
 
 def build_generation_replay_manifest(

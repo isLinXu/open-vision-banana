@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,20 @@ def resolve_manifest_path(value: str | Path, manifest_path: str | Path) -> Path:
     anchor = Path(manifest_path).resolve()
     base = anchor if anchor.is_dir() else anchor.parent
     return base / path
+
+
+def relative_manifest_path(path: str | Path, root: str | Path) -> str:
+    """``path`` relative to ``root`` (a builder's ``--data-root``) for a manifest row.
+
+    Absolute or cwd-relative, inside ``root`` or outside it (``../`` steps). Symlinks are kept as
+    the logical layout (no ``resolve()``), so a symlinked data tree does not write mount paths.
+    Across drives, where no relative path exists, the absolute path is returned.
+    """
+    absolute = os.path.abspath(path)
+    try:
+        return Path(os.path.relpath(absolute, os.path.abspath(root))).as_posix()
+    except ValueError:
+        return Path(absolute).as_posix()
 
 
 def _normalise_record(record: dict[str, Any], root: Path | None) -> dict[str, Any]:
@@ -72,4 +87,4 @@ def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
     return records
 
 
-__all__ = ["fingerprint_records", "read_jsonl", "resolve_manifest_path"]
+__all__ = ["fingerprint_records", "read_jsonl", "relative_manifest_path", "resolve_manifest_path"]
