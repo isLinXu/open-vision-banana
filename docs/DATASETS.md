@@ -89,6 +89,23 @@ Trainer's `ManifestVisionDataset` + `TaskWeightedSampler` as batches.
 | `OpenDataLab/Objects365` | Boxes only. |
 | `SOTA507/Mapillary_Vistas` | Login wall and tiny mirror; fetch from mapillary.com manually if a street-scene semantic source other than Cityscapes is wanted. |
 
+## SA-Co/Gold (paper Table 3) — annotations on ModelScope, images elsewhere
+
+`facebook/SACo-Gold` is mirrored on ModelScope **without a gate** (verified 2026-10-23: 474 MB, 24 files,
+anonymous download through `--only saco-gold`): 7 subsets × 3 annotator passes, COCO-style JSON with RLE
+masks, 168,202 image-NP pairs per pass of which ~84 % are negatives — matching the paper's description.
+Licence: SAM License (research use; redistribution terms apply to anything derived from it).
+
+The **images are not in the repository**. `file_name` points into MetaCLIP (6 subsets) and SA-1B (1 subset)
+folders that must be fetched separately (`saco-gold-images`, manual): MetaCLIP from Roboflow Universe
+(`sa-co-gold/gold-metaclip-merged-a-release-test`, free account) and SA-1B from Roboflow or Meta's
+`sa_co_gold.tar` dynamic link (form). Put them under `data/raw/saco_gold/images/` so the annotation paths
+resolve, then `scripts/prepare_saco_gold_queries.py`.
+
+Protocol note: the official evaluator scores each prediction against all three annotator passes and keeps
+the most favourable (oracle); `prepare_saco_gold_queries.py` currently exports pass `a` only — see the
+tracking issue before reporting cgF1 as protocol-faithful.
+
 ## Canary run (2026-10-22)
 
 A smoke test against the live sources with a 10 GB disk budget. Findings folded into the registry:

@@ -421,7 +421,7 @@ overrides the Appendix A decoder for ablations). Downloaded layouts via
 | Paper table | Benchmark | Dataset class | Registry row / source |
 |---|---|---|---|
 | T2 | Cityscapes val (19 cls, mIoU) | `CityscapesSegDataset` | `cityscapes` (manual) + `setup_cityscapes_official.py` |
-| T3 | SA-Co/Gold (cgF1, Gemini 3.1 Flash-Lite presence) | `SACoInstanceDataset` | `saco-gold` (HF gated, manual) |
+| T3 | SA-Co/Gold (cgF1, Gemini 3.1 Flash-Lite presence) | `SACoInstanceDataset` | `saco-gold` (annotations via ModelScope `facebook/SACo-Gold`, no gate) + `saco-gold-images` (Roboflow / Meta, manual) |
 | T4 | RefCOCOg UMD val (cIoU) | `RefCOCOgDataset(protocol="umd")` | `refcocog` (parquet → REFER) |
 | T5 | ReasonSeg val (gIoU, Gemini 2.5 Pro rewrite) | `ReasonSegDataset` | `reasonseg` |
 | T6 | NYU / iBims-1 / ETH3D / DIODE-Indoor / KITTI / nuScenes depth | `NYUDepthDataset`, `IBimsDepthDataset`, `ETH3DDataset`, `DIODEDataset`, `KITTIDataset`, `nuScenesDataset` | `nyu-depth-v2-*`, `ibims1` (manual), `eth3d-dslr-*`, `diode-val`, `kitti-depth` (manual), `nuscenes` (manual) |
