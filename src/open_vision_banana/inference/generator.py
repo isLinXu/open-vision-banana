@@ -90,6 +90,35 @@ def _tensor_to_pil(t: torch.Tensor) -> Image.Image:
     return Image.fromarray(arr)
 
 
+def _restore_peft_lora_scaling(backbone: torch.nn.Module, lora_dir: Path) -> None:
+    """Set injected LoRA layers to the adapter's trained scale.
+
+    A converted PEFT state dict carries no ``alpha`` tensors, so
+    ``load_lora_weights`` injects every layer with ``lora_alpha = r`` (scale 1.0)
+    and drops ``use_rslora``. Training used ``alpha / r`` or ``alpha / sqrt(r)``.
+    """
+    config_path = lora_dir / "adapter_config.json"
+    if not config_path.is_file():
+        return
+    config = json.loads(config_path.read_text())
+    rank = int(config.get("r", 0))
+    alpha = float(config.get("lora_alpha", rank))
+    if rank <= 0:
+        return
+    scale = alpha / rank ** 0.5 if config.get("use_rslora") else alpha / rank
+    layers = 0
+    for module in backbone.modules():
+        scaling = getattr(module, "scaling", None)
+        if isinstance(scaling, dict) and hasattr(module, "lora_A"):
+            for name in scaling:
+                scaling[name] = scale
+            layers += 1
+    logger.info(
+        "LoRA scale set to %.4f (r=%d, alpha=%g, rslora=%s) on %d layers",
+        scale, rank, alpha, bool(config.get("use_rslora")), layers,
+    )
+
+
 def _pil_to_tensor(img: Image.Image, device: str, dtype: torch.dtype) -> torch.Tensor:
     """Convert PIL Image to [1, C, H, W] tensor in [0, 1]."""
     import numpy as np
@@ -319,6 +348,8 @@ class BaseGenerator:
                         "(key prefix mismatch)"
                     )
                 logger.info("LoRA weights loaded via pipe.load_lora_weights (%d layers)", lora_count)
+                if isinstance(lora_payload, dict):
+                    _restore_peft_lora_scaling(backbone, lora_dir)
             except Exception as e:
                 logger.warning(
                     "pipe.load_lora_weights failed (%s); "
