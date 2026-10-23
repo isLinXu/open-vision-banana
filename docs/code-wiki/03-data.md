@@ -33,7 +33,7 @@ training.trainer.ManifestVisionDataset   每任务一个实例 → ConcatDataset
 
 - `group`：`train`、`replay`（生成保留数据）、`eval`（论文基准）。`--group train` **永远不会**拉 `eval` 行；`tests/test_download_datasets_script.py` 把全部 16 个论文基准钉在 `eval`。
 - `source`：`ms`（ModelScope CLI，缺 CLI 时退到 Python `snapshot_download`）、`hf`（`hf` / `huggingface-cli`，默认 hf-mirror）、`url`（curl 断点续传 + 失速中止）、`manual`（登录墙，打印说明后跳过）。
-- `include`：按文件选下（`HYPERSIM_SCENES`、`TARTANAIR_CHUNKS`、`OMNIEDIT_SHARDS` 环境变量展开）。
+- `include`：按文件选下（`HYPERSIM_SCENES`、`TARTANAIR_ENVS`、`OMNIEDIT_SHARDS` 环境变量展开）。
 - `post`：`unzip | untar | *_each | un7z_each | coco2014_links | refer_umd | refer_unc | nyu_mat | genai_prompts`，可用 `+` 串联；解压后写 `.extracted` 标记保证幂等。
 
 `post` 步骤里有三个真正的格式转换器，它们存在是因为上游格式和本仓库 Dataset 的期望不一致：

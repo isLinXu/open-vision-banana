@@ -14,7 +14,7 @@
 #
 # Env knobs (defaults = E0 in exp_setting.md):
 #   DATA_ROOT      raw downloads (default data/raw)        PREP_ROOT  prepared manifests (default data/prep)
-#   HYPERSIM_SCENES "ai_001_001 ai_001_002"                TARTANAIR_CHUNKS 1    OMNIEDIT_SHARDS 1
+#   HYPERSIM_SCENES "ai_001_001 ai_001_002"   TARTANAIR_ENVS japanesealley   OMNIEDIT_SHARDS 1
 #   MODEL_NAME     qwen-image-2.1                          CONFIG     configs/experiments/qwen_image_21_paper_aligned.yaml
 #   STEPS 500      SAVE_EVERY 250  EVAL_EVERY 250           PYTHON     python (absolute path recommended for nohup)
 #   INFER_STEPS 50 GUIDANCE 4.0   EVAL_SEED 42             (inference protocol, exp_setting.md E1.3)
@@ -38,7 +38,7 @@ INFER_STEPS="${INFER_STEPS:-50}"; GUIDANCE="${GUIDANCE:-4.0}"; EVAL_SEED="${EVAL
 EVAL_FLAGS=(--num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" --resolution 512 --native-resolution)
 PYTHON="${PYTHON:-python}"
 export HYPERSIM_SCENES="${HYPERSIM_SCENES:-ai_001_001 ai_001_002}"
-export TARTANAIR_CHUNKS="${TARTANAIR_CHUNKS:-1}"
+export TARTANAIR_ENVS="${TARTANAIR_ENVS:-japanesealley}"
 export OMNIEDIT_SHARDS="${OMNIEDIT_SHARDS:-1}"
 TASKS="depth,normal,semantic,instance,referring,generation"
 REFS_UMD="${DATA_ROOT}/refer/refcocog/refs(umd).p"
@@ -65,7 +65,7 @@ gate() { log "gate: $*"; run "$PYTHON" scripts/check_experiment_gates.py "$@"; }
 
 # ---------------------------------------------------------------- 1. download
 if active download; then
-  log "E0.1 download (HYPERSIM_SCENES='${HYPERSIM_SCENES}', TARTANAIR_CHUNKS=${TARTANAIR_CHUNKS}, OMNIEDIT_SHARDS=${OMNIEDIT_SHARDS})"
+  log "E0.1 download (HYPERSIM_SCENES='${HYPERSIM_SCENES}', TARTANAIR_ENVS='${TARTANAIR_ENVS}', OMNIEDIT_SHARDS=${OMNIEDIT_SHARDS})"
   run env DATA_ROOT="$DATA_ROOT" bash scripts/download_datasets.sh --group train
   # omniedit is group "replay", which --group train never selects
   run env DATA_ROOT="$DATA_ROOT" bash scripts/download_datasets.sh --only refcocog,reasonseg,nyu-depth-v2-splits,nyu-depth-v2-labeled,omniedit

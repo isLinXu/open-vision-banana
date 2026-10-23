@@ -16,7 +16,7 @@
 #   MODELSCOPE_TOKEN  for gated ModelScope datasets (OpenDataLab/* need a logged-in account)
 #   HF_TOKEN          for gated HF datasets
 #   HYPERSIM_SCENES   space-separated scene ids (default: 8 scenes, ~25 GB)
-#   TARTANAIR_CHUNKS  number of chunk tarballs (default: 2)
+#   TARTANAIR_ENVS    TartanAir v1 environments, Easy image_left + depth_left (default: japanesealley carwelding)
 #   OMNIEDIT_SHARDS   number of parquet shards (default: 4, ~20 GB)
 #   SKIP_EXTRACT=1    download archives only
 set -euo pipefail
@@ -27,7 +27,8 @@ REGISTRY="${REGISTRY:-$ROOT/configs/datasets/sources.tsv}"
 DATA_ROOT="${DATA_ROOT:-$ROOT/data/raw}"
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 HYPERSIM_SCENES="${HYPERSIM_SCENES:-ai_001_001 ai_001_002 ai_001_003 ai_001_004 ai_002_001 ai_002_002 ai_003_001 ai_004_001}"
-TARTANAIR_CHUNKS="${TARTANAIR_CHUNKS:-2}"
+TARTANAIR_ENVS="${TARTANAIR_ENVS:-japanesealley carwelding}"
+[[ -n ${TARTANAIR_CHUNKS:-} ]] && printf 'TARTANAIR_CHUNKS is no longer read; set TARTANAIR_ENVS (TartanAir v1 environments)\n' >&2
 OMNIEDIT_SHARDS="${OMNIEDIT_SHARDS:-4}"
 PYTHON="${PYTHON:-python3}"
 
@@ -79,7 +80,7 @@ expand_include() {  # macro-aware expansion; prints one pattern per line
     case "$item" in
       -) ;;
       @hypersim_scenes) for s in $HYPERSIM_SCENES; do printf 'raw/%s.zip\n' "$s"; done ;;
-      @tartanair_chunks) for ((i = 0; i < TARTANAIR_CHUNKS; i++)); do printf 'chunk__part%06d.tar.gz\n' "$i"; done ;;
+      @tartanair_envs) for e in $TARTANAIR_ENVS; do printf '%s/Easy/image_left.zip\n%s/Easy/depth_left.zip\n' "$e" "$e"; done ;;
       @omniedit_shards) for ((i = 0; i < OMNIEDIT_SHARDS; i++)); do printf 'data/train-%05d-of-00571.parquet\n' "$i"; done ;;
       *) printf '%s\n' "$item" ;;
     esac
@@ -190,6 +191,13 @@ post_step() {
     genai_prompts) run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" genai-bench --parquet "$dest" --out "$dest" ;;
     unzip|unzip_each)
       for z in "$dest"/*.zip "$dest"/raw/*.zip; do
+        [[ -e $z ]] || continue
+        local marker="$z.extracted"
+        [[ -e $marker && $DRY_RUN -eq 0 ]] && continue
+        run unzip -q -o "$z" -d "$dest" && run touch "$marker"
+      done ;;
+    unzip_envs)  # TartanAir: <env>/Easy/*.zip, whose members already start with <env>/Easy/
+      for z in "$dest"/*/Easy/*.zip; do
         [[ -e $z ]] || continue
         local marker="$z.extracted"
         [[ -e $marker && $DRY_RUN -eq 0 ]] && continue

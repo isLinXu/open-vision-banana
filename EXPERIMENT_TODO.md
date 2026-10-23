@@ -92,7 +92,7 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 ### E1 六任务主实验 —— Qwen-Image-2.1，30k 步，≈2–3 GPU 天，~300 GB ｜ [#52](https://github.com/isLinXu/open-vision-banana/issues/52)
 **目的**：Q1、Q2、Q4、Q5 的主要证据；开源发布的主 checkpoint。
 **数据（E1.1）**
-- [ ] 全量第一档（60 Hypersim 场景、6 TartanAir chunk、8 OmniEdit 分片、ADE20K、COCO-Stuff、COCO+LVIS、RefCOCO/+）
+- [ ] 全量第一档（60 Hypersim 场景、6 个 TartanAir v1 环境、8 OmniEdit 分片、ADE20K、COCO-Stuff、COCO+LVIS、RefCOCO/+）
 - [ ] prepare → `merge --cap 40000 --val-percent 2` → strict 审计 → `gates_data` 通过
 - [ ] 记录每任务 / 每来源的行数、图像数、许可（报告 §4 表；数据卡用）
 **训练（E1.2）**

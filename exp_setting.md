@@ -85,7 +85,7 @@ The subsections below are what the script executes, kept so each gate can be rea
 
 ### E0.1 Data (small)
 ```bash
-HYPERSIM_SCENES="ai_001_001 ai_001_002" TARTANAIR_CHUNKS=1 \
+HYPERSIM_SCENES="ai_001_001 ai_001_002" TARTANAIR_ENVS=japanesealley \
   bash scripts/download_datasets.sh --group train        # ≈ 30 GB (COCO 20 GB dominates)
 # omniedit is group replay, so --group train does not fetch it
 OMNIEDIT_SHARDS=1 bash scripts/download_datasets.sh --only refcocog,reasonseg,nyu-depth-v2-splits,nyu-depth-v2-labeled,omniedit
@@ -145,7 +145,8 @@ HYPERSIM_SCENES="$(python - <<'EOF'
 # 60 scenes ≈ 200 GB raw; spread across the ai_0xx families for layout diversity
 print(" ".join(f"ai_{a:03d}_{b:03d}" for a in range(1, 11) for b in range(1, 7)))
 EOF
-)" TARTANAIR_CHUNKS=6 bash scripts/download_datasets.sh --group train
+)" TARTANAIR_ENVS="japanesealley carwelding westerndesert office2 seasidetown office" \
+  bash scripts/download_datasets.sh --group train
 OMNIEDIT_SHARDS=8 bash scripts/download_datasets.sh --only omniedit   # group replay: --group train does not fetch it
 ```
 Also `ade20k` and `coco-stuff` (already in `--group train`), `lvis-v1`. Prepare with `semantic_variants 2`
@@ -155,7 +156,7 @@ Target row counts after audit (R, chosen so the vision half is balanced; adjust 
 
 | task | rows (train) | sources |
 |:--|--:|:--|
-| depth | ~15 k | Hypersim 60 scenes (~6 k frames) + TartanAir 6 chunks |
+| depth | ~15 k | Hypersim 60 scenes (~6 k frames) + TartanAir v1, 6 Easy environments |
 | normal | ~6 k | Hypersim |
 | semantic | ~40 k | ADE20K 20 k × 2 variants + Hypersim 6 k × 2 + COCO-Stuff capped |
 | instance | ~40 k | COCO 2017 + LVIS (`iscrowd`/non-exhaustive filtered) + Hypersim |
