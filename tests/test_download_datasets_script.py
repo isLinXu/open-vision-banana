@@ -44,7 +44,7 @@ def test_registry_rows_are_well_formed_and_cover_the_paper_tasks():
         assert row["group"] in {"train", "eval", "replay"}, row["name"]
         assert row["source"] in {"ms", "hf", "url", "manual"}, row["name"]
         for step in row["post"].split("+"):
-            assert step in {"none", "unzip", "untar", "unzip_each", "untar_each", "coco2014_links", "refer_umd", "refer_unc", "nyu_mat", "genai_prompts", "un7z", "un7z_each"}, row["name"]
+            assert step in {"none", "unzip", "untar", "unzip_each", "unzip_envs", "untar_each", "coco2014_links", "refer_umd", "refer_unc", "nyu_mat", "genai_prompts", "un7z", "un7z_each"}, row["name"]
         assert set(row["tasks"].split(",")) <= {"depth", "normal", "semantic", "instance", "referring", "generation"}, row["name"]
     train_tasks = {t for r in rows if r["group"] == "train" for t in r["tasks"].split(",")}
     assert {"depth", "normal", "semantic", "instance", "referring"} <= train_tasks
@@ -68,14 +68,34 @@ def test_list_and_filters():
 def test_dry_run_expands_macros_without_touching_the_network(tmp_path: Path):
     res = _run(
         "--only", "hypersim,tartanair,omniedit", "--dry-run", "--root", str(tmp_path),
-        env={"HYPERSIM_SCENES": "ai_001_001 ai_009_003", "TARTANAIR_CHUNKS": "3", "OMNIEDIT_SHARDS": "1"},
+        env={"HYPERSIM_SCENES": "ai_001_001 ai_009_003", "TARTANAIR_ENVS": "office carwelding", "OMNIEDIT_SHARDS": "1"},
     )
     assert res.returncode == 0, res.stderr
     # CLI form: "--include raw/a.zip raw/b.zip"; Python-API fallback form: "['raw/a.zip','raw/b.zip',]"
     assert "raw/ai_001_001.zip" in res.stdout and "raw/ai_009_003.zip" in res.stdout
-    assert "chunk__part000002.tar.gz" in res.stdout and "chunk__part000003" not in res.stdout
+    assert "office/Easy/image_left.zip" in res.stdout and "carwelding/Easy/depth_left.zip" in res.stdout
+    assert "office/Easy/depth_left.zip" in res.stdout and "japanesealley" not in res.stdout
     assert "data/train-00000-of-00571.parquet" in res.stdout
     assert not any(tmp_path.iterdir())  # nothing written in dry-run
+
+
+def test_unzip_envs_extracts_tartanair_environment_archives(tmp_path: Path):
+    root = tmp_path / "root"
+    env_dir = root / "tartanair" / "office" / "Easy"
+    env_dir.mkdir(parents=True)
+    with zipfile.ZipFile(env_dir / "depth_left.zip", "w") as zf:  # members carry the <env>/Easy/ prefix
+        zf.writestr("office/Easy/P000/depth_left/000000_left_depth.npy", b"npy")
+    stub = tmp_path / "stub.txt"
+    stub.write_text("x", encoding="utf-8")
+    registry = tmp_path / "registry.tsv"
+    registry.write_text(
+        f"tartanair\ttrain\tdepth\turl\tfile://{stub}\t-\ttartanair\tunzip_envs\t0\tCC\tfixture\n", encoding="utf-8"
+    )
+    for _ in range(2):  # the marker makes the second run a no-op
+        res = _run("--registry", str(registry), "--root", str(root))
+        assert res.returncode == 0, res.stderr
+    assert (env_dir / "P000" / "depth_left" / "000000_left_depth.npy").read_bytes() == b"npy"
+    assert (env_dir / "depth_left.zip.extracted").exists()
 
 
 def test_local_url_fetch_unzip_and_coco2014_links_are_idempotent(tmp_path: Path):

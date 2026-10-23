@@ -33,7 +33,7 @@ def test_dry_run_lists_every_stage_in_order_with_gates():
     assert "--num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution" in out
     assert "eval_smoke_steps50.json" in out
     # knobs from exp_setting E0
-    assert "HYPERSIM_SCENES='ai_001_001 ai_001_002', TARTANAIR_CHUNKS=1, OMNIEDIT_SHARDS=1" in out
+    assert "HYPERSIM_SCENES='ai_001_001 ai_001_002', TARTANAIR_ENVS='japanesealley', OMNIEDIT_SHARDS=1" in out
     assert "nyu-depth-v2-labeled,omniedit" in out  # group replay is not in --group train
     # nothing was created
     assert not (ROOT / "output" / "e0_test").exists()

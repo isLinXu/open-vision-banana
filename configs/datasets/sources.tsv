@@ -6,9 +6,9 @@
 # locator : repo id for ms/hf, URL for url/manual
 # include : ';'-separated glob patterns for ms/hf (or '-' for everything). Macros expanded by the script:
 #           @hypersim_scenes  -> raw/<scene>.zip for each scene in $HYPERSIM_SCENES
-#           @tartanair_chunks -> chunk__partNNNNNN.tar.gz for the first $TARTANAIR_CHUNKS chunks
+#           @tartanair_envs   -> <env>/Easy/image_left.zip + depth_left.zip for each env in $TARTANAIR_ENVS
 #           @omniedit_shards  -> data/train-NNNNN-of-00571.parquet for the first $OMNIEDIT_SHARDS shards
-# post    : none | unzip | untar | unzip_each | untar_each | un7z_each | coco2014_links ; chain with '+'. Archives are kept, extraction goes to dest.
+# post    : none | unzip | untar | unzip_each | unzip_envs | untar_each | un7z_each | coco2014_links ; chain with '+'. Archives are kept, extraction goes to dest.
 #           coco2014_links symlinks train2017/val2017 images under train2014/COCO_train2014_*.jpg (RefCOCO refer files use 2014 names).
 #           refer_umd / refer_unc rebuild REFER instances.json + refs(umd|unc).p from parquet shards (scripts/convert_refer_parquet.py).
 #           nyu_mat converts nyu_depth_v2_labeled.mat (+ splits.mat in the same dir) to test/images + test/depths (scripts/convert_eval_sets.py).
@@ -16,7 +16,7 @@
 #
 # ---- 3D: metric depth + surface normals (paper: synthetic only) ---------------------------------
 hypersim	train	depth,normal,semantic,instance	ms	OpenDataLab/Hypersim	@hypersim_scenes	hypersim	unzip_each	3-8/scene	Hypersim Custom (research)	Official per-scene zips (HDF5). depth_meters is RAY DISTANCE: scripts/prepare_hypersim.py converts to planar z by default. Pick scenes with HYPERSIM_SCENES.
-tartanair	train	depth,semantic	ms	potpree/tartanair	@tartanair_chunks	tartanair	untar_each	3/chunk	Apache-2.0 (mirror; original CC-BY-4.0)	Outdoor + indoor synthetic, planar z-depth .npy. Chunk count via TARTANAIR_CHUNKS.
+tartanair	train	depth	hf	theairlabcmu/tartanair	@tartanair_envs	tartanair	unzip_envs	2.5-4.5/env	CC-BY-4.0	TartanAir v1 in the layout prepare_tartanair.py reads (<env>/Easy/P*/image_left + depth_left/*_depth.npy, metres). Environments via TARTANAIR_ENVS.
 # ---- 2D: semantic segmentation (open vocabulary) -----------------------------------------------
 ade20k	train	semantic	url	https://data.csail.mit.edu/places/ADEchallenge/ADEChallengeData2016.zip	-	ade20k	unzip	0.9	ADE20K (research)	150 classes, 20k train. Not an evaluated benchmark -> safe for zero-shot. MIT moved the file to .../ADEchallenge/ (lower-case c).
 ade20k-ms	train	semantic	ms	OpenDataLab/ADE20K_2016	raw/ADE20k.zip	ade20k_full	unzip	6.0	ADE20K (research)	Full ADE20K (3k+ classes) mirror; alternative to ade20k.

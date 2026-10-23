@@ -21,7 +21,7 @@ defaults to `https://hf-mirror.com`. `OpenDataLab/*` datasets on ModelScope need
 logged-in account (`modelscope login` or `MODELSCOPE_TOKEN`).
 
 Size knobs (environment variables): `HYPERSIM_SCENES` (default 8 scenes, ~25 GB),
-`TARTANAIR_CHUNKS` (default 2, ~6 GB), `OMNIEDIT_SHARDS` (default 4, ~20 GB),
+`TARTANAIR_ENVS` (TartanAir v1 environments, default `japanesealley carwelding`, ~5.4 GB), `OMNIEDIT_SHARDS` (default 4, ~20 GB),
 `DATA_ROOT` (default `data/raw`), `SKIP_EXTRACT=1` to keep archives only. Archives
 are kept and marked `*.extracted`, so re-running is idempotent and resumable.
 
@@ -32,7 +32,7 @@ are kept and marked `*.extracted`, so re-running is idempotent and resumable.
 | `group` | `train` / `eval` / `replay`. **`eval` rows are paper benchmarks and must never be trained on**; the zero-shot audit in `build_qwen_baseline_manifest.py` rejects their paths. `replay` rows are fetched by name (`--only omniedit`): `--group replay` would also pull ultraedit (1.4 TB) and blip3o-60k (18 GB). |
 | `tasks` | subset of `depth, normal, semantic, instance, referring, generation` |
 | `source` | `ms` (ModelScope), `hf`, `url`, `manual` (login wall: the script prints instructions and skips) |
-| `include` | `;`-separated globs, or macros `@hypersim_scenes`, `@tartanair_chunks`, `@omniedit_shards` |
+| `include` | `;`-separated globs, or macros `@hypersim_scenes`, `@tartanair_envs`, `@omniedit_shards` |
 | `post` | `unzip`, `untar`, `*_each`, `coco2014_links`, `refer_umd` / `refer_unc`, chainable with `+` |
 
 `coco2014_links` exposes COCO 2017 images under the `train2014/COCO_train2014_*.jpg`
