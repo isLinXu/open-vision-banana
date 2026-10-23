@@ -170,3 +170,24 @@ class TestPeftAdapterToDiffusers:
         payload, kwargs = generator._prepare_lora_load(tmp_path, pipe)
         assert kwargs == {}
         assert payload == str(tmp_path)
+
+    @pytest.mark.parametrize(("use_rslora", "expected"), [(True, 4.0), (False, 2.0)])
+    def test_restore_peft_lora_scaling_after_converted_load(self, tmp_path: Path, use_rslora, expected):
+        import json
+
+        import torch
+        from peft import LoraConfig, inject_adapter_in_model
+
+        from open_vision_banana.inference.generator import _restore_peft_lora_scaling
+
+        # A converted payload has no alpha tensors, so injection runs with lora_alpha == r.
+        backbone = inject_adapter_in_model(
+            LoraConfig(r=4, lora_alpha=4, target_modules=["to_q"]),
+            torch.nn.ModuleDict({"to_q": torch.nn.Linear(8, 8), "other": torch.nn.Linear(8, 8)}),
+        )
+        assert backbone["to_q"].scaling["default"] == 1.0
+        (tmp_path / "adapter_config.json").write_text(
+            json.dumps({"r": 4, "lora_alpha": 8, "use_rslora": use_rslora})
+        )
+        _restore_peft_lora_scaling(backbone, tmp_path)
+        assert backbone["to_q"].scaling["default"] == pytest.approx(expected)
