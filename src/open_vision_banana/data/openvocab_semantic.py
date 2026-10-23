@@ -75,11 +75,13 @@ def sample_distinct_colors(
     min_distance: float = 64.0,
     reserved: Sequence[Color] = (),
     pool: Sequence[Color] | None = None,
+    allow_fewer: bool = False,
 ) -> list[Color]:
     """Draw ``count`` colors that are pairwise (and vs ``reserved``) >= ``min_distance`` apart.
 
     ``pool`` restricts candidates (used for named colors); otherwise colors come
-    from the 5-level RGB grid. Raises ``ValueError`` if the request is infeasible.
+    from the 5-level RGB grid. Raises ``ValueError`` if the request is infeasible,
+    unless ``allow_fewer``, which returns the colors that fit.
     """
     if pool is None:
         candidates = [(r, g, b) for r in _LEVELS for g in _LEVELS for b in _LEVELS]
@@ -94,10 +96,32 @@ def sample_distinct_colors(
             taken.append(color)
             if len(chosen) == count:
                 return chosen
+    if allow_fewer:
+        return chosen
     raise ValueError(
         f"Cannot place {count} colors with min_distance={min_distance} "
         f"(only {len(chosen)} fit; reserved={len(reserved)})"
     )
+
+
+def sample_legend_colors(
+    count: int, rng: random.Random, style: str, *, min_distance: float
+) -> tuple[str, list[Color]]:
+    """Colors for a ``count``-entry legend in ``style``, and the style actually used.
+
+    The named colors are not all ``min_distance`` apart, so a ``json_named`` legend the named
+    pool cannot hold falls back to ``json_tuple`` with grid colors; every class keeps a color.
+    """
+    if style == "json_named" and count <= len(NAMED_COLORS):
+        pool = list(NAMED_COLORS.values())
+        colors = sample_distinct_colors(
+            count, rng, min_distance=min_distance, pool=pool, allow_fewer=True
+        )
+        if len(colors) == count:
+            return style, colors
+    if style == "json_named":
+        style = "json_tuple"
+    return style, sample_distinct_colors(count, rng, min_distance=min_distance)
 
 
 def class_phrase(name: str) -> str:
@@ -209,15 +233,9 @@ def sample_openvocab_semantic(
             continue  # duplicate display names cannot be told apart in a prompt
         phrases[idx] = phrase
 
-    n_colors = len(phrases) + 1  # + background
-    if style == "json_named":
-        pool = list(NAMED_COLORS.values())
-        n_colors = min(n_colors, len(pool))
-        keep = n_colors - 1
-        phrases = dict(list(phrases.items())[:keep])
-        colors = sample_distinct_colors(n_colors, rng, min_distance=min_color_distance, pool=pool)
-    else:
-        colors = sample_distinct_colors(n_colors, rng, min_distance=min_color_distance)
+    # one color per phrase, plus the background
+    n_colors = len(phrases) + 1
+    style, colors = sample_legend_colors(n_colors, rng, style, min_distance=min_color_distance)
     background, class_colors = colors[0], colors[1:]
 
     mapping: dict[str, Color] = {}
