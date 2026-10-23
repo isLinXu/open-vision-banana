@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Merge ``evaluate_paper_benchmarks.py --num-shards N`` outputs into one evaluation JSON.
+
+Every shard of a benchmark stores its accumulator's raw sums; the merge adds them and recomputes
+the metrics, so the result is that of one unsharded run (same samples, same per-sample seeds), up
+to the order in which the float sums are added.
+The shards must be the complete set 0..N-1 of one command (same metadata, same benchmarks).
+
+    python scripts/merge_eval_shards.py output/run/eval_refcocog.shard*.json \\
+        --output-json output/run/eval_refcocog.json --output-csv output/run/eval_refcocog.csv
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from open_vision_banana.evaluation.results_io import write_metrics_csv, write_results  # noqa: E402
+from open_vision_banana.evaluation.shards import merged_metrics  # noqa: E402
+
+
+def merge_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
+    """One evaluation result from the JSON of every shard of a sharded run."""
+    if not shards:
+        raise ValueError("no shard results given")
+    keys = {tuple(sorted(shard["benchmarks"])) for shard in shards}
+    if len(keys) != 1:
+        raise ValueError(f"shards cover different benchmarks: {sorted(keys)}")
+    # the device may differ per shard (one GPU each); everything else names the same run
+    metadata = [
+        json.dumps({k: v for k, v in shard["metadata"].items() if k != "device"}, sort_keys=True)
+        for shard in shards
+    ]
+    if len(set(metadata)) != 1:
+        raise ValueError("shards were produced with different metadata (model, LoRA or protocol)")
+    merged = {key: value for key, value in shards[0].items() if key != "benchmarks"}
+    merged["benchmarks"] = {}
+    for key in shards[0]["benchmarks"]:
+        records = sorted(
+            (shard["benchmarks"][key] for shard in shards),
+            key=lambda record: record["shard"]["index"],
+        )
+        for field in ("count", "of_samples"):
+            if len({record["shard"][field] for record in records}) != 1:
+                raise ValueError(f"{key}: shards disagree on {field}")
+        if len({record.get("dataset_fingerprint") for record in records}) != 1:
+            raise ValueError(f"{key}: shards scored different copies of the dataset")
+        indices = [record["shard"]["index"] for record in records]
+        count = records[0]["shard"]["count"]
+        if indices != list(range(count)):
+            raise ValueError(f"{key}: expected shards 0..{count - 1}, got {indices}")
+        blocks = [(record["shard"]["start"], record["shard"]["stop"]) for record in records]
+        total = records[0]["shard"]["of_samples"]
+        starts, stops = [start for start, _ in blocks], [stop for _, stop in blocks]
+        if [0, *stops] != [*starts, total]:
+            raise ValueError(f"{key}: shard blocks {blocks} do not tile [0, {total})")
+        if any(record.get("accumulator_states") is None for record in records):
+            raise ValueError(f"{key}: a shard has no accumulator states (evaluator too old)")
+        states = [record["accumulator_states"] for record in records]
+        merged_record = {
+            k: v for k, v in records[0].items() if k not in {"shard", "accumulator_states"}
+        }
+        merged_record["samples"] = sum(record["samples"] for record in records)
+        merged_record["decoded_metrics"] = merged_metrics(states) if states else {}
+        merged_record["merged_shards"] = {"count": count, "blocks": blocks}
+        merged["benchmarks"][key] = merged_record
+    return merged
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("shards", nargs="+", type=Path, help="evaluation JSON of every shard")
+    parser.add_argument("--output-json", type=Path, required=True)
+    parser.add_argument("--output-csv", type=Path, default=None)
+    args = parser.parse_args()
+    merged = merge_shards([json.loads(path.read_text(encoding="utf-8")) for path in args.shards])
+    write_results(args.output_json, merged)
+    if args.output_csv is not None:
+        write_metrics_csv(args.output_csv, merged)
+    for key, record in merged["benchmarks"].items():
+        shards = record["merged_shards"]["count"]
+        print(f"{key}: {record['samples']} samples from {shards} shards")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

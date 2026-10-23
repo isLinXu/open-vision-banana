@@ -37,8 +37,10 @@ from .benchmark import (
     NormalAccumulator,
     SemanticAccumulator,
     apply_depth_benchmark_protocol,
+    depth_report,
 )
 from .depth import evaluate_depth
+from .shards import accumulator_state
 
 
 def decode_depth_rgb(
@@ -279,6 +281,8 @@ class VisionEvaluator:
             Dictionary of metric name → value (averaged over all batches).
         """
         self.model.eval()
+        # raw sums of the depth / semantic / referring accumulator, for merging benchmark shards
+        self.last_accumulator_states: dict[str, Any] | None = None
         all_metrics: dict[str, Any] = {}
         n_batches = 0
         gen_real_rgb: list[torch.Tensor] = []
@@ -656,23 +660,33 @@ class VisionEvaluator:
                 target_rgb=real_rgb,
             )
 
+        # recorded before the empty check, so a shard whose batches were all skipped still counts
+        depth_extras = {}
+        if task == "depth" and depth_accumulator is not None:
+            metric_depth = depth_mapper is None or depth_mapper.is_metric
+            depth_extras = {
+                "skipped_samples": skipped_samples,
+                "depth_curve": depth_curve,
+                "depth_units": "metres" if metric_depth else "relative_median",
+            }
+            self.last_accumulator_states = {
+                "main": accumulator_state(depth_accumulator),
+                "relative": (
+                    accumulator_state(relative_accumulator) if relative_accumulator else None
+                ),
+                **depth_extras,
+            }
+        elif task == "semantic" and semantic_accumulator is not None:
+            self.last_accumulator_states = {"main": accumulator_state(semantic_accumulator)}
+        elif task == "referring" and referring_accumulator is not None:
+            self.last_accumulator_states = {"main": accumulator_state(referring_accumulator)}
+
         if n_batches == 0:
             logger.warning("evaluate() called on an empty dataloader — returning empty metrics")
             return {}
 
         if task == "depth" and depth_accumulator is not None:
-            metrics = depth_accumulator.compute()
-            metrics["skipped_samples"] = skipped_samples
-            metrics["depth_curve"] = depth_curve
-            metrics["depth_units"] = (
-                "metres" if depth_mapper is None or depth_mapper.is_metric else "relative_median"
-            )
-            if relative_accumulator is not None:
-                relative_metrics = relative_accumulator.compute()
-                metrics["relative_delta_1.25"] = relative_metrics["delta_1.25"]
-                metrics["relative_delta_1.25_aligned"] = relative_metrics["delta_1.25_aligned"]
-                metrics["relative_AbsRel_aligned"] = relative_metrics["AbsRel_aligned"]
-            return metrics
+            return depth_report(depth_accumulator, relative_accumulator, **depth_extras)
         if task == "normal" and normal_accumulator is not None:
             return normal_accumulator.compute()
         if task == "semantic" and semantic_accumulator is not None:

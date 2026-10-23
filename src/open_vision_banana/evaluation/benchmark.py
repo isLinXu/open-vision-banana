@@ -128,6 +128,27 @@ class DepthAccumulator:
         }
 
 
+def depth_report(
+    accumulator: DepthAccumulator,
+    relative: DepthAccumulator | None,
+    *,
+    skipped_samples: int,
+    depth_curve: str,
+    depth_units: str,
+) -> dict[str, float | int | str]:
+    """Depth benchmark metrics: the accumulator's, the run's bookkeeping and the relative reading."""
+    metrics: dict[str, float | int | str] = dict(accumulator.compute())
+    metrics["skipped_samples"] = skipped_samples
+    metrics["depth_curve"] = depth_curve
+    metrics["depth_units"] = depth_units
+    if relative is not None:
+        relative_metrics = relative.compute()
+        metrics["relative_delta_1.25"] = relative_metrics["delta_1.25"]
+        metrics["relative_delta_1.25_aligned"] = relative_metrics["delta_1.25_aligned"]
+        metrics["relative_AbsRel_aligned"] = relative_metrics["AbsRel_aligned"]
+    return metrics
+
+
 @dataclass
 class NormalAccumulator:
     """Accumulate surface-normal angular metrics over valid pixels."""
