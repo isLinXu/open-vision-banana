@@ -31,6 +31,11 @@ def resolve_referring_encoding(
     return encoding
 
 
+# Paper Appendix A only calls referring/semantic post-processing "straightforward"; the
+# white/black contract decodes with this intensity threshold and keeps all components.
+BINARY_REFERRING_THRESHOLD = 0.5
+
+
 def decode_referring_mask(
     rgb_image: torch.Tensor,
     target_color: tuple[int, int, int] = WHITE,
@@ -53,7 +58,7 @@ def decode_referring_mask(
     if threshold is not None and (not math.isfinite(threshold) or threshold < 0):
         raise ValueError("Referring threshold must be finite and nonnegative")
     if encoding == BINARY_REFERRING_ENCODING:
-        threshold = 0.5 if threshold is None else threshold
+        threshold = BINARY_REFERRING_THRESHOLD if threshold is None else threshold
         if threshold > 1:
             raise ValueError("Binary referring threshold must be in [0,1]")
         return rgb_image.mean(dim=1, keepdim=True) > threshold

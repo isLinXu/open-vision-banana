@@ -63,6 +63,8 @@ flow:
   cfg_dropout_rate: 0.1
 
 loss:
+  # pinned 2026-10-22: TrainingConfig default at the time this config was written (paper-aligned default is now all 1.0 / min_snr off)
+  task_loss_weights: {depth: 2.5, normal: 2.0, semantic: 0.5}
   depth_edge_aux_weight: 0.1
   depth_edge_aux_gradient_weight: 0.25
   depth_edge_aux_edge_weight: 2.0
