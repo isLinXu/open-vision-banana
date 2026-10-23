@@ -7,12 +7,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from open_vision_banana.data.openvocab_semantic import (
     BACKGROUND_NAME,
     NAMED_COLORS,
     STYLES,
+    class_phrase,
     color_distance,
     decode_nearest,
     sample_distinct_colors,
@@ -42,6 +44,67 @@ def test_distinct_colors_respect_min_distance():
 def test_distinct_colors_raise_when_infeasible():
     with pytest.raises(ValueError):
         sample_distinct_colors(500, random.Random(0), min_distance=64.0)
+
+
+
+def _assert_pairwise_apart(colors, min_distance):
+    for i, a in enumerate(colors):
+        for b in colors[i + 1 :]:
+            assert color_distance(a, b) >= min_distance
+
+
+def test_distinct_colors_allow_fewer_returns_the_colors_that_fit():
+    colors = sample_distinct_colors(500, random.Random(0), min_distance=64.0, allow_fewer=True)
+    assert 0 < len(colors) < 500
+    _assert_pairwise_apart(colors, 64.0)
+
+
+def test_crowded_json_named_legend_falls_back_to_tuples_and_keeps_every_class():
+    # 20 visible classes need 21 colors; at most 16 named colors are 90 apart.
+    names = [f"class_{i}" for i in range(20)]
+    labels = np.repeat(np.arange(20), 5)[None, :].repeat(10, axis=0)
+    for seed in range(20):
+        sample = sample_openvocab_semantic(
+            labels,
+            names,
+            random.Random(seed),
+            ignore_index=-1,
+            max_present=20,
+            max_absent=0,
+            style_weights={"json_named": 1.0},
+        )
+        assert sample.style == "json_tuple"
+        assert set(sample.mapping) == {class_phrase(n) for n in names} | {BACKGROUND_NAME}
+        _assert_pairwise_apart(list(sample.mapping.values()), 90.0)
+
+
+def test_json_named_legend_that_fits_stays_named():
+    for seed in range(20):
+        sample = sample_openvocab_semantic(
+            _labels(),
+            CLASSES,
+            random.Random(seed),
+            ignore_index=-1,
+            max_absent=0,
+            style_weights={"json_named": 1.0},
+        )
+        assert sample.style == "json_named"
+        assert set(sample.mapping.values()) <= set(NAMED_COLORS.values())
+
+
+def test_named_remap_of_an_18_class_legend_falls_back_to_tuples():
+    from open_vision_banana.training.trainer import ManifestVisionDataset
+
+    # all 18 named colors: brown and olive are 63 apart, so they cannot all be redrawn at 64
+    mapping = {f"class_{i}": rgb for i, rgb in enumerate(NAMED_COLORS.values())}
+    ds = object.__new__(ManifestVisionDataset)
+    ds.rng = random.Random(0)
+    ds.semantic_prompt_styles = ["json_named"]
+    ds.semantic_color_remap_prob = 1.0
+    _, prompt = ds._augment_semantic(torch.zeros(3, 4, 4), "", mapping)
+    assert "<" in prompt  # json_tuple legend
+    for name in mapping:
+        assert name in prompt
 
 
 @pytest.mark.parametrize("style", STYLES)

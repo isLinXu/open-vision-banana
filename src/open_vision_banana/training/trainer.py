@@ -449,7 +449,7 @@ class ManifestVisionDataset(Dataset):
         from open_vision_banana.data.openvocab_semantic import (
             NAMED_COLORS,
             build_prompt,
-            sample_distinct_colors,
+            sample_legend_colors,
         )
 
         mapping = dict(mapping) if mapping else parse_semantic_legend_from_prompt(prompt)
@@ -468,12 +468,8 @@ class ManifestVisionDataset(Dataset):
                 do_remap = True
 
         if do_remap:
-            pool = list(NAMED_COLORS.values()) if chosen_style == "json_named" else None
-            if pool is not None and len(mapping) > len(pool):
-                chosen_style = "json_tuple"
-                pool = None
-            new_colors = sample_distinct_colors(
-                len(mapping), self.rng, min_distance=64.0, pool=pool
+            chosen_style, new_colors = sample_legend_colors(
+                len(mapping), self.rng, chosen_style, min_distance=64.0
             )
             quantized = (tgt.permute(1, 2, 0) * 255.0).round().to(torch.int32)
             remapped = quantized.clone()
