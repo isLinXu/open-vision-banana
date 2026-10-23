@@ -52,6 +52,22 @@ depth numbers stay labelled "relative-depth supervision"; they are not metric-de
 The SANA shared runs trained on Cityscapes train + Rea2Seg → their Cityscapes / ReasonSeg numbers are
 in-domain, and a rebuilt manifest must use `--protocol in_domain` explicitly (strict is the default).
 
+## E-0 — Base-model control (evaluation only, no training, ~½ GPU-day)
+
+The paper's thesis is that instruction-tuning only *unlocks* abilities the base model already has. To attribute
+E1's scores to the tuning rather than to prompt engineering, evaluate the **untuned** backbone with the exact same
+prompts, decoders and inference protocol (E1.3 table):
+
+```bash
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-image-2.1 \
+  --num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution \
+  --nyu-root data/raw/nyu_depth_v2 --refcocog-root data/raw/refer/refcocog --reasonseg-root data/raw/reasonseg \
+  --cityscapes-root data/raw/cityscapes --diode-root data/raw/diode --max-samples 200 \
+  --output-json output/e-0_base_qwen21/eval.json
+```
+Expected: decoders mostly fail (prompt-following is what tuning teaches) — that is the point. Its numbers are the
+"zero-training" row of every later table. Run it together with E0; it needs no data preparation beyond the eval sets.
+
 ## E0 — Pipeline smoke on real data (½ day)
 
 Goal: prove download → prepare → audit → 500 training steps → inference → one metric
@@ -114,6 +130,10 @@ Pass criterion: outputs decode (depth map not constant, referring mask non-empty
 `python scripts/check_experiment_gates.py eval --eval-json "$RUN/eval_smoke.json" --require AbsRel,cIoU`
 passes (present and finite). Values themselves are irrelevant at 500 steps.
 
+**Steps sensitivity (decides E1's `--num-inference-steps`)**: run the 50-sample eval twice more with
+`--num-inference-steps 20` and `50` (E0's default call uses 50). If 20 and 50 agree within the noise floor, E1 may use
+20 to halve evaluation time; otherwise 50 is pinned. Record the three JSONs side by side in the run directory.
+
 ---
 
 ## E1 — Paper-aligned six-task run (main experiment, ~2–3 days on 1 GPU)
@@ -174,23 +194,62 @@ Monitor every ≤ 100 s: `tail`, `grep -E "step=|loss="`, `nvidia-smi`. Expect ~
 (≈ 30 h for 30 k). If interrupted: `--resume "$RUN/checkpoint-<N>"` (full state).
 
 ### E1.3 Evaluation (at 5 k, 15 k, 30 k; always the `_best` of that window)
+
+#### Inference protocol (pinned; the paper states none of this)
+
+Every number in this document is produced with the settings below, and the evaluation JSON carries them in
+`metadata.inference_protocol`. Changing any of them means re-evaluating **all** checkpoints of the comparison.
+
+| setting | value | P/R | why |
+|:--|:--|:-:|:--|
+| `--num-inference-steps` | **50** (E0 additionally evaluates 20 to measure sensitivity) | R | the script default `1` is a smoke setting and must never appear in a results table |
+| `--guidance-scale` | **4.0**; E1 @ 30 k is evaluated once more with `0.0` | R | training uses `cfg_dropout_rate` so CFG is available; the no-CFG run shows how much of the score is guidance |
+| `--strength` | not applicable to the Qwen editor layout (flow starts from noise; source enters as conditioning); keep the default and ignore it | — | for T2I backbones (SANA) it matters: pin `0.85` there |
+| `--seed` | **42** (per-sample seed = 42 + index) | R | identical noise across checkpoints |
+| canvas | 512 × 512, aspect-preserving (`--resolution 512`) | R | training resolution |
+| scoring resolution | `--native-resolution` for depth / normal / referring / semantic: decode on the canvas, upsample the **decoded map** (nearest for labels, bilinear for depth/normals) to the original GT size, score there | R | Cityscapes is 2048×1024, KITTI 1242×375 — scoring on a 512² canvas hides aspect-ratio damage; interpolating RGB before decoding would create phantom classes |
+| negatives / rewrites | SA-Co presence via Gemini 3.1 Flash-Lite, ReasonSeg rewrite via Gemini 2.5 Pro, single turn | P | §3.1; **without `GEMINI_API_KEY` the script falls back to raw-query / all-positive diagnostics — those must be reported as "diagnostic", never as T3/T5 numbers** |
+
 ```bash
+EVAL_FLAGS="--num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution"
 PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-image-2.1 --lora-path "$RUN/checkpoint-<N>_best" \
+  $EVAL_FLAGS \
   --nyu-root data/raw/nyu_depth_v2 --diode-root data/raw/diode --eth3d-root data/raw/eth3d \
   --refcocog-root data/raw/refer/refcocog --reasonseg-root data/raw/reasonseg \
   --cityscapes-root data/raw/cityscapes \
   --output-json "$RUN/eval_<N>.json" --output-csv "$RUN/eval_<N>.csv"
-PYTHONPATH=src python scripts/evaluate_generation_preservation.py --model-name qwen-image-2.1 \
-  --lora-path "$RUN/checkpoint-<N>_best" --dataset-root data/raw/genai_bench --output-json "$RUN/gen_<N>.json"
+# no-CFG reading (30 k only)
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py ... --guidance-scale 0.0 --output-json "$RUN/eval_30000_nocfg.json"
 ```
+
+#### Generation preservation (App. D proxy) — needs a base-model reference set first
+```bash
+# 1. reference: the *base* model on the same prompts (once per prompt set, reused by every checkpoint)
+PYTHONPATH=src python scripts/evaluate_generation_preservation.py --model-name qwen-image-2.1 \
+  --dataset-root data/raw/genai_bench --num-inference-steps 50 --seed 42 --output-json output/reference/genai_base.json
+# 2. the checkpoint, same prompts / steps / seed
+PYTHONPATH=src python scripts/evaluate_generation_preservation.py --model-name qwen-image-2.1 \
+  --lora-path "$RUN/checkpoint-<N>_best" --dataset-root data/raw/genai_bench --num-inference-steps 50 --seed 42 \
+  --output-json "$RUN/gen_<N>.json"
+# 3. editing side: ImgEdit-Bench instructions (data/raw/imgedit_bench), same two-step pattern
+```
+The proxy is FID / LPIPS / CLIP between the two output sets; the paper metric is a human pairwise win rate.
+Report the proxy as "generation proxy", never as App. D.
+
+#### Noise floor and seeds
+Before reading any difference as a result, estimate the noise floor from E1 itself: the spread of each metric
+across the 5 k / 15 k / 30 k `_best` checkpoints **and** across `--seed 42` vs `--seed 43` on the 30 k checkpoint
+(one extra evaluation pass, no training). A difference between two runs smaller than that spread is reported as
+"no significant difference". The old `sqrt` vs `uniform` 0.003 mIoU gap would have failed this test.
+
 Record (protocol-faithful numbers only; `_aligned` keys are diagnostics):
 
 | table | metric | reference points we *do* have |
 |:--|:--|:--|
-| T2 Cityscapes val | mIoU (19 cls, one prompt) | SANA shared 0.009–0.017; SANA semantic-only 0.266; Qwen 2.1 shared 5 k **0.235** |
+| T2 Cityscapes val | mIoU (19 cls, one prompt, native 2048×1024 scoring) | SANA shared 0.009–0.017; SANA semantic-only 0.266; Qwen 2.1 shared 5 k **0.235** (canvas scoring, 1 step — not comparable) |
 | T6 NYU | AbsRel / δ1, metric, no alignment | constant-3 m baseline δ1 0.352; SANA shared 0.065 |
 | T6 DIODE-Indoor, ETH3D | AbsRel / δ1 | first measurements |
-| T7 DIODE-indoor normals | mean / median angle | first measurement |
+| T7 DIODE-indoor normals | mean / median angle (both aggregations reported) | first measurement |
 | T4 RefCOCOg UMD val | cIoU | SANA 0.16–0.23 |
 | T5 ReasonSeg val | gIoU (needs Gemini rewrite; without key: raw-query diagnostic) | SANA 0.19–0.21 |
 | App. D | FID / LPIPS proxy vs base model on GenAI-Bench prompts | SANA degraded 105 → 388 |
@@ -207,6 +266,16 @@ Same data and config as E1; only `data.vision_ratio ∈ {0.2, 0.8}` (E1 = 0.5 is
 steps each, evaluated with the E1.3 command at 10 k. Question: does a lower vision share preserve
 generation (App. D proxy) without collapsing the vision metrics — the paper's qualitative claim.
 Launch with `--vision-ratio 0.2 --steps 10000 --output-dir output/e2_vr02_...` (CLI override, no yaml copy).
+**Seeds**: each ratio runs with training `--seed 42` and `--seed 43` (4 runs of 10 k); a ratio "wins" only if the
+difference exceeds the E1 noise floor for ≥ 2 of {Cityscapes mIoU, NYU δ1, DIODE normal mean°} with no regression —
+the same pre-registered rule as the old mixture study, now with the noise floor made explicit.
+
+## E2b — Data-scale ablation (after E1; 1 × 10 k steps)
+
+The paper's second claim is "a small amount of vision task data". Rebuild the manifest with
+`merge_multitask_manifest.py --cap 10000` (¼ of E1's per-task cap), same audit, same config, 10 k steps, E1.3
+evaluation. Question: how far does the vision score drop when the vision data is quartered, with the generation
+replay held fixed? If it barely moves, the "small amount" claim is supported at our scale.
 
 ## E3 — Appendix A decoder readings (evaluation only, no training)
 
@@ -239,6 +308,12 @@ Weights only: fresh AdamW / warmup / step counter; LoRA rank and targets must ma
 2. Add one row to the results table in `docs/ABLATION_BASELINE.md`: run id, data tier, steps, the T2/T4/T6/T7/App. D numbers with their protocol, and a one-line finding.
 3. Never report `_aligned` depth, FID/LPIPS, or raw-query ReasonSeg as paper-protocol numbers.
 4. If a run changes the data distribution, lr or schedule, start from `--resume-weights-only`, not a full-state resume.
+5. Every reported number names its inference protocol (steps / guidance / seed / native scoring) — copy
+   `metadata.inference_protocol` from the eval JSON into the results row. Numbers produced with different protocols
+   are not placed in the same table.
+6. Without `GEMINI_API_KEY`, T3 (SA-Co cgF1 / IL_MCC) and T5 (ReasonSeg gIoU) are reported as **diagnostic** with
+   the fallback named (all-positive presence / raw query); only pmF1 on positive queries is protocol-faithful then.
+7. Every table has an E-0 (base model, no training) row.
 
 ## Fixed since the 2026-10-22 review (so E0+ are not affected)
 
@@ -255,6 +330,7 @@ Weights only: fresh AdamW / warmup / step counter; LoRA rank and targets must ma
 ## Known gaps to keep in mind
 
 - VKITTI normals (T7) are derived from VKITTI2 depth + `intrinsic.txt` by `VirtualKITTINormalDataset` (no normal GT ships); the derivation is exact on analytic planes but inherits the renderer's depth discretisation (1 cm) at grazing angles — report it as such.
-- SA-Co cgF1 and ReasonSeg's rewrite need a Gemini key; without it the scripts fall back to diagnostics and say so.
+- SA-Co cgF1 and ReasonSeg's rewrite need a Gemini key; without it the scripts fall back to diagnostics and say so (bookkeeping rule 6).
+- The inference protocol (steps, guidance, seed, scoring resolution) is a repository choice — the paper gives none — and is therefore pinned in E1.3 rather than derived from the paper.
 - iBims-1, ScanNet, nuScenes, KITTI, Cityscapes are login/request-walled; the registry prints the instructions.
 - Generation preservation here is a proxy; the paper's metric is a human pairwise study.

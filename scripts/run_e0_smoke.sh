@@ -17,6 +17,7 @@
 #   HYPERSIM_SCENES "ai_001_001 ai_001_002"                TARTANAIR_CHUNKS 1    OMNIEDIT_SHARDS 1
 #   MODEL_NAME     qwen-image-2.1                          CONFIG     configs/experiments/qwen_image_21_paper_aligned.yaml
 #   STEPS 500      SAVE_EVERY 250  EVAL_EVERY 250           PYTHON     python (absolute path recommended for nohup)
+#   INFER_STEPS 50 GUIDANCE 4.0   EVAL_SEED 42             (inference protocol, exp_setting.md E1.3)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,6 +32,10 @@ RUN_DIR="${RUN_DIR:-output/e0_qwen21_six_smoke_$(date +%Y%m%d_%H%M)}"
 MODEL_NAME="${MODEL_NAME:-qwen-image-2.1}"
 CONFIG="${CONFIG:-configs/experiments/qwen_image_21_paper_aligned.yaml}"
 STEPS="${STEPS:-500}"; SAVE_EVERY="${SAVE_EVERY:-250}"; EVAL_EVERY="${EVAL_EVERY:-250}"
+# Inference protocol pinned by exp_setting.md E1.3 (the paper states none): 50 steps, CFG 4.0, seed 42,
+# 512 canvas, scoring at native GT resolution. INFER_STEPS=20 runs the steps-sensitivity reading.
+INFER_STEPS="${INFER_STEPS:-50}"; GUIDANCE="${GUIDANCE:-4.0}"; EVAL_SEED="${EVAL_SEED:-42}"
+EVAL_FLAGS=(--num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" --resolution 512 --native-resolution)
 PYTHON="${PYTHON:-python}"
 export HYPERSIM_SCENES="${HYPERSIM_SCENES:-ai_001_001 ai_001_002}"
 export TARTANAIR_CHUNKS="${TARTANAIR_CHUNKS:-1}"
@@ -131,11 +136,12 @@ fi
 # ---------------------------------------------------------------- 6. paper-benchmark eval (50 samples) + eval gates
 if active eval; then
   log "E0.3 paper-benchmark evaluation (max 50 samples per set)"
-  run "$PYTHON" scripts/evaluate_paper_benchmarks.py --model-name "$MODEL_NAME" --lora-path "$CKPT" \
+  run "$PYTHON" scripts/evaluate_paper_benchmarks.py --model-name "$MODEL_NAME" --lora-path "$CKPT" "${EVAL_FLAGS[@]}" \
       --nyu-root "${DATA_ROOT}/nyu_depth_v2" --refcocog-root "${DATA_ROOT}/refer/refcocog" \
       --reasonseg-root "${DATA_ROOT}/reasonseg" --max-samples 50 \
-      --output-json "${RUN_DIR}/eval_smoke.json" --output-csv "${RUN_DIR}/eval_smoke.csv"
-  gate eval --eval-json "${RUN_DIR}/eval_smoke.json" --require AbsRel,cIoU --json-out "${RUN_DIR}/gates_eval.json"
+      --output-json "${RUN_DIR}/eval_smoke_steps${INFER_STEPS}.json" --output-csv "${RUN_DIR}/eval_smoke_steps${INFER_STEPS}.csv"
+  gate eval --eval-json "${RUN_DIR}/eval_smoke_steps${INFER_STEPS}.json" --require AbsRel,cIoU --json-out "${RUN_DIR}/gates_eval.json"
+  log "steps sensitivity: re-run this stage with INFER_STEPS=20 (bash $0 --from eval) and compare the two JSONs"
 fi
 
-log "E0 complete. Artefacts: ${RUN_DIR} (effective_config.json, gates_*.json, eval_smoke.json). Next: exp_setting.md §E1."
+log "E0 complete. Artefacts: ${RUN_DIR} (effective_config.json, gates_*.json, eval_smoke_steps*.json). Next: exp_setting.md §E-0 (base-model control) and §E1."

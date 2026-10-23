@@ -381,7 +381,10 @@ class CityscapesSegDataset(BaseVisionDataset):
         33: 18,
     }
 
-    def __init__(self, root_dir, split="train", resolution=512, **kwargs) -> None:
+    def __init__(self, root_dir, split="train", resolution=512, native_gt=False, **kwargs) -> None:
+        # ``native_gt=True`` additionally returns ``gt_labels_native`` (unresized trainIds)
+        # so mIoU can be scored at the 2048x1024 GT resolution instead of the model canvas.
+        self.native_gt = bool(native_gt)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -411,6 +414,7 @@ class CityscapesSegDataset(BaseVisionDataset):
         for label_id, train_id in self.CITYSCAPES_LABEL_TO_TRAIN.items():
             mapped[label == label_id] = train_id
         label = mapped
+        native_label = label.clone()
         label = label.unsqueeze(0).unsqueeze(0).float()
         label = (
             torch.nn.functional.interpolate(
@@ -423,12 +427,15 @@ class CityscapesSegDataset(BaseVisionDataset):
 
         target_rgb = self._label_to_rgb(label)
         prompt = PromptBuilder.build_semantic_prompt(self.CITYSCAPES_COLORS)
-        return {
+        item = {
             "prompt": prompt,
             "image": image,
             "target_rgb": target_rgb,
             "gt_labels": label,
         }
+        if self.native_gt:
+            item["gt_labels_native"] = native_label
+        return item
 
     # Build a [num_classes, 3] color palette tensor at class level (lazy, cached).
     _COLOR_PALETTE: torch.Tensor | None = None

@@ -268,9 +268,14 @@ PYTHONPATH=src python scripts/train.py --config <yaml> --resume output/<run>/che
 
 Use the **paper protocols** via `scripts/evaluate_paper_benchmarks.py` on the `_best` checkpoint. Only evaluate benchmarks whose data the user actually has (Stage 3.1 `--group eval`; login-walled sets print instructions).
 
+Always pass the pinned inference protocol (`exp_setting.md` E1.3) — the script's default of 1 denoising step is a
+smoke setting: `--num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution`.
+Every reported number must quote `metadata.inference_protocol` from the eval JSON.
+
 ```bash
 PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
   --model-name qwen-image-2.1 --lora-path output/<run>/checkpoint-<N>_best \
+  --num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution \
   --nyu-root data/raw/nyu_depth_v2 --diode-root data/raw/diode \
   --refcocog-root data/raw/refer/refcocog --reasonseg-root data/raw/reasonseg \
   --output-json output/eval_<run>/paper_benchmarks.json
@@ -287,7 +292,7 @@ PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
 | T7 | NYUv2, DIODE, ScanNet, VKitti normals | mean / median angular error | DIODE direct; others manual |
 | App. D | GenAI-Bench / ImgEdit-Bench | paper: human win rate; repo: FID/LPIPS **proxy only** | `scripts/evaluate_generation_preservation.py` |
 
-Report `AbsRel_aligned` / `delta_1.25_aligned` only as diagnostics — they are not the paper protocol. Qualitative grids: `scripts/infer_sana_512.py` (SANA) or `scripts/inference.py --image-dir`.
+Report `AbsRel_aligned` / `delta_1.25_aligned` only as diagnostics — they are not the paper protocol. Also evaluate the **untuned base model** once with the same command (no `--lora-path`): that is the E-0 row every table needs. Qualitative grids: `scripts/infer_sana_512.py` (SANA) or `scripts/inference.py --image-dir`.
 
 ---
 
