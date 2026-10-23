@@ -407,3 +407,60 @@ def test_instance_decoding_cli_override_defaults_to_paper_and_rejects_unknown_fi
     assert ablation.color_tolerance == 14.0
     with pytest.raises(ValueError, match="Unknown instance decoding field"):
         parse_instance_decoding("tau=14")
+
+
+def _nyu_depth_only(root: Path) -> None:
+    """Flat NYU depth export (images/ + depths/), as the official download gives: no normals."""
+    (root / "images").mkdir(parents=True)
+    (root / "depths").mkdir()
+    Image.new("RGB", (2, 2), (10, 20, 30)).save(root / "images" / "00001.jpg")
+    Image.fromarray(np.ones((2, 2), dtype=np.uint16)).save(root / "depths" / "00001.png")
+
+
+def _preflight_cli(monkeypatch, tmp_path: Path, *args: str) -> tuple[int, dict]:
+    output = tmp_path / "preflight.json"
+    argv = ["evaluate_paper_benchmarks.py", *args, "--preflight-only", "--resolution", "2"]
+    monkeypatch.setattr(sys, "argv", [*argv, "--output-json", str(output)])
+    code = main()
+    return code, json.loads(output.read_text())["preflight"]
+
+
+def test_benchmark_all_skips_a_normal_job_whose_depth_root_has_no_normals(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _nyu_depth_only(tmp_path / "nyu")
+    code, preflight = _preflight_cli(monkeypatch, tmp_path, "--nyu-root", str(tmp_path / "nyu"))
+    assert code == 0 and preflight["ok"]
+    assert [(job["benchmark"], job["samples"]) for job in preflight["jobs"]] == [("depth", 1)]
+    [skip] = preflight["skipped"]
+    assert (skip["benchmark"], skip["dataset"], skip["samples"]) == ("normal", "nyu", 0)
+
+
+def test_any_normal_root_keeps_normals_required(tmp_path: Path, monkeypatch) -> None:
+    _nyu_depth_only(tmp_path / "nyu")
+    (tmp_path / "normals").mkdir()
+    roots = ["--nyu-root", str(tmp_path / "nyu"), "--normal-root", str(tmp_path / "normals")]
+    code, preflight = _preflight_cli(monkeypatch, tmp_path, *roots)
+    assert code == 2 and preflight["skipped"] == []
+
+
+@pytest.mark.parametrize("benchmark", ["normal", "3d"])
+def test_explicit_normal_selection_still_requires_normals(
+    tmp_path: Path, monkeypatch, benchmark: str
+) -> None:
+    _nyu_depth_only(tmp_path / "nyu")
+    code, preflight = _preflight_cli(
+        monkeypatch, tmp_path, "--benchmark", benchmark, "--nyu-root", str(tmp_path / "nyu")
+    )
+    assert code == 2 and not preflight["ok"] and preflight["skipped"] == []
+    [normal] = [job for job in preflight["jobs"] if job["benchmark"] == "normal"]
+    assert "no usable pairs" in normal["error"]
+
+
+def test_only_zero_pair_optional_jobs_are_skipped(tmp_path: Path) -> None:
+    _nyu_depth_only(tmp_path)
+    jobs = [("depth", "nyu", tmp_path, "nyu_depth"), ("normal", "nyu", tmp_path, "nyu_normal")]
+    required = preflight_jobs(jobs, split="val", resolution=2)
+    assert not required["ok"] and required["skipped"] == []
+    optional = preflight_jobs(jobs, split="val", resolution=2, optional={("normal", "nyu")})
+    assert optional["ok"] and [job["dataset"] for job in optional["skipped"]] == ["nyu"]
