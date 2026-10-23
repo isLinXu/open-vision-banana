@@ -306,7 +306,7 @@ class TestHypersimMultiTaskExport:
         depth = np.full((H, W), 4.0, np.float32)
         normal = np.zeros((H, W, 3), np.float32)
         normal[..., 2] = 1.0  # a wall facing the camera
-        normal[:8, :, :] = (0.0, 1.0, 0.0)  # ceiling strip facing up
+        normal[:8, :, :] = (0.0, -1.0, 0.0)  # ceiling strip above the camera, facing down at it
         if flip_normals:
             normal[..., 2] *= -1
         normal[H - 2 :, :, :] = np.nan  # invalid rows
@@ -346,12 +346,12 @@ class TestHypersimMultiTaskExport:
         assert manifest["tasks"]["rows_per_task"] == {"depth": 1, "normal": 1, "semantic": 2, "instance": 3}
         assert manifest["tasks"]["normal_backfacing_frames"] == 0
 
-        # normal: wall pixel decodes to (0,0,1), ceiling to (0,1,0), invalid rows are the grey marker
+        # normal: wall pixel decodes to (0,0,1), ceiling to (0,-1,0), invalid rows are the grey marker
         normal_png = np.asarray(Image.open(out / by_task["normal"][0]["target"]).convert("RGB"))
         rgb = torch.from_numpy(normal_png).permute(2, 0, 1).float().unsqueeze(0) / 255.0
         decoded = NormalRGBMapper().rgb_to_normal(rgb)[0]
         assert torch.allclose(decoded[:, 12, 40], torch.tensor([0.0, 0.0, 1.0]), atol=0.02)
-        assert torch.allclose(decoded[:, 2, 20], torch.tensor([0.0, 1.0, 0.0]), atol=0.02)
+        assert torch.allclose(decoded[:, 2, 20], torch.tensor([0.0, -1.0, 0.0]), atol=0.02)
         assert tuple(normal_png[31, 0]) == INVALID_NORMAL_RGB
         assert by_task["normal"][0]["prompt"] == "Generate a surface normal estimation visualization of this image."
 
@@ -388,8 +388,13 @@ class TestHypersimMultiTaskExport:
         out = tmp_path / "flipped"
         prepare_hypersim(raw, out, tasks=("depth", "normal"))
         assert json.loads((out / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"] == 1
+        # a rerun over the existing targets still counts it
+        prepare_hypersim(raw, out, tasks=("depth", "normal"))
+        assert json.loads((out / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"] == 1
         out2 = tmp_path / "fixed"
         prepare_hypersim(raw, out2, tasks=("depth", "normal"), normal_flip="z")
+        # measured after the flip: the fixed run reports no back-facing frame
+        assert json.loads((out2 / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"] == 0
         from open_vision_banana.core.normal_mapper import NormalRGBMapper
 
         png = np.asarray(Image.open(next((out2 / "normal_targets").glob("*.png"))).convert("RGB"))
@@ -399,3 +404,25 @@ class TestHypersimMultiTaskExport:
     def test_unknown_task_rejected(self, tmp_path: Path):
         with pytest.raises(ValueError, match="Unknown Hypersim tasks"):
             prepare_hypersim(tmp_path, tmp_path / "o", tasks=("depth", "flow"))
+
+
+def test_backfacing_uses_the_view_ray_not_the_optical_axis():
+    from open_vision_banana.data.depth_geometry import hypersim_focal_px
+    from open_vision_banana.data.hypersim import normal_backfacing_fraction
+
+    h, w = 48, 64
+    focal = hypersim_focal_px(w)
+    us = (np.arange(w) - (w - 1) / 2.0) / focal
+    vs = (np.arange(h) - (h - 1) / 2.0) / focal
+    ray = np.stack(np.broadcast_arrays(us[None, :], -vs[:, None], -np.ones((1, 1))), axis=-1)
+    # every pixel sees its surface 75 degrees off its own view ray: oblique, but visible
+    lateral = np.cross(ray, np.array([0.0, 1.0, 0.0]))
+    lateral /= np.linalg.norm(lateral, axis=-1, keepdims=True)
+    to_camera = -ray / np.linalg.norm(ray, axis=-1, keepdims=True)
+    angle = np.radians(75.0)
+    oblique = np.cos(angle) * to_camera + np.sin(angle) * lateral
+    assert (oblique[..., 2] < -0.1).mean() > 0.1  # the old n_z test would flag this frame
+    assert normal_backfacing_fraction(oblique.astype(np.float32)) == 0.0
+    # the same normals with z negated are a flipped export and still detected
+    flipped = oblique * np.array([1.0, 1.0, -1.0])
+    assert normal_backfacing_fraction(flipped.astype(np.float32)) > 0.1

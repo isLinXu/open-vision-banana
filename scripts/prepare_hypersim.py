@@ -55,6 +55,7 @@ from open_vision_banana.data.depth_geometry import (
     ray_distance_to_planar_depth,
 )
 from open_vision_banana.data.hypersim import (
+    flip_normals,
     instance_targets,
     normal_backfacing_fraction,
     normal_to_target,
@@ -381,6 +382,7 @@ def _export_extra_tasks(
     normal_flip: str,
     overwrite: bool,
     on_low_facing,
+    focal_px: float | None = None,
 ) -> list[dict[str, Any]]:
     """Write normal / semantic / instance targets for one frame; return manifest rows."""
     records: list[dict[str, Any]] = []
@@ -391,14 +393,15 @@ def _export_extra_tasks(
             skipped["normal"] += 1
         else:
             out = dirs["normal"] / f"{stem}.png"
+            # checked after the flip and on every run, so a rerun over existing targets still counts
+            normal = flip_normals(load_hdf5_array(src), normal_flip)
+            backfacing = normal_backfacing_fraction(normal, focal_px)
+            if backfacing > 0.1:
+                logger.warning("%s: %.0f%% of normals point away from the camera; check --normal-flip",
+                               src.name, 100 * backfacing)
+                on_low_facing()
             if overwrite or not out.exists():
-                normal = load_hdf5_array(src)
-                backfacing = normal_backfacing_fraction(normal)
-                if backfacing > 0.1:
-                    logger.warning("%s: %.0f%% of normals point away from the camera; check --normal-flip",
-                                   src.name, 100 * backfacing)
-                    on_low_facing()
-                target, _valid = normal_to_target(normal, flip=normal_flip)
+                target, _valid = normal_to_target(normal)
                 Image.fromarray(target).save(out)
             records.append({
                 "task": "normal", "input": image_rel.as_posix(),
@@ -535,6 +538,7 @@ def prepare_hypersim(
                 depth_path, stem, out_img, tasks, extra_dirs, extra_counts, skipped_missing_channel,
                 rng, semantic_variants=semantic_variants, normal_flip=normal_flip, overwrite=overwrite,
                 on_low_facing=lambda: low_facing.__setitem__(0, low_facing[0] + 1),
+                focal_px=focal_px,
             )
         )
         if out_img.exists() and out_tgt.exists() and out_metric.exists() and not overwrite:
