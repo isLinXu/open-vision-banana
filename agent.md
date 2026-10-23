@@ -94,7 +94,8 @@ commands: `docs/DATASETS.md`.
 ```bash
 # 1. fetch (ModelScope / HF / URL; login-walled sets print instructions)
 bash scripts/download_datasets.sh --list
-HYPERSIM_SCENES="ai_001_001 ai_001_002" OMNIEDIT_SHARDS=2 bash scripts/download_datasets.sh --group train
+HYPERSIM_SCENES="ai_001_001 ai_001_002" bash scripts/download_datasets.sh --group train
+OMNIEDIT_SHARDS=2 bash scripts/download_datasets.sh --only omniedit   # group replay, not in --group train
 bash scripts/download_datasets.sh --group eval
 
 # 2. prepare, one script per source (all write manifest-relative pairs.jsonl)
@@ -598,6 +599,7 @@ pytest tests/ --cov=src/open_vision_banana --cov-report=term-missing
 # === DATA (Section 3) ===
 bash scripts/download_datasets.sh --list
 HYPERSIM_SCENES="ai_001_001 ai_001_002" bash scripts/download_datasets.sh --group train
+bash scripts/download_datasets.sh --only omniedit   # generation replay is group replay
 PYTHONPATH=src python scripts/merge_multitask_manifest.py --inputs data/prep/*/pairs.jsonl --out data/merged/pairs.jsonl
 PYTHONPATH=src python scripts/build_qwen_baseline_manifest.py --base-manifest data/merged/pairs.jsonl \
     --output data/qwen_baseline/pairs.jsonl --data-root data/merged --exclude-image-ids "data/raw/refer/refcocog/refs(umd).p"

@@ -67,7 +67,8 @@ gate() { log "gate: $*"; run "$PYTHON" scripts/check_experiment_gates.py "$@"; }
 if active download; then
   log "E0.1 download (HYPERSIM_SCENES='${HYPERSIM_SCENES}', TARTANAIR_CHUNKS=${TARTANAIR_CHUNKS}, OMNIEDIT_SHARDS=${OMNIEDIT_SHARDS})"
   run env DATA_ROOT="$DATA_ROOT" bash scripts/download_datasets.sh --group train
-  run env DATA_ROOT="$DATA_ROOT" bash scripts/download_datasets.sh --only refcocog,reasonseg,nyu-depth-v2-splits,nyu-depth-v2-labeled
+  # omniedit is group "replay", which --group train never selects
+  run env DATA_ROOT="$DATA_ROOT" bash scripts/download_datasets.sh --only refcocog,reasonseg,nyu-depth-v2-splits,nyu-depth-v2-labeled,omniedit
 fi
 
 # ---------------------------------------------------------------- 2. prepare

@@ -85,9 +85,10 @@ The subsections below are what the script executes, kept so each gate can be rea
 
 ### E0.1 Data (small)
 ```bash
-HYPERSIM_SCENES="ai_001_001 ai_001_002" TARTANAIR_CHUNKS=1 OMNIEDIT_SHARDS=1 \
+HYPERSIM_SCENES="ai_001_001 ai_001_002" TARTANAIR_CHUNKS=1 \
   bash scripts/download_datasets.sh --group train        # ≈ 30 GB (COCO 20 GB dominates)
-bash scripts/download_datasets.sh --only refcocog,reasonseg,nyu-depth-v2-splits,nyu-depth-v2-labeled
+# omniedit is group replay, so --group train does not fetch it
+OMNIEDIT_SHARDS=1 bash scripts/download_datasets.sh --only refcocog,reasonseg,nyu-depth-v2-splits,nyu-depth-v2-labeled,omniedit
 ```
 Expected: `done: N fetched, 0 failed`. Hypersim zips must pass `unzip -t`.
 
@@ -144,7 +145,8 @@ HYPERSIM_SCENES="$(python - <<'EOF'
 # 60 scenes ≈ 200 GB raw; spread across the ai_0xx families for layout diversity
 print(" ".join(f"ai_{a:03d}_{b:03d}" for a in range(1, 11) for b in range(1, 7)))
 EOF
-)" TARTANAIR_CHUNKS=6 OMNIEDIT_SHARDS=8 bash scripts/download_datasets.sh --group train
+)" TARTANAIR_CHUNKS=6 bash scripts/download_datasets.sh --group train
+OMNIEDIT_SHARDS=8 bash scripts/download_datasets.sh --only omniedit   # group replay: --group train does not fetch it
 ```
 Also `ade20k` and `coco-stuff` (already in `--group train`), `lvis-v1`. Prepare with `semantic_variants 2`
 for Hypersim and `--variants 2` for ADE20K/COCO-Stuff; instance with `--min-instances 1`.

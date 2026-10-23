@@ -7,7 +7,8 @@ adding one line to the TSV; the script itself does not change.
 ```bash
 bash scripts/download_datasets.sh --list                       # what is registered
 bash scripts/download_datasets.sh --group train --dry-run      # print the commands only
-bash scripts/download_datasets.sh --group train                # everything for training
+bash scripts/download_datasets.sh --group train                # vision-task training sources (not replay)
+bash scripts/download_datasets.sh --only omniedit              # generation replay, fetched by name
 bash scripts/download_datasets.sh --group eval                 # paper benchmarks (eval only)
 bash scripts/download_datasets.sh --only hypersim,omniedit     # a subset by name
 bash scripts/download_datasets.sh --task depth                 # a subset by task
@@ -28,7 +29,7 @@ are kept and marked `*.extracted`, so re-running is idempotent and resumable.
 
 | column | meaning |
 |:--|:--|
-| `group` | `train` / `eval` / `replay`. **`eval` rows are paper benchmarks and must never be trained on**; the zero-shot audit in `build_qwen_baseline_manifest.py` rejects their paths. |
+| `group` | `train` / `eval` / `replay`. **`eval` rows are paper benchmarks and must never be trained on**; the zero-shot audit in `build_qwen_baseline_manifest.py` rejects their paths. `replay` rows are fetched by name (`--only omniedit`): `--group replay` would also pull ultraedit (1.4 TB) and blip3o-60k (18 GB). |
 | `tasks` | subset of `depth, normal, semantic, instance, referring, generation` |
 | `source` | `ms` (ModelScope), `hf`, `url`, `manual` (login wall: the script prints instructions and skips) |
 | `include` | `;`-separated globs, or macros `@hypersim_scenes`, `@tartanair_chunks`, `@omniedit_shards` |

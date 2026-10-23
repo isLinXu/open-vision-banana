@@ -228,7 +228,8 @@ closest open backbones are Qwen-Image-2.1 / Qwen-Image-Edit (source image enters
 VLM visual tokens + reference latents). Starting from public data:
 
 ```bash
-bash scripts/download_datasets.sh --group train                 # Hypersim, TartanAir, ADE20K, COCO+LVIS, RefCOCO(+), OmniEdit
+bash scripts/download_datasets.sh --group train                 # Hypersim, TartanAir, ADE20K, COCO+LVIS, RefCOCO(+)
+bash scripts/download_datasets.sh --only omniedit                # generation replay (group replay, not in --group train)
 # ... per-source prepare scripts, then merge + zero-shot audit (docs/DATASETS.md)
 PYTHONPATH=src python scripts/train.py \
   --config configs/experiments/qwen_image_21_paper_aligned.yaml \
