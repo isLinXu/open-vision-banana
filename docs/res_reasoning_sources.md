@@ -47,6 +47,25 @@ resized, filled from a box or regenerated. Existing train/val rows passed with
 revision, shard SHA256, row/question identity, original split, image dimensions,
 COCO id where available, and decoded-pixel hashes are retained.
 
+## Prepared release counts
+
+The 2026-10-26 build adds **20,275 train rows** after cleaning:
+
+| Source | Accepted rows | Unique images | Cleaning result |
+| --- | ---: | ---: | --- |
+| Rea2Seg | 15,275 | 9,286 | GQA 7,983; LISA+ 7,052; spatial 240. Exclude 239 ReasonSeg-category rows; reject 15 held-out overlaps and 561 native dimension mismatches. |
+| LLM-Seg COCO subset | 5,000 | 5,000 | 521 COCO train images excluded by evaluation identities; from 8,459 eligible images, scan 7,447 selected questions and reject 2,447 by foreground area before reaching the cap. |
+
+All **30,525 unique image/mask assets** were decoded and validated, then both
+packages were fully restored with the existing RES restorer. Restored training
+manifests are byte-identical to their prepared versions, and the existing loader
+accepts every row. Eight deterministic samples were inspected as image, native
+mask and overlay; this does not certify every generated question's semantics.
+
+R0/R1/R2 contain **270,195 / 285,470 / 290,470 training rows**, respectively,
+and retain the same **24,554 checkpoint-validation rows**. The complete official
+benchmark views remain separate from these training manifests.
+
 ## Reproduce preparation
 
 Install `pip install -e '.[data]'`. The following Bash commands assume the
@@ -102,7 +121,7 @@ claim: the base RES corpus includes RefCOCOg training annotations.
 
 | Run | Training manifest | Change |
 | --- | --- | --- |
-| R0 | Original `data/res_binary_v1/training.jsonl` | Reference |
+| R0 | Base `training.jsonl`, rebased through the same merger | Reference |
 | R1 | R0 + cleaned Rea2Seg | Add reasoning/spatial source |
 | R2 | R1 + selected LLM-Seg COCO pairs | Add a second reasoning source |
 
@@ -121,6 +140,9 @@ separate. Do not use base `pairs.jsonl` as a training input.
 
 ```bash
 python scripts/merge_multitask_manifest.py \
+  --inputs data/res_binary_v1/training.jsonl \
+  --out data/res_reasoning/r0/training.jsonl --val-percent 0
+python scripts/merge_multitask_manifest.py \
   --inputs data/res_binary_v1/training.jsonl data/prep/rea2seg/training.jsonl \
   --out data/res_reasoning/r1/training.jsonl --val-percent 0
 python scripts/merge_multitask_manifest.py \
@@ -133,7 +155,10 @@ PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_2
 
 Check every merge audit: `per_task_dropped` must be empty and all three runs
 must retain exactly the base validation rows. Record manifest hashes and source
-counts with each run. Compare the same official RefCOCO/+/g held-out protocols
+counts with each run. R0 also goes through the merger so that the validation
+**row order** matches R1/R2: the trainer uses the first 128 validation rows.
+Do not point R0 directly at the original unsorted manifest for this comparison.
+Compare the same official RefCOCO/+/g held-out protocols
 using `evaluate_res_manifest.py`, plus ReasonSeg validation separately with its
 query protocol recorded. LLM-Seg validation is excluded from the new subset,
 but has not been globally removed from the original RES training pool; do not

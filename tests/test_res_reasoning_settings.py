@@ -22,9 +22,62 @@ def test_res_ablation_configs_only_change_data_and_output_paths():
         raw = yaml.safe_load(path.read_text())
         assert raw["training"]["steps"] == 10000
         assert raw["data"]["pair_manifest"].endswith("/training.jsonl")
+        if suffix == "base":
+            assert raw["data"]["pair_manifest"] == "data/res_reasoning/r0/training.jsonl"
         del raw["data"]["dir"], raw["data"]["pair_manifest"], raw["checkpoint"]["output_dir"]
         recipes.append(raw)
     assert recipes[0] == recipes[1] == recipes[2]
+
+
+def test_ablation_merges_keep_validation_order_for_bounded_evaluation(tmp_path):
+    from PIL import Image
+
+    from scripts.merge_multitask_manifest import merge_manifests
+
+    for name in ("a", "z", "supplement"):
+        Image.new("RGB", (4, 4), "white").save(tmp_path / f"{name}.png")
+    base = tmp_path / "base.jsonl"
+    base.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "sample_id": name,
+                    "task": "referring",
+                    "split": "val",
+                    "input": f"{name}.png",
+                    "target": f"{name}.png",
+                }
+            )
+            + "\n"
+            for name in ("z", "a")
+        )
+    )
+    extra = tmp_path / "extra.jsonl"
+    extra.write_text(
+        json.dumps(
+            {
+                "sample_id": "extra",
+                "task": "referring",
+                "split": "train",
+                "input": "supplement.png",
+                "target": "supplement.png",
+            }
+        )
+        + "\n"
+    )
+    orders = []
+    for name, sources in (("r0", [base]), ("r1", [base, extra]), ("r2", [base, extra])):
+        manifest = tmp_path / name / "training.jsonl"
+        audit = merge_manifests(sources, manifest, val_percent=0)
+        assert audit["per_task_dropped"] == {}
+        orders.append(
+            [
+                r["sample_id"]
+                for r in map(json.loads, manifest.read_text().splitlines())
+                if r["split"] == "val"
+            ]
+        )
+    assert orders == [["a", "z"]] * 3
 
 
 def test_download_supplement_uses_existing_restorer(tmp_path, monkeypatch):

@@ -22,8 +22,8 @@ data:
   vision_ratio: 1.0
   task_sampling: proportional
   num_workers: 4
-  dir: data/res_binary_v1
-  pair_manifest: data/res_binary_v1/training.jsonl
+  dir: data/res_reasoning/r0
+  pair_manifest: data/res_reasoning/r0/training.jsonl
 training:
   steps: 10000
   batch_size: 1
