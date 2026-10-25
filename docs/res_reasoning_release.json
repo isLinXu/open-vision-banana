@@ -1,7 +1,49 @@
 {
-  "status": "locally_validated",
-  "hub_publication": "in_progress",
+  "hub": {
+    "repo_id": "Melo111/open-vision-banana-res",
+    "revision": "e479f7013cc72ff355d60fdcbeb18b78e395bee5",
+    "subfolder": "supplements/reasoning-v1"
+  },
+  "release": "reasoning-v1",
+  "code_repository": "https://github.com/isLinXu/open-vision-banana",
   "preparation_code_revision": "c2551b0494526e32a9a4fca428a281e51309bdd7",
+  "format": "ovb_res_bundle_v1",
+  "encoding": "binary_white_black_v1",
+  "train_only": true,
+  "packages": {
+    "rea2seg": {
+      "subfolder": "supplements/reasoning-v1/rea2seg",
+      "bundle_sha256": "a5fb1249e2fc937a756c4134fde87d0572df6b3ae8a6043e80a80414c6a46d0b",
+      "payload_bytes": 4845382539,
+      "validation": {
+        "status": "passed",
+        "validator": "generic_binary_res_pairs_v1",
+        "dataset_fingerprint": "669fbca434e1f370aac28b4793301b8c3d88d032ef2f4bfd9b1ddc9fc8fbc126",
+        "counts": {
+          "train": 15275
+        },
+        "unique_images": 9286,
+        "unique_targets": 11239,
+        "assets_decoded": 20525
+      }
+    },
+    "llmseg-coco5k": {
+      "subfolder": "supplements/reasoning-v1/llmseg-coco5k",
+      "bundle_sha256": "59408c0dd1c68dfc149695bccf5a3479e294ef66e065ee78149392ed3d5a6a3e",
+      "payload_bytes": 2395807739,
+      "validation": {
+        "status": "passed",
+        "validator": "generic_binary_res_pairs_v1",
+        "dataset_fingerprint": "c027bf4b0c430a8a8f08bd3b0f083a5a70090bb0a39d931d71e96d29f321266f",
+        "counts": {
+          "train": 5000
+        },
+        "unique_images": 5000,
+        "unique_targets": 5000,
+        "assets_decoded": 10000
+      }
+    }
+  },
   "experiment_audit": {
     "status": "passed",
     "canonical_training_rows": {
@@ -159,17 +201,17 @@
           64
         ]
       }
+    },
+    "validation_order": {
+      "status": "passed",
+      "same_ordered_validation_sample_ids": true,
+      "validation_rows": 24554,
+      "checkpoint_validation_budget": 128,
+      "ordered_validation_ids_sha256": "49ed651e043d1eb745f31cf80d9438024671b8841ded299281d7f282d358e2f0",
+      "first_128_validation_ids_sha256": "3fa17da06c4e4a855f7839d89a805e7f12da06b761ec81e268cc9789160bd6ec",
+      "r0_train_rows": 270195,
+      "r0_missing_assets": 0
     }
-  },
-  "validation_order": {
-    "status": "passed",
-    "same_ordered_validation_sample_ids": true,
-    "validation_rows": 24554,
-    "checkpoint_validation_budget": 128,
-    "ordered_validation_ids_sha256": "49ed651e043d1eb745f31cf80d9438024671b8841ded299281d7f282d358e2f0",
-    "first_128_validation_ids_sha256": "3fa17da06c4e4a855f7839d89a805e7f12da06b761ec81e268cc9789160bd6ec",
-    "r0_train_rows": 270195,
-    "r0_missing_assets": 0
   },
   "local_restore_verification": {
     "rea2seg": {
@@ -184,5 +226,22 @@
       "format": "ovb_res_bundle_v1",
       "loaded_train_rows": 5000
     }
+  },
+  "remote_verification": {
+    "status": "passed",
+    "anonymous_access": true,
+    "pinned_revision": "e479f7013cc72ff355d60fdcbeb18b78e395bee5",
+    "files_checked": 47,
+    "existing_repository_files_unchanged": true
+  },
+  "verification_scope": "Native assets, source exclusions, manifest loading and collation; no GPU training or accuracy claim",
+  "hub_cli_verification": {
+    "status": "passed",
+    "hub_revision": "e479f7013cc72ff355d60fdcbeb18b78e395bee5",
+    "subfolder": "supplements/reasoning-v1/llmseg-coco5k",
+    "loaded_rows": 5000,
+    "training_manifest_byte_identical": true,
+    "cache_seeded_with_identical_local_bundles": true,
+    "scope": "Actual Hub metadata/download CLI, restore, and existing loader; large payloads reused after Hub checksum matching"
   }
 }

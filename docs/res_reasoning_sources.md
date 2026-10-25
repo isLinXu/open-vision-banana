@@ -166,7 +166,31 @@ report R0–R2 as held-out evaluation on LLM-Seg validation without an additiona
 global exclusion/rebuild. GPU training and accuracy conclusions are separate
 from data/interface verification.
 
-## Optional portable publication
+## Published portable bundles
+
+Both packages are published under [Melo111/open-vision-banana-res, reasoning-v1](https://huggingface.co/datasets/Melo111/open-vision-banana-res/tree/e479f7013cc72ff355d60fdcbeb18b78e395bee5/supplements/reasoning-v1)
+at immutable revision **`e479f7013cc72ff355d60fdcbeb18b78e395bee5`**. Anonymous remote access, all published
+file checksums and preservation of the previous repository files were verified.
+The [machine-readable release record](res_reasoning_release.json) includes source
+pins, cleaning counts, asset fingerprints, full-loader checks and the identical
+ordered validation-sample hashes. The Hub folder also contains the visual sample
+review and per-record rejection ledgers.
+
+Download both supplements directly with the existing restorer:
+
+```bash
+python scripts/download_res_dataset.py --repo-id Melo111/open-vision-banana-res \
+  --revision e479f7013cc72ff355d60fdcbeb18b78e395bee5 --subfolder supplements/reasoning-v1/rea2seg \
+  --output-dir data/prep/rea2seg
+python scripts/download_res_dataset.py --repo-id Melo111/open-vision-banana-res \
+  --revision e479f7013cc72ff355d60fdcbeb18b78e395bee5 --subfolder supplements/reasoning-v1/llmseg-coco5k \
+  --output-dir data/prep/llmseg
+```
+
+Then run the R0/R1/R2 merge commands above against the original canonical base.
+R0 contains RefCOCO 102,698, RefCOCO+ 95,501 and RefCOCOg 71,996 train rows.
+
+### Rebuild portable bundles
 
 Source-adapter output is validated with `validate_prepared_res.py`, not the
 RefCOCO-specific source-accounting validator. It then reuses the existing
@@ -177,10 +201,6 @@ existing root release, official benchmark manifests or immutable revisions.
 ```bash
 python scripts/validate_prepared_res.py data/prep/llmseg
 python scripts/package_res_dataset.py --data-dir data/prep/llmseg --output-dir output/llmseg_bundle
-# After publishing that bundle under supplements/reasoning-v1/llmseg-coco5k:
-python scripts/download_res_dataset.py --repo-id Melo111/open-vision-banana-res \
-  --revision <immutable-supplement-commit> --subfolder supplements/reasoning-v1/llmseg-coco5k \
-  --output-dir data/prep/llmseg
 ```
 
 Upstream image/annotation ownership and terms remain applicable. These adapters
