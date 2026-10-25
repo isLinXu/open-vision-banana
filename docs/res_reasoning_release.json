@@ -1,0 +1,188 @@
+{
+  "status": "locally_validated",
+  "hub_publication": "in_progress",
+  "preparation_code_revision": "c2551b0494526e32a9a4fca428a281e51309bdd7",
+  "experiment_audit": {
+    "status": "passed",
+    "canonical_training_rows": {
+      "train": 270195,
+      "val": 24554
+    },
+    "canonical_official_manifest_sha256": "4f9a450f04769a3d59ad79646f8677d9b762ec90e2af0714ea945518f6d4e5c9",
+    "new_source_vs_base_or_each_other_duplicate_normalized_image_queries": {},
+    "new_source_vs_official_heldout_exact_rgb_overlap": 0,
+    "image_identity": "sha256 of RGB dimensions and decoded pixels; no perceptual matching",
+    "source_reports": {
+      "rea2seg": {
+        "schema_version": "rea2seg_training_v1",
+        "source_dataset": "snowball521/Rea2Seg-16K",
+        "source_revision": "1b2247ca67e50e76f6494065ae089be4bd6ccd19",
+        "source_split": "train",
+        "categories": [
+          "gqa-seg",
+          "lisa-plus",
+          "spatial"
+        ],
+        "max_samples": null,
+        "scanned_rows": 16090,
+        "category_filtered_rows": 239,
+        "rea2seg_rows": 15275,
+        "existing_rows": 0,
+        "counts": {
+          "train": 15275
+        },
+        "rea2seg_category_counts": {
+          "gqa-seg": 7983,
+          "lisa-plus": 7052,
+          "spatial": 240
+        },
+        "unique_images": 9286,
+        "unique_targets": 11239,
+        "exclusion_rows": 57457,
+        "exclusion_images": 6548,
+        "image_identity": "sha256 of RGB dimensions and decoded pixels",
+        "duplicates": "recorded in rejected.jsonl",
+        "rejected_rows": 576,
+        "rejected_by_reason": {
+          "heldout_image_overlap": 15,
+          "mask_dimension_mismatch": 561
+        },
+        "reject_invalid": true,
+        "excluded_coco_image_ids": 6549,
+        "excluded_coco_image_ids_sha256": "f604060e6bc4e35ca4182551f321823cd2ba23eabe6d7359bca6135a871f9aad",
+        "exclusion_sources": [
+          {
+            "manifest": "pairs.jsonl",
+            "sha256": "4f9a450f04769a3d59ad79646f8677d9b762ec90e2af0714ea945518f6d4e5c9"
+          }
+        ],
+        "manifest_sha256": "7a15bc5faa853f58b76006efbe465c8790a21c0420008ebd243231ae7edd1cd5",
+        "manifest": "training.jsonl"
+      },
+      "llmseg": {
+        "schema_version": "llmseg_training_v1",
+        "source_dataset": "wangjunchi/LLMSeg",
+        "source_revision": "65147a98cc49c2dac9b7a3633d9d3d336f1ac023",
+        "source_split": "train",
+        "categories": [
+          "coco"
+        ],
+        "max_samples": 5000,
+        "scanned_rows": 7447,
+        "category_filtered_rows": 0,
+        "llmseg_rows": 5000,
+        "existing_rows": 0,
+        "counts": {
+          "train": 5000
+        },
+        "llmseg_category_counts": {
+          "coco": 5000
+        },
+        "unique_images": 5000,
+        "unique_targets": 5000,
+        "exclusion_rows": 57457,
+        "exclusion_images": 6548,
+        "image_identity": "sha256 of RGB dimensions and decoded pixels",
+        "duplicates": "recorded in rejected.jsonl",
+        "rejected_rows": 2447,
+        "rejected_by_reason": {
+          "foreground_fraction": 2447
+        },
+        "reject_invalid": true,
+        "excluded_coco_image_ids": 7300,
+        "excluded_coco_image_ids_sha256": "ecb9c93e7908636bedf2468fe80cd1d620d07b3c0602fce61aea7eddfc367931",
+        "exclusion_sources": [
+          {
+            "manifest": "pairs.jsonl",
+            "sha256": "4f9a450f04769a3d59ad79646f8677d9b762ec90e2af0714ea945518f6d4e5c9"
+          }
+        ],
+        "manifest_sha256": "acd9523e8a7e696a374ad8030c2e4be5927ad33e10d5be59d8dc0834de8da973",
+        "manifest": "training.jsonl",
+        "selection": {
+          "seed": 42,
+          "policy": "COCO train only; SHA256-ranked images/questions; one question per image",
+          "min_mask_fraction": 0.005,
+          "max_mask_fraction": 0.95,
+          "train_annotations_sha256": "d925dabf2465f066c43f5d14b1360cf97de281744af15c1d063fe7cc61508754",
+          "validation_annotations_sha256": "e25345607d94aea5f30b09ebdd6d9acf024f9a10ea3953d6300245a2cad27689",
+          "official_release_verified": true,
+          "eligible_images_before_asset_checks": 8459,
+          "upstream_coco_images": 8980,
+          "upstream_coco_questions": 33755,
+          "upstream_ego_objects_images": 2356,
+          "upstream_ego_objects_questions": 11025,
+          "excluded_coco_images": 521
+        }
+      }
+    },
+    "train_image_overlap_with_base": {
+      "rea2seg": 43,
+      "llmseg": 1126
+    },
+    "rea2seg_llmseg_shared_train_images": 135,
+    "experiments": {
+      "r1": {
+        "train_rows": 285470,
+        "val_rows": 24554,
+        "source_train_counts": {
+          "refcocog": 71996,
+          "refcoco": 102698,
+          "refcoco+": 95501,
+          "snowball521/Rea2Seg-16K": 15275
+        },
+        "validation_sample_ids_unchanged": true,
+        "missing_assets": 0,
+        "mixed_source_batch_shape": [
+          5,
+          3,
+          64,
+          64
+        ]
+      },
+      "r2": {
+        "train_rows": 290470,
+        "val_rows": 24554,
+        "source_train_counts": {
+          "refcocog": 71996,
+          "refcoco": 102698,
+          "refcoco+": 95501,
+          "wangjunchi/LLMSeg": 5000,
+          "snowball521/Rea2Seg-16K": 15275
+        },
+        "validation_sample_ids_unchanged": true,
+        "missing_assets": 0,
+        "mixed_source_batch_shape": [
+          6,
+          3,
+          64,
+          64
+        ]
+      }
+    }
+  },
+  "validation_order": {
+    "status": "passed",
+    "same_ordered_validation_sample_ids": true,
+    "validation_rows": 24554,
+    "checkpoint_validation_budget": 128,
+    "ordered_validation_ids_sha256": "49ed651e043d1eb745f31cf80d9438024671b8841ded299281d7f282d358e2f0",
+    "first_128_validation_ids_sha256": "3fa17da06c4e4a855f7839d89a805e7f12da06b761ec81e268cc9789160bd6ec",
+    "r0_train_rows": 270195,
+    "r0_missing_assets": 0
+  },
+  "local_restore_verification": {
+    "rea2seg": {
+      "asset_files": 20525,
+      "files": 20532,
+      "format": "ovb_res_bundle_v1",
+      "loaded_train_rows": 15275
+    },
+    "llmseg-coco5k": {
+      "asset_files": 10000,
+      "files": 10007,
+      "format": "ovb_res_bundle_v1",
+      "loaded_train_rows": 5000
+    }
+  }
+}
