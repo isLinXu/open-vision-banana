@@ -1,0 +1,51 @@
+name: RES reasoning sources
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rea2seg.yml"
+      - "src/open_vision_banana/rea2seg.py"
+      - "src/open_vision_banana/res_preparation.py"
+      - "src/open_vision_banana/llmseg.py"
+      - "src/open_vision_banana/data/res_contract.py"
+      - "scripts/prepare_rea2seg.py"
+      - "scripts/prepare_llmseg.py"
+      - "scripts/validate_prepared_res.py"
+      - "scripts/download_res_dataset.py"
+      - "tests/test_rea2seg.py"
+      - "tests/test_llmseg.py"
+      - "tests/test_res_reasoning_settings.py"
+      - "tests/test_res_training_contract.py"
+      - "configs/sana_rea2seg.yaml"
+      - "configs/experiments/qwen_image_21_res_*.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      WANDB_MODE: disabled
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install CPU test dependencies
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[inference,evaluation,data,dev]" pyarrow
+          pip install peft wandb
+          pip install ruff==0.11.4 mypy==1.19.1
+      - name: Check adapter
+        run: |
+          ruff check src/open_vision_banana/{rea2seg,res_preparation,llmseg}.py scripts/{prepare_rea2seg,prepare_llmseg,validate_prepared_res,download_res_dataset}.py tests/{test_rea2seg,test_llmseg,test_res_reasoning_settings}.py
+          ruff format --check src/open_vision_banana/{rea2seg,res_preparation,llmseg}.py scripts/{prepare_rea2seg,prepare_llmseg,validate_prepared_res,download_res_dataset}.py tests/{test_rea2seg,test_llmseg,test_res_reasoning_settings}.py
+          mypy --config-file .mypy-res.ini src/open_vision_banana/rea2seg.py src/open_vision_banana/res_preparation.py src/open_vision_banana/llmseg.py
+          python -m pytest tests/test_rea2seg.py tests/test_llmseg.py tests/test_res_reasoning_settings.py tests/test_res_training_contract.py tests/test_referring_masks_strict.py tests/test_manifest_portability.py tests/test_res_bundle.py tests/test_pipeline_smoke_all_tasks.py tests/test_trainer_system_all_tasks.py tests/test_download_datasets_script.py
+          python scripts/train.py --config configs/sana_rea2seg.yaml --print-effective-config
