@@ -24,6 +24,11 @@ def test_full_dry_run_has_all_stages_gates_and_pinned_protocol(tmp_path: Path):
     assert "check_experiment_gates.py data" in out and "check_experiment_gates.py run" in out and out.count("check_experiment_gates.py eval") >= 5
     assert "--protocol strict --exclude-image-ids data/raw/refer/refcocog/refs(umd).p" in out
     assert "--num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution" in out
+    assert "--dtype bfloat16" in out
+    assert "--cityscapes-root data/raw/cityscapes" in out and "--saco-root data/raw/saco_gold" in out
+    assert "--profile e1" in out and "check_experiment_gates.py generation" in out
+    assert "build_generation_reference.py" in out and "--dataset-root output/reference/genai_base_qwen-image-2.1_s42_n50" in out
+    assert "checkpoint-30000_best" not in out
     assert "--guidance-scale 0.0" in out and "--seed 43" in out
     assert "--cap 40000 --val-percent 2" in out and "--semantic-variants 2" in out
     # run dir is created before anything is redirected into it; W&B off without a key

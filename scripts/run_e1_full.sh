@@ -27,7 +27,9 @@
 #   STEPS 30000  SAVE_EVERY 2500  EVAL_EVERY 2500   CAP 40000  VAL_PERCENT 2
 #   HYPERSIM_SCENES (60 scenes)  TARTANAIR_ENVS (6 envs)  OMNIEDIT_SHARDS 8
 #   INFER_STEPS 50  GUIDANCE 4.0  EVAL_SEED 42   EVAL_CKPTS "5000 15000 30000"   EVAL_GPU (CUDA index for eval)
-#   MAX_EVAL_SAMPLES (unset = full benchmarks)   PYTHON python (absolute path recommended)
+#   MAX_EVAL_SAMPLES (unset = full benchmarks)   GEN_PROXY_SAMPLES 200
+#   EVAL_DTYPE bfloat16   GEN_REF_DIR output/reference/genai_base_<model>_s<seed>_n<steps>
+#   PYTHON python (absolute path recommended)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,17 +49,20 @@ PYTHON="${PYTHON:-python}"
 INFER_STEPS="${INFER_STEPS:-50}"; GUIDANCE="${GUIDANCE:-4.0}"; EVAL_SEED="${EVAL_SEED:-42}"
 EVAL_CKPTS="${EVAL_CKPTS:-5000 15000 30000}"
 MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-}"
+GEN_PROXY_SAMPLES="${GEN_PROXY_SAMPLES:-200}"
+EVAL_DTYPE="${EVAL_DTYPE:-bfloat16}"
+GEN_REF_DIR="${GEN_REF_DIR:-output/reference/genai_base_${MODEL_NAME}_s${EVAL_SEED}_n${INFER_STEPS}}"
 TASKS="depth,normal,semantic,instance,referring,generation"
 REFS_UMD="${DATA_ROOT}/refer/refcocog/refs(umd).p"
 export HYPERSIM_SCENES="${HYPERSIM_SCENES:-$(for a in 1 2 3 4 5 6 7 8 9 10; do for b in 1 2 3 4 5 6; do printf 'ai_%03d_%03d ' "$a" "$b"; done; done)}"
 export TARTANAIR_ENVS="${TARTANAIR_ENVS:-japanesealley carwelding westerndesert office2 seasidetown office}"
 export OMNIEDIT_SHARDS="${OMNIEDIT_SHARDS:-8}"
 
-EVAL_FLAGS=(--num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" --resolution 512 --native-resolution)
+EVAL_FLAGS=(--num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" --resolution 512 --native-resolution --dtype "$EVAL_DTYPE")
 [[ -n $MAX_EVAL_SAMPLES ]] && EVAL_FLAGS+=(--max-samples "$MAX_EVAL_SAMPLES")
 EVAL_ROOTS=(--nyu-root "${DATA_ROOT}/nyu_depth_v2" --diode-root "${DATA_ROOT}/diode" --eth3d-root "${DATA_ROOT}/eth3d"
+            --cityscapes-root "${DATA_ROOT}/cityscapes" --saco-root "${DATA_ROOT}/saco_gold"
             --refcocog-root "${DATA_ROOT}/refer/refcocog" --reasonseg-root "${DATA_ROOT}/reasonseg")
-[[ -d "${DATA_ROOT}/cityscapes" ]] && EVAL_ROOTS+=(--cityscapes-root "${DATA_ROOT}/cityscapes")
 
 DRY_RUN=0; FROM="download"; TO="eval"; WATCH=0
 while [[ $# -gt 0 ]]; do
@@ -172,21 +177,33 @@ fi
 eval_ckpt() {  # <step> [extra flags...] ; writes eval_<step>[_tag].json
   local step="$1"; shift
   local tag="${TAG:-}"
-  local ckpt="${RUN_DIR}/checkpoint-${step}_best"
-  [[ -d $ckpt ]] || ckpt="${RUN_DIR}/checkpoint-${step}"
+  local expected_guidance="$GUIDANCE" expected_seed="$EVAL_SEED"
+  [[ $tag == "_nocfg" ]] && expected_guidance=0.0
+  [[ $tag == "_seed43" ]] && expected_seed=43
+  local ckpt="${RUN_DIR}/checkpoint-${step}"
   local out="${RUN_DIR}/eval_${step}${tag}.json"
-  if [[ -f $out && $DRY_RUN -eq 0 ]]; then log "skip ${out} (exists)"; return 0; fi
+  run "$PYTHON" scripts/check_eval_checkpoint.py --checkpoint "$ckpt"
+  if [[ -f $out && $DRY_RUN -eq 0 ]]; then
+    run "$PYTHON" scripts/check_eval_checkpoint.py --checkpoint "$ckpt" --eval-json "$out" \
+        --expected-steps "$INFER_STEPS" --expected-guidance "$expected_guidance" \
+        --expected-seed "$expected_seed" --expected-dtype "$EVAL_DTYPE"
+    log "skip ${out} (exists)"
+  else
   run env ${EVAL_GPU:+CUDA_VISIBLE_DEVICES="$EVAL_GPU"} "$PYTHON" scripts/evaluate_paper_benchmarks.py \
       --model-name "$MODEL_NAME" --lora-path "$ckpt" "${EVAL_FLAGS[@]}" "$@" "${EVAL_ROOTS[@]}" \
       --output-json "$out" --output-csv "${out%.json}.csv"
-  gate eval --eval-json "$out" --require AbsRel,cIoU --json-out "${RUN_DIR}/gates_eval_${step}${tag}.json"
+    run "$PYTHON" scripts/check_eval_checkpoint.py --checkpoint "$ckpt" --eval-json "$out" \
+        --expected-steps "$INFER_STEPS" --expected-guidance "$expected_guidance" \
+        --expected-seed "$expected_seed" --expected-dtype "$EVAL_DTYPE"
+  fi
+  gate eval --eval-json "$out" --profile e1 --json-out "${RUN_DIR}/gates_eval_${step}${tag}.json"
 }
 
 if active eval; then
   if [[ $WATCH -eq 1 ]]; then
     log "E1.3 watch mode: evaluating checkpoints ${EVAL_CKPTS} as they appear (EVAL_GPU=${EVAL_GPU:-same})"
     for step in $EVAL_CKPTS; do
-      while [[ $DRY_RUN -eq 0 && ! -d "${RUN_DIR}/checkpoint-${step}_best" && ! -d "${RUN_DIR}/checkpoint-${step}" ]]; do sleep 120; done
+      while [[ $DRY_RUN -eq 0 && ! -f "${RUN_DIR}/checkpoint-${step}/metadata.json" ]]; do sleep 120; done
       eval_ckpt "$step"
     done
   else
@@ -197,12 +214,19 @@ if active eval; then
   log "E1.3 extra readings on ${last}: no-CFG and seed 43 (noise floor)"
   TAG="_nocfg" eval_ckpt "$last" --guidance-scale 0.0
   TAG="_seed43" eval_ckpt "$last" --seed 43
-  log "E1.3 generation proxy: base reference, then checkpoint"
+  log "E1.3 generation proxy: fixed base reference, then checkpoint-${last} (online)"
+  run env ${EVAL_GPU:+CUDA_VISIBLE_DEVICES="$EVAL_GPU"} "$PYTHON" scripts/build_generation_reference.py \
+      --model-name "$MODEL_NAME" --prompts-root "${DATA_ROOT}/genai_bench" --output-dir "$GEN_REF_DIR" \
+      --num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" \
+      --dtype "$EVAL_DTYPE" --max-samples "$GEN_PROXY_SAMPLES"
   run env ${EVAL_GPU:+CUDA_VISIBLE_DEVICES="$EVAL_GPU"} "$PYTHON" scripts/evaluate_generation_preservation.py --model-name "$MODEL_NAME" \
-      --dataset-root "${DATA_ROOT}/genai_bench" --num-inference-steps "$INFER_STEPS" --seed "$EVAL_SEED" \
-      --output-json "output/reference/genai_base_${MODEL_NAME}.json"
-  run env ${EVAL_GPU:+CUDA_VISIBLE_DEVICES="$EVAL_GPU"} "$PYTHON" scripts/evaluate_generation_preservation.py --model-name "$MODEL_NAME" \
-      --lora-path "${RUN_DIR}/checkpoint-${last}_best" --dataset-root "${DATA_ROOT}/genai_bench" \
-      --num-inference-steps "$INFER_STEPS" --seed "$EVAL_SEED" --output-json "${RUN_DIR}/gen_${last}.json"
+      --lora-path "${RUN_DIR}/checkpoint-${last}" --dataset-root "$GEN_REF_DIR" --dtype "$EVAL_DTYPE" \
+      --num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" \
+      --max-samples "$GEN_PROXY_SAMPLES" \
+      --output-json "${RUN_DIR}/gen_${last}.json"
+  run "$PYTHON" scripts/check_eval_checkpoint.py --checkpoint "${RUN_DIR}/checkpoint-${last}" --eval-json "${RUN_DIR}/gen_${last}.json" \
+      --expected-steps "$INFER_STEPS" --expected-guidance "$GUIDANCE" --expected-seed "$EVAL_SEED" --expected-dtype "$EVAL_DTYPE"
+  gate generation --eval-json "${RUN_DIR}/gen_${last}.json" --reference-dir "$GEN_REF_DIR" \
+      --json-out "${RUN_DIR}/gates_generation_${last}.json"
   log "E1 complete. Artefacts in ${RUN_DIR}: effective_config.json, gates_*.json, eval_*.json, gen_*.json, train.log. Next: exp_setting.md §E2."
 fi
