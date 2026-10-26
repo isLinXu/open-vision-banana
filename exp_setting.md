@@ -272,16 +272,24 @@ Missing any one of these is a *finding*, not a failure — write it into `docs/A
 Same data and config as E1; only `data.vision_ratio ∈ {0.2, 0.8}` (E1 = 0.5 is the third point), 10 k
 steps each, evaluated with the E1.3 command at 10 k. Question: does a lower vision share preserve
 generation (App. D proxy) without collapsing the vision metrics — the paper's qualitative claim.
-Launch with `--vision-ratio 0.2 --steps 10000 --output-dir output/e2_vr02_...` (CLI override, no yaml copy).
+
+Runner (chains all runs in one GPU job, auto-resumes, gates each, evaluates with the pinned protocol and the
+generation proxy; E2b is included):
+```bash
+bash scripts/run_e2_ablations.sh --dry-run
+E1_RUN_DIR=output/e1_qwen21_paper_aligned_v1 nohup bash scripts/run_e2_ablations.sh > output/e2.nohup.log 2>&1 &
+RUNS="vr0.2_s42 vr0.8_s42" bash scripts/run_e2_ablations.sh      # subset / second GPU
+```
 **Seeds**: each ratio runs with training `--seed 42` and `--seed 43` (4 runs of 10 k); a ratio "wins" only if the
 difference exceeds the E1 noise floor for ≥ 2 of {Cityscapes mIoU, NYU δ1, DIODE normal mean°} with no regression —
-the same pre-registered rule as the old mixture study, now with the noise floor made explicit.
+the same pre-registered rule as the old mixture study, now with the noise floor made explicit. The 0.5 point is
+E1's `checkpoint-10000` (`RUN_DIR=<e1> EVAL_CKPTS=10000 bash scripts/run_e1_full.sh --from eval --to eval`).
 
 ## E2b — Data-scale ablation (after E1; 1 × 10 k steps)
 
-The paper's second claim is "a small amount of vision task data". Rebuild the manifest with
-`merge_multitask_manifest.py --cap 10000` (¼ of E1's per-task cap), same audit, same config, 10 k steps, E1.3
-evaluation. Question: how far does the vision score drop when the vision data is quartered, with the generation
+The paper's second claim is "a small amount of vision task data". `run_e2_ablations.sh --only e2b` rebuilds the
+manifest with `merge_multitask_manifest.py --cap 10000` (¼ of E1's per-task cap) into `data/qwen_baseline_e2b/`,
+runs the strict audit + data gate, trains 10 k steps at ratio 0.5 / seed 42 and evaluates with the E1.3 protocol. Question: how far does the vision score drop when the vision data is quartered, with the generation
 replay held fixed? If it barely moves, the "small amount" claim is supported at our scale.
 
 ## E3 — Appendix A decoder readings (evaluation only, no training)
@@ -295,7 +303,7 @@ PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-ima
   --output-json "$RUN/eval_decoder_${seed}_${area}.json"
 done; done
 ```
-Default (paper-aligned) = `pixel_only` + `bbox`.
+Default (paper-aligned) = `pixel_only` + `bbox`. **Known gaps** (tracked): the script regenerates predictions per cell (no `--save-predictions` yet, so the 2×2 costs 4× one pass — add `--benchmark instance` to limit it) and the COCO-val fallback builder does not exist; the SA-Co numbers also wait for the 3-pass oracle (#66).
 
 ## E4 — Continue E1 on re-cleaned data (when new data arrives)
 
