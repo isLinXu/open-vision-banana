@@ -27,21 +27,34 @@ import torch
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from open_vision_banana.evaluation.generation_preservation import (  # noqa: E402
-    merge_generation_shard_states,
-)
+from open_vision_banana.evaluation.generation_preservation import generation_metrics  # noqa: E402
 from open_vision_banana.evaluation.results_io import write_metrics_csv, write_results  # noqa: E402
 from open_vision_banana.evaluation.shards import merged_metrics  # noqa: E402
 
-GENERATION_MODE = "generation_preservation_proxy"
 # metadata a generation shard reports about its own block, not about the run
 GENERATION_PER_SHARD = frozenset(
-    {"device", "requested_samples", "successful_samples", "failed_samples", "failure_jsonl", "elapsed_seconds", "shard"}
+    {
+        "device",
+        "requested_samples",
+        "successful_samples",
+        "failed_samples",
+        "failure_jsonl",
+        "elapsed_seconds",
+        "shard",
+    }
 )
 
 
-def check_blocks(key: str, infos: list[dict[str, Any]]) -> tuple[int, list[tuple[int, int]]]:
-    """Shard count and blocks of ``infos`` (sorted by index): shards 0..N-1 tiling one set."""
+def common_metadata(metadatas: list[dict[str, Any]], per_shard: frozenset[str]) -> dict[str, Any]:
+    """The metadata of the run: every shard's without its ``per_shard`` keys, which must agree."""
+    common = [{k: v for k, v in m.items() if k not in per_shard} for m in metadatas]
+    if len({json.dumps(c, sort_keys=True) for c in common}) != 1:
+        raise ValueError("shards were produced with different metadata (model, LoRA or protocol)")
+    return common[0]
+
+
+def check_blocks(key: str, infos: list[dict[str, Any]]) -> dict[str, Any]:
+    """``merged_shards`` record of shard ``infos`` (sorted by index): shards 0..N-1 tiling one set."""
     for field in ("count", "of_samples"):
         if len({info[field] for info in infos}) != 1:
             raise ValueError(f"{key}: shards disagree on {field}")
@@ -54,29 +67,21 @@ def check_blocks(key: str, infos: list[dict[str, Any]]) -> tuple[int, list[tuple
     starts, stops = [start for start, _ in blocks], [stop for _, stop in blocks]
     if [0, *stops] != [*starts, total]:
         raise ValueError(f"{key}: shard blocks {blocks} do not tile [0, {total})")
-    return count, blocks
+    return {"count": count, "blocks": blocks}
 
 
-def is_generation_shard(shard: dict[str, Any]) -> bool:
-    return shard.get("metadata", {}).get("evaluation_mode") == GENERATION_MODE
-
-
-def merge_generation_shards(shards: list[dict[str, Any]], states: list[dict[str, Any]]) -> dict[str, Any]:
-    """One generation-preservation report from every shard's JSON and its saved state (same order)."""
-    if not shards or len(shards) != len(states):
-        raise ValueError("one saved state per generation shard is required")
-    order = sorted(range(len(shards)), key=lambda i: shards[i]["metadata"]["shard"]["index"])
-    metadata = [shards[i]["metadata"] for i in order]
-    common = [json.dumps({k: v for k, v in m.items() if k not in GENERATION_PER_SHARD}, sort_keys=True) for m in metadata]
-    if len(set(common)) != 1:
-        raise ValueError("shards were produced with different metadata (model, LoRA or protocol)")
-    count, blocks = check_blocks("generation", [m["shard"] for m in metadata])
-    merged = {k: v for k, v in metadata[0].items() if k not in GENERATION_PER_SHARD}
+def merge_generation_shards(shards: list[tuple[dict[str, Any], dict[str, Any]]]) -> dict[str, Any]:
+    """One generation-preservation report from the (JSON, saved state) pair of every shard."""
+    if not shards:
+        raise ValueError("no generation shards given")
+    shards = sorted(shards, key=lambda pair: pair[0]["metadata"]["shard"]["index"])
+    metadata = [shard["metadata"] for shard, _ in shards]
+    merged = common_metadata(metadata, GENERATION_PER_SHARD)
     for field in ("requested_samples", "successful_samples", "failed_samples", "elapsed_seconds"):
         merged[field] = sum(m[field] for m in metadata)
     merged["failure_jsonl"] = [m["failure_jsonl"] for m in metadata]
-    merged["merged_shards"] = {"count": count, "blocks": blocks}
-    return {"metadata": merged, "metrics": merge_generation_shard_states([states[i] for i in order])}
+    merged["merged_shards"] = check_blocks("generation", [m["shard"] for m in metadata])
+    return {"metadata": merged, "metrics": generation_metrics([state for _, state in shards])}
 
 
 def merge_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
@@ -87,12 +92,7 @@ def merge_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
     if len(keys) != 1:
         raise ValueError(f"shards cover different benchmarks: {sorted(keys)}")
     # the device may differ per shard (one GPU each); everything else names the same run
-    metadata = [
-        json.dumps({k: v for k, v in shard["metadata"].items() if k != "device"}, sort_keys=True)
-        for shard in shards
-    ]
-    if len(set(metadata)) != 1:
-        raise ValueError("shards were produced with different metadata (model, LoRA or protocol)")
+    common_metadata([shard["metadata"] for shard in shards], frozenset({"device"}))
     merged = {key: value for key, value in shards[0].items() if key != "benchmarks"}
     merged["benchmarks"] = {}
     for key in shards[0]["benchmarks"]:
@@ -100,7 +100,7 @@ def merge_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
             (shard["benchmarks"][key] for shard in shards),
             key=lambda record: record["shard"]["index"],
         )
-        count, blocks = check_blocks(key, [record["shard"] for record in records])
+        merged_shards = check_blocks(key, [record["shard"] for record in records])
         if len({record.get("dataset_fingerprint") for record in records}) != 1:
             raise ValueError(f"{key}: shards scored different copies of the dataset")
         if any(record.get("accumulator_states") is None for record in records):
@@ -111,7 +111,7 @@ def merge_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
         }
         merged_record["samples"] = sum(record["samples"] for record in records)
         merged_record["decoded_metrics"] = merged_metrics(states) if states else {}
-        merged_record["merged_shards"] = {"count": count, "blocks": blocks}
+        merged_record["merged_shards"] = merged_shards
         merged["benchmarks"][key] = merged_record
     return merged
 
@@ -125,15 +125,16 @@ def main() -> int:
     parser.add_argument("--output-csv", type=Path, default=None)
     args = parser.parse_args()
     shards = [json.loads(path.read_text(encoding="utf-8")) for path in args.shards]
-    kinds = {is_generation_shard(shard) for shard in shards}
+    kinds = {"shard_state" in shard for shard in shards}  # generation shards save a state file
     if kinds == {True}:
         if args.output_csv is not None:
             raise SystemExit("--output-csv applies to benchmark shards, not generation shards")
-        states = [
-            torch.load(path.with_name(shard["shard_state"]), map_location="cpu")
-            for path, shard in zip(args.shards, shards, strict=True)
-        ]
-        merged = merge_generation_shards(shards, states)
+        merged = merge_generation_shards(
+            [
+                (shard, torch.load(path.with_name(shard["shard_state"]), map_location="cpu"))
+                for path, shard in zip(args.shards, shards, strict=True)
+            ]
+        )
         write_results(args.output_json, merged)
         print(f"generation: {merged['metadata']['successful_samples']} samples from {len(shards)} shards")
         return 0

@@ -251,6 +251,18 @@ def compute_perceptual_similarity(
     return F.mse_loss(pred_rgb, target_rgb).item()
 
 
+def _mse_per_image(pred_rgb: torch.Tensor, target_rgb: torch.Tensor) -> torch.Tensor:
+    """[N] pixel MSE of each image; their mean is :func:`compute_perceptual_similarity`."""
+    return (pred_rgb - target_rgb).pow(2).flatten(1).mean(dim=1)
+
+
+def _resize_like(pred_rgb: torch.Tensor, target_rgb: torch.Tensor) -> torch.Tensor:
+    """``pred_rgb`` resized (bilinear) to the spatial size of ``target_rgb`` when the shapes differ."""
+    if pred_rgb.shape == target_rgb.shape:
+        return pred_rgb
+    return F.interpolate(pred_rgb, size=target_rgb.shape[-2:], mode="bilinear", align_corners=False)
+
+
 def evaluate_generation_preservation(
     real_features: torch.Tensor | None = None,
     gen_features: torch.Tensor | None = None,
@@ -292,13 +304,7 @@ def evaluate_generation_preservation(
         results["clip_score_proxy"] = float("nan")
 
     if pred_rgb is not None and target_rgb is not None:
-        if pred_rgb.shape != target_rgb.shape:
-            pred_rgb = F.interpolate(
-                pred_rgb,
-                size=target_rgb.shape[-2:],
-                mode="bilinear",
-                align_corners=False,
-            )
+        pred_rgb = _resize_like(pred_rgb, target_rgb)
         if _lpips_available():
             results["LPIPS"] = compute_lpips(pred_rgb, target_rgb)
             results["perceptual_similarity"] = results["LPIPS"]
@@ -323,51 +329,45 @@ def generation_shard_state(
     real_rgb: torch.Tensor,
     gen_rgb: torch.Tensor,
     feature_extractor: Callable[[torch.Tensor], torch.Tensor],
-) -> dict[str, torch.Tensor | None]:
-    """Per-image quantities of one block of a sharded generation-preservation run.
+) -> dict[str, torch.Tensor | bool]:
+    """Per-image quantities from which :func:`generation_metrics` computes the report.
 
     Every metric :func:`evaluate_generation_preservation` reports for ``real_rgb`` against
     ``gen_rgb`` is a function of per-image features (Fréchet statistics, diversity) or the mean
-    of a per-image distance (LPIPS, else pixel MSE), so a block keeps exactly these and
-    :func:`merge_generation_shard_states` recomputes the metrics of the whole set.
+    of a per-image distance (LPIPS, else pixel MSE), so the states of any split of the samples
+    into blocks give the metrics of all of them.
     """
-    if gen_rgb.shape != real_rgb.shape:
-        gen_rgb = F.interpolate(
-            gen_rgb, size=real_rgb.shape[-2:], mode="bilinear", align_corners=False
-        )
+    pred_rgb = _resize_like(gen_rgb, real_rgb)
+    lpips = _lpips_available()
     return {
         "real_features": feature_extractor(real_rgb),
         "gen_features": feature_extractor(gen_rgb),
-        "lpips": _lpips_per_image(gen_rgb, real_rgb) if _lpips_available() else None,
-        "mse": (gen_rgb - real_rgb).pow(2).flatten(1).mean(dim=1),
+        "lpips": lpips,
+        "perceptual": (
+            _lpips_per_image(pred_rgb, real_rgb) if lpips else _mse_per_image(pred_rgb, real_rgb)
+        ),
     }
 
 
-def merge_generation_shard_states(
-    states: Sequence[dict[str, torch.Tensor | None]],
-) -> dict[str, float]:
-    """Metrics of the whole set from the :func:`generation_shard_state` of each block, in order.
+def generation_metrics(states: Sequence[dict[str, torch.Tensor | bool]]) -> dict[str, float]:
+    """Metrics of all samples from the :func:`generation_shard_state` of each block, in order.
 
-    These are the metrics of one unsharded run over the same images, up to the order in which
-    the per-image distances are averaged.
+    They equal what :func:`evaluate_generation_preservation` reports for the same images, up to
+    the order in which the per-image distances are averaged.
     """
     if not states:
-        raise ValueError("no generation shard states to merge")
-    if len({state["lpips"] is None for state in states}) != 1:
+        raise ValueError("no generation shard states")
+    if len({state["lpips"] for state in states}) != 1:
         raise ValueError("shards disagree on whether LPIPS was available")
     results = evaluate_generation_preservation(
         real_features=torch.cat([state["real_features"] for state in states]),
         gen_features=torch.cat([state["gen_features"] for state in states]),
     )
-    # without images the call above leaves the perceptual entries NaN; fill them as the
-    # unsharded run does: LPIPS when available, otherwise pixel MSE as perceptual_similarity
-    if states[0]["lpips"] is not None:
-        lpips_mean = float(torch.cat([state["lpips"] for state in states]).mean().item())
-        results["LPIPS"] = results["perceptual_similarity"] = lpips_mean
-    else:
-        results["perceptual_similarity"] = float(
-            torch.cat([state["mse"] for state in states]).mean().item()
-        )
+    # without images the call above leaves the perceptual entries NaN
+    perceptual = float(torch.cat([state["perceptual"] for state in states]).mean().item())
+    results["perceptual_similarity"] = perceptual
+    if states[0]["lpips"]:
+        results["LPIPS"] = perceptual
     return results
 
 
@@ -383,5 +383,5 @@ __all__ = [
     "evaluate_pairwise_preferences",
     "evaluate_generation_preservation",
     "generation_shard_state",
-    "merge_generation_shard_states",
+    "generation_metrics",
 ]

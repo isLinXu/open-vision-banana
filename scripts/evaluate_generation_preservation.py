@@ -45,11 +45,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from open_vision_banana.data import build_generation_dataset  # noqa: E402
 from open_vision_banana.data.manifest import fingerprint_records  # noqa: E402
 from open_vision_banana.evaluation.generation_preservation import (  # noqa: E402
-    evaluate_generation_preservation,
     extract_inception_features,
     extract_rgb_features,
+    generation_metrics,
     generation_shard_state,
 )
+from open_vision_banana.evaluation.results_io import write_results  # noqa: E402
 from open_vision_banana.evaluation.shards import shard_range  # noqa: E402
 from open_vision_banana.inference.generator import BaseGenerator  # noqa: E402
 
@@ -146,16 +147,6 @@ def dataset_fingerprint(dataset: Any) -> str:
     return fingerprint_records(records, root)
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
-        return None
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_safe(item) for item in value]
-    return value
-
-
 def _write_failure(handle, *, index: int, prompt: str, exc: Exception, elapsed_ms: float) -> None:
     record = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -185,15 +176,18 @@ def main() -> int:
     )
     if not len(dataset):
         raise SystemExit(f"No generation samples found under {args.dataset_root}")
-    selected = dataset if args.max_samples is None else Subset(dataset, range(min(args.max_samples, len(dataset))))
-    total = len(selected)
-    block = range(total)
-    if args.num_shards > 1:
-        # ``selected`` is a prefix of ``dataset``, so block indices address ``dataset`` directly
-        block = shard_range(total, args.num_shards, args.shard_index, args.batch_size)
-        if not block:
-            raise SystemExit(f"shard {args.shard_index} of {args.num_shards} is empty: use fewer shards")
-        selected = Subset(dataset, block)
+    total = len(dataset) if args.max_samples is None else min(args.max_samples, len(dataset))
+    block = shard_range(total, args.num_shards, args.shard_index, args.batch_size)
+    if not block:
+        raise SystemExit(f"shard {args.shard_index} of {args.num_shards} is empty: use fewer shards")
+    shard = {
+        "index": args.shard_index,
+        "count": args.num_shards,
+        "start": block.start,
+        "stop": block.stop,
+        "of_samples": total,
+    }
+    selected = Subset(dataset, block)
     loader = DataLoader(
         selected,
         batch_size=args.batch_size,
@@ -265,20 +259,15 @@ def main() -> int:
         feature_extractor = extract_rgb_features
     else:
         feature_extractor = extract_inception_features
-    args.output_json.parent.mkdir(parents=True, exist_ok=True)
+    # sharded or not, the metrics come from the per-image state, so shards merge exactly
+    state = generation_shard_state(real_rgb, gen_rgb, feature_extractor)
     if args.num_shards > 1:
         state_path = args.output_json.with_suffix(".state.pt")
-        torch.save(generation_shard_state(real_rgb, gen_rgb, feature_extractor), state_path)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(state, state_path)
         result: dict[str, Any] = {"shard_state": state_path.name}
     else:
-        metrics = evaluate_generation_preservation(
-            real_rgb=real_rgb,
-            gen_rgb=gen_rgb,
-            pred_rgb=gen_rgb,
-            target_rgb=real_rgb,
-            feature_extractor=feature_extractor,
-        )
-        result = {"metrics": _json_safe(metrics)}
+        result = {"metrics": generation_metrics([state])}
     elapsed = time.perf_counter() - started
     report = {
         "metadata": {
@@ -302,18 +291,11 @@ def main() -> int:
             "elapsed_seconds": elapsed,
             "python": platform.python_version(),
             "torch": torch.__version__,
+            **({"shard": shard} if args.num_shards > 1 else {}),
         },
         **result,
     }
-    if args.num_shards > 1:
-        report["metadata"]["shard"] = {
-            "index": args.shard_index,
-            "count": args.num_shards,
-            "start": block.start,
-            "stop": block.stop,
-            "of_samples": total,
-        }
-    args.output_json.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
+    write_results(args.output_json, report)
     logger.info("generation health report written to %s", args.output_json)
     return 0
 
