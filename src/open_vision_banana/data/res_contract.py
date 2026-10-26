@@ -35,7 +35,11 @@ def resolve_referring_prompt(row: dict[str, Any]) -> str:
     if expression is not None:
         if not prompt:
             return build_binary_referring_prompt(expression)
-        if encoding == BINARY_RES_ENCODING and not is_binary_referring_prompt(prompt, expression):
+        # Canonical construction normalizes a leading article ("a cat" -> "The cat").
+        # Exact template matching already verifies the full expression binding.
+        if is_binary_referring_prompt(prompt, expression):
+            return prompt
+        if encoding == BINARY_RES_ENCODING:
             raise ValueError("Versioned binary RES rows require the canonical white/black prompt")
 
         def normalized(text: str) -> str:

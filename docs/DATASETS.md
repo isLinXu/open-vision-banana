@@ -76,6 +76,14 @@ PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_2
 the downloaded layouts and asserts that all six paper_aligned tasks come out of the
 Trainer's `ManifestVisionDataset` + `TaskWeightedSampler` as batches.
 
+## Supervised referring-segmentation extensions
+
+For the **supervised RES extension** (Rea2Seg-16K plus a fixed LLM-Seg40K COCO
+subset), see [res_reasoning_sources.md](res_reasoning_sources.md). It reuses the
+same binary pair manifest and training loader, with separate R0/R1/R2 data
+ablations. These supplements are explicitly prepared/downloaded; they are not
+silently added to the strict paper-aligned six-task default recipe.
+
 ## Sources surveyed and rejected
 
 | source | reason |

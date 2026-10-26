@@ -15,12 +15,15 @@ def main():
     parser.add_argument("--repo-id")
     parser.add_argument("--revision", help="Immutable Hub commit SHA (required for Hub downloads)")
     parser.add_argument(
+        "--subfolder", default="", help="Optional supplement directory in the Hub repository"
+    )
+    parser.add_argument(
         "--bundle-dir", type=Path, help="Alternatively restore an existing local bundle"
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     if args.bundle_dir is not None:
-        if args.repo_id or args.revision:
+        if args.repo_id or args.revision or args.subfolder:
             parser.error("Use either --bundle-dir or --repo-id/--revision")
         bundle = args.bundle_dir
     else:
@@ -30,8 +33,12 @@ def main():
             parser.error("--revision must be a 40-character immutable commit SHA")
         from huggingface_hub import hf_hub_download, snapshot_download
 
+        prefix = ""
+        if args.subfolder:
+            safe_path(Path.cwd(), args.subfolder)
+            prefix = args.subfolder.rstrip("/") + "/"
         index_path = hf_hub_download(
-            args.repo_id, "bundle.json", repo_type="dataset", revision=args.revision
+            args.repo_id, prefix + "bundle.json", repo_type="dataset", revision=args.revision
         )
         index = json.loads(Path(index_path).read_text(encoding="utf-8"))
         if index.get("format") != FORMAT:
@@ -43,11 +50,16 @@ def main():
                 args.repo_id,
                 repo_type="dataset",
                 revision=args.revision,
-                allow_patterns=["bundle.json", *[e["path"] for e in index["files"]]],
+                allow_patterns=[
+                    prefix + "bundle.json",
+                    *[prefix + e["path"] for e in index["files"]],
+                ],
                 local_dir=args.output_dir.parent
                 / (args.output_dir.name + ".bundle-" + args.revision[:8]),
             )
         )
+        if args.subfolder:
+            bundle = bundle / args.subfolder
     print(json.dumps(restore_bundle(bundle, args.output_dir), indent=2))
 
 

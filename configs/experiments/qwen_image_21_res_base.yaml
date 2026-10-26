@@ -1,0 +1,70 @@
+# Supervised RES data ablation; identical optimizer/model/steps and official validation.
+# See docs/res_reasoning_sources.md. This is not a zero-shot or generation-preservation run.
+model:
+  name: qwen-image-2.1
+  dtype: bfloat16
+  resolution: 512
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+  - to_q
+  - to_k
+  - to_v
+  - to_out.0
+  - img_mlp.proj
+  - img_mlp.gate_layer
+  - img_mlp.out
+data:
+  tasks:
+  - referring
+  vision_ratio: 1.0
+  task_sampling: proportional
+  num_workers: 4
+  dir: data/res_reasoning/r0
+  pair_manifest: data/res_reasoning/r0/training.jsonl
+training:
+  steps: 10000
+  batch_size: 1
+  gradient_accumulation: 32
+  lr: 3.0e-05
+  max_grad_norm: 1.0
+  drop_grad_norm: 10.0
+  seed: 42
+  gradient_checkpointing: true
+optimizer:
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-08
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+validation:
+  max_samples_per_task: 128
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: false
+  cfg_dropout_rate: 0.0
+loss:
+  task_loss_weights:
+    referring: 1.0
+  normal_angular_loss_weight: 0.0
+  depth_edge_aux_weight: 0.0
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+checkpoint:
+  output_dir: output/qwen_image_21_res_base
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+wandb:
+  enabled: true
+  project: open-vision-banana
+device: cuda

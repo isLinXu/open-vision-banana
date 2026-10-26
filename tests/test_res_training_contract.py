@@ -21,6 +21,18 @@ def test_expression_only_builds_prompt_and_legacy_prompt_survives():
     assert resolve_referring_prompt({"prompt": "Segment the dog."}) == "Segment the dog."
 
 
+@pytest.mark.parametrize("expression", ["A red car", "An orange cat", "The left dog"])
+@pytest.mark.parametrize("encoding", [None, BINARY_RES_ENCODING])
+def test_canonical_article_normalization_keeps_valid_source_expressions(expression, encoding):
+    from open_vision_banana.referring_contract import build_binary_referring_prompt
+
+    prompt = build_binary_referring_prompt(expression)
+    row = {"expression": expression, "prompt": prompt, "encoding": encoding}
+    assert resolve_referring_prompt(row) == prompt
+    with pytest.raises(ValueError):
+        resolve_referring_prompt({**row, "expression": "A different object"})
+
+
 @pytest.mark.parametrize(
     "row",
     [

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RES expression validation**: accept the existing canonical prompt when its shared builder normalizes a leading article, so valid Rea2Seg/LLM-Seg expressions such as "A red car" are not rejected during preparation or loading.
+
 - **nuScenes depth benchmark**: `evaluate_paper_benchmarks.py --nuscenes-root` failed before loading any model with `TypeError: build_dataset() got multiple values for argument 'task'`, because the depth task of `nuScenesDataset` was passed as an adapter keyword while `build_dataset`'s first argument is also named `task`. The benchmark now uses a `nuscenes_depth` adapter key (`NuScenesDepthDataset`), as NYU uses `nyu_depth`.
 
 - **Expression-conditioned RES**: keep one prompt per expression, resize binary masks with nearest-neighbor interpolation, and share the versioned white/black decoding contract across training, inference and evaluation. Preserve disconnected targets and provide an explicit legacy color decoder. Strict RefCOCOg evaluation rejects incomplete annotations and declares its image range so official and portable loaders preserve the same input pixels.
@@ -27,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Experiment configs**: Updated all archived script references to include `archive/pre_opensource/` prefix.
 
 ### Added
+
+- **Supervised RES reasoning sources**: integrate PR #26's offline Rea2Seg adapter and a deterministic LLM-Seg40K COCO train subset through a shared native binary-pair exporter. Reuse existing prompt/mask contracts, manifest loading, merging and portable RES bundles; add source/exclusion audits, optional explicit cleaning, pinned supplement downloads and controlled R0/R1/R2 configurations.
 
 - **Qwen-Image-2.1 LoRA training and inference**: `qwen-image-2.1` (`QwenImage21Pipeline`, diffusers>=0.41 with transformers>=5.17) trains with the source image given the way the pipeline's editing mode gives it: as Qwen3-VL visual tokens through the pipeline's own prompt encoder, and as reference latents placed before the target tokens (`edit_forward.qwen21_edit_forward`, sigma in and `noise - x0` out, converted to the repo frame). `vae_encode` / `vae_decode` handle its RGBA VAE with per-channel `latents_mean` / `latents_std`. Training takes batch size 1 (the transformer reads one token layout per batch) and a resolution that is a multiple of 32, checked before the model loads; CFG dropout blanks the prompt and keeps the source image. At inference, `output_resolution` keeps the input's area up to the model's native 1024 instead of always resizing the source to 1024 px.
 
