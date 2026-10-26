@@ -95,8 +95,8 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 - [ ] 全量第一档（60 Hypersim 场景、6 个 TartanAir v1 环境、8 OmniEdit 分片、ADE20K、COCO-Stuff、COCO+LVIS、RefCOCO/+）
 - [ ] prepare → `merge --cap 40000 --val-percent 2` → strict 审计 → `gates_data` 通过
 - [ ] 记录每任务 / 每来源的行数、图像数、许可（报告 §4 表；数据卡用）
-**训练（E1.2）**
-- [ ] `--print-effective-config` 过目并存档
+**训练（E1.2）**——用 `scripts/run_e1_full.sh`：数据阶段在 CPU 节点 `--to merge`，GPU 节点 `RUN_DIR=... nohup bash scripts/run_e1_full.sh --from train`，第二块卡可 `--from eval --watch` 边训边评；脚本自动续训、无 key 时自动关 W&B
+- [ ] `--print-effective-config` 过目并存档（runner 首次启动自动打印）
 - [ ] 30k 步，`save_every` / `eval_every` 2500；loss 有限；`gates_run` 通过
 - [ ] 保留 5k / 10k / 15k / 20k / 25k / 30k 的 `_best`（E2 需要 10k 点；报告需要学习曲线）
 - [ ] W&B 或 `train.log` 导出：总 loss、每任务 loss、lr——报告 Fig.「训练曲线」

@@ -185,16 +185,20 @@ Use `merge_multitask_manifest.py --cap 40000` so no task dominates its 0.1 share
 | training | `cfg_dropout_rate` | 0.1 | R | keeps unconditional ability for CFG at inference |
 | checkpoint | `save_every` / `eval_every` | 2 500 / 2 500 | R | |
 
-Launch:
+Launch — use the runner, not a hand-typed `nohup` (the earlier snippet redirected into a run directory
+that did not exist yet, so training never started and the node sat idle):
 ```bash
-RUN=output/e1_qwen21_paper_aligned_$(date +%Y%m%d_%H%M)
-CUDA_VISIBLE_DEVICES=<idx> PYTHONPATH=src nohup "$(which python)" scripts/train.py \
-  --config configs/experiments/qwen_image_21_paper_aligned.yaml \
-  --pair-manifest data/qwen_baseline/pairs.jsonl --data-dir data/qwen_baseline \
-  --output-dir "$RUN" --wandb > "$RUN/train.log" 2>&1 &
+# CPU / login node: data only (download -> prepare -> merge -> strict audit -> data gate)
+bash scripts/run_e1_full.sh --to merge
+# GPU node: train (auto-resumes from the newest checkpoint in RUN_DIR) -> run gate -> eval -> eval gates
+RUN_DIR=output/e1_qwen21_paper_aligned_v1 nohup bash scripts/run_e1_full.sh --from train > output/e1_v1.nohup.log 2>&1 &
+# optional second GPU: evaluate 5k/15k/30k as they land instead of after training
+RUN_DIR=output/e1_qwen21_paper_aligned_v1 EVAL_GPU=1 nohup bash scripts/run_e1_full.sh --from eval --watch > output/e1_v1.eval.log 2>&1 &
 ```
-Monitor every ≤ 100 s: `tail`, `grep -E "step=|loss="`, `nvidia-smi`. Expect ~3.5 s/step at bf16 on H100
-(≈ 30 h for 30 k). If interrupted: `--resume "$RUN/checkpoint-<N>"` (full state).
+`--dry-run` prints every command. W&B is enabled only when `WANDB_API_KEY` is set (an interactive
+`wandb login` would block the job). Monitor: `tail -f $RUN_DIR/train.log`, `nvidia-smi`; expect ~3.5 s/step
+at bf16 on H100 (≈ 30 h for 30 k). A killed job is restarted with the same command — the runner finds the
+newest `checkpoint-N` and resumes full state.
 
 ### E1.3 Evaluation (at 5 k, 15 k, 30 k; always the `_best` of that window)
 
