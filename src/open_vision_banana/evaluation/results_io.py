@@ -20,6 +20,11 @@ def json_safe(value: Any) -> Any:
     return value
 
 
+def sidecar(output_json: Path, suffix: str) -> Path:
+    """A file next to ``output_json`` named after all of it (``gen.shard0.json`` -> ``gen.shard0<suffix>``)."""
+    return output_json.with_name(output_json.name.removesuffix(".json") + suffix)
+
+
 def write_results(path: Path, results: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(json_safe(results), indent=2, allow_nan=False), encoding="utf-8")
@@ -38,4 +43,4 @@ def write_metrics_csv(path: Path, results: dict[str, Any]) -> None:
                     writer.writerow([benchmark, dataset, metric, value])
 
 
-__all__ = ["json_safe", "write_metrics_csv", "write_results"]
+__all__ = ["json_safe", "sidecar", "write_metrics_csv", "write_results"]

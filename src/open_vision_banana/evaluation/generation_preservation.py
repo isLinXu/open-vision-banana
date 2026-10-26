@@ -349,14 +349,18 @@ def generation_shard_state(
     }
 
 
-def generation_metrics(states: Sequence[dict[str, torch.Tensor | bool]]) -> dict[str, float]:
+def generation_metrics(
+    states: Sequence[dict[str, torch.Tensor | bool] | None],
+) -> dict[str, float]:
     """Metrics of all samples from the :func:`generation_shard_state` of each block, in order.
 
     They equal what :func:`evaluate_generation_preservation` reports for the same images, up to
-    the order in which the per-image distances are averaged.
+    the order in which the per-image distances are averaged. ``None`` is a block that generated
+    no image (an empty block, or one whose samples all failed) and contributes nothing.
     """
+    states = [state for state in states if state is not None]
     if not states:
-        raise ValueError("no generation shard states")
+        raise ValueError("no generated image in any block")
     if len({state["lpips"] for state in states}) != 1:
         raise ValueError("shards disagree on whether LPIPS was available")
     results = evaluate_generation_preservation(

@@ -28,7 +28,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from open_vision_banana.evaluation.generation_preservation import generation_metrics  # noqa: E402
-from open_vision_banana.evaluation.results_io import write_metrics_csv, write_results  # noqa: E402
+from open_vision_banana.evaluation.results_io import (  # noqa: E402
+    sidecar,
+    write_metrics_csv,
+    write_results,
+)
 from open_vision_banana.evaluation.shards import merged_metrics  # noqa: E402
 
 # metadata a generation shard reports about its own block, not about the run
@@ -77,9 +81,16 @@ def merge_generation_shards(shards: list[tuple[dict[str, Any], dict[str, Any]]])
     shards = sorted(shards, key=lambda pair: pair[0]["metadata"]["shard"]["index"])
     metadata = [shard["metadata"] for shard, _ in shards]
     merged = common_metadata(metadata, GENERATION_PER_SHARD)
-    for field in ("requested_samples", "successful_samples", "failed_samples", "elapsed_seconds"):
+    for (_, state), meta in zip(shards, metadata, strict=True):
+        rows = 0 if state is None else len(state["perceptual"])
+        if rows != meta["successful_samples"]:
+            raise ValueError(
+                f"generation shard {meta['shard']['index']}: its saved state holds {rows} samples, "
+                f"its JSON {meta['successful_samples']} (a stale or foreign state file?)"
+            )
+    for field in ("requested_samples", "successful_samples", "failed_samples"):
         merged[field] = sum(m[field] for m in metadata)
-    merged["failure_jsonl"] = [m["failure_jsonl"] for m in metadata]
+    merged["elapsed_seconds"] = max(m["elapsed_seconds"] for m in metadata)  # shards run in parallel
     merged["merged_shards"] = check_blocks("generation", [m["shard"] for m in metadata])
     return {"metadata": merged, "metrics": generation_metrics([state for _, state in shards])}
 
@@ -116,6 +127,12 @@ def merge_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
     return merged
 
 
+def _shard_file(shard_json: Path, recorded: str) -> Path:
+    """A file a shard recorded by path: as recorded, else next to the shard's JSON."""
+    path = Path(recorded)
+    return path if path.exists() else shard_json.with_name(path.name)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -125,16 +142,29 @@ def main() -> int:
     parser.add_argument("--output-csv", type=Path, default=None)
     args = parser.parse_args()
     shards = [json.loads(path.read_text(encoding="utf-8")) for path in args.shards]
+    for path, shard in zip(args.shards, shards, strict=True):
+        if "shard_state" not in shard and "benchmarks" not in shard:
+            raise SystemExit(f"{path} is not the output of a sharded evaluation")
     kinds = {"shard_state" in shard for shard in shards}  # generation shards save a state file
     if kinds == {True}:
         if args.output_csv is not None:
             raise SystemExit("--output-csv applies to benchmark shards, not generation shards")
-        merged = merge_generation_shards(
-            [
-                (shard, torch.load(path.with_name(shard["shard_state"]), map_location="cpu"))
+        pairs = [
+            (shard, torch.load(path.with_name(shard["shard_state"]), weights_only=True))
+            for path, shard in zip(args.shards, shards, strict=True)
+        ]
+        merged = merge_generation_shards(pairs)
+        # one failures file for the run, as an unsharded run writes it
+        failures = sidecar(args.output_json, ".failures.jsonl")
+        failures.parent.mkdir(parents=True, exist_ok=True)
+        failures.write_text(
+            "".join(
+                _shard_file(path, shard["metadata"]["failure_jsonl"]).read_text(encoding="utf-8")
                 for path, shard in zip(args.shards, shards, strict=True)
-            ]
+            ),
+            encoding="utf-8",
         )
+        merged["metadata"]["failure_jsonl"] = str(failures)
         write_results(args.output_json, merged)
         print(f"generation: {merged['metadata']['successful_samples']} samples from {len(shards)} shards")
         return 0

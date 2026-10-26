@@ -6,6 +6,7 @@ import copy
 import json
 import math
 import sys
+from pathlib import Path
 
 import pytest
 import torch
@@ -74,12 +75,14 @@ def test_block_states_give_the_metrics_of_the_whole_set(with_lpips, size):
     _assert_same_metrics(generation_metrics(states), whole)
 
 
-def test_metrics_reject_empty_or_inconsistent_states(no_lpips):
-    with pytest.raises(ValueError, match="no generation shard states"):
-        generation_metrics([])
+def test_metrics_skip_blocks_without_images_and_reject_inconsistent_states(no_lpips):
+    for empty in ([], [None, None]):
+        with pytest.raises(ValueError, match="no generated image"):
+            generation_metrics(empty)
     state = generation_shard_state(
         torch.rand(2, 3, 8, 8), torch.rand(2, 3, 8, 8), extract_rgb_features
     )
+    assert generation_metrics([None, state, None]) == generation_metrics([state])
     with pytest.raises(ValueError, match="LPIPS"):
         generation_metrics([state, {**state, "lpips": True}])
 
@@ -101,10 +104,14 @@ class _FakeDataset(torch.utils.data.Dataset):
 
 
 class _FakeGenerator:
+    fail_from_seed: int | None = None  # samples whose seed reaches this raise
+
     def __init__(self, **kwargs):
         pass
 
     def generate(self, *, prompt, image, num_inference_steps, height, width, seed):
+        if self.fail_from_seed is not None and seed >= self.fail_from_seed:
+            raise RuntimeError("CUDA out of memory")
         return torch.rand(1, 3, height, width, generator=torch.Generator().manual_seed(seed))
 
 
@@ -130,19 +137,28 @@ def _run_merge(monkeypatch, out, *paths, extra=()):
     return merge_main()
 
 
-def _run_shards(monkeypatch, tmp_path, count=3):
+def _run_shards(monkeypatch, tmp_path, count=3, *extra):
     paths = [tmp_path / f"gen.shard{index}.json" for index in range(count)]
     for index, path in enumerate(paths):
-        shard_args = ("--num-shards", str(count), "--shard-index", str(index))
+        shard_args = ("--num-shards", str(count), "--shard-index", str(index), *extra)
         assert _run_script(monkeypatch, tmp_path, path, *shard_args) == 0
     return paths
+
+
+def _merged_equals_unsharded(monkeypatch, tmp_path, paths, *extra) -> dict:
+    assert _run_script(monkeypatch, tmp_path, tmp_path / "gen.json", *extra) == 0
+    whole = json.loads((tmp_path / "gen.json").read_text())
+    assert _run_merge(monkeypatch, tmp_path / "merged.json", *reversed(paths)) == 0
+    merged = json.loads((tmp_path / "merged.json").read_text())
+    _assert_same_metrics(merged["metrics"], whole["metrics"])
+    for key in ("requested_samples", "successful_samples", "failed_samples", "dataset_fingerprint"):
+        assert merged["metadata"][key] == whole["metadata"][key], key
+    return merged
 
 
 def test_sharded_runs_merge_into_the_unsharded_report(
     monkeypatch, tmp_path, fake_runtime, with_lpips
 ):
-    assert _run_script(monkeypatch, tmp_path, tmp_path / "gen.json") == 0
-    whole = json.loads((tmp_path / "gen.json").read_text())
     paths = _run_shards(monkeypatch, tmp_path)
     shard = json.loads(paths[1].read_text())
     assert shard["metadata"]["shard"] == {
@@ -153,20 +169,30 @@ def test_sharded_runs_merge_into_the_unsharded_report(
         "of_samples": 7,
     }
     assert shard["shard_state"] == "gen.shard1.state.pt" and "metrics" not in shard
-    assert "shard" not in whole["metadata"] and "shard_state" not in whole
 
-    assert _run_merge(monkeypatch, tmp_path / "merged.json", *reversed(paths)) == 0
-    merged = json.loads((tmp_path / "merged.json").read_text())
-    _assert_same_metrics(merged["metrics"], whole["metrics"])
-    meta = merged["metadata"]
-    assert meta["requested_samples"] == meta["successful_samples"] == 7
-    assert meta["failed_samples"] == 0 and len(meta["failure_jsonl"]) == 3
+    meta = _merged_equals_unsharded(monkeypatch, tmp_path, paths)["metadata"]
+    assert meta["successful_samples"] == 7 and "shard" not in meta
     assert meta["merged_shards"] == {"count": 3, "blocks": [[0, 3], [3, 6], [6, 7]]}
-    assert meta["dataset_fingerprint"] == whole["metadata"]["dataset_fingerprint"]
-    assert "shard" not in meta
+    assert meta["failure_jsonl"] == str(tmp_path / "merged.failures.jsonl")
 
 
-def test_merge_cli_rejects_csv_and_mixed_shards(monkeypatch, tmp_path, fake_runtime, no_lpips):
+def test_empty_and_wholly_failed_shards_still_merge(monkeypatch, tmp_path, fake_runtime, no_lpips):
+    # more shards than samples: shard 1 of 2 over one sample has an empty block
+    paths = _run_shards(monkeypatch, tmp_path, 2, "--max-samples", "1")
+    assert json.loads(paths[1].read_text())["metadata"]["requested_samples"] == 0
+    _merged_equals_unsharded(monkeypatch, tmp_path, paths, "--max-samples", "1")
+
+    # every sample of shard 1 (indices 4..6, seeds 46..48) fails: a proxy from the rest
+    monkeypatch.setattr(_FakeGenerator, "fail_from_seed", 46)
+    with pytest.raises(RuntimeError, match="3 generation samples failed"):
+        _run_script(monkeypatch, tmp_path, tmp_path / "x.json")
+    paths = _run_shards(monkeypatch, tmp_path, 2, "--allow-failures")
+    meta = _merged_equals_unsharded(monkeypatch, tmp_path, paths, "--allow-failures")["metadata"]
+    assert meta["failed_samples"] == 3 and meta["successful_samples"] == 4
+    assert len(Path(meta["failure_jsonl"]).read_text().splitlines()) == 3
+
+
+def test_merge_cli_rejects_wrong_inputs(monkeypatch, tmp_path, fake_runtime, no_lpips):
     paths = _run_shards(monkeypatch, tmp_path, count=2)
     out = tmp_path / "merged.json"
     with pytest.raises(SystemExit, match="output-csv"):
@@ -175,27 +201,19 @@ def test_merge_cli_rejects_csv_and_mixed_shards(monkeypatch, tmp_path, fake_runt
     benchmark.write_text(json.dumps({"metadata": {}, "benchmarks": {}}))
     with pytest.raises(SystemExit, match="cannot merge"):
         _run_merge(monkeypatch, out, paths[0], benchmark)
+    assert _run_script(monkeypatch, tmp_path, tmp_path / "gen.json") == 0
+    with pytest.raises(SystemExit, match="not the output of a sharded evaluation"):
+        _run_merge(monkeypatch, out, tmp_path / "gen.json")
 
 
-def test_script_rejects_bad_or_empty_shards(monkeypatch, tmp_path, fake_runtime):
-    out = tmp_path / "gen.json"
+def test_script_rejects_a_shard_index_out_of_range(monkeypatch, tmp_path, fake_runtime):
     with pytest.raises(SystemExit, match="shard-index"):
-        _run_script(monkeypatch, tmp_path, out, "--num-shards", "2", "--shard-index", "2")
-    with pytest.raises(SystemExit, match="empty"):
         _run_script(
-            monkeypatch,
-            tmp_path,
-            out,
-            "--max-samples",
-            "1",
-            "--num-shards",
-            "2",
-            "--shard-index",
-            "1",
+            monkeypatch, tmp_path, tmp_path / "g.json", "--num-shards", "2", "--shard-index", "2"
         )
 
 
-def test_merge_keeps_per_shard_metadata_out_of_the_run_check(no_lpips):
+def test_merge_checks_run_metadata_and_saved_states(no_lpips):
     blocks = [(0, 2), (2, 5)]
     shards = []
     for index, (start, stop) in enumerate(blocks):
@@ -208,7 +226,7 @@ def test_merge_keeps_per_shard_metadata_out_of_the_run_check(no_lpips):
                 "successful_samples": stop - start,
                 "failed_samples": 0,
                 "failure_jsonl": f"f{index}.jsonl",
-                "elapsed_seconds": 1.5,
+                "elapsed_seconds": 1.5 + index,
                 "shard": {
                     "index": index,
                     "count": 2,
@@ -222,7 +240,7 @@ def test_merge_keeps_per_shard_metadata_out_of_the_run_check(no_lpips):
         images = torch.rand(stop - start, 3, 8, 8), torch.rand(stop - start, 3, 8, 8)
         shards.append((record, generation_shard_state(*images, extract_rgb_features)))
     merged = merge_generation_shards(shards)
-    assert merged["metadata"]["elapsed_seconds"] == pytest.approx(3.0)
+    assert merged["metadata"]["elapsed_seconds"] == pytest.approx(2.5)  # wall time of the slowest
     assert "device" not in merged["metadata"] and "shard_state" not in merged
 
     with pytest.raises(ValueError, match="no generation shards"):
@@ -231,3 +249,6 @@ def test_merge_keeps_per_shard_metadata_out_of_the_run_check(no_lpips):
     other[1][0]["metadata"]["seed"] = 43
     with pytest.raises(ValueError, match="metadata"):
         merge_generation_shards(other)
+    stale = [shards[0], (shards[1][0], shards[0][1])]
+    with pytest.raises(ValueError, match="stale or foreign"):
+        merge_generation_shards(stale)
