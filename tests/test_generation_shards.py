@@ -82,7 +82,7 @@ def test_metrics_skip_blocks_without_images_and_reject_inconsistent_states(no_lp
     state = generation_shard_state(
         torch.rand(2, 3, 8, 8), torch.rand(2, 3, 8, 8), extract_rgb_features
     )
-    assert generation_metrics([None, state, None]) == generation_metrics([state])
+    _assert_same_metrics(generation_metrics([None, state, None]), generation_metrics([state]))
     with pytest.raises(ValueError, match="LPIPS"):
         generation_metrics([state, {**state, "lpips": True}])
 
