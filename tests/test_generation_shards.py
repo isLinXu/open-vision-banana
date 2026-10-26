@@ -191,6 +191,11 @@ def test_empty_and_wholly_failed_shards_still_merge(monkeypatch, tmp_path, fake_
     assert meta["failed_samples"] == 3 and meta["successful_samples"] == 4
     assert len(Path(meta["failure_jsonl"]).read_text().splitlines()) == 3
 
+    # an unsharded run with nothing generated still has no report to give
+    monkeypatch.setattr(_FakeGenerator, "fail_from_seed", 0)
+    with pytest.raises(RuntimeError, match="All 7 generation samples failed"):
+        _run_script(monkeypatch, tmp_path, tmp_path / "x.json", "--allow-failures")
+
 
 def test_merge_cli_rejects_wrong_inputs(monkeypatch, tmp_path, fake_runtime, no_lpips):
     paths = _run_shards(monkeypatch, tmp_path, count=2)
