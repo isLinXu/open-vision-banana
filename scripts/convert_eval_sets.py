@@ -6,16 +6,21 @@
                  The 654 Eigen test frames come from ``splits.mat`` (testNdxs, 1-based);
                  without it every frame goes to ``all/`` and the paper protocol is not met.
     genai-bench  GenAI-Bench parquet shards -> <out>/prompts.jsonl ({"id", "prompt", ...})
-                 for GenAIBenchDataset; image columns are dropped (they are model outputs).
+                 for GenAIBenchDataset. The image columns are other models' outputs; with
+                 --reference-model one of them (e.g. DALLE_3) is written to <out>/images/ and named
+                 in each row's "image", the fixed reference set of the generation-preservation proxy
+                 (GenerationDataset serves only prompts that have an image).
 
     python scripts/convert_eval_sets.py nyu-mat --mat data/raw/nyu_depth_v2/nyu_depth_v2_labeled.mat \\
         --splits data/raw/nyu_depth_v2/splits.mat --out data/eval/nyu_depth_v2
-    python scripts/convert_eval_sets.py genai-bench --parquet data/raw/genai_bench/data --out data/eval/genai_bench
+    python scripts/convert_eval_sets.py genai-bench --parquet data/raw/genai_bench/data --out data/eval/genai_bench \\
+        --reference-model DALLE_3
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
 from pathlib import Path
@@ -83,8 +88,14 @@ def convert_nyu_mat(mat_path: Path, out: Path, *, splits_path: Path | None = Non
     return summary
 
 
-def convert_genai_bench(parquet: Path, out: Path, *, prompt_columns: tuple[str, ...] = ("prompt", "source_prompt", "text", "caption")) -> dict:
-    """Collect unique prompts from GenAI-Bench parquet shards into prompts.jsonl."""
+def convert_genai_bench(parquet: Path, out: Path, *, prompt_columns: tuple[str, ...] = ("prompt", "source_prompt", "text", "caption"),
+                        reference_model: str | None = None) -> dict:
+    """Collect unique prompts from GenAI-Bench parquet shards into prompts.jsonl.
+
+    ``reference_model`` names an image column (``DALLE_3``, ``Midjourney_6``, ...): that model's
+    image of each prompt is written unchanged to ``<out>/images/<id>.<format>`` and named in the
+    row's ``image``.
+    """
     try:
         import pyarrow.parquet as pq
     except ImportError as exc:  # pragma: no cover
@@ -93,6 +104,7 @@ def convert_genai_bench(parquet: Path, out: Path, *, prompt_columns: tuple[str, 
     if not shards:
         raise FileNotFoundError(f"no parquet under {parquet}")
     seen: dict[str, dict] = {}
+    images = 0
     for shard in shards:
         # GenAI-Bench-1600 capitalises its columns ("Prompt", "Tags"), the pairwise sets do not
         names = {name.lower(): name for name in pq.ParquetFile(shard).schema_arrow.names}
@@ -100,12 +112,25 @@ def convert_genai_bench(parquet: Path, out: Path, *, prompt_columns: tuple[str, 
         if column is None:
             continue
         extra = [names[c] for c in ("basic_skills", "advanced_skills", "task", "instruct_prompt", "vote_type") if c in names]
-        table = pq.read_table(shard, columns=[column, *extra]).to_pylist()
-        for row in table:
+        image_column = None
+        if reference_model is not None:
+            image_column = names.get(reference_model.lower())
+            if image_column is None:
+                raise ValueError(f"{shard.name} has no image column {reference_model!r}: {sorted(names.values())}")
+        columns = [column, *extra, *([image_column] if image_column else [])]
+        for row in pq.read_table(shard, columns=columns).to_pylist():
             prompt = str(row.get(column) or "").strip()
             if prompt and prompt not in seen:
-                seen[prompt] = {"id": f"genai_{len(seen):05d}", "prompt": prompt, "source_shard": shard.name,
-                                **{k: row[k] for k in extra if row.get(k) is not None}}
+                record = {"id": f"genai_{len(seen):05d}", "prompt": prompt, "source_shard": shard.name,
+                          **{k: row[k] for k in extra if row.get(k) is not None}}
+                data = (row.get(image_column) or {}).get("bytes") if image_column else None
+                if data:  # the stored file as is; its format names the extension
+                    name = f"{record['id']}.{Image.open(io.BytesIO(data)).format.lower()}"
+                    (out / "images").mkdir(parents=True, exist_ok=True)
+                    (out / "images" / name).write_bytes(data)
+                    record["image"] = name
+                    images += 1
+                seen[prompt] = record
     if not seen:
         raise ValueError(f"no prompts under {parquet}: no non-empty value in a column named one of {prompt_columns}")
     out.mkdir(parents=True, exist_ok=True)
@@ -113,6 +138,8 @@ def convert_genai_bench(parquet: Path, out: Path, *, prompt_columns: tuple[str, 
         for row in seen.values():
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     summary = {"shards": len(shards), "prompts": len(seen), "output": str(out / "prompts.jsonl")}
+    if reference_model is not None:
+        summary.update(reference_model=reference_model, reference_images=images)
     (out / "convert_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
 
@@ -127,11 +154,13 @@ def main() -> int:
     gb = sub.add_parser("genai-bench")
     gb.add_argument("--parquet", type=Path, required=True, help="parquet file or directory of shards")
     gb.add_argument("--out", type=Path, required=True)
+    gb.add_argument("--reference-model", default=None,
+                    help="image column to write as the reference images, e.g. DALLE_3 (default: prompts only)")
     args = parser.parse_args()
     if args.command == "nyu-mat":
         summary = convert_nyu_mat(args.mat, args.out, splits_path=args.splits)
     else:
-        summary = convert_genai_bench(args.parquet, args.out)
+        summary = convert_genai_bench(args.parquet, args.out, reference_model=args.reference_model)
     print(json.dumps(summary, indent=2))
     return 0
 

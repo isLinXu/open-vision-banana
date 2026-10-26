@@ -65,6 +65,15 @@ def test_list_and_filters():
     assert "refcocog" in only_eval and "ade20k" not in only_eval
 
 
+def test_genai_bench_conversion_writes_reference_images_unless_disabled(tmp_path: Path):
+    res = _run("--only", "genai-bench", "--dry-run", "--root", str(tmp_path))
+    assert res.returncode == 0, res.stderr
+    assert "genai-bench --parquet" in res.stdout and "--reference-model DALLE_3" in res.stdout
+    res = _run("--only", "genai-bench", "--dry-run", "--root", str(tmp_path), env={"GENAI_REFERENCE": ""})
+    assert res.returncode == 0, res.stderr
+    assert "genai-bench --parquet" in res.stdout and "--reference-model" not in res.stdout
+
+
 def test_dry_run_expands_macros_without_touching_the_network(tmp_path: Path):
     res = _run(
         "--only", "hypersim,tartanair,omniedit", "--dry-run", "--root", str(tmp_path),

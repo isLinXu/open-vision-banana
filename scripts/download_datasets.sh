@@ -18,6 +18,8 @@
 #   HYPERSIM_SCENES   space-separated scene ids (default: 8 scenes, ~25 GB)
 #   TARTANAIR_ENVS    TartanAir v1 environments, Easy image_left + depth_left (default: japanesealley carwelding)
 #   OMNIEDIT_SHARDS   number of parquet shards (default: 4, ~20 GB)
+#   GENAI_REFERENCE   GenAI-Bench image column written as the generation proxy's reference images
+#                     (default: DALLE_3, ~5 GB; empty = prompts only)
 #   SKIP_EXTRACT=1    download archives only
 set -euo pipefail
 # Works with macOS bash 3.2 (no mapfile / associative arrays) and GNU bash.
@@ -188,7 +190,9 @@ post_step() {
       local splits=() ; [[ -f "$dest/splits.mat" ]] && splits=(--splits "$dest/splits.mat")
       [[ ${#splits[@]} -eq 0 ]] && warn "   splits.mat not found in $dest; frames go to all/ (fetch nyu-depth-v2-splits first)"
       run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" nyu-mat --mat "$dest/nyu_depth_v2_labeled.mat" "${splits[@]}" --out "$dest" ;;
-    genai_prompts) run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" genai-bench --parquet "$dest" --out "$dest" ;;
+    genai_prompts)
+      local reference=() ; [[ -n ${GENAI_REFERENCE-DALLE_3} ]] && reference=(--reference-model "${GENAI_REFERENCE-DALLE_3}")
+      run "$PYTHON" "$ROOT/scripts/convert_eval_sets.py" genai-bench --parquet "$dest" --out "$dest" ${reference[@]+"${reference[@]}"} ;;
     unzip|unzip_each)
       for z in "$dest"/*.zip "$dest"/raw/*.zip; do
         [[ -e $z ]] || continue

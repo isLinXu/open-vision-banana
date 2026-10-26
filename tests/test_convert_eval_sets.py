@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -15,6 +16,7 @@ pq = pytest.importorskip("pyarrow.parquet")
 scipy_io = pytest.importorskip("scipy.io")
 
 from open_vision_banana.data.datasets import NYUDepthDataset  # noqa: E402
+from open_vision_banana.data.generation import build_generation_dataset  # noqa: E402
 from open_vision_banana.data.paper_eval_datasets import GenAIBenchDataset  # noqa: E402
 from scripts.convert_eval_sets import convert_genai_bench, convert_nyu_mat  # noqa: E402
 
@@ -92,3 +94,30 @@ def test_genai_bench_without_a_prompt_column_fails(tmp_path: Path):
     with pytest.raises(ValueError, match="no prompts"):
         convert_genai_bench(shards, tmp_path / "gb")
     assert not (tmp_path / "gb" / "prompts.jsonl").exists()
+
+
+def test_genai_bench_reference_model_writes_the_proxy_reference_images(tmp_path: Path):
+    shards = tmp_path / "data"
+    shards.mkdir()
+    png = io.BytesIO()
+    Image.new("RGB", (8, 8), (255, 0, 0)).save(png, format="PNG")
+    image = {"bytes": png.getvalue(), "path": "00000.jpeg"}  # the shards' paths say .jpeg for PNG bytes
+    rows = [
+        {"Prompt": "a red square", "DALLE_3": image},
+        {"Prompt": "a prompt without a reference", "DALLE_3": None},
+        {"Prompt": "a red square", "DALLE_3": image},
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), shards / "train-00000-of-00001.parquet")
+    summary = convert_genai_bench(shards, tmp_path / "gb", reference_model="DALLE_3")
+    assert summary["prompts"] == 2 and summary["reference_images"] == 1
+    written = [json.loads(line) for line in (tmp_path / "gb" / "prompts.jsonl").read_text().splitlines()]
+    assert written[0]["image"] == "genai_00000.png" and "image" not in written[1]
+    assert (tmp_path / "gb" / "images" / "genai_00000.png").read_bytes() == png.getvalue()
+
+    # the generation proxy serves the prompts that have a reference; GenAIBenchDataset sees it too
+    proxy = build_generation_dataset(str(tmp_path / "gb"), resolution=8, require_captions=True)
+    assert len(proxy) == 1 and proxy.samples[0]["prompt"] == "a red square"
+    assert GenAIBenchDataset(tmp_path / "gb", split="val", resolution=8).has_images
+
+    with pytest.raises(ValueError, match="no image column 'SDXL_Turbo'"):
+        convert_genai_bench(shards, tmp_path / "gb2", reference_model="SDXL_Turbo")
