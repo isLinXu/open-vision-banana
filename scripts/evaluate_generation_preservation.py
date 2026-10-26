@@ -70,6 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--num-inference-steps", type=int, default=1)
+    parser.add_argument("--guidance-scale", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
@@ -223,6 +224,7 @@ def main() -> int:
                         prompt=str(prompt),
                         image=None,
                         num_inference_steps=args.num_inference_steps,
+                        guidance_scale=args.guidance_scale,
                         height=args.resolution,
                         width=args.resolution,
                         seed=args.seed + index,
@@ -288,6 +290,7 @@ def main() -> int:
             "resolution": args.resolution,
             "seed": args.seed,
             "num_inference_steps": args.num_inference_steps,
+            "guidance_scale": args.guidance_scale,
             "requested_samples": len(selected),
             "successful_samples": len(generated_images),
             "failed_samples": failures,

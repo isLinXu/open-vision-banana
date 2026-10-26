@@ -200,7 +200,7 @@ RUN_DIR=output/e1_qwen21_paper_aligned_v1 EVAL_GPU=1 nohup bash scripts/run_e1_f
 at bf16 on H100 (≈ 30 h for 30 k). A killed job is restarted with the same command — the runner finds the
 newest `checkpoint-N` and resumes full state.
 
-### E1.3 Evaluation (at 5 k, 15 k, 30 k; always the `_best` of that window)
+### E1.3 Evaluation (at 5 k, 15 k, 30 k; fixed-step online adapters)
 
 #### Inference protocol (pinned; the paper states none of this)
 
@@ -218,12 +218,12 @@ Every number in this document is produced with the settings below, and the evalu
 | negatives / rewrites | SA-Co presence via Gemini 3.1 Flash-Lite, ReasonSeg rewrite via Gemini 2.5 Pro, single turn | P | §3.1; **without `GEMINI_API_KEY` the script falls back to raw-query / all-positive diagnostics — those must be reported as "diagnostic", never as T3/T5 numbers** |
 
 ```bash
-EVAL_FLAGS="--num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution"
-PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-image-2.1 --lora-path "$RUN/checkpoint-<N>_best" \
+EVAL_FLAGS="--num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution --dtype bfloat16"
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py --model-name qwen-image-2.1 --lora-path "$RUN/checkpoint-<N>" \
   $EVAL_FLAGS \
   --nyu-root data/raw/nyu_depth_v2 --diode-root data/raw/diode --eth3d-root data/raw/eth3d \
   --refcocog-root data/raw/refer/refcocog --reasonseg-root data/raw/reasonseg \
-  --cityscapes-root data/raw/cityscapes \
+  --cityscapes-root data/raw/cityscapes --saco-root data/raw/saco_gold \
   --output-json "$RUN/eval_<N>.json" --output-csv "$RUN/eval_<N>.csv"
 # no-CFG reading (30 k only)
 PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py ... --guidance-scale 0.0 --output-json "$RUN/eval_30000_nocfg.json"
@@ -231,21 +231,25 @@ PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py ... --guidance-scale 
 
 #### Generation preservation (App. D proxy) — needs a base-model reference set first
 ```bash
-# 1. reference: the *base* model on the same prompts (once per prompt set, reused by every checkpoint)
+# 1. reference: generate and store the base model's images for 200 fixed prompts
+PYTHONPATH=src python scripts/build_generation_reference.py --model-name qwen-image-2.1 \
+  --prompts-root data/raw/genai_bench --output-dir output/reference/genai_base_qwen-image-2.1_s42_n50 \
+  --num-inference-steps 50 --guidance-scale 4.0 --seed 42 --dtype bfloat16 --max-samples 200
+# 2. score the fixed-step online adapter against those exact base images
 PYTHONPATH=src python scripts/evaluate_generation_preservation.py --model-name qwen-image-2.1 \
-  --dataset-root data/raw/genai_bench --num-inference-steps 50 --seed 42 --output-json output/reference/genai_base.json
-# 2. the checkpoint, same prompts / steps / seed
-PYTHONPATH=src python scripts/evaluate_generation_preservation.py --model-name qwen-image-2.1 \
-  --lora-path "$RUN/checkpoint-<N>_best" --dataset-root data/raw/genai_bench --num-inference-steps 50 --seed 42 \
+  --lora-path "$RUN/checkpoint-<N>" --dataset-root output/reference/genai_base_qwen-image-2.1_s42_n50 \
+  --num-inference-steps 50 --guidance-scale 4.0 --seed 42 --dtype bfloat16 --max-samples 200 \
   --output-json "$RUN/gen_<N>.json"
-# 3. editing side: ImgEdit-Bench instructions (data/raw/imgedit_bench), same two-step pattern
+# 3. check completeness and protocol match
+PYTHONPATH=src python scripts/check_experiment_gates.py generation --eval-json "$RUN/gen_<N>.json" \
+  --reference-dir output/reference/genai_base_qwen-image-2.1_s42_n50
 ```
-The proxy is FID / LPIPS / CLIP between the two output sets; the paper metric is a human pairwise win rate.
+The proxy reports RGB-feature distribution distance, diversity, and paired perceptual similarity to the base outputs. It does not compute a text CLIP score. The paper metric is a human pairwise win rate.
 Report the proxy as "generation proxy", never as App. D.
 
 #### Noise floor and seeds
 Before reading any difference as a result, estimate the noise floor from E1 itself: the spread of each metric
-across the 5 k / 15 k / 30 k `_best` checkpoints **and** across `--seed 42` vs `--seed 43` on the 30 k checkpoint
+across the 5 k / 15 k / 30 k online checkpoints **and** across `--seed 42` vs `--seed 43` on the 30 k checkpoint
 (one extra evaluation pass, no training). A difference between two runs smaller than that spread is reported as
 "no significant difference". The old `sqrt` vs `uniform` 0.003 mIoU gap would have failed this test.
 
@@ -259,10 +263,10 @@ Record (protocol-faithful numbers only; `_aligned` keys are diagnostics):
 | T7 DIODE-indoor normals | mean / median angle (both aggregations reported) | first measurement |
 | T4 RefCOCOg UMD val | cIoU | SANA 0.16–0.23 |
 | T5 ReasonSeg val | gIoU (needs Gemini rewrite; without key: raw-query diagnostic) | SANA 0.19–0.21 |
-| App. D | FID / LPIPS proxy vs base model on GenAI-Bench prompts | SANA degraded 105 → 388 |
+| App. D | RGB-feature distance / perceptual proxy vs base outputs on fixed GenAI-Bench prompts | first measurement |
 
 **Success criteria for E1 (internal, not paper numbers):** Cityscapes mIoU ≥ 0.30 at 30 k; NYU δ1 clearly
-above the constant-depth baseline (> 0.45); RefCOCOg cIoU ≥ 0.35; generation FID within 1.3× of the base model.
+above the constant-depth baseline (> 0.45); RefCOCOg cIoU ≥ 0.35. Record generation drift against the base reference without applying a ratio to the zero-distance self-comparison.
 Missing any one of these is a *finding*, not a failure — write it into `docs/ABLATION_BASELINE.md`.
 
 ---
@@ -287,9 +291,9 @@ E1's `checkpoint-10000` (`RUN_DIR=<e1> EVAL_CKPTS=10000 bash scripts/run_e1_full
 
 ## E2b — Data-scale ablation (after E1; 1 × 10 k steps)
 
-The paper's second claim is "a small amount of vision task data". `run_e2_ablations.sh --only e2b` rebuilds the
-manifest with `merge_multitask_manifest.py --cap 10000` (¼ of E1's per-task cap) into `data/qwen_baseline_e2b/`,
-runs the strict audit + data gate, trains 10 k steps at ratio 0.5 / seed 42 and evaluates with the E1.3 protocol. Question: how far does the vision score drop when the vision data is quartered, with the generation
+The paper's second claim is "a small amount of vision task data". `run_e2_ablations.sh --only e2b` derives
+`data/qwen_baseline_e2b/` from E1's audited final manifest: it keeps all generation and validation rows, and deterministically selects 25% of each vision task's training rows. It records source/output hashes and task counts,
+runs the data gate, trains 10 k steps at ratio 0.5 / seed 42 and evaluates with the E1.3 protocol. Question: how far does the vision score drop when the vision data is quartered, with the generation
 replay held fixed? If it barely moves, the "small amount" claim is supported at our scale.
 
 ## E3 — Appendix A decoder readings (evaluation only, no training)

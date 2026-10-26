@@ -2,16 +2,17 @@
 # E2 + E2b — ablations on top of E1 (exp_setting.md §E2, §E2b), chained so the GPU is never idle.
 #
 #   E2  : vision_ratio in {0.2, 0.8} x training seed in {42, 43}  -> 4 runs x 10k steps  (E1 @10k is the 0.5 point)
-#   E2b : quarter vision data (merge --cap 10000), ratio 0.5, seed 42 -> 1 run x 10k steps
+#   E2b : quarter E1 vision train rows, fixed generation and validation, ratio 0.5, seed 42 -> 1 run x 10k steps
 #   each run: train (auto-resume) -> run gate -> eval @10k with the pinned protocol -> eval gate -> generation proxy
 #
 #   bash scripts/run_e2_ablations.sh --dry-run
 #   bash scripts/run_e2_ablations.sh                      # all 5 runs, sequentially, in one GPU job
 #   RUNS="vr0.2_s42 vr0.8_s42" bash scripts/run_e2_ablations.sh     # subset (names below)
-#   bash scripts/run_e2_ablations.sh --only e2b           # just the data-scale run (does its own merge + audit)
+#   bash scripts/run_e2_ablations.sh --only e2b           # just the data-scale run (subsamples audited E1 rows)
 #
 # Env knobs: DATA_ROOT PREP_ROOT FINAL (E1 manifest) E1_RUN_DIR (for the 0.5 @10k point) OUT_ROOT (output/e2)
-#            STEPS 10000  CAP_E2B 10000  INFER_STEPS 50  GUIDANCE 4.0  EVAL_SEED 42  MAX_EVAL_SAMPLES  PYTHON
+#            STEPS 10000  INFER_STEPS 50  GUIDANCE 4.0  EVAL_SEED 42  MAX_EVAL_SAMPLES  PYTHON
+#            GEN_PROXY_SAMPLES 200  EVAL_DTYPE bfloat16  GEN_REF_DIR output/reference/genai_base_<model>_s<seed>_n<steps>
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"
 export PYTHONPATH="${ROOT}/src:${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
@@ -22,18 +23,22 @@ E1_RUN_DIR="${E1_RUN_DIR:-}"
 OUT_ROOT="${OUT_ROOT:-output/e2}"
 CONFIG="${CONFIG:-configs/experiments/qwen_image_21_paper_aligned.yaml}"
 MODEL_NAME="${MODEL_NAME:-qwen-image-2.1}"
-STEPS="${STEPS:-10000}"; CAP_E2B="${CAP_E2B:-10000}"
+STEPS="${STEPS:-10000}"
 PYTHON="${PYTHON:-python}"
 INFER_STEPS="${INFER_STEPS:-50}"; GUIDANCE="${GUIDANCE:-4.0}"; EVAL_SEED="${EVAL_SEED:-42}"
 MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-}"
+GEN_PROXY_SAMPLES="${GEN_PROXY_SAMPLES:-200}"
+EVAL_DTYPE="${EVAL_DTYPE:-bfloat16}"
+GEN_REF_DIR="${GEN_REF_DIR:-output/reference/genai_base_${MODEL_NAME}_s${EVAL_SEED}_n${INFER_STEPS}}"
 TASKS="depth,normal,semantic,instance,referring,generation"
 REFS_UMD="${DATA_ROOT}/refer/refcocog/refs(umd).p"
 RUNS="${RUNS:-vr0.2_s42 vr0.2_s43 vr0.8_s42 vr0.8_s43 e2b}"
 
-EVAL_FLAGS=(--num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" --resolution 512 --native-resolution)
+EVAL_FLAGS=(--num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" --resolution 512 --native-resolution --dtype "$EVAL_DTYPE")
 [[ -n $MAX_EVAL_SAMPLES ]] && EVAL_FLAGS+=(--max-samples "$MAX_EVAL_SAMPLES")
-EVAL_ROOTS=(--nyu-root "${DATA_ROOT}/nyu_depth_v2" --diode-root "${DATA_ROOT}/diode" --refcocog-root "${DATA_ROOT}/refer/refcocog" --reasonseg-root "${DATA_ROOT}/reasonseg")
-[[ -d "${DATA_ROOT}/cityscapes" ]] && EVAL_ROOTS+=(--cityscapes-root "${DATA_ROOT}/cityscapes")
+EVAL_ROOTS=(--nyu-root "${DATA_ROOT}/nyu_depth_v2" --diode-root "${DATA_ROOT}/diode" --eth3d-root "${DATA_ROOT}/eth3d"
+            --cityscapes-root "${DATA_ROOT}/cityscapes" --saco-root "${DATA_ROOT}/saco_gold"
+            --refcocog-root "${DATA_ROOT}/refer/refcocog" --reasonseg-root "${DATA_ROOT}/reasonseg")
 
 DRY_RUN=0
 while [[ $# -gt 0 ]]; do
@@ -62,18 +67,27 @@ train_eval() {  # name manifest vision_ratio seed
              ${resume[@]+"${resume[@]}"} ${WANDB_FLAG[@]+"${WANDB_FLAG[@]}"})
   if [[ $DRY_RUN -eq 1 ]]; then printf '  $ %s 2>&1 | tee -a %s\n' "${cmd[*]}" "${run_dir}/train.log"; else "${cmd[@]}" 2>&1 | tee -a "${run_dir}/train.log"; fi
   gate run --run-dir "$run_dir" --tasks "$TASKS" --vision-ratio "$ratio" --json-out "${run_dir}/gates_run.json"
-  local ckpt="${run_dir}/checkpoint-${STEPS}_best"; [[ -d $ckpt || $DRY_RUN -eq 1 ]] || ckpt="${run_dir}/checkpoint-${STEPS}_final"
+  local ckpt="${run_dir}/checkpoint-${STEPS}_final"
+  run "$PYTHON" scripts/check_eval_checkpoint.py --checkpoint "$ckpt"
   if [[ ! -f "${run_dir}/eval_${STEPS}.json" || $DRY_RUN -eq 1 ]]; then
     run "$PYTHON" scripts/evaluate_paper_benchmarks.py --model-name "$MODEL_NAME" --lora-path "$ckpt" "${EVAL_FLAGS[@]}" "${EVAL_ROOTS[@]}" \
         --output-json "${run_dir}/eval_${STEPS}.json" --output-csv "${run_dir}/eval_${STEPS}.csv"
   fi
-  gate eval --eval-json "${run_dir}/eval_${STEPS}.json" --require AbsRel,cIoU --json-out "${run_dir}/gates_eval.json"
+  run "$PYTHON" scripts/check_eval_checkpoint.py --checkpoint "$ckpt" --eval-json "${run_dir}/eval_${STEPS}.json" \
+      --expected-steps "$INFER_STEPS" --expected-guidance "$GUIDANCE" --expected-seed "$EVAL_SEED" --expected-dtype "$EVAL_DTYPE"
+  gate eval --eval-json "${run_dir}/eval_${STEPS}.json" --profile e2 --json-out "${run_dir}/gates_eval.json"
   # this ablation is *about* generation preservation: proxy for every run (base reference is shared with E1)
-  [[ -f "output/reference/genai_base_${MODEL_NAME}.json" && $DRY_RUN -eq 0 ]] || \
-    run "$PYTHON" scripts/evaluate_generation_preservation.py --model-name "$MODEL_NAME" --dataset-root "${DATA_ROOT}/genai_bench" \
-        --num-inference-steps "$INFER_STEPS" --seed "$EVAL_SEED" --output-json "output/reference/genai_base_${MODEL_NAME}.json"
-  run "$PYTHON" scripts/evaluate_generation_preservation.py --model-name "$MODEL_NAME" --lora-path "$ckpt" --dataset-root "${DATA_ROOT}/genai_bench" \
-      --num-inference-steps "$INFER_STEPS" --seed "$EVAL_SEED" --output-json "${run_dir}/gen_${STEPS}.json"
+  run "$PYTHON" scripts/build_generation_reference.py --model-name "$MODEL_NAME" --prompts-root "${DATA_ROOT}/genai_bench" \
+      --output-dir "$GEN_REF_DIR" --num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" --seed "$EVAL_SEED" \
+      --dtype "$EVAL_DTYPE" --max-samples "$GEN_PROXY_SAMPLES"
+  run "$PYTHON" scripts/evaluate_generation_preservation.py --model-name "$MODEL_NAME" --lora-path "$ckpt" --dataset-root "$GEN_REF_DIR" \
+      --dtype "$EVAL_DTYPE" --num-inference-steps "$INFER_STEPS" --guidance-scale "$GUIDANCE" \
+      --seed "$EVAL_SEED" --max-samples "$GEN_PROXY_SAMPLES" \
+      --output-json "${run_dir}/gen_${STEPS}.json"
+  run "$PYTHON" scripts/check_eval_checkpoint.py --checkpoint "$ckpt" --eval-json "${run_dir}/gen_${STEPS}.json" \
+      --expected-steps "$INFER_STEPS" --expected-guidance "$GUIDANCE" --expected-seed "$EVAL_SEED" --expected-dtype "$EVAL_DTYPE"
+  gate generation --eval-json "${run_dir}/gen_${STEPS}.json" --reference-dir "$GEN_REF_DIR" \
+      --json-out "${run_dir}/gates_generation.json"
 }
 
 for name in $RUNS; do
@@ -82,19 +96,13 @@ for name in $RUNS; do
       ratio="${name#vr}"; ratio="${ratio%%_s*}"; seed="${name##*_s}"
       train_eval "$name" "$FINAL" "$ratio" "$seed" ;;
     e2b)
-      log "E2b: quarter vision data -> merge --cap ${CAP_E2B} -> strict audit -> data gate"
-      MERGED_Q="data/merged_e2b/pairs.jsonl"; FINAL_Q="data/qwen_baseline_e2b/pairs.jsonl"
-      INPUTS=("${PREP_ROOT}/hypersim/pairs.jsonl" "${PREP_ROOT}/tartanair/pairs.jsonl" "${PREP_ROOT}/ade20k/pairs.jsonl"
-              "${PREP_ROOT}/inst/instance.jsonl" "${PREP_ROOT}/res/pairs.jsonl" "${PREP_ROOT}/replay/omniedit.jsonl")
-      [[ -f "${PREP_ROOT}/cocostuff/pairs.jsonl" || $DRY_RUN -eq 1 ]] && INPUTS+=("${PREP_ROOT}/cocostuff/pairs.jsonl")
-      [[ -f "${PREP_ROOT}/inst_lvis/instance.jsonl" || $DRY_RUN -eq 1 ]] && INPUTS+=("${PREP_ROOT}/inst_lvis/instance.jsonl")
-      run "$PYTHON" scripts/merge_multitask_manifest.py --inputs "${INPUTS[@]}" --out "$MERGED_Q" --cap "$CAP_E2B" --val-percent 2
-      run "$PYTHON" scripts/build_qwen_baseline_manifest.py --base-manifest "$MERGED_Q" --output "$FINAL_Q" \
-          --data-root "$(dirname "$MERGED_Q")" --protocol strict --exclude-image-ids "$REFS_UMD"
-      gate data --merged-audit "${MERGED_Q%.jsonl}.audit.json" --final-manifest "$FINAL_Q" \
+      log "E2b: keep E1 generation/validation rows; select 25% of each vision task's train rows"
+      FINAL_Q="${FINAL_Q:-data/qwen_baseline_e2b/pairs.jsonl}"
+      run "$PYTHON" scripts/subsample_multitask_manifest.py --source "$FINAL" --output "$FINAL_Q" --fraction 0.25 --seed 42
+      gate data --merged-audit "${FINAL_Q%.jsonl}.audit.json" --final-manifest "$FINAL_Q" \
            --hypersim-manifest "${PREP_ROOT}/hypersim/manifest.json" --tasks "$TASKS" --model-name "$MODEL_NAME" \
            --json-out "$(dirname "$FINAL_Q")/gates_data.json"
-      train_eval "e2b_cap${CAP_E2B}_s42" "$FINAL_Q" 0.5 42 ;;
+      train_eval "e2b_quarter_s42" "$FINAL_Q" 0.5 42 ;;
     *) echo "unknown run name: $name (use vr<ratio>_s<seed> or e2b)" >&2; exit 2 ;;
   esac
 done

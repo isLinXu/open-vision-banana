@@ -18,12 +18,13 @@ observed value; the exit code is 1 if any required gate fails.
         --tasks depth,normal,semantic,instance,referring,generation --vision-ratio 0.5
 
     # after evaluation (E0.3 / E1.3)
-    python scripts/check_experiment_gates.py eval --eval-json output/<run>/eval.json
+    python scripts/check_experiment_gates.py eval --eval-json output/<run>/eval.json --profile e1
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -33,6 +34,17 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+
+E1_E2_BENCHMARKS: dict[str, tuple[str, ...]] = {
+    "depth/nyu": ("AbsRel", "delta_1.25"),
+    "depth/diode": ("AbsRel", "delta_1.25"),
+    "depth/eth3d": ("AbsRel", "delta_1.25"),
+    "normal/diode": ("mean_angle_deg",),
+    "semantic/cityscapes": ("mIoU",),
+    "referring/refcocog": ("cIoU",),
+    "referring/reasonseg": ("gIoU",),
+    "instance/saco": ("cgF1",),
+}
 
 
 @dataclass
@@ -62,8 +74,10 @@ class GateReport:
     def render(self) -> str:
         width = max((len(r.name) for r in self.results), default=10)
         lines = [f"{r.status:4s} {r.name.ljust(width)}  {r.detail}" for r in self.results]
+        passed = sum(1 for r in self.results if r.status == "PASS")
         warned = sum(1 for r in self.results if r.status == "WARN")
-        lines.append(f"---- {len(self.results) - len(self.failed) - warned}/{len(self.results)} gates passed, {warned} warning(s), {len(self.failed)} failed")
+        skipped = sum(1 for r in self.results if r.status == "SKIP")
+        lines.append(f"---- {passed}/{len(self.results)} gates passed, {warned} warning(s), {skipped} skipped, {len(self.failed)} failed")
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
@@ -96,7 +110,7 @@ def check_data(
     report = GateReport()
     merged = _load(merged_audit)
     if merged is None:
-        report.add("merge.audit_present", None, f"{merged_audit} not found")
+        report.add("merge.audit_present", False, f"{merged_audit} not found")
     else:
         dropped = merged.get("per_task_dropped", {})
         report.add("merge.per_task_dropped_empty", dropped == {}, json.dumps(dropped))
@@ -112,7 +126,7 @@ def check_data(
 
     final_audit = _load(final_manifest.with_suffix(".audit.json")) if final_manifest else None
     if final_audit is None:
-        report.add("final.audit_present", None, "final audit json not found")
+        report.add("final.audit_present", False, "final audit json not found")
     else:
         if require_strict:
             report.add("final.protocol_strict", final_audit.get("protocol") == "strict", str(final_audit.get("protocol")))
@@ -141,11 +155,17 @@ def check_data(
         for task in tasks:
             ok = counts.get(f"{task}/train", 0) >= 1 and counts.get(f"{task}/val", 0) >= 1
             report.add(f"final.{task}.train_and_val", ok, f"train={counts.get(f'{task}/train', 0)} val={counts.get(f'{task}/val', 0)}")
-        report.add("final.manifest_sha256", len(str(final_audit.get("manifest_sha256", ""))) == 64, str(final_audit.get("manifest_sha256", ""))[:12])
+        expected_hash = final_audit.get("manifest_sha256")
+        actual_hash = hashlib.sha256(final_manifest.read_bytes()).hexdigest() if final_manifest and final_manifest.is_file() else None
+        report.add(
+            "final.manifest_sha256",
+            actual_hash is not None and isinstance(expected_hash, str) and expected_hash == actual_hash,
+            f"audit={str(expected_hash)[:12]} actual={str(actual_hash)[:12]}",
+        )
 
     hyp = _load(hypersim_manifest)
     if hyp is None:
-        report.add("hypersim.manifest_present", None, "not provided / not found")
+        report.add("hypersim.manifest_present", False, "not provided / not found")
     else:
         report.add(
             "hypersim.planar_z_depth",
@@ -167,7 +187,7 @@ def check_data(
             "; ".join(i.message for i in contract.errors)[:200] or f"{len(contract.warnings)} warning(s)",
         )
     else:
-        report.add("contract.no_errors", None, "final manifest not found")
+        report.add("contract.no_errors", False, "final manifest not found")
     return report
 
 
@@ -205,7 +225,12 @@ def check_run(*, run_dir: Path, tasks: list[str], vision_ratio: float | None) ->
 
 
 # ----------------------------------------------------------------------------- eval gates
-def check_eval(*, eval_json: Path, required_metrics: list[str] | None = None) -> GateReport:
+def check_eval(
+    *,
+    eval_json: Path,
+    required_metrics: list[str] | None = None,
+    profile: str | None = None,
+) -> GateReport:
     report = GateReport()
     results = _load(eval_json)
     if results is None:
@@ -226,6 +251,73 @@ def check_eval(*, eval_json: Path, required_metrics: list[str] | None = None) ->
     for metric in required_metrics or []:
         hits = {k: v for k, v in numeric.items() if k.endswith(metric)}
         report.add(f"eval.{metric}", bool(hits) and all(_finite(v) for v in hits.values()), json.dumps({k: round(v, 4) for k, v in list(hits.items())[:3]}))
+    if profile in {"e1", "e2"}:
+        benchmarks = results.get("benchmarks", {})
+        for key, metrics in E1_E2_BENCHMARKS.items():
+            record = benchmarks.get(key, {}) if isinstance(benchmarks, dict) else {}
+            decoded = record.get("decoded_metrics") if isinstance(record, dict) else None
+            report.add(
+                f"eval.{key}.coverage",
+                isinstance(decoded, dict) and _finite(record.get("samples")) and float(record["samples"]) > 0
+                and record.get("samples") == record.get("source_samples")
+                and record.get("split") == "val",
+                f"samples={record.get('samples')} source_samples={record.get('source_samples')} split={record.get('split')}"
+                if isinstance(record, dict) else "invalid record",
+            )
+            for metric in metrics:
+                value = decoded.get(metric) if isinstance(decoded, dict) else None
+                report.add(f"eval.{key}.{metric}", _finite(value), str(value))
+    return report
+
+
+def check_generation(*, eval_json: Path, reference_dir: Path) -> GateReport:
+    report = GateReport()
+    spec = _load(reference_dir / "reference_config.json")
+    results = _load(eval_json)
+    if not isinstance(spec, dict):
+        report.add("generation.reference_present", False, str(reference_dir / "reference_config.json"))
+        return report
+    if not isinstance(results, dict):
+        report.add("generation.eval_present", False, str(eval_json))
+        return report
+    manifest = reference_dir / "metadata.jsonl"
+    rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.is_file() else []
+    prompts = [row.get("prompt") for row in rows if isinstance(row, dict)]
+    prompt_hash = hashlib.sha256(json.dumps(prompts, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    sample_count = spec.get("samples")
+    report.add(
+        "generation.reference_complete",
+        isinstance(sample_count, int) and sample_count > 0 and len(rows) == sample_count
+        and all(isinstance(row, dict) and isinstance(row.get("prompt"), str)
+                and isinstance(row.get("image"), str) and (reference_dir / "images" / row["image"]).is_file()
+                for row in rows)
+        and spec.get("prompts_sha256") == prompt_hash,
+        f"manifest={len(rows)} expected={sample_count}",
+    )
+    metadata = results.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    report.add(
+        "generation.reference_match",
+        isinstance(metadata, dict) and Path(str(metadata.get("dataset_root", ""))).resolve() == reference_dir.resolve()
+        and metadata.get("model_name") == spec.get("model_name")
+        and metadata.get("seed") == spec.get("seed")
+        and metadata.get("num_inference_steps") == spec.get("num_inference_steps")
+        and metadata.get("guidance_scale") == spec.get("guidance_scale")
+        and metadata.get("dtype") == spec.get("dtype"),
+        str(metadata.get("dataset_root")) if isinstance(metadata, dict) else "invalid metadata",
+    )
+    report.add(
+        "generation.all_samples_scored",
+        metadata.get("requested_samples") == sample_count
+        and metadata.get("successful_samples") == sample_count
+        and metadata.get("failed_samples") == 0,
+        f"requested={metadata.get('requested_samples')} successful={metadata.get('successful_samples')} failed={metadata.get('failed_samples')}",
+    )
+    metrics = results.get("metrics", {})
+    for key in ("FID_proxy", "diversity_score", "perceptual_similarity"):
+        value = metrics.get(key) if isinstance(metrics, dict) else None
+        report.add(f"generation.{key}", _finite(value), str(value))
     return report
 
 
@@ -246,7 +338,12 @@ def main() -> int:
     e = sub.add_parser("eval")
     e.add_argument("--eval-json", type=Path, required=True)
     e.add_argument("--require", default="", help="comma-separated metric suffixes that must be present and finite, e.g. AbsRel,cIoU")
-    for p in (d, r, e):
+    e.add_argument("--profile", choices=("e1", "e2"), default=None,
+                   help="require all E1/E2 paper benchmark datasets, val splits, sample counts, and headline metrics")
+    g = sub.add_parser("generation")
+    g.add_argument("--eval-json", type=Path, required=True)
+    g.add_argument("--reference-dir", type=Path, required=True)
+    for p in (d, r, e, g):
         p.add_argument("--json-out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -257,8 +354,10 @@ def main() -> int:
         )
     elif args.stage == "run":
         report = check_run(run_dir=args.run_dir, tasks=[t for t in args.tasks.split(",") if t], vision_ratio=args.vision_ratio)
+    elif args.stage == "generation":
+        report = check_generation(eval_json=args.eval_json, reference_dir=args.reference_dir)
     else:
-        report = check_eval(eval_json=args.eval_json, required_metrics=[m for m in args.require.split(",") if m])
+        report = check_eval(eval_json=args.eval_json, required_metrics=[m for m in args.require.split(",") if m], profile=args.profile)
     print(report.render())
     if args.json_out:
         args.json_out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")

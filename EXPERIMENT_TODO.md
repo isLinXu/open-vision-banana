@@ -37,7 +37,7 @@
 1. **推理协议固定**：`--num-inference-steps 50 --guidance-scale 4.0 --seed 42 --resolution 512 --native-resolution`。脚本默认 1 步是 smoke 设置，**不进结果表**。每个数字旁抄 `metadata.inference_protocol`；协议不同的数字不进同一张表。
 2. **零样本 manifest** 只用 `build_qwen_baseline_manifest.py --protocol strict`（默认）；`in_domain` 的 run 必须标注。
 3. **无 `GEMINI_API_KEY`** 时 T3（SA-Co cgF1 / IL_MCC）、T5（ReasonSeg gIoU）只报"诊断值"；仅正样本 pmF1 协议内。
-4. **生成保留**是对底座参照集的 FID / LPIPS / CLIP **代理**，报告写"generation proxy"，不写 App. D。
+4. **生成保留**先用 GenAI-Bench 提示词生成固定底座图像，再比较 RGB 特征距离、感知相似度和多样性；报告写 "generation proxy"，不写 App. D 或 CLIP 分数。
 5. `*_aligned` 深度指标是诊断值。
 6. 状态写 `训练 … / 结论 …`；差异小于 E1 噪声下限一律"无显著差异"。
 7. 论文 Table 1–7 是参照不是目标。
@@ -98,18 +98,18 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 **训练（E1.2）**——用 `scripts/run_e1_full.sh`：数据阶段在 CPU 节点 `--to merge`，GPU 节点 `RUN_DIR=... nohup bash scripts/run_e1_full.sh --from train`，第二块卡可 `--from eval --watch` 边训边评；脚本自动续训、无 key 时自动关 W&B
 - [ ] `--print-effective-config` 过目并存档（runner 首次启动自动打印）
 - [ ] 30k 步，`save_every` / `eval_every` 2500；loss 有限；`gates_run` 通过
-- [ ] 保留 5k / 10k / 15k / 20k / 25k / 30k 的 `_best`（E2 需要 10k 点；报告需要学习曲线）
+- [ ] 保留 5k / 10k / 15k / 20k / 25k / 30k 的在线 checkpoint（E2 需要 10k 点；报告需要学习曲线）及各次 `_best`
 - [ ] W&B 或 `train.log` 导出：总 loss、每任务 loss、lr——报告 Fig.「训练曲线」
 **评测（E1.3）**——协议：50 步（或 E0 决定）、CFG 4.0、seed 42、512 画布、native 打分
-- [ ] 5k / 15k / 30k `_best`：Cityscapes / NYU / iBims-1（若拿到）/ ETH3D / DIODE-Indoor / RefCOCOg / ReasonSeg / DIODE 法向 / NYU 法向（若拿到 DSINE 包）/ VKITTI 法向（深度推导）
+- [ ] 5k / 15k / 30k 在线 checkpoint：Cityscapes / NYU / iBims-1（若拿到）/ ETH3D / DIODE-Indoor / RefCOCOg / ReasonSeg / SA-Co / DIODE 法向 / NYU 法向（若拿到 DSINE 包）/ VKITTI 法向（深度推导）
 - [ ] 30k 再评 `--guidance-scale 0.0`（CFG 贡献）
 - [ ] 30k 再评 `--seed 43`（噪声下限的一半来源）
 - [ ] **解码失败率**：每个任务统计"解码器返回空 / 非法"的样本比例（评测 JSON 里有 `skipped_samples`）——Q4 的直接证据
 - [ ] 生成代理：底座参照集（GenAI-Bench prompt）→ checkpoint；ImgEdit-Bench 编辑侧同样两步
 - [ ] 有 Gemini：SA-Co Gold cgF1 / IL_MCC / pmF1、ReasonSeg 带改写；无则标"诊断"
 - [ ] **每任务保存 8 张"输入 / 预测 RGB / 解码结果 / GT"四联图**（固定样本 id，E-0 与 E2 用同一批）——报告 Fig. 2–6 的素材
-**内部成功标准**（不是论文数字；达不到是发现）：Cityscapes mIoU ≥ 0.30 @30k · NYU δ1 > 0.45 · RefCOCOg cIoU ≥ 0.35 · 生成 FID ≤ 1.3× 底座
-**产出**：主 checkpoint（30k `_best`）、全部评测 JSON、噪声下限、四联图、训练曲线。
+**内部成功标准**（不是论文数字；达不到是发现）：Cityscapes mIoU ≥ 0.30 @30k · NYU δ1 > 0.45 · RefCOCOg cIoU ≥ 0.35；生成代理记录相对底座漂移，不对零距离的底座自比值套用倍率。
+**产出**：30k 在线 checkpoint 用于跨步数/消融比较，另存 `_best` 作为按验证损失挑选的主 checkpoint；全部评测 JSON、噪声下限、四联图、训练曲线。
 **完成判据**：结果行带协议、噪声下限、E-0 并列，状态 `训练 done / 结论 done`。
 **进报告**：§5.1 主结果表、§5.2 学习曲线、§5.3 解码失败率、Fig. 2–6。
 
@@ -122,7 +122,7 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 - [ ] 画一张双轴图：横轴 `vision_ratio`，左轴视觉指标均值（归一化到 E1），右轴生成代理——报告 Fig.「权衡曲线」
 - [ ] 预设规则裁决（≥2/3 指标超噪声下限且无退步）
 **E2b 数据量**
-- [ ] `merge --cap 10000`（1/4）；同配置 10k 步；与 E1 @10k 比
+- [ ] 从 E1 最终清单按任务抽取 25% 视觉训练行，保持生成行与验证行不变；同配置 10k 步；与 E1 @10k 比
 - [ ] 若时间允许加 `--cap 2500`（1/16）一个点，三点成曲线
 **产出**：5+1（或 +2）行表、权衡曲线图。
 **完成判据**：结论尊重噪声下限。
