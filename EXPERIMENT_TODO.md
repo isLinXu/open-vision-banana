@@ -95,8 +95,8 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 - [ ] 全量第一档（60 Hypersim 场景、6 个 TartanAir v1 环境、8 OmniEdit 分片、ADE20K、COCO-Stuff、COCO+LVIS、RefCOCO/+）
 - [ ] prepare → `merge --cap 40000 --val-percent 2` → strict 审计 → `gates_data` 通过
 - [ ] 记录每任务 / 每来源的行数、图像数、许可（报告 §4 表；数据卡用）
-**训练（E1.2）**
-- [ ] `--print-effective-config` 过目并存档
+**训练（E1.2）**——用 `scripts/run_e1_full.sh`：数据阶段在 CPU 节点 `--to merge`，GPU 节点 `RUN_DIR=... nohup bash scripts/run_e1_full.sh --from train`，第二块卡可 `--from eval --watch` 边训边评；脚本自动续训、无 key 时自动关 W&B
+- [ ] `--print-effective-config` 过目并存档（runner 首次启动自动打印）
 - [ ] 30k 步，`save_every` / `eval_every` 2500；loss 有限；`gates_run` 通过
 - [ ] 保留 5k / 10k / 15k / 20k / 25k / 30k 的 `_best`（E2 需要 10k 点；报告需要学习曲线）
 - [ ] W&B 或 `train.log` 导出：总 loss、每任务 loss、lr——报告 Fig.「训练曲线」
@@ -114,6 +114,7 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 **进报告**：§5.1 主结果表、§5.2 学习曲线、§5.3 解码失败率、Fig. 2–6。
 
 ### E2 + E2b 消融 —— 5 × 10k 步 ｜ [#53](https://github.com/isLinXu/open-vision-banana/issues/53)
+一键：`E1_RUN_DIR=<e1 run> nohup bash scripts/run_e2_ablations.sh > output/e2.nohup.log 2>&1 &`（五个 run 串在一个 GPU 任务里，自动续训、逐个过闸门、含生成代理；`--only` / `RUNS` 选子集）
 **目的**：Q3（混合比例）、Q2（数据量）。
 **E2 `vision_ratio`**
 - [ ] 0.2 × seed {42, 43}；0.8 × seed {42, 43}；E1 @10k 为 0.5 点
@@ -127,7 +128,7 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 **完成判据**：结论尊重噪声下限。
 **进报告**：§5.6 消融。
 
-### E3 附录 A 解码器 2×2 —— 仅评估 ｜ [#54](https://github.com/isLinXu/open-vision-banana/issues/54)
+### E3 附录 A 解码器 2×2 —— 仅评估 ｜ [#54](https://github.com/isLinXu/open-vision-banana/issues/54)（前置 #81：预测缓存 + COCO val 回退构建器）
 **目的**：Q4——论文留下的两处读法（Eq.3 seed 规则 × Eq.6 面积口径）对指标的影响。
 - [ ] 实例预测只生成一次并缓存；四种解码跑缓存 RGB
 - [ ] pmF1（有 Gemini 加 cgF1）四格；默认格 = E1 报的数
@@ -156,7 +157,7 @@ INFER_STEPS=20 bash scripts/run_e0_smoke.sh --from eval      # 步数敏感度
 **完成判据**：每张图有固定 seed、prompt、checkpoint 记录，可一键重生成。
 **进报告**：§5.9 定性结果、§6 失败分析、全部 Figure。
 
-### E6 鲁棒性与跨任务迁移 —— 仅评估，≈1 GPU 天 ｜ [#59](https://github.com/isLinXu/open-vision-banana/issues/59)
+### E6 鲁棒性与跨任务迁移 —— 仅评估，≈1 GPU 天 ｜ [#59](https://github.com/isLinXu/open-vision-banana/issues/59)（前置 #82：评测期 prompt 风格 / 图例换色参数）
 **目的**：论文 §3.1 末段"cross-task transfer"与 Fig. 2 "various prompting styles" 的量化版本；检验训练期增强真的起作用。
 - [ ] **prompt 风格鲁棒性**：Cityscapes val 用 `json_tuple` / `json_named` / `natural` / `hex` 四种 prompt 各评一次（同一图例）；四个 mIoU 的离散度 = 风格鲁棒性
 - [ ] **颜色重映射鲁棒性**：Cityscapes 换三套随机图例颜色各评一次；mIoU 不随颜色变 = 模型读 prompt 而非背调色板（这是 SANA 时代失败的核心症状）
