@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +19,7 @@ scipy_io = pytest.importorskip("scipy.io")
 from open_vision_banana.data.datasets import NYUDepthDataset  # noqa: E402
 from open_vision_banana.data.generation import build_generation_dataset  # noqa: E402
 from open_vision_banana.data.paper_eval_datasets import GenAIBenchDataset  # noqa: E402
-from scripts.convert_eval_sets import convert_genai_bench, convert_nyu_mat  # noqa: E402
+from scripts.convert_eval_sets import convert_genai_bench, convert_nyu_mat, main  # noqa: E402
 
 
 def test_nyu_mat_to_eigen_split_layout_loads_in_the_eval_dataset(tmp_path: Path):
@@ -121,3 +122,16 @@ def test_genai_bench_reference_model_writes_the_proxy_reference_images(tmp_path:
 
     with pytest.raises(ValueError, match="no image column 'SDXL_Turbo'"):
         convert_genai_bench(shards, tmp_path / "gb2", reference_model="SDXL_Turbo")
+
+
+def test_genai_bench_cli_passes_the_reference_model(tmp_path: Path, monkeypatch):
+    shards = tmp_path / "data"
+    shards.mkdir()
+    png = io.BytesIO()
+    Image.new("RGB", (4, 4)).save(png, format="PNG")
+    rows = [{"Prompt": "a black square", "DALLE_3": {"bytes": png.getvalue(), "path": "0.png"}}]
+    pq.write_table(pa.Table.from_pylist(rows), shards / "train-00000-of-00001.parquet")
+    argv = ["convert_eval_sets.py", "genai-bench", "--parquet", str(shards), "--out", str(tmp_path / "gb")]
+    monkeypatch.setattr(sys, "argv", [*argv, "--reference-model", "DALLE_3"])
+    assert main() == 0
+    assert (tmp_path / "gb" / "images" / "genai_00000.png").is_file()
