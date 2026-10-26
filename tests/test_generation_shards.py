@@ -46,6 +46,12 @@ def with_lpips(request, monkeypatch):
     return request.param
 
 
+@pytest.fixture
+def no_lpips(monkeypatch):
+    """Pixel-MSE path whether or not the ``lpips`` package is installed."""
+    monkeypatch.setattr(gp, "_lpips_available", lambda: False)
+
+
 def test_shard_states_merge_to_the_unsharded_metrics(with_lpips):
     gen = torch.Generator().manual_seed(0)
     real, fake = torch.rand(7, 3, 16, 16, generator=gen), torch.rand(7, 3, 16, 16, generator=gen)
@@ -65,7 +71,7 @@ def test_shard_states_merge_to_the_unsharded_metrics(with_lpips):
     _assert_same_metrics(merge_generation_shard_states(states), whole)
 
 
-def test_shard_state_resizes_generated_images_like_the_unsharded_run():
+def test_shard_state_resizes_generated_images_like_the_unsharded_run(no_lpips):
     real, fake = torch.rand(2, 3, 8, 8), torch.rand(2, 3, 16, 16)
     state = generation_shard_state(real, fake, extract_rgb_features)
     resized = torch.nn.functional.interpolate(
@@ -74,7 +80,7 @@ def test_shard_state_resizes_generated_images_like_the_unsharded_run():
     assert torch.allclose(state["mse"], (resized - real).pow(2).flatten(1).mean(dim=1))
 
 
-def test_merge_rejects_empty_or_inconsistent_states():
+def test_merge_rejects_empty_or_inconsistent_states(no_lpips):
     with pytest.raises(ValueError, match="no generation shard states"):
         merge_generation_shard_states([])
     state = generation_shard_state(
@@ -268,7 +274,7 @@ def _generation_shard(index: int, blocks: list[tuple[int, int]], **metadata) -> 
     }
 
 
-def test_merge_generation_shards_checks_the_set_of_shards():
+def test_merge_generation_shards_checks_the_set_of_shards(no_lpips):
     blocks = [(0, 2), (2, 4), (4, 5)]
     states = [
         generation_shard_state(
