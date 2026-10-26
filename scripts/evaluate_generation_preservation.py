@@ -14,6 +14,13 @@ Example (requires local model weights and a local generation dataset)::
         --dataset-root data/vb_generation_5k \
         --output-json reports/generation_health.json \
         --max-samples 32
+
+Sharded over N GPUs (shard K writes ``gen.shardK.json`` and its ``gen.shardK.state.pt``), then
+merged into the report of one unsharded run::
+
+    for k in 0 1 2 3 4 5 6 7; do CUDA_VISIBLE_DEVICES=$k python scripts/evaluate_generation_preservation.py \
+        ... --num-shards 8 --shard-index $k --output-json out/gen.shard$k.json & done; wait
+    python scripts/merge_eval_shards.py out/gen.shard*.json --output-json out/gen.json
 """
 
 from __future__ import annotations
@@ -38,10 +45,13 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from open_vision_banana.data import build_generation_dataset  # noqa: E402
 from open_vision_banana.data.manifest import fingerprint_records  # noqa: E402
 from open_vision_banana.evaluation.generation_preservation import (  # noqa: E402
-    evaluate_generation_preservation,
     extract_inception_features,
     extract_rgb_features,
+    generation_metrics,
+    generation_shard_state,
 )
+from open_vision_banana.evaluation.results_io import sidecar, write_results  # noqa: E402
+from open_vision_banana.evaluation.shards import shard_range  # noqa: E402
 from open_vision_banana.inference.generator import BaseGenerator  # noqa: E402
 
 logger = logging.getLogger("generation_preservation")
@@ -73,6 +83,17 @@ def parse_args() -> argparse.Namespace:
         default="rgb_proxy",
         help="rgb_proxy is offline and deterministic; inception requires torchvision weights.",
     )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help=(
+            "Generate one contiguous block of the samples (with --shard-index) and store its "
+            "per-image features and distances; scripts/merge_eval_shards.py recomputes the metrics "
+            "of the whole set. Per-sample seeds stay those of the unsharded run."
+        ),
+    )
+    parser.add_argument("--shard-index", type=int, default=0)
     return parser.parse_args()
 
 
@@ -126,16 +147,6 @@ def dataset_fingerprint(dataset: Any) -> str:
     return fingerprint_records(records, root)
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
-        return None
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_safe(item) for item in value]
-    return value
-
-
 def _write_failure(handle, *, index: int, prompt: str, exc: Exception, elapsed_ms: float) -> None:
     record = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -153,6 +164,8 @@ def main() -> int:
     args = parse_args()
     if args.batch_size < 1 or args.num_inference_steps < 1:
         raise SystemExit("--batch-size and --num-inference-steps must be positive")
+    if args.num_shards < 1 or not 0 <= args.shard_index < args.num_shards:
+        raise SystemExit(f"--shard-index must be in [0, --num-shards={args.num_shards})")
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
 
@@ -163,7 +176,17 @@ def main() -> int:
     )
     if not len(dataset):
         raise SystemExit(f"No generation samples found under {args.dataset_root}")
-    selected = dataset if args.max_samples is None else Subset(dataset, range(min(args.max_samples, len(dataset))))
+    total = len(dataset) if args.max_samples is None else min(args.max_samples, len(dataset))
+    # more shards than batches leaves some blocks empty; they still write a (stateless) shard
+    block = shard_range(total, args.num_shards, args.shard_index, args.batch_size)
+    shard = {
+        "index": args.shard_index,
+        "count": args.num_shards,
+        "start": block.start,
+        "stop": block.stop,
+        "of_samples": total,
+    }
+    selected = Subset(dataset, block)
     loader = DataLoader(
         selected,
         batch_size=args.batch_size,
@@ -172,13 +195,15 @@ def main() -> int:
     )
 
     runtime_dtype = resolve_runtime_dtype(args.dtype, device)
-    model = BaseGenerator(
-        model_name=args.model_name,
-        lora_path=args.lora_path,
-        device=device,
-        dtype=runtime_dtype,
-    )
-    failure_path = args.failure_jsonl or args.output_json.with_suffix(".failures.jsonl")
+    model = None
+    if block:  # an empty block generates nothing, so it does not load the model
+        model = BaseGenerator(
+            model_name=args.model_name,
+            lora_path=args.lora_path,
+            device=device,
+            dtype=runtime_dtype,
+        )
+    failure_path = args.failure_jsonl or sidecar(args.output_json, ".failures.jsonl")
     failure_path.parent.mkdir(parents=True, exist_ok=True)
     real_images: list[torch.Tensor] = []
     generated_images: list[torch.Tensor] = []
@@ -186,7 +211,7 @@ def main() -> int:
     started = time.perf_counter()
 
     with failure_path.open("w", encoding="utf-8") as failure_handle:
-        sample_index = 0
+        sample_index = block.start  # a shard keeps the seeds of the unsharded run
         for batch in loader:
             prompts = batch["prompt"]
             target_rgb = batch["target_rgb"].float()
@@ -226,22 +251,27 @@ def main() -> int:
             f"See {failure_path} or pass --allow-failures for a non-gating proxy."
         )
 
-    if not generated_images:
+    if not generated_images and args.num_shards == 1:
         raise RuntimeError(f"All {failures} generation samples failed; see {failure_path}")
 
-    real_rgb = torch.cat(real_images)
-    gen_rgb = torch.cat(generated_images)
     if args.feature_backend == "rgb_proxy":
         feature_extractor = extract_rgb_features
     else:
         feature_extractor = extract_inception_features
-    metrics = evaluate_generation_preservation(
-        real_rgb=real_rgb,
-        gen_rgb=gen_rgb,
-        pred_rgb=gen_rgb,
-        target_rgb=real_rgb,
-        feature_extractor=feature_extractor,
-    )
+    # sharded or not, the metrics come from the per-image state, so shards merge exactly; a shard
+    # that generated nothing (empty block, or every sample failed under --allow-failures) has None
+    state = None
+    if generated_images:
+        state = generation_shard_state(
+            torch.cat(real_images), torch.cat(generated_images), feature_extractor
+        )
+    if args.num_shards > 1:
+        state_path = sidecar(args.output_json, ".state.pt")
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(state, state_path)
+        result: dict[str, Any] = {"shard_state": state_path.name}
+    else:
+        result = {"metrics": generation_metrics([state])}
     elapsed = time.perf_counter() - started
     report = {
         "metadata": {
@@ -265,11 +295,11 @@ def main() -> int:
             "elapsed_seconds": elapsed,
             "python": platform.python_version(),
             "torch": torch.__version__,
+            **({"shard": shard} if args.num_shards > 1 else {}),
         },
-        "metrics": _json_safe(metrics),
+        **result,
     }
-    args.output_json.parent.mkdir(parents=True, exist_ok=True)
-    args.output_json.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
+    write_results(args.output_json, report)
     logger.info("generation health report written to %s", args.output_json)
     return 0
 

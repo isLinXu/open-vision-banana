@@ -7,7 +7,8 @@ all N blocks and recomputes the metrics: those of a single run over the set, up 
 which the float sums are added.
 
 Depth, semantic and referring accumulators are sums. Normal (per-pixel angle lists for the
-median), instance and generation jobs are not shardable.
+median), instance and generation jobs are not shardable. ``evaluate_generation_preservation.py``
+shards through per-image states instead (``generation_preservation.generation_shard_state``).
 """
 
 from __future__ import annotations
