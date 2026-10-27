@@ -79,7 +79,7 @@ def validate(manifest: Path, output: Path, release: Path, *, workers: int = 16) 
         "scope": "Full supplement loading/collation and augmentation; CPU, no model or accuracy evaluation",
     }
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
     return report
 
 

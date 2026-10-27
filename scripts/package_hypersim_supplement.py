@@ -96,7 +96,9 @@ def validate_native(root: Path, workers: int = 8) -> dict:
     if len({a["path"] for a in inventory}) != len(inventory):
         raise ValueError("Repeated asset paths")
     (root / "assets.jsonl").write_text(
-        "".join(json.dumps(a, sort_keys=True) + "\n" for a in inventory), encoding="utf-8"
+        "".join(json.dumps(a, sort_keys=True) + "\n" for a in inventory),
+        encoding="utf-8",
+        newline="\n",
     )
     names = [
         "pairs.jsonl",

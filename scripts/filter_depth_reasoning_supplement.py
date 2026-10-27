@@ -40,7 +40,9 @@ def filter_depth(source: Path, output: Path, *, expected_initial_count: int = 20
     if not kept:
         raise ValueError("No depth frames pass the maximum-error gate")
     output.mkdir(parents=True, exist_ok=True)
-    (output / "BUILD_INCOMPLETE").write_text("Filtering and verifying native depth assets\n")
+    (output / "BUILD_INCOMPLETE").write_text(
+        "Filtering and verifying native depth assets\n", encoding="utf-8", newline="\n"
+    )
     for record in kept:
         for asset in record["assets"]:
             src, dst = source / asset["path"], output / asset["path"]
@@ -72,6 +74,7 @@ def filter_depth(source: Path, output: Path, *, expected_initial_count: int = 20
         (output / name).write_text(
             "".join(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n" for r in entries),
             encoding="utf-8",
+            newline="\n",
         )
     policy = dict(original["quality_policy"], maximum_frame_encoded_max_abs_error_m=0.05)
     selection = dict(
@@ -139,7 +142,9 @@ def filter_depth(source: Path, output: Path, *, expected_initial_count: int = 20
         json.dumps(
             {"schema_version": 1, "count": len(rows), "scenes": scenes}, separators=(",", ":")
         )
-        + "\n"
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     (output / "BUILD_INCOMPLETE").unlink()
     return report
@@ -186,7 +191,9 @@ def filter_referring(
     write_json(output, report)
     ledger.parent.mkdir(parents=True, exist_ok=True)
     ledger.write_text(
-        "".join(json.dumps(r, sort_keys=True) + "\n" for r in details), encoding="utf-8"
+        "".join(json.dumps(r, sort_keys=True) + "\n" for r in details),
+        encoding="utf-8",
+        newline="\n",
     )
     return report
 

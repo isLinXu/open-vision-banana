@@ -140,7 +140,9 @@ def build(
     if spec_path.exists() and json.loads(spec_path.read_text()) != spec:
         raise ValueError("Selection specification changed; use a new output directory")
     incomplete = output / "BUILD_INCOMPLETE"
-    incomplete.write_text("Preparing or verifying Hypersim assets\n", encoding="utf-8")
+    incomplete.write_text(
+        "Preparing or verifying Hypersim assets\n", encoding="utf-8", newline="\n"
+    )
     metadata_path.write_bytes(content)
     write_json(spec_path, spec)
     quality_policy = {
@@ -241,6 +243,7 @@ def build(
         (output / name).write_text(
             "".join(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n" for r in values),
             encoding="utf-8",
+            newline="\n",
         )
     report = {
         "schema_version": 2,

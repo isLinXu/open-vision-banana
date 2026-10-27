@@ -179,6 +179,8 @@ def test_build_tops_up_quality_and_duplicate_rejections(tmp_path, monkeypatch):
     output = tmp_path / "prepared"
     report = builder.build(output, count=2, workers=1, metadata=meta)
     assert report["pairs_written"] == 2 and report["rejected_frames"] == 2
+    for name in ("pairs.jsonl", "manifest.json", "provenance.jsonl", "rejected.jsonl"):
+        assert b"\r\n" not in (output / name).read_bytes()
     assert len(report["source_fingerprint"]) == 64
     assert report["data_contract"]["encoded_roundtrip_abs_error"]["mean"] < 0.01
     assert not (output / "BUILD_INCOMPLETE").exists()

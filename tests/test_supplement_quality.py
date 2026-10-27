@@ -136,6 +136,8 @@ def test_depth_filter_removes_a_large_pixel_error_hidden_by_the_mean(tmp_path):
     )
     report = filter_depth(source, output, expected_initial_count=2)
     assert report["pairs_written"] == 1 and report["pre_filter"]["removed_max_error"] == 1
+    for name in ("pairs.jsonl", "manifest.json", "provenance.jsonl", "selected_frames.json"):
+        assert b"\r\n" not in (output / name).read_bytes()
     assert report["data_contract"]["encoded_roundtrip_abs_error"]["max"] <= 0.05
     assert not (output / records[1]["row"]["input"]).exists()
     assert (source / records[1]["row"]["input"]).is_file()

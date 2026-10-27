@@ -174,7 +174,9 @@ def merge(
                         )
                 rebased.append(row)
             filtered_path.write_text(
-                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rebased), encoding="utf-8"
+                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rebased),
+                encoding="utf-8",
+                newline="\n",
             )
             inputs.append(filtered_path)
         staged = Path(temp) / "pairs.jsonl"
@@ -226,7 +228,9 @@ def merge(
                 heldout.append(row)
             merged = [r for r in merged if r["split"] == "train"] + heldout
         output.write_text(
-            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in merged), encoding="utf-8"
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in merged),
+            encoding="utf-8",
+            newline="\n",
         )
     report = {
         "status": "prepared",
