@@ -1,0 +1,56 @@
+:root{--bg:#fbfaf6;--fg:#1d1d1f;--muted:#5c5c66;--accent:#d9a400;--accent2:#2b6cb0;--line:#e6e2d6;--card:#fff;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--fg);background:var(--bg)}
+a{color:var(--accent2);text-decoration:none}a:hover{text-decoration:underline}
+code,pre{font-family:var(--mono);font-size:.9em}
+pre{background:#14161a;color:#e8e8e8;padding:16px 18px;border-radius:10px;overflow-x:auto}
+pre code{color:inherit}
+.topnav{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:10px 24px;background:rgba(251,250,246,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.topnav .brand{font-weight:700;color:var(--fg)}
+.topnav .links a{margin-left:16px;color:var(--muted);font-size:.95em}
+.hero{text-align:center;padding:72px 24px 40px;max-width:900px;margin:0 auto}
+.hero .kicker{text-transform:uppercase;letter-spacing:.12em;font-size:.78em;color:var(--accent);font-weight:700;margin:0}
+.hero h1{font-size:3rem;margin:.2em 0 .3em}
+.hero .sub{font-size:1.2em;color:var(--muted)}
+.cta{margin:22px 0 14px;display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.btn{display:inline-block;padding:10px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-weight:600}
+.btn.primary{background:var(--fg);color:#fff;border-color:var(--fg)}
+.btn:hover{text-decoration:none;transform:translateY(-1px)}
+.disclaimer{font-size:.85em;color:var(--muted);max-width:760px;margin:10px auto 0;border-left:3px solid var(--accent);padding-left:12px;text-align:left}
+main{max-width:1100px;margin:0 auto;padding:0 24px 60px}
+section{padding:48px 0;border-top:1px solid var(--line)}
+h2{font-size:1.9rem;margin:0 0 18px}h3{margin:.4em 0 .5em}
+.note{color:var(--muted);font-size:.95em}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}
+.card .ico{font-size:1.6rem}
+.card p{color:var(--muted);margin:0}
+figure.wide{margin:28px 0 0}figure.wide img{width:100%;border-radius:12px;border:1px solid var(--line);background:#fff}
+figcaption{color:var(--muted);font-size:.9em;margin-top:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}.topnav .links{display:none}.hero h1{font-size:2.2rem}}
+ul.tight li{margin-bottom:8px}
+table{border-collapse:collapse;width:100%;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:.93em}
+th{background:#f3f0e6;font-weight:600}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+table.kv td:first-child{width:28%;color:var(--muted)}
+tr.ours td{background:#fff8dc}tr.base td{color:var(--muted)}
+.diag{color:#9a6700;font-size:.85em}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:16px 0}
+.stats div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+.stats .num{display:block;font-size:2rem;font-weight:700}.stats .lbl{color:var(--muted);font-size:.85em}
+.protocol{margin-top:14px;padding:12px 14px;border-radius:10px;background:#f3f0e6;font-size:.9em;color:var(--muted)}
+/* gallery */
+.task-block{margin:28px 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tile .img{position:relative;aspect-ratio:1/1;background:#eee;cursor:pointer}
+.tile .img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .25s}
+.tile .img img.pred{opacity:0}
+.tile .img:hover img.pred,.tile .img.show img.pred{opacity:1}
+.tile .img .tag{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6);color:#fff;font-size:.72em;padding:2px 8px;border-radius:999px}
+.tile .meta{padding:10px 12px;font-size:.84em;color:var(--muted)}
+.tile .meta b{color:var(--fg)}
+.placeholder{display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:.9em;text-align:center;padding:12px}
+footer{text-align:center;color:var(--muted);padding:24px;border-top:1px solid var(--line);font-size:.9em}
