@@ -3,7 +3,7 @@
   "release_id": "main-depth-reasoning-v1",
   "date": "2026-10-28",
   "base_git_revision": "410febb0995194a82abb9985ea42f282faeb2f45",
-  "status": "uploading_private",
+  "status": "published",
   "hypersim": {
     "rows": 13267,
     "manifest_sha256": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
@@ -337,17 +337,88 @@
       "full_windows_failed": 32,
       "full_windows_skipped": 20,
       "full_windows_failure_ids_equal_base": true,
-      "global_coverage_percent": 71.15,
+      "global_coverage_percent": 71.14,
       "changed_file_lint_format": "passed",
-      "precommit": "All applicable hooks pass except 33 existing errors in imported modules under mypy"
+      "precommit": "All applicable hooks pass except 33 existing errors in imported modules under mypy",
+      "linux_full_passed": 1725,
+      "linux_full_failed": 4,
+      "linux_full_skipped": 35,
+      "failure_ids_equal_base": true,
+      "failure_ids": [
+        "FAILED tests/test_generation_shards.py::test_empty_and_wholly_failed_shards_still_merge",
+        "FAILED tests/test_generation_shards.py::test_merge_cli_rejects_wrong_inputs",
+        "FAILED tests/test_generation_shards.py::test_sharded_runs_merge_into_the_unsharded_report[lpips]",
+        "FAILED tests/test_generation_shards.py::test_sharded_runs_merge_into_the_unsharded_report[mse]"
+      ],
+      "baseline_summary": "===== 4 failed, 1705 passed, 35 skipped, 509 warnings in 76.57s (0:01:16) ======",
+      "lf_portability_regression": "passed on Windows and Linux"
     },
     "main_training_ready": false,
-    "main_training_gate_reason": "The increment has no validation split or original normal/semantic/instance/generation rows; 12 split gates intentionally fail until an audited actual main base is joined"
+    "main_training_gate_reason": "The increment has no validation split or original normal/semantic/instance/generation rows; 12 split gates intentionally fail until an audited actual main base is joined",
+    "linux_environment": {
+      "torch": "2.14.1+cpu",
+      "numpy": "2.2.6",
+      "pillow": "12.3.0",
+      "h5py": "3.16.0",
+      "pycocotools": "2.0.11",
+      "diffusers": "0.41.0",
+      "transformers": "5.20.2",
+      "peft": "0.21.2",
+      "wandb": "0.31.0"
+    },
+    "github_actions": {
+      "status": "not_started_account_billing_limit",
+      "evidence": "https://github.com/isLinXu/open-vision-banana/actions/runs/40560961309/job/122389515118",
+      "head_revision": "d8de47f155d082160b1c8311db34262760827f99"
+    },
+    "hub_payloads": {
+      "status": "passed",
+      "revision": "f10df98aae80e5299f4ffb1402dabf8bc798e517",
+      "shards": 88,
+      "metadata_files": 23,
+      "payload_files": 97,
+      "payload_bytes": 39393834841,
+      "shard_hash_size_verification": "Hub LFS SHA256 and size match the independently verified source bundle",
+      "metadata_verification": "Every metadata file downloaded and SHA256 checked",
+      "first_shard_full_hub_download_verified": true
+    },
+    "multipart_transfer": {
+      "shards": 88,
+      "parts": 2495,
+      "bytes": 39349762374,
+      "status": "all_completed",
+      "part_etag_md5_verification": true,
+      "full_source_sha256_checked_before_upload": true,
+      "long_lived_hub_token_on_server": false
+    },
+    "hub_release": {
+      "status": "passed",
+      "revision": "9f56e9c8d6a05f4e9a512cdc9de5231bbda0628b",
+      "shards": 88,
+      "metadata_files": 23,
+      "payload_files": 97,
+      "payload_bytes": 39393834841,
+      "shard_hash_size_verification": "Hub LFS SHA256 and size match the independently verified source bundle",
+      "metadata_verification": "Every metadata file downloaded and SHA256 checked",
+      "first_shard_full_hub_download_verified": true
+    }
   },
   "publication": {
     "repo_id": "Melo111/open-vision-banana-depth",
-    "visibility": "private_staging",
+    "visibility": "public",
     "transfer": "Server uploads scoped multipart URLs; local authentication, completion, commits and public release",
-    "long_lived_hub_token_on_server": false
+    "long_lived_hub_token_on_server": false,
+    "code_revision": "82e443c219a6050db6deee01641206d3df72f500",
+    "artifact_paths": {
+      "depth_bundle": "hypersim-filtered-v1/bundle.json",
+      "initial_frame_index": "hypersim_initial20k.frames.json",
+      "retained_frame_index": "hypersim_filtered_v1.frames.json",
+      "referring_filter": "reasoning_crop_filter_v1.json",
+      "referring_ledger": "review/reasoning_crop_filter_ledger.jsonl"
+    },
+    "bundle_sha256": "7088a165cd911e2f8a4ffb460f1b5137dab1229b13a9933b37c881a6746b3b5e",
+    "revision_record": "https://github.com/isLinXu/open-vision-banana/blob/codex/hypersim20k-reasoning-main/docs/main_depth_reasoning_release.json",
+    "revision": "9f56e9c8d6a05f4e9a512cdc9de5231bbda0628b",
+    "anonymous_access": "passed"
   }
 }

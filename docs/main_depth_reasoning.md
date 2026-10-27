@@ -133,7 +133,9 @@ Install `pip install -e '.[data,training]'`. The
 [published depth repository](https://huggingface.co/datasets/Melo111/open-vision-banana-depth)
 uses the existing verified bundle downloader; allow approximately 90 GB for its
 compressed bundle and restored depth assets, plus the reasoning sources.
-Use the immutable Hub revision in the release record:
+Published Hub revision: [`9f56e9c8d6a05f4e9a512cdc9de5231bbda0628b`](https://huggingface.co/datasets/Melo111/open-vision-banana-depth/tree/9f56e9c8d6a05f4e9a512cdc9de5231bbda0628b).
+The full bundle and publication metadata were verified before anonymous access
+was enabled. Use this immutable revision from the release record:
 
 ```bash
 DEPTH_REV="$(python -c "import json; print(json.load(open('docs/main_depth_reasoning_release.json'))['publication']['revision'])")
@@ -247,6 +249,21 @@ processed all **29,383 rows** with the configured 512px augmentations: zero empt
 referring targets and zero nonfinite tensors. The referring crop audit also
 exhaustively covers every permitted crop, beyond that single seeded loader pass.
 Six retained depth examples were visually inspected for RGB/geometry alignment.
+
+The 35 focused regression tests pass on Linux and Windows. The complete Linux
+suite has 1,725 passes and four failures, matching the four failures on the
+unmodified base (1,705 passes). Those failures are in the existing generation
+shard test double's `guidance_scale` interface. Windows has 1,712 passes and the
+same 32 failures as its base comparison, including platform/dependency limits.
+Changed-file lint/format and generic pre-commit hooks pass; mypy still reports
+33 errors in existing imported modules. Global Windows coverage is 71.14%, below
+the repository's 80% gate; focused affected-source coverage is 86.60%. These
+results do not claim that whole-repository CI is green.
+
+GitHub Actions did not start for the initial PR commit because of the repository
+account's billing/spending limit, as recorded in the
+[runner annotation](https://github.com/isLinXu/open-vision-banana/actions/runs/40560961309/job/122389515118).
+The local and server validation above is the available execution evidence.
 
 The increment-only main gate reports **9 passing checks and 12 split failures**:
 the original four other tasks and held-out splits must come from the audited
