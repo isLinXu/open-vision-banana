@@ -311,12 +311,24 @@ Default (paper-aligned) = `pixel_only` + `bbox`. **Known gaps** (tracked): the s
 
 ## E4 — Continue E1 on re-cleaned data (when new data arrives)
 
+The concrete depth/reasoning extension is specified in
+[Main six-task depth + reasoning](docs/main_depth_reasoning.md): prepare 20,000
+scene-disjoint Hypersim depth rows and combine the published Rea2Seg 15,275 +
+LLM-Seg COCO 5,000 rows, then filter maximum depth error and every possible
+512px referring crop. The retained increment is **29,383 rows**: 13,267 depth,
+11,812 Rea2Seg and 4,304 LLM-Seg. It keeps E1's six tasks and `vision_ratio=0.5`, with
+an initial 10k-step, 3e-5 weights-only continuation. The data release and config
+do not claim a new trained result; use its pinned merge/audit procedure first.
+
 ```bash
-PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_paper_aligned.yaml \
-  --pair-manifest data/qwen_baseline_v2/pairs.jsonl --data-dir data/qwen_baseline_v2 \
-  --resume "$RUN/checkpoint-30000_best" --resume-weights-only --steps 15000 --output-dir output/e4_...
+PYTHONPATH=src python scripts/train.py --config configs/experiments/qwen_image_21_main_depth_reasoning.yaml \
+  --pair-manifest data/qwen_main_depth_reasoning/pairs.jsonl --data-dir data/qwen_main_depth_reasoning \
+  --resume "$E1_ONLINE_CHECKPOINT" --resume-weights-only --output-dir output/e4_...
 ```
 Weights only: fresh AdamW / warmup / step counter; LoRA rank and targets must match the source checkpoint.
+Identify, hash and re-evaluate `E1_ONLINE_CHECKPOINT` before use. The loader reads
+the online adapter, including from a `_best` directory; it does not select EMA
+weights that may have produced a reported validation result.
 `best_val_loss` resets automatically because the manifest fingerprint changes.
 
 ---

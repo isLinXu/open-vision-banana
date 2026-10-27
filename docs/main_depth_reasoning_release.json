@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "release_id": "main-depth-reasoning-v1",
+  "date": "2026-10-28",
+  "base_git_revision": "410febb0995194a82abb9985ea42f282faeb2f45",
+  "status": "uploading_private",
+  "hypersim": {
+    "rows": 13267,
+    "manifest_sha256": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
+    "dataset_fingerprint": "3a7b061701a6be230fa5a4a5f6a51404bddcabc295127729bddfb7b709be3381",
+    "source_fingerprint": "3486f610163a5a159e55aeac156ad17ffffda0e28dce61bbb8bb4ddc2e174610",
+    "source_revision": "3463c5c4a75f3cbfc65ed31cfd6e87204b3a2254",
+    "unique_images": 13267,
+    "unique_scenes": 243,
+    "unique_cameras": 406,
+    "asset_bytes": 46761936860,
+    "selection": {
+      "schema_version": 1,
+      "count": 13267,
+      "metadata_url": "https://raw.githubusercontent.com/apple-aiml-research/ml-hypersim/3463c5c4a75f3cbfc65ed31cfd6e87204b3a2254/evermotion_dataset/analysis/metadata_images_split_scene_v1.csv",
+      "metadata_sha256": "47b7cce12f4659ffa31cf05e8fbf2aee3d69e1929d07b5ea25506603b69d5ce6",
+      "seed": 42,
+      "excluded_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "frame_stride": 2,
+      "split": "official_train",
+      "eligible_frames": 23682,
+      "selection_mode": "maximum_error_filtered_initial_20k",
+      "parent_manifest_sha256": "b5cf4eb2bf65e903e5f2e151766d505afc0ee74168a3fd737ff5d04dad5951a0"
+    },
+    "quality_policy": {
+      "minimum_valid_depth_fraction": 0.5,
+      "maximum_frame_encoded_mae_m": 0.05,
+      "maximum_release_encoded_mae_m": 0.01,
+      "duplicate_policy": "exact_decoded_rgb",
+      "maximum_frame_encoded_max_abs_error_m": 0.05
+    },
+    "data_contract": {
+      "valid_pixels": 10356244601,
+      "invalid_pixels": 77348743,
+      "depth_meters": {
+        "min": 0.02025650069117546,
+        "max": 46.97687530517578,
+        "mean": 4.350135632793255
+      },
+      "encoded_roundtrip_abs_error": {
+        "mean": 0.00455904276966329,
+        "max": 0.0499420166015625
+      }
+    },
+    "license": "cc-by-sa-3.0",
+    "rejected_frames": 8960,
+    "rejected_by_reason": {
+      "frame_encoded_mae_above_5cm": 2207,
+      "valid_depth_below_half": 19,
+      "duplicate_decoded_rgb": 1,
+      "frame_max_encoded_error_above_5cm": 6733
+    },
+    "e1_exclusion_evidence": {
+      "download_log": "https://huggingface.co/khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/resolve/f32ca2ebfb1bd81f9401efc3b4e89c2ba6b0dca7/logs/pipeline/dl_e1_node_b.log",
+      "sha256": "a25a3ca4e7fe7f460fdb1f405d1b11f5c7974eaf35bba10367293ce6fb989448",
+      "observed_scenes": [
+        "ai_001_001",
+        "ai_001_002",
+        "ai_001_003",
+        "ai_001_004",
+        "ai_001_005",
+        "ai_001_006",
+        "ai_002_001",
+        "ai_002_002",
+        "ai_002_003",
+        "ai_002_004",
+        "ai_002_005",
+        "ai_002_006",
+        "ai_003_001",
+        "ai_003_002",
+        "ai_003_004",
+        "ai_003_005",
+        "ai_003_006",
+        "ai_004_001",
+        "ai_004_002",
+        "ai_004_003",
+        "ai_004_004",
+        "ai_004_005",
+        "ai_004_006",
+        "ai_005_001",
+        "ai_005_003",
+        "ai_005_004",
+        "ai_005_005",
+        "ai_005_006",
+        "ai_006_001",
+        "ai_006_002",
+        "ai_006_003",
+        "ai_006_004",
+        "ai_006_006",
+        "ai_007_001",
+        "ai_007_002",
+        "ai_007_004",
+        "ai_007_005",
+        "ai_007_006",
+        "ai_008_001",
+        "ai_008_002",
+        "ai_008_003",
+        "ai_008_004",
+        "ai_008_005",
+        "ai_008_006",
+        "ai_009_001",
+        "ai_009_002",
+        "ai_009_003",
+        "ai_009_004",
+        "ai_009_005",
+        "ai_009_006",
+        "ai_010_001",
+        "ai_010_002",
+        "ai_010_003",
+        "ai_010_004",
+        "ai_010_005",
+        "ai_010_006"
+      ],
+      "policy": "Exclude all volumes 1-10, not just the observed scenes"
+    },
+    "provenance_sha256": "d24ca07b8bfec6480a480378f9a66e01a26569ccfbb6b5e0e3179b8cbabc1a3d",
+    "pre_filter": {
+      "rows": 20000,
+      "manifest_sha256": "b5cf4eb2bf65e903e5f2e151766d505afc0ee74168a3fd737ff5d04dad5951a0",
+      "source_fingerprint": "4f9473420bd41c832709ebc09dbd197d4827482775aca487505553b7d409c548",
+      "removed_max_error": 6733
+    },
+    "repo_id": "Melo111/open-vision-banana-depth",
+    "subfolder": "hypersim-filtered-v1",
+    "initial_frame_index": {
+      "path": "configs/datasets/hypersim_depth20k_v1.frames.json",
+      "sha256": "044474b1dfadaf59e716632896c4691723230d5940b6b4693c3ac45781b47201"
+    },
+    "retained_frame_index": {
+      "path": "configs/datasets/hypersim_filtered_v1.frames.json",
+      "sha256": "733fe2da946c191515b80fa9b2bebef68876d5b2fe07f4e778d0681e31ff6d0e"
+    },
+    "bundle": {
+      "format": "ovb_res_bundle_v1",
+      "encoding": "metric_power_cube_edge_v1",
+      "asset_files": 39801,
+      "payload_files": 97,
+      "gzip_shards": 88,
+      "payload_bytes": 39393834841,
+      "metadata_fingerprint": "be0abb7fe75ddcf7f03523b76a11126db863bf83c4d1029e5eae35329995899b",
+      "index_sha256": "7088a165cd911e2f8a4ffb460f1b5137dab1229b13a9933b37c881a6746b3b5e"
+    }
+  },
+  "rea2seg": {
+    "rows": 15275,
+    "manifest_sha256": "7a15bc5faa853f58b76006efbe465c8790a21c0420008ebd243231ae7edd1cd5",
+    "repo_id": "Melo111/open-vision-banana-res",
+    "revision": "e479f7013cc72ff355d60fdcbeb18b78e395bee5",
+    "subfolder": "supplements/reasoning-v1/rea2seg",
+    "retained_rows": 11812,
+    "excluded_rows": 3463,
+    "directly_unsafe_rows": 2342,
+    "retained_fingerprint": "f9d48e69f1b6ff920163ed064da4aea2209a37e2b29d6aaf45eff6d88f9bf6f2"
+  },
+  "llmseg": {
+    "rows": 5000,
+    "manifest_sha256": "acd9523e8a7e696a374ad8030c2e4be5927ad33e10d5be59d8dc0834de8da973",
+    "repo_id": "Melo111/open-vision-banana-res",
+    "revision": "e479f7013cc72ff355d60fdcbeb18b78e395bee5",
+    "subfolder": "supplements/reasoning-v1/llmseg-coco5k",
+    "retained_rows": 4304,
+    "excluded_rows": 696,
+    "directly_unsafe_rows": 667,
+    "retained_fingerprint": "8a6749994fc817898f78da15c2f1aae273ce355fc52ec3508e6a88bdfc4686e1"
+  },
+  "increment": {
+    "rows": 29383,
+    "depth": 13267,
+    "referring": 16116,
+    "split": "train",
+    "main_base_included": false,
+    "pre_filter_rows": 40275,
+    "quality_filtered_rows": 10892
+  },
+  "training_recommendation": {
+    "config": "configs/experiments/qwen_image_21_main_depth_reasoning.yaml",
+    "vision_ratio": 0.5,
+    "tasks": [
+      "depth",
+      "normal",
+      "semantic",
+      "instance",
+      "referring",
+      "generation"
+    ],
+    "global_batch": 32,
+    "initial_continuation_steps": 10000,
+    "learning_rate": 3e-05,
+    "training_executed": false,
+    "zero_shot_claim_allowed": false
+  },
+  "verification_scope": "Data and existing loader contracts; no new trained model or accuracy claim",
+  "referring_filter": {
+    "path": "configs/datasets/reasoning_crop_filter_v1.json",
+    "sha256": "07e48e6a9d79783f701537ecea9e1f743d87ac515436370d26388d1596e0f6e6",
+    "resolution": 512,
+    "policy": "Exclude whole images across sources if any target is empty for any allowed integer crop after the existing nearest-neighbour resize",
+    "excluded_unique_decoded_images": 2254
+  },
+  "quality_decision": {
+    "depth_max_pixel_error_m": 0.05,
+    "referring_all_possible_crops_nonempty": true,
+    "prefer_filtered_subset_over_topping_up": true
+  },
+  "validation": {
+    "native_depth": {
+      "status": "passed",
+      "validator": "hypersim_native_depth_v1",
+      "counts": {
+        "train": 13267
+      },
+      "dataset_fingerprint": "be0abb7fe75ddcf7f03523b76a11126db863bf83c4d1029e5eae35329995899b",
+      "assets_decoded": 39801,
+      "encoded_roundtrip_mae_m": 0.00455904276966329,
+      "unique_images": 13267
+    },
+    "loader": {
+      "status": "passed",
+      "rows": 29383,
+      "task_counts": {
+        "depth": 13267,
+        "referring": 16116
+      },
+      "resolution": 512,
+      "workers": 16,
+      "seed": 42,
+      "aspect_preserving_crop": true,
+      "depth_colormaps": [
+        "cube_edge",
+        "plasma",
+        "inferno",
+        "viridis",
+        "grayscale"
+      ],
+      "empty_referring_masks_after_configured_random_crop": 0,
+      "nonfinite_values": 0,
+      "input_range": [
+        -1,
+        1
+      ],
+      "target_range": [
+        0,
+        1
+      ],
+      "elapsed_seconds": 433.0311606489122,
+      "scope": "Full supplement loading/collation and augmentation; CPU, no model or accuracy evaluation"
+    },
+    "merge": {
+      "status": "prepared",
+      "rows": 29383,
+      "supplement_rows": 29383,
+      "source_rows_before_ref_filter": {
+        "hypersim": 13267,
+        "rea2seg": 15275,
+        "llmseg": 5000
+      },
+      "source_rows_after_ref_filter": {
+        "hypersim": 13267,
+        "rea2seg": 11812,
+        "llmseg": 4304
+      },
+      "referring_filter_sha256": "07e48e6a9d79783f701537ecea9e1f743d87ac515436370d26388d1596e0f6e6",
+      "manifest_sha256": "c78b8c30d15ea5d531238887c2e0c68f10a59227795744fb05711594186265bd",
+      "input_manifest_sha256": {
+        "hypersim": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
+        "rea2seg": "7a15bc5faa853f58b76006efbe465c8790a21c0420008ebd243231ae7edd1cd5",
+        "llmseg": "acd9523e8a7e696a374ad8030c2e4be5927ad33e10d5be59d8dc0834de8da973"
+      },
+      "base_manifest_sha256": null,
+      "task_split_counts": {
+        "depth/train": 13267,
+        "referring/train": 16116
+      },
+      "per_task_dropped": {},
+      "per_task_split": {
+        "depth": {
+          "train": 13267
+        },
+        "referring": {
+          "train": 16116
+        }
+      },
+      "cap": 0,
+      "validation_reassigned": false,
+      "zero_shot_claim_allowed": false,
+      "protocol": "train_only_supplement",
+      "source_benchmark_rows": 0,
+      "known_coco_heldout_overlap": 0,
+      "evaluation_image_id_overlap_by_source": {
+        "evaluation_image_ids.json": 0
+      },
+      "train_val_coco_image_id_overlap": 0,
+      "rejected_non_metric_depth_rows": 0,
+      "metric_validation_evidence": "Pinned native-depth preparation; hash-matched base metric audit when supplied",
+      "evaluation_image_ids_sha256": "de8a65fbe39d6939fe7c1fbf9a4ba499777a71a02401d005d9c768f6df7f2d05",
+      "excluded_coco_image_ids": 6549,
+      "official_ref_exclusion_evidence": "Pinned reasoning-v1 release: all-family held-out IDs and decoded RGB"
+    },
+    "full_bundle_restore": {
+      "status": "passed",
+      "asset_files": 39801,
+      "files": 39810,
+      "format": "ovb_res_bundle_v1"
+    },
+    "visual_review": {
+      "retained_samples": [
+        "ai_011_001_cam_00_frame.0000",
+        "ai_018_010_cam_01_frame.0076",
+        "ai_030_004_cam_00_frame.0018",
+        "ai_042_002_cam_00_frame.0088",
+        "ai_048_009_cam_00_frame.0074",
+        "ai_019_001_cam_00_frame.0088"
+      ],
+      "result": "Native RGB, encoded target and metric geometry align in the six inspected retained examples"
+    },
+    "tests": {
+      "linux_focused_passed": 35,
+      "windows_focused_passed": 35,
+      "focused_source_coverage_percent": 86.6,
+      "full_windows_passed": 1712,
+      "full_windows_failed": 32,
+      "full_windows_skipped": 20,
+      "full_windows_failure_ids_equal_base": true,
+      "global_coverage_percent": 71.15,
+      "changed_file_lint_format": "passed",
+      "precommit": "All applicable hooks pass except 33 existing errors in imported modules under mypy"
+    },
+    "main_training_ready": false,
+    "main_training_gate_reason": "The increment has no validation split or original normal/semantic/instance/generation rows; 12 split gates intentionally fail until an audited actual main base is joined"
+  },
+  "publication": {
+    "repo_id": "Melo111/open-vision-banana-depth",
+    "visibility": "private_staging",
+    "transfer": "Server uploads scoped multipart URLs; local authentication, completion, commits and public release",
+    "long_lived_hub_token_on_server": false
+  }
+}

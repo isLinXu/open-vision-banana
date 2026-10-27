@@ -63,6 +63,7 @@ evaluation = [
     "lpips>=0.1.4",
 ]
 data = [
+    "remotezip>=0.12.6",
     "h5py>=3.8",
     "pyarrow>=14.0",
     "ijson>=3.2",

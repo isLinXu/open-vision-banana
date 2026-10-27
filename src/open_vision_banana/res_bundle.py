@@ -86,7 +86,9 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
         for line in handle:
             if line.strip():
                 row = json.loads(line)
-                for key in ("input", "target"):
+                for key in ("input", "target", "metric_depth"):
+                    if key == "metric_depth" and not row.get(key):
+                        continue
                     value = row[key]
                     if value not in assets:
                         if not safe_path(data_dir, value).is_file():
@@ -162,7 +164,7 @@ def package_dataset(data_dir: Path, output_dir: Path, shard_bytes: int) -> dict:
             tar.close()
     index = {
         "format": FORMAT,
-        "encoding": "binary_white_black_v1",
+        "encoding": build.get("encoding", "binary_white_black_v1"),
         "asset_files": len(assets),
         "dataset_fingerprint": build["dataset_fingerprint"],
         "files": entries,
@@ -219,7 +221,7 @@ def restore_bundle(bundle_dir: Path, output_dir: Path) -> dict:
                 copy_checked(item["path"], stream)
         else:
             count = 0
-            with tarfile.open(source, "r:") as archive:
+            with tarfile.open(source, "r:*") as archive:
                 for member in archive:
                     if not member.isfile():
                         raise ValueError(f"Non-regular archive member: {member.name}")
