@@ -31,7 +31,7 @@
 
 <main>
 <section id="overview">
-  <h2>Overview</h2>
+  <h2 data-num="01">Overview</h2>
   <div class="cards">
     <div class="card"><div class="ico">🧩</div><h3>One interface, five vision tasks</h3><p>Semantic, instance and referring segmentation, metric depth and surface normals are all emitted as RGB images selected by the prompt and decoded back to structured outputs — the paper's method, implemented one-to-one where the paper is explicit.</p></div>
     <div class="card"><div class="ico">🔓</div><h3>Open backbone, open data</h3><p>Qwen-Image-2.1 / Qwen-Image-Edit as the natively image-conditioned base; Hypersim, TartanAir, ADE20K, COCO/LVIS, RefCOCO and OmniEdit as public substitutes for the paper's in-house data, with a strict zero-shot audit on every manifest.</p></div>
@@ -44,7 +44,7 @@
 </section>
 
 <section id="method">
-  <h2>Method as implemented</h2>
+  <h2 data-num="02">Method as implemented</h2>
   <div class="grid2">
     <div>
       <h3>Encodings (paper §3.1–3.2, Appendix A)</h3>
@@ -71,20 +71,21 @@
 </section>
 
 <section id="capabilities">
-  <h2>Capabilities</h2>
+  <h2 data-num="03">Capabilities</h2>
   <p class="note">Hover (or tap) a tile to reveal the generated output. Tiles are populated from <code>data/gallery.json</code> by experiment E5; until then they show placeholders. Every tile records its checkpoint, prompt and seed.</p>
   <div id="gallery"></div>
 </section>
 
 <section id="results">
-  <h2>Results</h2>
-  <p class="note">Rendered from <code>data/results.json</code>, which is generated from the evaluation JSONs (<code>scripts/render_results_tables.py</code>). Each table states its inference protocol; "base" is the untuned backbone with identical prompts and decoders; "paper" columns are the original paper's numbers for context only — a different, closed base model.</p>
+  <h2 data-num="04">Results</h2>
+  <p class="note">Bars and tables are rendered from <code>data/results.json</code>, which is generated from the evaluation JSONs (<code>scripts/render_results_tables.py</code>). Each table states its inference protocol; "base" is the untuned backbone with identical prompts and decoders; "paper" columns are the original paper's numbers for context only — a different, closed base model.</p>
+  <div id="results-charts" class="charts"></div>
   <div id="results-tables"></div>
   <div id="protocol-box" class="protocol"></div>
 </section>
 
 <section id="reproduce">
-  <h2>Reproduce</h2>
+  <h2 data-num="05">Reproduce</h2>
   <pre><code># data: download -> prepare -> merge -> strict zero-shot audit -> gates   (CPU node)
 bash scripts/run_e1_full.sh --to merge
 
@@ -97,7 +98,7 @@ python scripts/check_experiment_gates.py data|run|eval ...</code></pre>
 </section>
 
 <section id="alignment">
-  <h2>Paper alignment audit</h2>
+  <h2 data-num="06">Paper alignment audit</h2>
   <p>Every checkable statement in the paper (formulas, constants, prompt strings, Appendix A, evaluation protocols, data rules) was mapped to its implementation — <a href="https://github.com/isLinXu/open-vision-banana/blob/main/docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md">full table</a>.</p>
   <div class="stats">
     <div><span class="num">58</span><span class="lbl">checkable statements</span></div>
@@ -110,7 +111,7 @@ python scripts/check_experiment_gates.py data|run|eval ...</code></pre>
 </section>
 
 <section id="boundaries">
-  <h2>Honest boundaries</h2>
+  <h2 data-num="07">Honest boundaries</h2>
   <ul class="tight">
     <li>The paper's absolute numbers are not a target: Nano Banana Pro is closed and our backbone is different.</li>
     <li>Generation preservation is measured with a FID / LPIPS / CLIP <em>proxy</em> against the base model; the paper used a human pairwise study.</li>
@@ -121,7 +122,7 @@ python scripts/check_experiment_gates.py data|run|eval ...</code></pre>
 </section>
 
 <section id="cite">
-  <h2>Citation</h2>
+  <h2 data-num="08">Citation</h2>
   <p>Please cite the original paper; cite this repository for the implementation and the reproduction study.</p>
   <pre><code>@article{visionbanana2026,
   title   = {Image Generators are Generalist Vision Learners},
