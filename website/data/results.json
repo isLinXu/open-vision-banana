@@ -1,0 +1,52 @@
+{
+  "generated_at": "placeholder — regenerate with scripts/render_results_tables.py after E1",
+  "commit": null,
+  "source_count": 0,
+  "report_url": null,
+  "inference_protocol": {"num_inference_steps": 50, "guidance_scale": 4.0, "seed": 42, "canvas_resolution": 512, "native_resolution_scoring": true,
+    "note": "The paper states no inference settings; these are the repository's pinned values (exp_setting.md E1.3)."},
+  "tables": [
+    {"title": "2D understanding (paper Tables 2, 4, 5; zero-shot transfer)",
+     "note": "Paper rows use a different, closed base model (Nano Banana Pro) and are context only.",
+     "columns": [{"key": "cityscapes_miou", "label": "Cityscapes mIoU ↑", "digits": 1}, {"key": "refcocog_ciou", "label": "RefCOCOg cIoU ↑", "digits": 1}, {"key": "reasonseg_giou", "label": "ReasonSeg gIoU ↑", "digits": 1}],
+     "rows": [
+       {"label": "Qwen-Image-2.1, untuned (E-0)", "kind": "base", "values": {}},
+       {"label": "Open-Vision-Banana E1 @ 30k", "kind": "ours", "values": {}},
+       {"label": "SAM 3 (+ Gemini 2.5 Pro for referring)", "kind": "paper", "source": "paper", "values": {"cityscapes_miou": 65.2, "refcocog_ciou": 73.4, "reasonseg_giou": 77.0}},
+       {"label": "Vision Banana (paper)", "kind": "paper", "source": "paper", "values": {"cityscapes_miou": 69.9, "refcocog_ciou": 73.8, "reasonseg_giou": 79.3}}
+     ]},
+    {"title": "Instance segmentation — SA-Co/Gold (paper Table 3)",
+     "note": "cgF1 = 100 · pmF1 · IL_MCC; our IL_MCC needs the Gemini 3.1 Flash-Lite presence filter, otherwise diagnostic.",
+     "columns": [{"key": "cgf1", "label": "cgF1 ↑", "digits": 1}, {"key": "il_mcc", "label": "IL_MCC ↑", "digits": 2}, {"key": "pmf1", "label": "pmF1 ↑", "digits": 1}],
+     "rows": [
+       {"label": "Qwen-Image-2.1, untuned (E-0)", "kind": "base", "values": {}},
+       {"label": "Open-Vision-Banana E1 @ 30k", "kind": "ours", "values": {}},
+       {"label": "OWLv2", "kind": "paper", "source": "paper", "values": {"cgf1": 24.6, "il_mcc": 0.57, "pmf1": 42.0}},
+       {"label": "Vision Banana + Gemini 3.1 Flash-Lite (paper)", "kind": "paper", "source": "paper", "values": {"cgf1": 47.5, "il_mcc": 0.84, "pmf1": 56.0}}
+     ]},
+    {"title": "Metric depth (paper Table 6; δ1 ↑ / AbsRel ↓, no camera intrinsics, no scale alignment)",
+     "columns": [{"key": "nyu_d1", "label": "NYU δ1", "digits": 3}, {"key": "nyu_absrel", "label": "NYU AbsRel", "digits": 3}, {"key": "diode_d1", "label": "DIODE-In δ1", "digits": 3}, {"key": "eth3d_d1", "label": "ETH3D δ1", "digits": 3}],
+     "rows": [
+       {"label": "constant 3 m (trivial baseline)", "kind": "base", "values": {"nyu_d1": 0.352}},
+       {"label": "Qwen-Image-2.1, untuned (E-0)", "kind": "base", "values": {}},
+       {"label": "Open-Vision-Banana E1 @ 30k", "kind": "ours", "values": {}},
+       {"label": "Depth Anything 3", "kind": "paper", "source": "paper", "values": {"nyu_d1": 0.963, "diode_d1": 0.838, "eth3d_d1": 0.917}},
+       {"label": "Vision Banana (paper)", "kind": "paper", "source": "paper", "values": {"nyu_d1": 0.948, "nyu_absrel": 0.081, "diode_d1": 0.917, "eth3d_d1": 0.935}}
+     ]},
+    {"title": "Surface normals (paper Table 7; mean angular error ° ↓)",
+     "note": "Both pixel-weighted and per-image aggregations are reported in the JSON; the paper does not state which it uses.",
+     "columns": [{"key": "nyu_mean", "label": "NYUv2", "digits": 2}, {"key": "diode_mean", "label": "DIODE-indoor", "digits": 2}, {"key": "scannet_mean", "label": "ScanNet", "digits": 2}, {"key": "vkitti_mean", "label": "VKitti", "digits": 2}],
+     "rows": [
+       {"label": "Qwen-Image-2.1, untuned (E-0)", "kind": "base", "values": {}},
+       {"label": "Open-Vision-Banana E1 @ 30k", "kind": "ours", "values": {}},
+       {"label": "Lotus-2-Normal", "kind": "paper", "source": "paper", "values": {"nyu_mean": 16.9, "diode_mean": 18.575, "scannet_mean": 14.2, "vkitti_mean": 28.894}},
+       {"label": "Vision Banana (paper)", "kind": "paper", "source": "paper", "values": {"nyu_mean": 17.778, "diode_mean": 13.818, "scannet_mean": 15.052, "vkitti_mean": 29.063}}
+     ]},
+    {"title": "Generation preservation (paper Appendix D) — proxy only",
+     "note": "Paper: human pairwise win rate vs the base model (53.5% GenAI-Bench / 47.8% ImgEdit). Ours: FID / LPIPS proxy vs the base model's own outputs on the same prompts; not comparable to the human numbers.",
+     "columns": [{"key": "genai_fid", "label": "GenAI-Bench FID vs base ↓", "digits": 1}, {"key": "genai_lpips", "label": "LPIPS ↓", "digits": 3}, {"key": "imgedit_fid", "label": "ImgEdit-Bench FID vs base ↓", "digits": 1}],
+     "rows": [
+       {"label": "Open-Vision-Banana E1 @ 30k", "kind": "ours", "diagnostic": true, "values": {}}
+     ]}
+  ]
+}

@@ -395,6 +395,10 @@ Task-matched runs:
 
 The `fix_*` depth LoRAs were trained as closer-brighter grayscale. Decode them with `--depth-colormap grayscale --invert-depth`. A separate local SANA-1600M Hypersim run (cube-edge metric metres, not a Hub `ovb-*` repo) is listed separately.
 
+## Project page
+
+Static GitHub Pages site in [`website/`](website/) (results and gallery render from `website/data/*.json`; publish with `bash scripts/publish_site.sh` to the `gh-pages` branch, then enable Pages from that branch).
+
 ## Paper Alignment Statement
 
 > Line-by-line audit against the paper text (58 checkable statements, per-item status and code locations): [`docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md`](docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md).
