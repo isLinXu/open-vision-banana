@@ -38,7 +38,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_vision_banana.data.manifest import resolve_manifest_path  # noqa: E402
 
-PATH_KEYS = ("input", "target", "image")
+PATH_KEYS = ("input", "target", "image", "metric_depth")
 
 
 _COCO_ID_RE = re.compile(r"^(?:COCO_(?:train|val|test)20\d\d_)?0*(\d{1,12})\.(?:jpg|jpeg|png)$", re.IGNORECASE)
