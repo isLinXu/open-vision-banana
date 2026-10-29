@@ -386,3 +386,84 @@ def test_hunyuan_image3_instruct_calls_generate_image(tmp_path):
     )
     assert calls[1]["diff_infer_steps"] == 8
     assert calls[1]["seed"] is None
+
+
+def test_qwen_image_21_text_to_image_uses_true_cfg():
+    calls = []
+
+    class _Pipe:  # QwenImage21Pipeline declares true_cfg_scale, not guidance_scale
+        def __call__(
+            self,
+            prompt=None,
+            negative_prompt=None,
+            true_cfg_scale=1.0,
+            height=None,
+            width=None,
+            num_inference_steps=40,
+            generator=None,
+            output_resolution=1024,
+        ):
+            calls.append(
+                {
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "true_cfg_scale": true_cfg_scale,
+                    "height": height,
+                    "width": width,
+                    "num_inference_steps": num_inference_steps,
+                }
+            )
+            return _Out((width, height))
+
+    gen = _generator("qwen-image-2.1", _Pipe())
+    out = gen.generate(
+        prompt="a red bicycle",
+        image=None,
+        num_inference_steps=50,
+        guidance_scale=4.0,
+        height=64,
+        width=48,
+        seed=7,
+    )
+    assert calls == [
+        {
+            "prompt": "a red bicycle",
+            "negative_prompt": " ",
+            "true_cfg_scale": 4.0,
+            "height": 64,
+            "width": 48,
+            "num_inference_steps": 50,
+        }
+    ]
+    assert out.shape == (1, 3, 64, 48)
+
+
+def test_text_to_image_keeps_guidance_scale_where_declared():
+    calls = []
+
+    class _Pipe:
+        def __call__(
+            self,
+            prompt=None,
+            guidance_scale=0.0,
+            height=None,
+            width=None,
+            num_inference_steps=1,
+            generator=None,
+            true_cfg_scale=1.0,
+            negative_prompt=None,
+        ):
+            calls.append(
+                {
+                    "guidance_scale": guidance_scale,
+                    "true_cfg_scale": true_cfg_scale,
+                    "negative_prompt": negative_prompt,
+                }
+            )
+            return _Out((width, height))
+
+    gen = _generator("qwen-image", _Pipe())
+    gen.generate(
+        prompt="a cat", image=None, num_inference_steps=4, guidance_scale=3.5, height=32, width=32
+    )
+    assert calls == [{"guidance_scale": 3.5, "true_cfg_scale": 1.0, "negative_prompt": None}]

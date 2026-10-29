@@ -671,6 +671,27 @@ class BaseGenerator:
     # Generation
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _guidance_kwargs(pipe, guidance_scale: float) -> dict:
+        """Guidance arguments for ``pipe``, which may not declare ``guidance_scale``.
+
+        Qwen-Image-2.1's pipeline applies classifier-free guidance only through
+        ``true_cfg_scale`` against a negative prompt (blank, as in the editing path).
+        """
+        import inspect
+
+        parameters = inspect.signature(pipe.__call__).parameters
+        if "guidance_scale" in parameters or any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+        ):
+            return {"guidance_scale": guidance_scale}
+        if "true_cfg_scale" in parameters:
+            call = {"true_cfg_scale": guidance_scale}
+            if "negative_prompt" in parameters:
+                call["negative_prompt"] = " "
+            return call
+        return {}
+
     @torch.no_grad()
     def generate(
         self,
@@ -805,11 +826,10 @@ class BaseGenerator:
             output = self._t2i_pipe(
                 prompt=prompt if encode_prompt else None,
                 num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
                 height=height,
                 width=width,
                 generator=generator,
-                **kwargs,
+                **{**self._guidance_kwargs(self._t2i_pipe, guidance_scale), **kwargs},
             )
 
         output_tensor = self._output_to_tensor(output)
