@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Qwen-Image-2.1 text-to-image**: `BaseGenerator.generate(image=None)` passed `guidance_scale` to `QwenImage21Pipeline`, which only declares `true_cfg_scale`, so every Qwen-Image-2.1 text-to-image call raised `TypeError` (the generation-preservation reference build and proxy evaluation among them). Text-to-image now passes the guidance arguments the pipeline declares: `guidance_scale` where it exists, otherwise `true_cfg_scale` with a blank negative prompt, as the editing path already does.
+
 - **RES expression validation**: accept the existing canonical prompt when its shared builder normalizes a leading article, so valid Rea2Seg/LLM-Seg expressions such as "A red car" are not rejected during preparation or loading.
 
 - **nuScenes depth benchmark**: `evaluate_paper_benchmarks.py --nuscenes-root` failed before loading any model with `TypeError: build_dataset() got multiple values for argument 'task'`, because the depth task of `nuScenesDataset` was passed as an adapter keyword while `build_dataset`'s first argument is also named `task`. The benchmark now uses a `nuscenes_depth` adapter key (`NuScenesDepthDataset`), as NYU uses `nyu_depth`.
