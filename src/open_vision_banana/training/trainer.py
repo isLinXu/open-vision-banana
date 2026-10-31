@@ -515,6 +515,10 @@ class Trainer:
     Replaces both train_sana_512.py and train_flux.py main() functions.
     """
 
+    # LoRA unless __init__ shards the backbone for train_mode: full.
+    full = False
+    full_record = None
+
     def __init__(self, config: TrainingConfig):
         config.validate()
         self.config = config
