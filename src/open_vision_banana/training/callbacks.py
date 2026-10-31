@@ -191,6 +191,13 @@ class TrainingCallbacks:
         logger.info("  Saved checkpoint at step %d → %s", step, ckpt_dir)
         return ckpt_dir
 
+    def log_validation(self, step: int, val_loss: float) -> None:
+        logger.info("  [val] step=%d val_loss=%.4f", step, val_loss)
+        if self.wandb_enabled:
+            import wandb
+
+            wandb.log({"val/loss": val_loss}, step=step)
+
     def on_validate(
         self,
         step: int,
@@ -208,13 +215,7 @@ class TrainingCallbacks:
 
         Returns True only after a new best checkpoint is saved successfully.
         """
-        logger.info("  [val] step=%d val_loss=%.4f", step, val_loss)
-
-        if self.wandb_enabled:
-            import wandb
-
-            wandb.log({"val/loss": val_loss}, step=step)
-
+        self.log_validation(step, val_loss)
         is_best = math.isfinite(val_loss) and val_loss < self.best_val_loss
         if is_best:
             self.on_checkpoint(

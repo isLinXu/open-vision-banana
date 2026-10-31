@@ -133,6 +133,7 @@ class ModelBackend:
         use_rslora: bool = True,
         lora_targets: list[str] | None = None,
         enable_gradient_checkpointing: bool = True,
+        train_mode: str = "lora",
     ):
         """Load pipeline and setup backend.
 
@@ -146,6 +147,8 @@ class ModelBackend:
             use_rslora: Whether to use rsLoRA scaling.
             lora_targets: Override LoRA target modules.
             enable_gradient_checkpointing: Enable gradient checkpointing on backbone.
+            train_mode: "lora" injects the adapter; "full" leaves the backbone as is
+                (``peft_model`` is the backbone; the Trainer shards and unfreezes it).
         """
         self.device = device
         self.dtype = dtype
@@ -199,6 +202,13 @@ class ModelBackend:
             self.pipe = qwen_image21.build_qwen_edit_pipeline(
                 self.components, self.model_config.pipeline_class
             )
+
+        if train_mode == "full":
+            # Same attribute name, so the forward / loss code is shared with the LoRA path.
+            logger.info("Full-parameter training: no LoRA; the Trainer shards the backbone")
+            self.peft_model = self.backbone
+            self.flow_scheduler = FlowScheduler()
+            return
 
         # Apply LoRA
         logger.info(
