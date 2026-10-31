@@ -817,13 +817,14 @@ class Trainer:
 
     def _validate_full(self, step: int) -> None:
         """EMA validation on every rank (the backbone is sharded), best checkpoint if improved."""
-        from .full_finetune import broadcast_float
+        from .full_finetune import broadcast_float, reshard
 
         model = self.backend.peft_model
         backup = self.ema.apply_shadow(model) if self.ema else None
         try:
             val_loss = self.validate()
         finally:
+            reshard(model)
             if backup is not None:
                 self.ema.restore_shadow(model, backup)
         val_loss = broadcast_float(val_loss)

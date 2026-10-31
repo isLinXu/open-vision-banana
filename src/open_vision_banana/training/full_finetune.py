@@ -77,6 +77,20 @@ def shard_backbone(model: torch.nn.Module) -> dict:
     return record
 
 
+def reshard(model: torch.nn.Module) -> None:
+    """Return every FSDP unit to its sharded parameters.
+
+    The root unit keeps its gathered weights after a forward (it expects the
+    backward next), so after a no-grad forward (validation) its registered
+    parameters are plain tensors until resharded; EMA swaps work on the shards.
+    """
+    from torch.distributed.fsdp import FSDPModule
+
+    for module in model.modules():
+        if isinstance(module, FSDPModule):
+            module.reshard()
+
+
 def total_grad_norm(params: list[torch.nn.Parameter]) -> float:
     """Global L2 norm of the sharded gradients (no clipping)."""
     norm = torch.nn.utils.clip_grad_norm_(params, float("inf"))

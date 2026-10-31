@@ -160,6 +160,20 @@ def test_train_state_round_trip_continues_exactly(group, tmp_path):
         assert torch.equal(tensor.full_tensor(), reference_ema[name])
 
 
+def test_ema_swap_around_a_no_grad_forward_needs_and_survives_a_reshard(group):
+    model, _ = _sharded(seed=3)
+    optimizer, scheduler, ema = _parts(model)
+    _train(model, optimizer, ema, scheduler, 2, seed=4)
+    online = {n: p.full_tensor().clone() for n, p in model.named_parameters()}
+    backup = ema.apply_shadow(model)
+    with torch.no_grad():
+        model(torch.randn(2, 4))  # the root unit stays gathered after a no-grad forward
+    full_finetune.reshard(model)
+    ema.restore_shadow(model, backup)
+    for name, param in model.named_parameters():
+        assert torch.equal(param.full_tensor(), online[name])
+
+
 def test_save_train_state_replaces_the_previous_one(group, tmp_path):
     model, _ = _sharded()
     optimizer, scheduler, ema = _parts(model)
