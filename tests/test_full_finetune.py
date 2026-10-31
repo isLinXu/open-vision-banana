@@ -38,6 +38,11 @@ def test_train_mode_rejections(fields, message):
         TrainingConfig(**fields).validate()
 
 
+def test_full_mode_ignores_an_inert_weights_only_flag():
+    # The #88 configs set resume_weights_only without a resume path.
+    TrainingConfig(train_mode="full", resume_weights_only=True).validate()
+
+
 class _Config(dict):
     """Stands in for a diffusers FrozenDict config."""
 

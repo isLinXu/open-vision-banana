@@ -263,7 +263,7 @@ class TrainingConfig:
             raise ValueError("train_mode must be lora or full")
         if self.train_mode == "full" and self.quantize is not None:
             raise ValueError("train_mode full trains the unquantized backbone; set quantize to null")
-        if self.train_mode == "full" and self.resume_weights_only:
+        if self.train_mode == "full" and self.resume and self.resume_weights_only:
             raise ValueError("train_mode full resumes its own sharded state only (no resume_weights_only)")
         if self.scheduler not in {"cosine", "cosine_restarts", "polynomial", "constant", "one_cycle"}:
             raise ValueError(
