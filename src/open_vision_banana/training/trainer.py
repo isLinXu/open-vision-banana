@@ -11,10 +11,10 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
-import math
 import random
 import re
 import shutil
@@ -27,14 +27,17 @@ from PIL import Image, ImageFile
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
 
 from ..model_registry import resolve_model_config
-from . import qwen_image21
+from . import full_finetune, qwen_image21
 from .callbacks import TrainingCallbacks
 from .config import TrainingConfig
 from .distributed import (
     all_reduce_gradients_,
     barrier,
+    broadcast_float,
     broadcast_parameters_,
     cleanup,
+    clip_grad_norm,
+    ensure_process_group,
     init_distributed,
 )
 from .edit_forward import edit_latent_layout
@@ -515,9 +518,10 @@ class Trainer:
     Replaces both train_sana_512.py and train_flux.py main() functions.
     """
 
-    # LoRA unless __init__ shards the backbone for train_mode: full.
-    full = False
-    full_record = None
+    @property
+    def full(self) -> bool:
+        """Full-parameter (FSDP2) training instead of a LoRA adapter."""
+        return self.config.train_mode == "full"
 
     def __init__(self, config: TrainingConfig):
         config.validate()
@@ -575,14 +579,9 @@ class Trainer:
             train_mode=config.train_mode,
         )
         # Full-parameter mode shards the backbone (FSDP2); every rank loaded the same weights.
-        self.full = config.train_mode == "full"
-        self.full_record = None
         if self.full:
-            from .full_finetune import ensure_process_group, shard_backbone
-
             ensure_process_group()
-            self.full_record = shard_backbone(self.backend.peft_model)
-            logger.info("Full-parameter training: %d FSDP units", self.full_record["fsdp_units"])
+            self.full_record = full_finetune.shard_backbone(self.backend.peft_model)
         self.trainable_params = [p for p in self.backend.peft_model.parameters() if p.requires_grad]
         if not self.full:
             broadcast_parameters_(self.trainable_params, self.dist)
@@ -691,7 +690,13 @@ class Trainer:
         run directory holding it): weights, optimizer, EMA, schedule and step.
         """
         if self.full:
-            return self._resume_full(Path(resume))
+            path = Path(resume)
+            if (path / "train_state").is_dir():
+                path = path / "train_state"
+            extra = full_finetune.load_train_state(
+                path, self.backend.peft_model, self.optimizer, self.lr_scheduler, self.ema
+            )
+            return self._resume_progress(path, int(extra["step"]), extra)
         path = Path(resume)
         if path.is_dir():
             path = path / "lora.pt"
@@ -735,106 +740,93 @@ class Trainer:
                 self.ema.shadow_params[name].copy_(tensor)
         if self.ema:
             self.ema.step = step
+        return self._resume_progress(path, step, ckpt)
+
+    def _resume_progress(self, path: Path, step: int, saved: dict) -> int:
+        """Reseed for ``step`` and take the saved best score if it is still comparable."""
         # RNG state is not checkpointed. Without a new seed the resumed run would replay
         # the shuffles, noise and timesteps of the run's first steps.
-        seed = self.config.seed + self.dist.rank + step
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        best = ckpt.get("best_val_loss")
-        if best is not None and ckpt.get("selection_protocol") == self._selection_protocol():
+        torch.manual_seed(self.config.seed + self.dist.rank + step)  # seeds every CUDA device too
+        best = saved.get("best_val_loss")
+        if best is not None and saved.get("selection_protocol") == self._selection_protocol():
             self.callbacks.best_val_loss = best
         elif best is not None:
             logger.warning("Reset best score: saved validation protocol differs from current run")
         logger.info("Resumed from %s at step %d (best val_loss=%s)", path, step, best)
         return step
 
-    def _resume_full(self, path: Path) -> int:
-        from .full_finetune import load_train_state
-
-        if (path / "train_state").is_dir():
-            path = path / "train_state"
-        extra = load_train_state(path, self.backend.peft_model, self.optimizer, self.lr_scheduler, self.ema)
-        step = int(extra["step"])
-        seed = self.config.seed + self.dist.rank + step
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        best = extra.get("best_val_loss")
-        if best is not None and extra.get("selection_protocol") == self._selection_protocol():
-            self.callbacks.best_val_loss = best
-        logger.info("Resumed full-parameter state %s at step %d (best val_loss=%s)", path, step, best)
-        return step
-
     def _save_full(self, step: int, suffix: str = "", val_loss: float | None = None) -> None:
-        """Full-parameter checkpoint (collective): ``transformer/`` + metadata, then the train state.
+        """Full-parameter checkpoint (collective): ``transformer/``, metadata, then train state.
 
         Plain and ``_final`` checkpoints hold the online weights and refresh the
         resumable ``train_state``; ``_best`` holds the EMA weights (when EMA is on) and
         replaces the previous best directory (a full backbone is 14 GB).
         """
-        from .full_finetune import save_train_state, save_transformer
-
         model = self.backend.peft_model
         out = self.callbacks.output_dir
         ckpt_dir = out / f"checkpoint-{step}{suffix}"
         is_best = suffix == "_best"
         source = "ema" if is_best and self.ema is not None else "online"
-        backup = self.ema.apply_shadow(model) if source == "ema" else None
-        try:
-            save_transformer(model, ckpt_dir / "transformer", self.full_record, is_main=self.dist.is_main)
-        finally:
-            if backup is not None:
-                self.ema.restore_shadow(model, backup)
+        with self.ema.applied(model) if source == "ema" else contextlib.nullcontext():
+            full_finetune.save_transformer(
+                model, ckpt_dir / "transformer", self.full_record, is_main=self.dist.is_main
+            )
         protocol = self._selection_protocol()
-        best = val_loss if is_best else self.callbacks.best_val_loss
+        validated = ("ema" if self.ema else "online") if val_loss is not None else None
         if self.dist.is_main:
             meta = {
                 "step": step,
                 "val_loss": val_loss,
-                "best_val_loss": best,
+                "best_val_loss": val_loss if is_best else self.callbacks.best_val_loss,
                 "train_mode": "full",
                 "model_name": self.config.model_name,
                 "checkpoint_weight_source": "online",
                 "transformer_weight_source": source,
-                "validation_weight_source": ("ema" if self.ema else "online") if val_loss is not None else None,
+                "validation_weight_source": validated,
                 "selection_protocol": protocol,
             }
-            if self.callbacks.task_prompts:
-                meta["task_prompts"] = self.callbacks.task_prompts
-            (ckpt_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
+            self.callbacks.write_metadata(ckpt_dir, meta)
             if is_best:
                 for old in out.glob("checkpoint-*_best"):
                     if old != ckpt_dir:
                         shutil.rmtree(old, ignore_errors=True)
-            logger.info("  Saved full checkpoint at step %d (%s weights) → %s", step, source, ckpt_dir)
+            logger.info(
+                "  Saved full checkpoint at step %d (%s weights) → %s", step, source, ckpt_dir
+            )
         if not is_best:
-            save_train_state(
-                out / "train_state", model, self.optimizer, self.lr_scheduler, self.ema, step,
-                {"best_val_loss": self.callbacks.best_val_loss, "selection_protocol": protocol},
+            progress = {
+                "best_val_loss": self.callbacks.best_val_loss,
+                "selection_protocol": protocol,
+            }
+            full_finetune.save_train_state(
+                out / "train_state",
+                model,
+                self.optimizer,
+                self.lr_scheduler,
+                self.ema,
+                step,
+                progress,
                 is_main=self.dist.is_main,
             )
 
+    def _ema_weights(self, model: torch.nn.Module):
+        """Context with the EMA weights in ``model`` (the online ones when EMA is off)."""
+        return self.ema.applied(model) if self.ema is not None else contextlib.nullcontext()
+
     def _validate_full(self, step: int) -> None:
         """EMA validation on every rank (the backbone is sharded), best checkpoint if improved."""
-        from .full_finetune import broadcast_float, reshard
-
         model = self.backend.peft_model
-        backup = self.ema.apply_shadow(model) if self.ema else None
-        try:
-            val_loss = self.validate()
-        finally:
-            reshard(model)
-            if backup is not None:
-                self.ema.restore_shadow(model, backup)
+        with self._ema_weights(model):
+            try:
+                val_loss = self.validate()
+            finally:
+                full_finetune.reshard(model)  # before the online weights return (EMA swaps shards)
         val_loss = broadcast_float(val_loss)
+        self.callbacks.on_validation_loss(
+            step, val_loss, lambda: self._save_full(step, "_best", val_loss)
+        )
         if self.dist.is_main:
-            self.callbacks.log_validation(step, val_loss)
             logger.info("Validation details: %s", self.validation_metrics)
-        if math.isfinite(val_loss) and val_loss < self.callbacks.best_val_loss:
-            self._save_full(step, "_best", val_loss)
-            self.callbacks.best_val_loss = val_loss
-            logger.info("  New best val_loss=%.4f", val_loss)
 
     def _selection_protocol(self) -> str:
         source = "ema" if self.ema is not None else "online"
@@ -1050,16 +1042,11 @@ class Trainer:
                     continue
 
                 # ── Optimizer step ─────────────────────────────────────
-                if self.full:
-                    # FSDP already reduce-scattered the gradients in backward.
-                    from .full_finetune import total_grad_norm
-
-                    grad_norm = total_grad_norm(self.trainable_params)
-                else:
+                if not self.full:  # FSDP already reduce-scattered the gradients in backward
                     all_reduce_gradients_(self.trainable_params, self.dist)
-                    grad_norm = float(
-                        torch.nn.utils.clip_grad_norm_(self.trainable_params, float("inf"))
-                    )
+                # The pre-clip norm decides a drop; a dropped update discards the clipped
+                # gradients, so clipping first leaves both outcomes unchanged.
+                grad_norm = clip_grad_norm(self.trainable_params, config.max_grad_norm)
                 if drop_oversized_gradients(grad_norm, config.drop_grad_norm):
                     self.optimizer.zero_grad(set_to_none=True)
                     if self.dist.is_main:
@@ -1070,7 +1057,6 @@ class Trainer:
                             config.drop_grad_norm,
                         )
                     continue
-                torch.nn.utils.clip_grad_norm_(self.trainable_params, config.max_grad_norm)
                 self.optimizer.step()
                 self.lr_scheduler.step()
                 self.optimizer.zero_grad(set_to_none=True)
@@ -1141,12 +1127,8 @@ class Trainer:
                     and self.val_loader is not None
                     and self.callbacks.should_validate(global_step)
                 ):
-                    ema_backup = self.ema.apply_shadow(peft_model) if self.ema else None
-                    try:
+                    with self._ema_weights(peft_model):
                         val_loss = self.validate()
-                    finally:
-                        if self.ema:
-                            self.ema.restore_shadow(peft_model, ema_backup)
                     self.callbacks.on_validate(
                         global_step,
                         val_loss,
@@ -1164,8 +1146,6 @@ class Trainer:
         # ── Final save ─────────────────────────────────────────────────
         if self.full:
             self._save_full(global_step, "_final")
-            if self.dist.is_main:
-                self.callbacks.on_finish(global_step)
         elif self.dist.is_main:
             self.callbacks.on_checkpoint(
                 global_step,
@@ -1179,6 +1159,7 @@ class Trainer:
                 suffix="_final",
                 selection_protocol=self._selection_protocol(),
             )
+        if self.dist.is_main:
             self.callbacks.on_finish(global_step)
         barrier(self.dist)  # keep the process group alive until rank 0 has saved
         cleanup(self.dist)

@@ -262,9 +262,13 @@ class TrainingConfig:
         if self.train_mode not in {"lora", "full"}:
             raise ValueError("train_mode must be lora or full")
         if self.train_mode == "full" and self.quantize is not None:
-            raise ValueError("train_mode full trains the unquantized backbone; set quantize to null")
+            raise ValueError(
+                "train_mode full trains the unquantized backbone; set quantize to null"
+            )
         if self.train_mode == "full" and self.resume and self.resume_weights_only:
-            raise ValueError("train_mode full resumes its own sharded state only (no resume_weights_only)")
+            raise ValueError(
+                "train_mode full resumes its own sharded state only (no resume_weights_only)"
+            )
         if self.scheduler not in {"cosine", "cosine_restarts", "polynomial", "constant", "one_cycle"}:
             raise ValueError(
                 "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
@@ -444,8 +448,8 @@ class _UnsupportedBackend(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         parser.error(
             f"{option_string} is not supported by the unified Trainer; LoRA training is "
-            "data-parallel only. Launch with torchrun (e.g. "
-            "scripts/launch_training_a100_80g_ddp.sh)."
+            "data-parallel, and --train-mode full shards the backbone with FSDP2 on its own. "
+            "Launch with torchrun (e.g. scripts/launch_training_a100_80g_ddp.sh)."
         )
 
 

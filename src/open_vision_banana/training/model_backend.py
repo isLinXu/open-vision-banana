@@ -207,10 +207,13 @@ class ModelBackend:
             # Same attribute name, so the forward / loss code is shared with the LoRA path.
             logger.info("Full-parameter training: no LoRA; the Trainer shards the backbone")
             self.peft_model = self.backbone
-            self.flow_scheduler = FlowScheduler()
-            return
+        else:
+            self._apply_lora(lora_rank, lora_alpha, use_rslora)
 
-        # Apply LoRA
+        # Flow scheduler
+        self.flow_scheduler = FlowScheduler()
+
+    def _apply_lora(self, lora_rank: int, lora_alpha: int, use_rslora: bool) -> None:
         logger.info(
             "Applying LoRA (rank=%d, alpha=%d, rsLoRA=%s)...", lora_rank, lora_alpha, use_rslora
         )
@@ -234,9 +237,6 @@ class ModelBackend:
             "Trainable parameter names: %s",
             [name for name, parameter in self.peft_model.named_parameters() if parameter.requires_grad],
         )
-
-        # Flow scheduler
-        self.flow_scheduler = FlowScheduler()
 
     def _load_hunyuan_instruct(self) -> None:
         """Load HunyuanImage-3.0-Instruct for its published ``forward``.
