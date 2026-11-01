@@ -184,11 +184,18 @@ def load_train_state(path: Path, model, optimizer, scheduler, ema) -> dict:
 
     if not (path / "extra.pt").is_file():
         raise FileNotFoundError(f"no full-training state at {path}")
-    state = _dcp_state(model, optimizer, ema)
+    saved = dcp.FileSystemReader(str(path)).read_metadata().state_dict_metadata
+    saved_ema = any(key.startswith("ema.") for key in saved)
+    state = _dcp_state(model, optimizer, ema if saved_ema else None)
     dcp.load(state, checkpoint_id=str(path))
     set_state_dict(
         model, optimizer, model_state_dict=state["model"], optim_state_dict=state["optim"]
     )
+    if ema is not None and not saved_ema:
+        # Saved without EMA: start the shadow from the loaded weights, as a LoRA resume does.
+        for name, param in model.named_parameters():
+            if name in ema.shadow_params:
+                ema.shadow_params[name].copy_(param.detach())
     extra = torch.load(path / "extra.pt", map_location="cpu", weights_only=False)
     scheduler.load_state_dict(extra["scheduler"])
     if ema is not None and extra.get("ema_step") is not None:

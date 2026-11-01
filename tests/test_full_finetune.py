@@ -333,15 +333,96 @@ def test_full_resume_restores_state_step_and_comparable_best(
     _train(model, trainer.optimizer, trainer.ema, trainer.lr_scheduler, 3, seed=7)
     trainer.callbacks.best_val_loss = 0.25
     trainer._save_full(3)
+    # Validation after the plain save of the same step: the train state still says 0.25.
+    trainer.validate = lambda: 0.1
+    trainer._validate_full(3)
+    out = trainer.callbacks.output_dir
 
     other = _full_trainer(tmp_path, seed=8, **({} if same_protocol else {"lora_rank": 8}))
+    other.callbacks = TrainingCallbacks(output_dir=out)
     with caplog.at_level(logging.WARNING):
-        step = other._resume(str(trainer.callbacks.output_dir))  # the run dir holding train_state
+        step = other._resume(str(out))  # the run dir holding train_state
     assert step == 3 and other.ema.step == 3 and other.lr_scheduler.last_epoch == 3
     for name, param in other.backend.peft_model.named_parameters():
         assert torch.equal(param.full_tensor(), dict(model.named_parameters())[name].full_tensor())
     if same_protocol:
-        assert other.callbacks.best_val_loss == 0.25
+        assert other.callbacks.best_val_loss == 0.1  # the newer _best on disk wins
     else:
         assert other.callbacks.best_val_loss == float("inf")
         assert "Reset best score" in caplog.text
+
+
+def test_full_resume_falls_back_to_the_previous_state_after_an_interrupted_swap(group, tmp_path):
+    trainer = _full_trainer(tmp_path, seed=10)
+    model = trainer.backend.peft_model
+    _train(model, trainer.optimizer, trainer.ema, trainer.lr_scheduler, 2, seed=11)
+    trainer._save_full(2)
+    out = trainer.callbacks.output_dir
+    (out / "train_state").rename(out / "train_state.old")  # killed between the two renames
+
+    other = _full_trainer(tmp_path, seed=12)
+    assert other._resume(str(out)) == 2
+    for name, param in other.backend.peft_model.named_parameters():
+        assert torch.equal(param.full_tensor(), dict(model.named_parameters())[name].full_tensor())
+    with pytest.raises(FileNotFoundError):
+        _full_trainer(tmp_path, seed=13)._resume(str(tmp_path / "empty"))
+
+
+def test_full_resume_across_an_ema_setting_change(group, tmp_path):
+    trainer = _full_trainer(tmp_path, seed=14, ema=False)
+    model = trainer.backend.peft_model
+    _train(model, trainer.optimizer, None, trainer.lr_scheduler, 2, seed=15)
+    trainer._save_full(2)
+    out = trainer.callbacks.output_dir
+
+    with_ema = _full_trainer(tmp_path, seed=16)  # EMA on now, off when saved
+    assert with_ema._resume(str(out)) == 2
+    for name, shadow in with_ema.ema.shadow_params.items():
+        assert torch.equal(shadow.full_tensor(), dict(model.named_parameters())[name].full_tensor())
+
+    source = _full_trainer(tmp_path, seed=17)  # and the other way round
+    source._save_full(5)
+    assert (
+        _full_trainer(tmp_path, seed=18, ema=False)._resume(str(source.callbacks.output_dir)) == 5
+    )
+
+
+def test_full_mode_rejects_hunyuan_before_loading(tmp_path, monkeypatch):
+    from open_vision_banana.training import trainer as trainer_module
+
+    monkeypatch.setattr(trainer_module, "edit_latent_layout", lambda config: "hunyuan")
+    monkeypatch.setattr(Trainer, "_build_datasets", lambda self: (None, None))
+    monkeypatch.setattr(trainer_module, "ModelBackend", None)  # must not be reached
+    config = TrainingConfig(train_mode="full", output_dir=str(tmp_path), skip_preflight=True)
+    with pytest.raises(ValueError, match="HunyuanImage-3.0-Instruct is not supported"):
+        Trainer(config)
+
+
+def test_full_train_loop_saves_validates_and_closes_the_group(group, tmp_path):
+    trainer = _full_trainer(tmp_path, seed=19, steps=4, grad_accum=1)
+    trainer.callbacks.save_every = trainer.callbacks.eval_every = 2
+    trainer.callbacks.log_every = 100
+    model = trainer.backend.peft_model
+    trainer.start_step = 0
+    trainer.trainable_params = list(model.parameters())
+    trainer.train_loader = torch.utils.data.DataLoader(list(range(4)), batch_size=1)
+    trainer.val_loader = [None]  # validation is stubbed below
+    losses = iter([0.5, 0.4])
+    trainer.validate = lambda: next(losses)
+    trainer._train_step = lambda batch, step: {
+        "loss": model(torch.randn(1, 4)).float().pow(2).mean(),
+        "total_loss": 0.0,
+        "flow_loss": 0.0,
+        "depth_aux": 0.0,
+        "normal_aux": 0.0,
+    }
+    try:
+        trainer.train()
+        assert not dist.is_initialized()  # the one-rank group of a single-process run is closed
+    finally:
+        distributed.ensure_process_group()  # for any test that runs after this one
+    out = trainer.callbacks.output_dir
+    names = sorted(p.name for p in out.glob("checkpoint-*"))
+    assert names == ["checkpoint-2", "checkpoint-4", "checkpoint-4_best", "checkpoint-4_final"]
+    assert torch.load(out / "train_state" / "extra.pt", weights_only=False)["step"] == 4
+    assert trainer.callbacks.best_val_loss == 0.4

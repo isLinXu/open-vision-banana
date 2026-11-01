@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
 from PIL import Image, ImageFile
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
@@ -559,6 +560,11 @@ class Trainer:
         # errors first (missing manifest, identity replay), then the contract preflight.
         self.train_loader, self.val_loader = self._build_datasets()
         model_layout = edit_latent_layout(resolve_model_config(config.model_name))
+        if self.full and model_layout == "hunyuan":
+            raise ValueError(
+                "train_mode full shards a diffusion transformer; HunyuanImage-3.0-Instruct "
+                "is not supported"
+            )
         if model_layout == "qwen21":
             qwen_image21.check_training_config(config)
         if model_layout is not None:
@@ -580,6 +586,8 @@ class Trainer:
         )
         # Full-parameter mode shards the backbone (FSDP2); every rank loaded the same weights.
         if self.full:
+            if self.device.type == "cuda" and self.device.index is not None:
+                torch.cuda.set_device(self.device)  # the one-rank NCCL group and FSDP mesh use it
             ensure_process_group()
             self.full_record = full_finetune.shard_backbone(self.backend.peft_model)
         self.trainable_params = [p for p in self.backend.peft_model.parameters() if p.requires_grad]
@@ -689,15 +697,19 @@ class Trainer:
         Full-parameter runs resume from their sharded ``train_state`` directory (or the
         run directory holding it): weights, optimizer, EMA, schedule and step.
         """
+        path = Path(resume)
         if self.full:
-            path = Path(resume)
-            if (path / "train_state").is_dir():
-                path = path / "train_state"
+            if not (path / "extra.pt").is_file():
+                # The run directory. A crash between the two renames of a save leaves only
+                # the previous state, train_state.old.
+                candidates = (path / "train_state", path / "train_state.old")
+                path = next((p for p in candidates if (p / "extra.pt").is_file()), candidates[0])
             extra = full_finetune.load_train_state(
                 path, self.backend.peft_model, self.optimizer, self.lr_scheduler, self.ema
             )
-            return self._resume_progress(path, int(extra["step"]), extra)
-        path = Path(resume)
+            step = self._resume_progress(path, int(extra["step"]), extra)
+            self._adopt_saved_best()
+            return step
         if path.is_dir():
             path = path / "lora.pt"
         if not path.is_file():
@@ -755,6 +767,22 @@ class Trainer:
         logger.info("Resumed from %s at step %d (best val_loss=%s)", path, step, best)
         return step
 
+    def _adopt_saved_best(self) -> None:
+        """Take the score of this run's ``_best`` checkpoint when it beats the resumed one.
+
+        Full mode keeps a single ``_best`` and deletes it when a better score arrives. The
+        train state can predate that checkpoint (it is refreshed by plain saves only), and
+        resuming with its older score would let a worse validation replace the best weights.
+        """
+        protocol = self._selection_protocol()
+        for path in self.callbacks.output_dir.glob("checkpoint-*_best/metadata.json"):
+            meta = json.loads(path.read_text())
+            loss = meta.get("val_loss")
+            if meta.get("selection_protocol") == protocol and loss is not None:
+                self.callbacks.best_val_loss = min(self.callbacks.best_val_loss, loss)
+        # Saving a new best is collective: every rank must take the same decision.
+        self.callbacks.best_val_loss = broadcast_float(self.callbacks.best_val_loss)
+
     def _save_full(self, step: int, suffix: str = "", val_loss: float | None = None) -> None:
         """Full-parameter checkpoint (collective): ``transformer/``, metadata, then train state.
 
@@ -767,7 +795,7 @@ class Trainer:
         ckpt_dir = out / f"checkpoint-{step}{suffix}"
         is_best = suffix == "_best"
         source = "ema" if is_best and self.ema is not None else "online"
-        with self.ema.applied(model) if source == "ema" else contextlib.nullcontext():
+        with self._ema_weights(model) if is_best else contextlib.nullcontext():
             full_finetune.save_transformer(
                 model, ckpt_dir / "transformer", self.full_record, is_main=self.dist.is_main
             )
@@ -1163,6 +1191,8 @@ class Trainer:
             self.callbacks.on_finish(global_step)
         barrier(self.dist)  # keep the process group alive until rank 0 has saved
         cleanup(self.dist)
+        if self.full and dist.is_initialized():  # the one-rank group of a single-process run
+            dist.destroy_process_group()
 
     def _in_context_conditioning(self) -> bool:
         """Whether the backbone takes the source image as in-context tokens (Kontext-style)."""
