@@ -5,13 +5,19 @@ import io
 import json
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from open_vision_banana.rea2seg import build_rea2seg, cached_hf_shards, parquet_rows
+from open_vision_banana.rea2seg import (
+    build_rea2seg,
+    cached_hf_shards,
+    load_vg_coco_ids,
+    parquet_rows,
+)
 from open_vision_banana.referring_contract import build_binary_referring_prompt
 
 
@@ -328,18 +334,30 @@ def test_same_query_with_conflicting_mask_fails(tmp_path):
         build_rea2seg(rows(sample(), other), tmp_path / "out")
 
 
-@pytest.mark.parametrize(
-    "filename,coco_id",
-    [("2408208.jpg", None), ("000000000042.jpg", 42), ("COCO_train2014_000000000042.jpg", 42)],
-)
-def test_parquet_coco_identity_does_not_confuse_visual_genome_ids(tmp_path, filename, coco_id):
+def parquet_of(tmp_path, *filenames):
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
-    original = sample()
-    original["image"]["path"] = filename
-    shard = tmp_path / "train.parquet"
-    pq.write_table(pa.Table.from_pylist([original]), shard)
-    converted = list(parquet_rows([shard]))
+    table = []
+    for i, name in enumerate(filenames):
+        row = sample(question=f"Which object {i}?")
+        row["image"]["path"] = name
+        table.append(row)
+    shard = tmp_path / "train-00000-of-00001.parquet"
+    pq.write_table(pa.Table.from_pylist(table), shard)
+    return shard
+
+
+@pytest.mark.parametrize(
+    "filename,coco_id",
+    [
+        ("2408208.jpg", None),
+        ("000000000042.jpg", 42),
+        ("COCO_train2014_000000000042.jpg", 42),
+        ("coco_000000000042.jpg", 42),
+    ],
+)
+def test_parquet_coco_identity_does_not_confuse_visual_genome_ids(tmp_path, filename, coco_id):
+    converted = list(parquet_rows([parquet_of(tmp_path, filename)]))
     assert converted[0][0].get("image_id") == coco_id
     assert converted[0][0]["source_image"] == filename
     if coco_id is not None:
@@ -350,3 +368,74 @@ def test_parquet_coco_identity_does_not_confuse_visual_genome_ids(tmp_path, file
             build_rea2seg(converted, tmp_path / "out", exclude_image_ids=[2408208])["rea2seg_rows"]
             == 1
         )
+
+
+def vg_image_data(tmp_path, zipped):
+    path = tmp_path / "image_data.json"
+    path.write_text(
+        json.dumps([{"image_id": 2315688, "coco_id": 44266}, {"image_id": 1, "coco_id": None}])
+    )
+    if not zipped:
+        return path
+    with zipfile.ZipFile(tmp_path / "image_data.json.zip", "w") as archive:
+        archive.write(path, "image_data.json")
+    return tmp_path / "image_data.json.zip"
+
+
+@pytest.mark.parametrize("zipped", [False, True])
+def test_visual_genome_images_get_their_coco_id(tmp_path, zipped):
+    mapping = load_vg_coco_ids(vg_image_data(tmp_path, zipped))
+    assert mapping == {2315688: 44266}
+    converted = list(parquet_rows([parquet_of(tmp_path, "2315688.jpg", "1.jpg")], mapping))
+    assert [r.get("image_id") for r, _, _ in converted] == [44266, None]
+    assert converted[0][0]["source_image"] == "2315688.jpg"
+    with pytest.raises(ValueError, match="Held-out COCO image id overlap"):
+        build_rea2seg(converted, tmp_path / "out", exclude_image_ids=[44266])
+
+
+@pytest.mark.parametrize(
+    "filename,leak",
+    [
+        ("cityscapes_frankfurt_000001_035864_leftImg8bit.png", "cityscapes"),  # val city
+        ("cityscapes_aachen_000000_000019_leftImg8bit.png", "cityscapes"),  # strict: any split
+        ("pixabay_0006_0907_4287458.jpg", None),
+    ],
+)
+def test_source_images_from_evaluated_benchmarks_are_held_out(tmp_path, filename, leak):
+    converted = list(parquet_rows([parquet_of(tmp_path, filename)]))
+    if leak is None:
+        assert build_rea2seg(converted, tmp_path / "out")["rea2seg_rows"] == 1
+        return
+    with pytest.raises(ValueError, match=rf"Held-out benchmark source image \({leak}\)"):
+        build_rea2seg(converted, tmp_path / "out")
+    keep = sample(question="Which object stays?", color="blue")
+    report = build_rea2seg(converted + rows(keep), tmp_path / "audited", reject_invalid=True)
+    assert report["rejected_by_reason"] == {"heldout_image_overlap": 1}
+
+
+def test_cli_requires_visual_genome_ids_to_exclude_gqa_seg(tmp_path):
+    shard = parquet_of(tmp_path, "2315688.jpg", "1.jpg")
+    ids = tmp_path / "evaluation_image_ids.json"
+    ids.write_text(json.dumps([44266]))
+    script = Path(__file__).resolve().parents[1] / "scripts" / "prepare_rea2seg.py"
+
+    def run(*extra, out):
+        cmd = [sys.executable, str(script), "--parquet", str(shard), "--output-dir", str(out)]
+        return subprocess.run(
+            cmd + ["--exclude-image-ids", str(ids), *extra], capture_output=True, text=True
+        )
+
+    missing = run(out=tmp_path / "missing")
+    assert missing.returncode != 0 and "--vg-image-data" in missing.stderr
+    # without gqa-seg the mapping is not needed (these fixture rows are all gqa-seg: none selected)
+    assert "--vg-image-data" not in run("--categories", "spatial", out=tmp_path / "no-gqa").stderr
+    done = run(
+        "--vg-image-data",
+        str(vg_image_data(tmp_path, zipped=True)),
+        "--reject-invalid",
+        out=tmp_path / "out",
+    )
+    assert done.returncode == 0, done.stderr
+    report = json.loads(done.stdout)
+    assert report["rea2seg_rows"] == 1
+    assert report["rejected_by_reason"] == {"heldout_image_overlap": 1}
