@@ -5,6 +5,7 @@ The helpers run on CPU in a one-rank gloo group; the Qwen-Image-2.1 path itself 
 
 import json
 import logging
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -72,8 +73,13 @@ def test_ema_applied_restores_the_online_weights_even_on_error():
         assert torch.equal(param, online[name])
 
 
-def test_on_validation_loss_saves_only_finite_improvements(tmp_path, caplog):
+def test_on_validation_loss_saves_only_finite_improvements(tmp_path, caplog, monkeypatch):
+    logged = []
+    monkeypatch.setitem(
+        sys.modules, "wandb", SimpleNamespace(log=lambda d, step: logged.append((d, step)))
+    )
     callbacks = TrainingCallbacks(output_dir=tmp_path)
+    callbacks.wandb_enabled = True
     saved = []
     with caplog.at_level(logging.INFO):
         assert callbacks.on_validation_loss(1, 0.5, lambda: saved.append(1))
@@ -81,6 +87,7 @@ def test_on_validation_loss_saves_only_finite_improvements(tmp_path, caplog):
         assert not callbacks.on_validation_loss(3, float("nan"), lambda: saved.append(3))
     assert saved == [1] and callbacks.best_val_loss == 0.5
     assert "New best val_loss=0.5000" in caplog.text
+    assert [step for _, step in logged] == [1, 2, 3] and logged[0][0] == {"val/loss": 0.5}
 
 
 class _Config(dict):
