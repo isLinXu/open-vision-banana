@@ -37,6 +37,9 @@ class TrainingConfig:
     lora_alpha: int = 64
     rslora: bool = True
     lora_targets: list[str] | None = None
+    # "lora": train a LoRA adapter (data-parallel); "full": train every backbone weight,
+    # sharded with FSDP2 (training/full_finetune.py). The lora_* fields apply to "lora" only.
+    train_mode: str = "lora"
 
     # ── Data ───────────────────────────────────────────────────────────
     data_dir: str | None = None
@@ -256,6 +259,16 @@ class TrainingConfig:
             raise ValueError("dtype must be float32, float16, or bfloat16")
         if self.quantize not in {None, "4bit", "8bit"}:
             raise ValueError("quantize must be null, 4bit, or 8bit")
+        if self.train_mode not in {"lora", "full"}:
+            raise ValueError("train_mode must be lora or full")
+        if self.train_mode == "full" and self.quantize is not None:
+            raise ValueError(
+                "train_mode full trains the unquantized backbone; set quantize to null"
+            )
+        if self.train_mode == "full" and self.resume and self.resume_weights_only:
+            raise ValueError(
+                "train_mode full resumes its own sharded state only (no resume_weights_only)"
+            )
         if self.scheduler not in {"cosine", "cosine_restarts", "polynomial", "constant", "one_cycle"}:
             raise ValueError(
                 "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
@@ -310,7 +323,7 @@ _YAML_SECTIONS = {
              "aspect_preserving_crop": "aspect_preserving_crop"},
     "training": {"steps": "steps", "batch_size": "batch_size", "gradient_accumulation": "grad_accum",
                  "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
-                 "seed": "seed",
+                 "seed": "seed", "mode": "train_mode",
                  "gradient_checkpointing": "gradient_checkpointing", "skip_preflight": "skip_preflight"},
     "optimizer": {"weight_decay": "weight_decay", "beta1": "adam_beta1", "beta2": "adam_beta2",
                   "eps": "adam_eps"},
@@ -435,8 +448,8 @@ class _UnsupportedBackend(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         parser.error(
             f"{option_string} is not supported by the unified Trainer; LoRA training is "
-            "data-parallel only. Launch with torchrun (e.g. "
-            "scripts/launch_training_a100_80g_ddp.sh)."
+            "data-parallel, and --train-mode full shards the backbone with FSDP2 on its own. "
+            "Launch with torchrun (e.g. scripts/launch_training_a100_80g_ddp.sh)."
         )
 
 

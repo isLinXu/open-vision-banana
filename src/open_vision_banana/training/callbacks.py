@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -184,12 +185,35 @@ class TrainingCallbacks:
             "validation_weight_source": validation_source,
             "selection_protocol": selection_protocol,
         }
+        self.write_metadata(ckpt_dir, meta)
+
+        logger.info("  Saved checkpoint at step %d → %s", step, ckpt_dir)
+        return ckpt_dir
+
+    def write_metadata(self, ckpt_dir: Path, meta: dict) -> None:
+        """``metadata.json`` of a checkpoint, with the task prompts the run trained with."""
         if self.task_prompts:
             meta["task_prompts"] = self.task_prompts
         (ckpt_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
-        logger.info("  Saved checkpoint at step %d → %s", step, ckpt_dir)
-        return ckpt_dir
+    def on_validation_loss(
+        self, step: int, val_loss: float, save_best: Callable[[], object]
+    ) -> bool:
+        """Log a validation loss; when it improves, ``save_best()`` and record it as the best.
+
+        Returns True only after a new best checkpoint is saved successfully.
+        """
+        logger.info("  [val] step=%d val_loss=%.4f", step, val_loss)
+        if self.wandb_enabled:
+            import wandb
+
+            wandb.log({"val/loss": val_loss}, step=step)
+        is_best = math.isfinite(val_loss) and val_loss < self.best_val_loss
+        if is_best:
+            save_best()
+            self.best_val_loss = val_loss
+            logger.info("  New best val_loss=%.4f", val_loss)
+        return is_best
 
     def on_validate(
         self,
@@ -208,16 +232,10 @@ class TrainingCallbacks:
 
         Returns True only after a new best checkpoint is saved successfully.
         """
-        logger.info("  [val] step=%d val_loss=%.4f", step, val_loss)
-
-        if self.wandb_enabled:
-            import wandb
-
-            wandb.log({"val/loss": val_loss}, step=step)
-
-        is_best = math.isfinite(val_loss) and val_loss < self.best_val_loss
-        if is_best:
-            self.on_checkpoint(
+        return self.on_validation_loss(
+            step,
+            val_loss,
+            lambda: self.on_checkpoint(
                 step,
                 peft_model,
                 optimizer,
@@ -229,11 +247,8 @@ class TrainingCallbacks:
                 lora_alpha=lora_alpha,
                 suffix="_best",
                 selection_protocol=selection_protocol,
-            )
-            self.best_val_loss = val_loss
-            logger.info("  New best val_loss=%.4f", val_loss)
-
-        return is_best
+            ),
+        )
 
     def on_finish(self, step: int) -> None:
         """Called when training completes."""

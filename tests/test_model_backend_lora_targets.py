@@ -128,3 +128,11 @@ def test_logs_actual_trainable_parameter_names(lora_setup, caplog):
     assert "weight" not in records[0]
     assert "bias" not in records[0]
     assert "Trainable params: 3 / 9 (33.33%)" in caplog.text
+
+
+def test_full_mode_trains_the_backbone_itself_without_lora(lora_setup):
+    backend = lora_setup.make_backend(train_mode="full")
+
+    assert lora_setup.calls == []
+    assert backend.peft_model is backend.backbone
+    assert backend.flow_scheduler is not None

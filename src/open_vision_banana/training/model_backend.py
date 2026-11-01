@@ -133,6 +133,7 @@ class ModelBackend:
         use_rslora: bool = True,
         lora_targets: list[str] | None = None,
         enable_gradient_checkpointing: bool = True,
+        train_mode: str = "lora",
     ):
         """Load pipeline and setup backend.
 
@@ -146,6 +147,8 @@ class ModelBackend:
             use_rslora: Whether to use rsLoRA scaling.
             lora_targets: Override LoRA target modules.
             enable_gradient_checkpointing: Enable gradient checkpointing on backbone.
+            train_mode: "lora" injects the adapter; "full" leaves the backbone as is
+                (``peft_model`` is the backbone; the Trainer shards and unfreezes it).
         """
         self.device = device
         self.dtype = dtype
@@ -200,7 +203,17 @@ class ModelBackend:
                 self.components, self.model_config.pipeline_class
             )
 
-        # Apply LoRA
+        if train_mode == "full":
+            # Same attribute name, so the forward / loss code is shared with the LoRA path.
+            logger.info("Full-parameter training: no LoRA; the Trainer shards the backbone")
+            self.peft_model = self.backbone
+        else:
+            self._apply_lora(lora_rank, lora_alpha, use_rslora)
+
+        # Flow scheduler
+        self.flow_scheduler = FlowScheduler()
+
+    def _apply_lora(self, lora_rank: int, lora_alpha: int, use_rslora: bool) -> None:
         logger.info(
             "Applying LoRA (rank=%d, alpha=%d, rsLoRA=%s)...", lora_rank, lora_alpha, use_rslora
         )
@@ -224,9 +237,6 @@ class ModelBackend:
             "Trainable parameter names: %s",
             [name for name, parameter in self.peft_model.named_parameters() if parameter.requires_grad],
         )
-
-        # Flow scheduler
-        self.flow_scheduler = FlowScheduler()
 
     def _load_hunyuan_instruct(self) -> None:
         """Load HunyuanImage-3.0-Instruct for its published ``forward``.
