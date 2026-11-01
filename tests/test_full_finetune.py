@@ -171,7 +171,8 @@ def _train(model, optimizer, ema, scheduler, steps, seed):
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad(set_to_none=True)
-        ema.update(model)
+        if ema is not None:
+            ema.update(model)
 
 
 def _parts(model):
