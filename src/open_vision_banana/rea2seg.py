@@ -19,6 +19,8 @@ from .res_preparation import build_res_pairs
 DATASET = "snowball521/Rea2Seg-16K"
 CATEGORIES = ("gqa-seg", "lisa-plus", "spatial", "reasonseg")
 FIELDS = frozenset(("image", "question", "cot_answer", "mask", "category"))
+# gqa-seg image names: the Visual Genome image id
+_VISUAL_GENOME_NAME = re.compile(r"(\d{1,11})\.jpg", re.IGNORECASE)
 
 
 def load_vg_coco_ids(path: str | Path) -> dict[int, int]:
@@ -30,10 +32,17 @@ def load_vg_coco_ids(path: str | Path) -> dict[int, int]:
     path = Path(path)
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as archive:
-            records = json.loads(archive.read("image_data.json"))
+            members = [n for n in archive.namelist() if Path(n).name == "image_data.json"]
+            if len(members) != 1:
+                raise ValueError(f"{path.name}: expected one image_data.json, found {members}")
+            records = json.loads(archive.read(members[0]))
     else:
         records = json.loads(path.read_text(encoding="utf-8"))
-    return {int(r["image_id"]): int(r["coco_id"]) for r in records if r.get("coco_id") is not None}
+    if not isinstance(records, list) or not all(
+        isinstance(r, dict) and "image_id" in r and "coco_id" in r for r in records
+    ):
+        raise ValueError(f"{path.name}: not a Visual Genome image_data list (image_id, coco_id)")
+    return {int(r["image_id"]): int(r["coco_id"]) for r in records if r["coco_id"] is not None}
 
 
 def parquet_rows(
@@ -41,8 +50,8 @@ def parquet_rows(
 ) -> Iterator[tuple[dict, dict, Path]]:
     """Yield rows, stable shard/row provenance, and the local image-path root.
 
-    ``vg_coco_ids`` (:func:`load_vg_coco_ids`) gives Visual Genome images their COCO id,
-    so ``exclude_image_ids`` also reaches gqa-seg.
+    ``vg_coco_ids`` (:func:`load_vg_coco_ids`) gives gqa-seg's Visual Genome images their
+    COCO id, so ``exclude_image_ids`` also reaches them.
     """
     try:
         import pyarrow.parquet as pq
@@ -76,9 +85,14 @@ def parquet_rows(
                 if image_name:
                     row["source_image"] = image_name
                 image_id = coco_image_id_from_path(image_name)
-                if image_id is None and vg_coco_ids is not None:
-                    visual_genome = re.fullmatch(r"(\d{1,11})\.jpg", image_name, re.IGNORECASE)
-                    image_id = vg_coco_ids.get(int(visual_genome[1])) if visual_genome else None
+                visual_genome = _VISUAL_GENOME_NAME.fullmatch(image_name)
+                if (
+                    image_id is None
+                    and vg_coco_ids is not None
+                    and visual_genome
+                    and row.get("category") == "gqa-seg"
+                ):
+                    image_id = vg_coco_ids.get(int(visual_genome[1]))
                 if image_id is not None:
                     row["image_id"] = image_id
                 yield (

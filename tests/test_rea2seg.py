@@ -334,14 +334,15 @@ def test_same_query_with_conflicting_mask_fails(tmp_path):
         build_rea2seg(rows(sample(), other), tmp_path / "out")
 
 
-def parquet_of(tmp_path, *filenames):
+def parquet_of(tmp_path, *filenames, category="gqa-seg"):
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
     table = []
     for i, name in enumerate(filenames):
-        row = sample(question=f"Which object {i}?")
+        row = sample(category, question=f"Which object {i}?")
         row["image"]["path"] = name
         table.append(row)
+    tmp_path.mkdir(parents=True, exist_ok=True)
     shard = tmp_path / "train-00000-of-00001.parquet"
     pq.write_table(pa.Table.from_pylist(table), shard)
     return shard
@@ -370,6 +371,21 @@ def test_parquet_coco_identity_does_not_confuse_visual_genome_ids(tmp_path, file
         )
 
 
+def test_visual_genome_image_data_must_be_recognisable(tmp_path):
+    path = tmp_path / "image_data.json"
+    path.write_text(json.dumps([{"id": 1, "coco_id": None}]))
+    with pytest.raises(ValueError, match="not a Visual Genome image_data list"):
+        load_vg_coco_ids(path)
+    nested = tmp_path / "nested.zip"
+    with zipfile.ZipFile(nested, "w") as archive:
+        archive.writestr("data/image_data.json", json.dumps([{"image_id": 5, "coco_id": 7}]))
+    assert load_vg_coco_ids(nested) == {5: 7}
+    with zipfile.ZipFile(tmp_path / "empty.zip", "w") as archive:
+        archive.writestr("other.json", "[]")
+    with pytest.raises(ValueError, match="expected one image_data.json"):
+        load_vg_coco_ids(tmp_path / "empty.zip")
+
+
 def vg_image_data(tmp_path, zipped):
     path = tmp_path / "image_data.json"
     path.write_text(
@@ -389,6 +405,9 @@ def test_visual_genome_images_get_their_coco_id(tmp_path, zipped):
     converted = list(parquet_rows([parquet_of(tmp_path, "2315688.jpg", "1.jpg")], mapping))
     assert [r.get("image_id") for r, _, _ in converted] == [44266, None]
     assert converted[0][0]["source_image"] == "2315688.jpg"
+    # only gqa-seg names its images by Visual Genome id
+    spatial = parquet_of(tmp_path / "spatial", "2315688.jpg", category="spatial")
+    assert "image_id" not in next(parquet_rows([spatial], mapping))[0]
     with pytest.raises(ValueError, match="Held-out COCO image id overlap"):
         build_rea2seg(converted, tmp_path / "out", exclude_image_ids=[44266])
 
@@ -419,7 +438,7 @@ def test_cli_requires_visual_genome_ids_to_exclude_gqa_seg(tmp_path):
     ids.write_text(json.dumps([44266]))
     script = Path(__file__).resolve().parents[1] / "scripts" / "prepare_rea2seg.py"
 
-    def run(*extra, out):
+    def run(*extra, out, shard=shard):
         cmd = [sys.executable, str(script), "--parquet", str(shard), "--output-dir", str(out)]
         return subprocess.run(
             cmd + ["--exclude-image-ids", str(ids), *extra], capture_output=True, text=True
@@ -427,8 +446,9 @@ def test_cli_requires_visual_genome_ids_to_exclude_gqa_seg(tmp_path):
 
     missing = run(out=tmp_path / "missing")
     assert missing.returncode != 0 and "--vg-image-data" in missing.stderr
-    # without gqa-seg the mapping is not needed (these fixture rows are all gqa-seg: none selected)
-    assert "--vg-image-data" not in run("--categories", "spatial", out=tmp_path / "no-gqa").stderr
+    spatial = parquet_of(tmp_path / "spatial", "pixabay_0006_0907_4287458.jpg", category="spatial")
+    no_gqa = run("--categories", "spatial", out=tmp_path / "no-gqa", shard=spatial)
+    assert no_gqa.returncode == 0, no_gqa.stderr  # without gqa-seg no mapping is needed
     done = run(
         "--vg-image-data",
         str(vg_image_data(tmp_path, zipped=True)),
