@@ -339,6 +339,14 @@ def eval_fixture(tmp_path):
             target_kind="tartan",
         ),
         dict(
+            task="depth",
+            split="val",
+            input=rgb,
+            target=depth_png,
+            prompt="nan depth",
+            target_kind="tartan",
+        ),
+        dict(
             task="referring",
             split="val",
             input=rgb,
@@ -360,7 +368,7 @@ def eval_fixture(tmp_path):
             split="val",
             input=rgb,
             target=mask_png,
-            prompt="inst nan",
+            prompt="inst",
             background_color=[0, 0, 0],
             category="box",
         ),
@@ -374,7 +382,7 @@ def eval_fixture(tmp_path):
             "--manifest",
             str(manifest),
             "--counts",
-            "depth=2,referring=1,semantic=1,instance=1,generation=1",
+            "depth=3,referring=1,semantic=1,instance=1,generation=1",
             "--output",
             str(index),
         ]
@@ -429,18 +437,20 @@ def test_eval_end_to_end_on_cpu(tmp_path, monkeypatch):
         assert dev.main(args) == 0
         shards.append(out)
     records = [r for s in shards for r in dev.read_jsonl(s)]
-    assert len(records) == 6 and len(loads) == 2 and loads[0]["device"] == "cpu"
+    assert len(records) == 7 and len(loads) == 2 and loads[0]["device"] == "cpu"
     by_task = defaultdict(list)
     for r in records:
         by_task[r["task"]].append(r)
-    failed = {r["task"]: r["error"] for r in records if r["status"] == "failed"}
-    assert set(failed) == {"depth", "instance"} and "non-finite" in failed["instance"]
+    failed = sorted(r["error"] for r in records if r["status"] == "failed")
+    assert len(failed) == 2 and {r["task"] for r in records if r["status"] == "failed"} == {"depth"}
+    assert failed[0].startswith("RuntimeError: boom") and "non-finite" in failed[1]
+    assert "AP@0.5" in by_task["instance"][0]["metrics"]
     depth = next(r for r in by_task["depth"] if r["status"] == "ok")
     assert depth["gt_floor"]["delta1"] == depth["gt_floor"]["pixels"] > 0
     assert by_task["referring"][0]["metrics"]["kind"] == "referring"
     assert set(by_task["semantic"][0]["metrics"]["per_class"]) <= {"wall", "bed"}
     assert by_task["generation"][0]["metrics"]["clip_image_to_reference"] > 0.99
-    assert len(list((tmp_path / "png").glob("*_pred.png"))) == 4
+    assert len(list((tmp_path / "png").glob("*_pred.png"))) == 5
     summary = tmp_path / "summary.json"
     assert (
         dev.main(
@@ -457,7 +467,7 @@ def test_eval_end_to_end_on_cpu(tmp_path, monkeypatch):
         == 3
     )
     metrics = json.loads(summary.read_text())["metrics"]
-    assert metrics["depth"]["failed"] == 1 and metrics["referring"]["samples"] == 1
+    assert metrics["depth"]["failed"] == 2 and metrics["referring"]["samples"] == 1
     # A rerun retries only the failed samples; a fully scored shard never loads the model.
     loads.clear()
     assert dev.main(args) == 0 and len(loads) == 1
