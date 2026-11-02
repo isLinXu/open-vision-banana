@@ -190,12 +190,11 @@ class ManifestVisionDataset(Dataset):
         self.disk_cache_dir = Path(disk_cache_dir) if disk_cache_dir else None
         self.samples: list[dict[str, str]] = []
         path_anchor = data_root.resolve() if data_root else manifest_path
-        if "referring" in tasks:
-            roots = [Path(manifest_path).parent]
-            if data_root is not None:
-                roots.append(Path(data_root))
-            if any((root / "BUILD_INCOMPLETE").exists() for root in roots):
-                raise ValueError("RES dataset build or restore is incomplete; validate before training")
+        roots = [Path(manifest_path).parent]
+        if data_root is not None:
+            roots.append(Path(data_root))
+        if any((root / "BUILD_INCOMPLETE").exists() for root in roots):
+            raise ValueError("Dataset build or restore is incomplete; validate before training")
 
         # Optional indexed_gzip tar stream support (Solution 3)
         self._tar_files: dict[str, dict[str, int]] = {}
@@ -273,6 +272,7 @@ class ManifestVisionDataset(Dataset):
                         "target_tar_key": tgt_tar_key or "",
                         "task": mapped,
                         "prompt": prompt,
+                        **{key: row[key] for key in ("experiment_source", "experiment_sample_id", "source_scene") if key in row},
                         # Builders record the exact legend; it beats re-parsing the prompt.
                         **({"mapping": {k: tuple(int(c) for c in v) for k, v in mapping.items()}}
                            if isinstance(mapping, dict) and mapping else {}),
@@ -442,6 +442,12 @@ class ManifestVisionDataset(Dataset):
             "target_rgb": tgt,
             "task": s["task"],
         }
+        if "experiment_source" in s:
+            item["experiment_audit"] = {
+                "source": s["experiment_source"], "id": s["experiment_sample_id"],
+                "scene": s.get("source_scene"), "task": s["task"],
+                "palette": target_cmap if s["task"] == "depth" else None,
+            }
         if s["task"] == "referring":
             item.update({key: s[key] for key in ("expression", "encoding", "sample_id", "source_dataset") if key in s})
         if s["task"] == "instance" and "background_color" in s:
@@ -499,6 +505,8 @@ def _collate_fn(batch: list[dict]) -> dict:
         "target_rgb": torch.stack([b["target_rgb"] for b in batch]),
         "task": [b["task"] for b in batch],
     }
+    if any("experiment_audit" in b for b in batch):
+        result["experiment_audit"] = [b.get("experiment_audit") for b in batch]
     if any(b["task"] == "referring" for b in batch):
         for key in ("expression", "encoding", "sample_id", "source_dataset"):
             if any(key in b for b in batch):
@@ -1023,6 +1031,8 @@ class Trainer:
         }
         task_loss_acc: dict[str, list[float]] = {}
         task_sample_counts: dict[str, int] = {}
+        from .exposure import ExposureAudit
+        exposure = ExposureAudit(Path(config.output_dir), self.dist.rank, self.start_step)
         global_step = self.start_step
         micro_step = 0
         # full passes over the train loader; seeds DistributedSampler shuffles. A resumed
@@ -1047,6 +1057,7 @@ class Trainer:
                     break
                 for task in batch.get("task", []) if isinstance(batch, dict) else []:
                     task_sample_counts[task] = task_sample_counts.get(task, 0) + 1
+                exposure.observe(batch)
 
                 # ── Forward ────────────────────────────────────────────
                 loss_dict = self._train_step(batch, global_step)
@@ -1076,6 +1087,7 @@ class Trainer:
                 # gradients, so clipping first leaves both outcomes unchanged.
                 grad_norm = clip_grad_norm(self.trainable_params, config.max_grad_norm)
                 if drop_oversized_gradients(grad_norm, config.drop_grad_norm):
+                    exposure.dropped_updates += 1
                     self.optimizer.zero_grad(set_to_none=True)
                     if self.dist.is_main:
                         logger.warning(
@@ -1091,6 +1103,8 @@ class Trainer:
                 if self.ema is not None:
                     self.ema.update(peft_model)
                 global_step += 1
+                if global_step % config.save_every == 0:
+                    exposure.flush(global_step)
 
                 # ── Logging ────────────────────────────────────────────
                 if self.callbacks.should_log(global_step):
@@ -1172,6 +1186,7 @@ class Trainer:
                     logger.info("Validation details: %s", self.validation_metrics)
 
         # ── Final save ─────────────────────────────────────────────────
+        exposure.flush(global_step, complete=True)
         if self.full:
             self._save_full(global_step, "_final")
         elif self.dist.is_main:

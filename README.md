@@ -243,6 +243,10 @@ prompts, aspect-preserving crops and rsLoRA r32/α64. Every run writes
 `effective_config.json`; values the paper does not state (optimizer, lr, ratio, …) are
 marked as repository choices in the config comments.
 
+For the pinned LingBot 50k supplement, see the [full-pool depth experiment plan](docs/lingbot_full_data_experiments.md):
+paired D/P/M configurations, strict data preparation, audited launches and benchmark protocols.
+These are experiment recipes, not claims of improved model results.
+
 ### Unified Training Framework
 
 `scripts/train.py` is one entry point for all registered models (Qwen-Image, SANA,
