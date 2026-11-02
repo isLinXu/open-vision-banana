@@ -2,6 +2,7 @@
 
 import json
 import math
+from collections import defaultdict
 
 import pytest
 import torch
@@ -251,3 +252,247 @@ def test_merge_coverage_duplicates_and_failures(tmp_path, capsys):
     result = json.loads(out.read_text())
     assert result["complete"] and result["meta"] == {"job": "x"}
     capsys.readouterr()
+
+
+class _FakeGenerator:
+    """Returns the input image; raises / returns NaN for marked prompts."""
+
+    def generate(self, prompt, image, **kwargs):
+        if "boom" in prompt:
+            raise RuntimeError("boom")
+        if "nan" in prompt:
+            return torch.full_like(image, float("nan"))
+        return image.clone()
+
+
+class _FakeClip:
+    def __init__(self):
+        self.vision_model = lambda pixel_values: type(
+            "O", (), {"pooler_output": pixel_values.flatten(1)[:, :4]}
+        )()
+        self.text_model = lambda input_ids, attention_mask: type(
+            "O", (), {"pooler_output": input_ids[:, :4].float()}
+        )()
+        self.visual_projection = self.text_projection = lambda x: x
+
+    def to(self, device):
+        return self
+
+    def eval(self):
+        return self
+
+
+class _FakeProcessor:
+    def __call__(self, text, images, **kwargs):
+        import numpy as np
+
+        pixels = torch.stack(
+            [torch.from_numpy(np.asarray(i, np.float32)).permute(2, 0, 1) for i in images]
+        )
+        return _Batch(
+            pixel_values=pixels + 1.0,
+            input_ids=torch.ones(1, 8, dtype=torch.long),
+            attention_mask=torch.ones(1, 8, dtype=torch.long),
+        )
+
+
+class _Batch(dict):
+    def to(self, device):
+        return self
+
+
+def eval_fixture(tmp_path):
+    import numpy as np
+    from PIL import Image
+
+    from open_vision_banana.core.depth_mapper import DepthRGBMapper
+    from open_vision_banana.data.res_contract import build_binary_referring_prompt
+
+    def png(name, array):
+        Image.fromarray(np.asarray(array, np.uint8)).save(tmp_path / name)
+        return name
+
+    rgb = png("img.png", np.random.default_rng(0).integers(0, 255, (24, 32, 3)))
+    depth = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 24, 32), 2.5))
+    depth_png = png("depth.png", (depth[0].permute(1, 2, 0).numpy() * 255).round())
+    mask = np.zeros((24, 32, 3))
+    mask[4:12, 4:20] = 255
+    mask_png = png("mask.png", mask)
+    seg = np.zeros((24, 32, 3))
+    seg[:, 16:] = (255, 0, 0)
+    seg_png = png("seg.png", seg)
+    rows = [
+        dict(
+            task="depth",
+            split="val",
+            input=rgb,
+            target=depth_png,
+            prompt="Generate a metric depth visualization of this image.",
+            target_kind="tartan",
+        ),
+        dict(
+            task="depth",
+            split="val",
+            input=rgb,
+            target=depth_png,
+            prompt="boom depth",
+            target_kind="tartan",
+        ),
+        dict(
+            task="referring",
+            split="val",
+            input=rgb,
+            target=mask_png,
+            expression="the box",
+            encoding="binary_white_black_v1",
+            prompt=build_binary_referring_prompt("the box"),
+        ),
+        dict(
+            task="semantic",
+            split="val",
+            input=rgb,
+            target=seg_png,
+            prompt="seg",
+            mapping={"wall": [0, 0, 0], "bed": [255, 0, 0]},
+        ),
+        dict(
+            task="instance",
+            split="val",
+            input=rgb,
+            target=mask_png,
+            prompt="inst nan",
+            background_color=[0, 0, 0],
+            category="box",
+        ),
+        dict(task="generation", split="val", input=rgb, target=rgb, prompt="Add a tree"),
+    ]
+    manifest = write_manifest(tmp_path / "pairs.jsonl", rows)
+    index = tmp_path / "index.json"
+    dev.main(
+        [
+            "index",
+            "--manifest",
+            str(manifest),
+            "--counts",
+            "depth=2,referring=1,semantic=1,instance=1,generation=1",
+            "--output",
+            str(index),
+        ]
+    )
+    return manifest, index
+
+
+def test_eval_end_to_end_on_cpu(tmp_path, monkeypatch):
+    import transformers
+
+    from open_vision_banana.inference import pipeline
+
+    manifest, index = eval_fixture(tmp_path)
+    loads = []
+    monkeypatch.setattr(
+        pipeline.VisionBanana,
+        "from_pretrained",
+        classmethod(
+            lambda cls, **kw: loads.append(kw) or type("M", (), {"generator": _FakeGenerator()})()
+        ),
+    )
+    monkeypatch.setattr(
+        transformers.CLIPModel, "from_pretrained", classmethod(lambda cls, *a, **k: _FakeClip())
+    )
+    monkeypatch.setattr(
+        transformers.CLIPProcessor,
+        "from_pretrained",
+        classmethod(lambda cls, *a, **k: _FakeProcessor()),
+    )
+    shards = []
+    for k in range(2):
+        out = tmp_path / f"shard{k}.jsonl"
+        args = [
+            "eval",
+            "--manifest",
+            str(manifest),
+            "--index",
+            str(index),
+            "--device",
+            "cpu",
+            "--resolution",
+            "16",
+            "--num-shards",
+            "2",
+            "--shard-index",
+            str(k),
+            "--output-jsonl",
+            str(out),
+            "--save-dir",
+            str(tmp_path / "png"),
+        ]
+        assert dev.main(args) == 0
+        shards.append(out)
+    records = [r for s in shards for r in dev.read_jsonl(s)]
+    assert len(records) == 6 and len(loads) == 2 and loads[0]["device"] == "cpu"
+    by_task = defaultdict(list)
+    for r in records:
+        by_task[r["task"]].append(r)
+    failed = {r["task"]: r["error"] for r in records if r["status"] == "failed"}
+    assert set(failed) == {"depth", "instance"} and "non-finite" in failed["instance"]
+    depth = next(r for r in by_task["depth"] if r["status"] == "ok")
+    assert depth["gt_floor"]["delta1"] == depth["gt_floor"]["pixels"] > 0
+    assert by_task["referring"][0]["metrics"]["kind"] == "referring"
+    assert set(by_task["semantic"][0]["metrics"]["per_class"]) <= {"wall", "bed"}
+    assert by_task["generation"][0]["metrics"]["clip_image_to_reference"] > 0.99
+    assert len(list((tmp_path / "png").glob("*_pred.png"))) == 4
+    summary = tmp_path / "summary.json"
+    assert (
+        dev.main(
+            [
+                "merge",
+                "--index",
+                str(index),
+                "--shards",
+                *map(str, shards),
+                "--output-json",
+                str(summary),
+            ]
+        )
+        == 3
+    )
+    metrics = json.loads(summary.read_text())["metrics"]
+    assert metrics["depth"]["failed"] == 1 and metrics["referring"]["samples"] == 1
+    # A rerun retries only the failed samples; a fully scored shard never loads the model.
+    loads.clear()
+    assert dev.main(args) == 0 and len(loads) == 1
+    ok_only = tmp_path / "ok.jsonl"
+    ok_only.write_text("".join(json.dumps(r) + "\n" for r in records if r["status"] == "ok"))
+    monkeypatch.setattr(
+        pipeline.VisionBanana,
+        "from_pretrained",
+        classmethod(lambda cls, **kw: pytest.fail("loaded")),
+    )
+    done = [
+        "eval",
+        "--manifest",
+        str(manifest),
+        "--index",
+        str(index),
+        "--device",
+        "cpu",
+        "--resolution",
+        "16",
+        "--num-shards",
+        "1",
+        "--shard-index",
+        "0",
+        "--output-jsonl",
+        str(ok_only),
+    ]
+    ok_only.write_text("".join(json.dumps({**r, "status": "ok"}) + "\n" for r in records))
+    assert dev.main(done) == 0
+
+
+def test_dataset_prompt_matches_dataset():
+    from open_vision_banana.data.res_contract import build_binary_referring_prompt
+
+    row = dict(expression="the box", encoding="binary_white_black_v1")
+    assert dev.dataset_prompt(row, "referring") == build_binary_referring_prompt("the box")
+    assert dev.dataset_prompt({"prompt": "p"}, "semantic") == "p"
+    assert dev.dataset_prompt({}, "depth")

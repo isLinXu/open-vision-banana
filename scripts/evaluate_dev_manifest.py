@@ -448,6 +448,16 @@ SCORERS = {
 }
 
 
+def dataset_prompt(row: dict, task: str) -> str:
+    """The prompt ManifestVisionDataset gives this row (RES prompts are resolved, others defaulted)."""
+    from open_vision_banana.data.res_contract import resolve_referring_prompt
+    from open_vision_banana.training.trainer import TASK_PROMPTS
+
+    if task == "referring":
+        return resolve_referring_prompt(row)
+    return row.get("prompt") or TASK_PROMPTS.get(task, "")
+
+
 def run_eval(args) -> int:
     import torch
 
@@ -482,7 +492,10 @@ def run_eval(args) -> int:
         rows = {n: json.loads(line) for n, line in enumerate(stream, 1) if n in wanted}
 
     model = VisionBanana.from_pretrained(
-        model_name=args.model_name, lora_path=args.lora_path, device="cuda", dtype=torch.bfloat16
+        model_name=args.model_name,
+        lora_path=args.lora_path,
+        device=args.device,
+        dtype=torch.bfloat16,
     )
     ctx = SimpleNamespace(
         mapper=DepthRGBMapper(colormap="cube_edge"),
@@ -495,7 +508,7 @@ def run_eval(args) -> int:
         from transformers import CLIPModel, CLIPProcessor
 
         ctx.clip = (
-            CLIPModel.from_pretrained(args.clip_model).to("cuda").eval(),
+            CLIPModel.from_pretrained(args.clip_model).to(args.device).eval(),
             CLIPProcessor.from_pretrained(args.clip_model),
         )
     if args.save_dir is not None:
@@ -510,7 +523,7 @@ def run_eval(args) -> int:
                 image_path=resolve_manifest_path(row["input"], args.manifest),
                 target_path=resolve_manifest_path(row["target"], args.manifest),
             )
-            key = (task, str(sample.image_path), str(sample.target_path), row.get("prompt", ""))
+            key = (task, str(sample.image_path), str(sample.target_path), dataset_prompt(row, task))
             record = {
                 "position": entry["position"],
                 "task": task,
@@ -524,8 +537,8 @@ def run_eval(args) -> int:
                 sample.item = dataset[lookup[key]]
                 # [0, 1] on purpose: generator._tensor_to_pil reads a tensor without negative pixels
                 # as [0, 1], so a bright image in the documented [-1, 1] range would be misread.
-                image = ((sample.item["image"] + 1.0) / 2.0).unsqueeze(0).to("cuda")
-                target = sample.item["target_rgb"].unsqueeze(0).to("cuda")
+                image = ((sample.item["image"] + 1.0) / 2.0).unsqueeze(0).to(args.device)
+                target = sample.item["target_rgb"].unsqueeze(0).to(args.device)
                 with torch.no_grad():
                     pred = model.generator.generate(
                         prompt=sample.item["prompt"],
@@ -537,7 +550,7 @@ def run_eval(args) -> int:
                         width=args.resolution,
                         seed=args.seed + entry["position"],
                     )
-                pred = pred.float().to("cuda")
+                pred = pred.float().to(args.device)
                 if pred.shape[-2:] != target.shape[-2:]:
                     pred = torch.nn.functional.interpolate(
                         pred, size=target.shape[-2:], mode="bilinear", align_corners=False
@@ -612,6 +625,7 @@ def main(argv=None) -> int:
     e.add_argument("--guidance-scale", type=float, default=4.0)
     e.add_argument("--strength", type=float, default=0.85)
     e.add_argument("--seed", type=int, default=42)
+    e.add_argument("--device", default="cuda")
     e.add_argument("--num-shards", type=int, default=1)
     e.add_argument("--shard-index", type=int, default=0)
     e.add_argument("--clip-model", default="openai/clip-vit-large-patch14")
