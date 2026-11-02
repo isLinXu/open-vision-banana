@@ -115,3 +115,28 @@ def test_coco_identity_overlap_is_detected_even_with_different_pixels(tmp_path):
     ]
     with pytest.raises(ValueError, match="COCO IDs"):
         merger.assert_no_heldout_overlap(rows, tmp_path / "pairs.jsonl")
+
+
+@pytest.mark.parametrize(
+    "extra,match",
+    [
+        ({"image_id": 999}, "Held-out COCO image in supplement"),  # Visual Genome mapped to COCO
+        (
+            {"source_image": "cityscapes_frankfurt_000001_035864_leftImg8bit.png"},
+            "Benchmark-source row in supplement",
+        ),
+    ],
+)
+def test_rea2seg_source_identity_reaches_the_heldout_gates(tmp_path, monkeypatch, extra, match):
+    sources, release, exclude = fixture_inputs(tmp_path, monkeypatch)
+    path = sources["rea2seg"]
+    row = dict(json.loads(path.read_text()), **extra)
+    path.write_text(json.dumps(row) + "\n")
+    pinned = json.loads(release.read_text())
+    pinned["rea2seg"] = {
+        "manifest_sha256": file_sha256(path),
+        "dataset_fingerprint": fingerprint_records([row], path.parent),
+    }
+    release.write_text(json.dumps(pinned))
+    with pytest.raises(ValueError, match=match):
+        merger.merge(sources, tmp_path / "combined.jsonl", release, exclude)
