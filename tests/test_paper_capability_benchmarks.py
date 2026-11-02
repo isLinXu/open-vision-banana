@@ -80,6 +80,7 @@ def test_build_jobs_wires_paper_roots(tmp_path: Path) -> None:
     assert ("generation", "imgedit") in keys
 
 
+
 def test_every_native_resolution_job_has_a_native_adapter_key(tmp_path: Path) -> None:
     # --native-resolution covers depth, normal, referring and semantic jobs; each job's adapter
     # key must be in NATIVE_GT_DATASETS or the run exits before scoring (Cityscapes did).

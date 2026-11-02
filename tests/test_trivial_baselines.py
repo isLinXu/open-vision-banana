@@ -83,28 +83,11 @@ def test_script_native_resolution_end_to_end(tmp_path):
     out = tmp_path / "out.json"
     root = Path(__file__).resolve().parent.parent
     proc = subprocess.run(
-        [
-            sys.executable,
-            str(root / "scripts" / "depth_trivial_baselines.py"),
-            "--dataset-key",
-            "nyu_depth",
-            "--dataset-name",
-            "other",
-            "--root",
-            str(tmp_path),
-            "--split",
-            "val",
-            "--resolution",
-            "16",
-            "--native-resolution",
-            "--constants",
-            "3",
-            "--output-json",
-            str(out),
-        ],
-        capture_output=True,
-        text=True,
-        env={**__import__("os").environ, "PYTHONPATH": str(root / "src")},
+        [sys.executable, str(root / "scripts" / "depth_trivial_baselines.py"),
+         "--dataset-key", "nyu_depth", "--dataset-name", "other", "--root", str(tmp_path),
+         "--split", "val", "--resolution", "16", "--native-resolution", "--constants", "3",
+         "--output-json", str(out)],
+        capture_output=True, text=True, env={**__import__("os").environ, "PYTHONPATH": str(root / "src")},
     )
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(out.read_text())

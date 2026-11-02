@@ -51,7 +51,7 @@ def test_saco_cgf1_uses_paper_product_not_geometric_mean() -> None:
     )
 
     # Confusion: TP=2, TN=1, FP=1, FN=0 -> MCC = 2/sqrt(12).
-    expected_mcc = 2.0 / (12.0**0.5)
+    expected_mcc = 2.0 / (12.0 ** 0.5)
     assert metrics["pmF1"] == pytest.approx(1.0)
     assert metrics["IL_MCC"] == pytest.approx(expected_mcc)
     assert metrics["cgF1"] == pytest.approx(100.0 * expected_mcc)
@@ -132,9 +132,11 @@ def test_cityscapes_evaluation_prompt_contains_all_nineteen_classes() -> None:
 
 
 def test_cityscapes_subset_prompt_expands_to_canonical_legend() -> None:
-    prompt = PromptBuilder.build_semantic_prompt({"road": (128, 64, 128), "sky": (70, 130, 180)})
+    prompt = PromptBuilder.build_semantic_prompt(
+        {"road": (128, 64, 128), "sky": (70, 130, 180)}
+    )
     assert '"bicycle": <119, 11, 32>' in prompt
-    assert prompt.count("<") == 19
+    assert prompt.count('<') == 19
 
 
 def test_manifest_cityscapes_prompt_matches_inference_contract(tmp_path) -> None:

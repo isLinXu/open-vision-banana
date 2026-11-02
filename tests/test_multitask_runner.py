@@ -145,9 +145,7 @@ def test_checkpoint_monitor_always_resumes_paused_training():
 
     with (
         patch.object(module, "_pid_alive", return_value=True),
-        patch.object(
-            module.os, "kill", side_effect=lambda pid, sig: sent_signals.append((pid, sig))
-        ),
+        patch.object(module.os, "kill", side_effect=lambda pid, sig: sent_signals.append((pid, sig))),
         pytest.raises(RuntimeError, match="inference failed"),
         module.pause_process(123),
     ):
@@ -170,29 +168,13 @@ def test_runner_command_carries_schedule_and_validation_controls():
         "Args",
         (),
         {
-            "model": "ssd-1b",
-            "data_dir": Path("data"),
-            "output_dir": Path("output"),
-            "max_steps": 2,
-            "epochs": 1,
-            "batch_size": 1,
-            "grad_accum": 1,
-            "resolution": 64,
-            "rank": 4,
-            "alpha": 8,
-            "lr": 1e-4,
-            "max_per_task": None,
-            "max_val_per_task": 2,
-            "max_generation": None,
-            "save_every": 1,
-            "log_every": 1,
-            "seed": 42,
-            "device": "cpu",
-            "gradient_checkpointing": False,
-            "task_ratios": '{"depth": 1, "normal": 1}',
-            "task_schedule": True,
-            "no_balance_data": True,
-            "eval_every": 2,
+            "model": "ssd-1b", "data_dir": Path("data"), "output_dir": Path("output"),
+            "max_steps": 2, "epochs": 1, "batch_size": 1, "grad_accum": 1,
+            "resolution": 64, "rank": 4, "alpha": 8, "lr": 1e-4,
+            "max_per_task": None, "max_val_per_task": 2, "max_generation": None,
+            "save_every": 1, "log_every": 1, "seed": 42, "device": "cpu",
+            "gradient_checkpointing": False, "task_ratios": '{"depth": 1, "normal": 1}',
+            "task_schedule": True, "no_balance_data": True, "eval_every": 2,
         },
     )()
     command = module.build_training_command(args)

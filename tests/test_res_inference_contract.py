@@ -318,19 +318,12 @@ def test_referring_prompt_is_the_paper_template_everywhere():
     # Pre-template manifests stay loadable but are not re-emitted.
     old = "Segment the red car in solid white. Render all other pixels black."
     assert is_binary_referring_prompt(old, "the red car")
-    assert (
-        resolve_referring_prompt(
-            {"expression": "the red car", "prompt": old, "encoding": BINARY_REFERRING_ENCODING}
-        )
-        == old
-    )
+    assert resolve_referring_prompt(
+        {"expression": "the red car", "prompt": old, "encoding": BINARY_REFERRING_ENCODING}
+    ) == old
     with pytest.raises(ValueError, match="canonical"):
         resolve_referring_prompt(
-            {
-                "expression": "the red car",
-                "prompt": "Paint it white.",
-                "encoding": BINARY_REFERRING_ENCODING,
-            }
+            {"expression": "the red car", "prompt": "Paint it white.", "encoding": BINARY_REFERRING_ENCODING}
         )
 
     # Fig. 4 (a) and the legacy green-distractor wording remain reachable explicitly.

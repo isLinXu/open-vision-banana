@@ -452,12 +452,10 @@ class TestETH3DOfficialLayout:
         depth_dir.mkdir(parents=True)
         Image.new("RGB", (width, height), color=(10, 20, 30)).save(rgb_dir / "DSC_0001.JPG")
         depth = np.array(
-            [
-                [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
-                [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
-                [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
-                [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
-            ],
+            [[1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
+             [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
+             [1.5, 2.0, 3.0, 4.0, 5.0, np.inf],
+             [1.5, 2.0, 3.0, 4.0, 5.0, np.inf]],
             dtype=np.float32,
         )
         depth.tofile(depth_dir / "DSC_0001.JPG")
@@ -512,12 +510,7 @@ class TestKITTIOfficialLayout:
         from open_vision_banana.data.datasets import KITTIDataset
 
         depth_dir = (
-            tmp_path
-            / "val"
-            / "2011_09_26_drive_0002_sync"
-            / "proj_depth"
-            / "groundtruth"
-            / "image_02"
+            tmp_path / "val" / "2011_09_26_drive_0002_sync" / "proj_depth" / "groundtruth" / "image_02"
         )
         depth_dir.mkdir(parents=True)
         Image.new("I;16", (16, 8), color=256).save(depth_dir / "0000000005.png")

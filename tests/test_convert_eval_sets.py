@@ -31,9 +31,7 @@ def test_nyu_mat_to_eigen_split_layout_loads_in_the_eval_dataset(tmp_path: Path)
         depths[0, 0, 0] = np.nan
         handle.create_dataset("depths", data=depths)
     splits = tmp_path / "splits.mat"
-    scipy_io.savemat(
-        splits, {"trainNdxs": np.array([[1], [2], [3], [4]]), "testNdxs": np.array([[5], [6]])}
-    )
+    scipy_io.savemat(splits, {"trainNdxs": np.array([[1], [2], [3], [4]]), "testNdxs": np.array([[5], [6]])})
 
     summary = convert_nyu_mat(mat, tmp_path / "nyu", splits_path=splits)
     assert summary["frames_written"] == {"train": 4, "test": 2} and summary["eigen_test_split"]
@@ -42,12 +40,8 @@ def test_nyu_mat_to_eigen_split_layout_loads_in_the_eval_dataset(tmp_path: Path)
     img = np.asarray(Image.open(test_imgs[0]))
     assert img.shape == (h, w, 3) and img[..., 0].mean() > 190  # transposed back to H x W
     depth_png = np.asarray(Image.open(tmp_path / "nyu" / "test" / "depths" / "0004.png"))
-    assert (
-        depth_png.dtype == np.uint16 and depth_png.shape == (h, w) and int(depth_png[5, 5]) == 5000
-    )
-    assert (
-        int(np.asarray(Image.open(tmp_path / "nyu" / "train" / "depths" / "0000.png"))[0, 0]) == 0
-    )  # NaN -> 0 (invalid)
+    assert depth_png.dtype == np.uint16 and depth_png.shape == (h, w) and int(depth_png[5, 5]) == 5000
+    assert int(np.asarray(Image.open(tmp_path / "nyu" / "train" / "depths" / "0000.png"))[0, 0]) == 0  # NaN -> 0 (invalid)
 
     ds = NYUDepthDataset(tmp_path / "nyu", split="test", resolution=32)
     assert len(ds) == 2
@@ -63,32 +57,15 @@ def test_genai_bench_parquet_to_prompts_jsonl(tmp_path: Path):
     shards = tmp_path / "data"
     shards.mkdir()
     rows = [
-        {
-            "prompt": "a red cube on a table",
-            "left_model": "x",
-            "right_model": "y",
-            "vote_type": "leftvote",
-        },
-        {
-            "prompt": "a red cube on a table",
-            "left_model": "x",
-            "right_model": "z",
-            "vote_type": "rightvote",
-        },
-        {
-            "prompt": "two cats wearing hats",
-            "left_model": "x",
-            "right_model": "y",
-            "vote_type": "tie",
-        },
+        {"prompt": "a red cube on a table", "left_model": "x", "right_model": "y", "vote_type": "leftvote"},
+        {"prompt": "a red cube on a table", "left_model": "x", "right_model": "z", "vote_type": "rightvote"},
+        {"prompt": "two cats wearing hats", "left_model": "x", "right_model": "y", "vote_type": "tie"},
         {"prompt": "   ", "left_model": "x", "right_model": "y", "vote_type": "tie"},
     ]
     pq.write_table(pa.Table.from_pylist(rows), shards / "train-00000-of-00001.parquet")
     summary = convert_genai_bench(shards, tmp_path / "gb")
     assert summary["prompts"] == 2
-    written = [
-        json.loads(line) for line in (tmp_path / "gb" / "prompts.jsonl").read_text().splitlines()
-    ]
+    written = [json.loads(line) for line in (tmp_path / "gb" / "prompts.jsonl").read_text().splitlines()]
     assert [r["prompt"] for r in written] == ["a red cube on a table", "two cats wearing hats"]
     assert written[0]["id"] == "genai_00000"
 
@@ -102,28 +79,16 @@ def test_genai_bench_1600_capitalised_columns(tmp_path: Path):
     # the ModelScope / HF GenAI-Bench-1600 shards: Index, Prompt, Tags, HumanRatings, one image per model
     shards = tmp_path / "data"
     shards.mkdir()
-    rows = [
-        {
-            "Index": 0,
-            "Prompt": "A baker pulling bread out of an oven.",
-            "HumanRatings": {"SDXL_Base": [3]},
-        }
-    ]
+    rows = [{"Index": 0, "Prompt": "A baker pulling bread out of an oven.", "HumanRatings": {"SDXL_Base": [3]}}]
     pq.write_table(pa.Table.from_pylist(rows), shards / "train-00000-of-00012.parquet")
     assert convert_genai_bench(shards, tmp_path / "gb")["prompts"] == 1
-    assert (
-        GenAIBenchDataset(tmp_path / "gb", split="val", resolution=32)
-        .samples[0]["prompt"]
-        .startswith("A baker")
-    )
+    assert GenAIBenchDataset(tmp_path / "gb", split="val", resolution=32).samples[0]["prompt"].startswith("A baker")
 
 
 def test_genai_bench_without_a_prompt_column_fails(tmp_path: Path):
     shards = tmp_path / "data"
     shards.mkdir()
-    pq.write_table(
-        pa.Table.from_pylist([{"question": "q"}]), shards / "train-00000-of-00001.parquet"
-    )
+    pq.write_table(pa.Table.from_pylist([{"question": "q"}]), shards / "train-00000-of-00001.parquet")
     with pytest.raises(ValueError, match="no prompts"):
         convert_genai_bench(shards, tmp_path / "gb")
     assert not (tmp_path / "gb" / "prompts.jsonl").exists()

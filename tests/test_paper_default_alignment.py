@@ -27,11 +27,7 @@ def _signature_defaults(func, names):
 def test_instance_decoding_config_defaults_match_paper():
     default = InstanceDecodingConfig()
     assert default.grouping_mode == PAPER_INSTANCE_DECODING_CONFIG.grouping_mode == "seed"
-    assert (
-        default.adaptive_color_tolerance
-        is PAPER_INSTANCE_DECODING_CONFIG.adaptive_color_tolerance
-        is False
-    )
+    assert default.adaptive_color_tolerance is PAPER_INSTANCE_DECODING_CONFIG.adaptive_color_tolerance is False
     # All scalar hyperparameters must match Appendix A exactly.
     assert default.color_tolerance == 14.0
     assert default.min_area_fraction == 2e-4
@@ -56,11 +52,7 @@ def test_rgb_mapper_default_is_paper_protocol():
 
 
 def test_pipeline_and_decoder_signature_defaults_match_paper():
-    for func in (
-        VisionBanana.__init__,
-        VisionBanana.from_pretrained,
-        VisualizationDecoder.__init__,
-    ):
+    for func in (VisionBanana.__init__, VisionBanana.from_pretrained, VisualizationDecoder.__init__):
         defaults = _signature_defaults(
             func, ("instance_grouping_mode", "instance_adaptive_color_tolerance")
         )

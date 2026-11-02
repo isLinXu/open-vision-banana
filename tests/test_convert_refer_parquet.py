@@ -18,53 +18,25 @@ def _row(ref_id: int, ann_id: int, image_id: int, split: str, sents: list[str]) 
     return {
         "image_id": image_id,
         "split": split,
-        "sentences": json.dumps(
-            [
-                {"sent_id": 10 * ref_id + i, "sent": s, "raw": s, "tokens": s.split()}
-                for i, s in enumerate(sents)
-            ]
-        ),
+        "sentences": json.dumps([{"sent_id": 10 * ref_id + i, "sent": s, "raw": s, "tokens": s.split()} for i, s in enumerate(sents)]),
         "file_name": f"COCO_train2014_{image_id:012d}_{ann_id}.jpg",
         "category_id": 1,
         "ann_id": ann_id,
         "sent_ids": [10 * ref_id + i for i in range(len(sents))],
         "ref_id": ref_id,
-        "raw_anns": json.dumps(
-            {
-                "segmentation": [[0, 0, 10, 0, 10, 10, 0, 10]],
-                "area": 100.0,
-                "bbox": [0, 0, 10, 10],
-                "iscrowd": 0,
-            }
-        ),
-        "raw_image_info": json.dumps(
-            {
-                "file_name": f"COCO_train2014_{image_id:012d}.jpg",
-                "width": 64,
-                "height": 48,
-                "license": 1,
-            }
-        ),
+        "raw_anns": json.dumps({"segmentation": [[0, 0, 10, 0, 10, 10, 0, 10]], "area": 100.0, "bbox": [0, 0, 10, 10], "iscrowd": 0}),
+        "raw_image_info": json.dumps({"file_name": f"COCO_train2014_{image_id:012d}.jpg", "width": 64, "height": 48, "license": 1}),
     }
 
 
 def _write(dir_: Path, shard: str, rows: list[dict]) -> None:
     (dir_ / "data").mkdir(parents=True, exist_ok=True)
-    pq.write_table(
-        pa.Table.from_pylist(rows), dir_ / "data" / f"{shard}-00000-of-00001-abc.parquet"
-    )
+    pq.write_table(pa.Table.from_pylist(rows), dir_ / "data" / f"{shard}-00000-of-00001-abc.parquet")
 
 
 def test_refcocog_umd_round_trip(tmp_path: Path):
     src = tmp_path / "refcocog"
-    _write(
-        src,
-        "train",
-        [
-            _row(1, 100, 7, "train", ["the left dog"]),
-            _row(2, 101, 7, "train", ["a red ball", "the ball"]),
-        ],
-    )
+    _write(src, "train", [_row(1, 100, 7, "train", ["the left dog"]), _row(2, 101, 7, "train", ["a red ball", "the ball"])])
     _write(src, "validation", [_row(3, 102, 8, "val", ["woman in blue"])])
     _write(src, "test", [_row(4, 103, 9, "test", ["the lamp"])])
     out = tmp_path / "refer" / "refcocog"
@@ -74,9 +46,7 @@ def test_refcocog_umd_round_trip(tmp_path: Path):
     refs = pickle.load((out / "refs(umd).p").open("rb"))
     assert [r["ref_id"] for r in refs] == [1, 2, 3, 4]
     assert refs[1]["sentences"][1]["raw"] == "the ball" and refs[1]["sent_ids"] == [20, 21]
-    assert (
-        refs[0]["file_name"] == "COCO_train2014_000000000007_100.jpg"
-    )  # REFER keeps the ann suffix
+    assert refs[0]["file_name"] == "COCO_train2014_000000000007_100.jpg"  # REFER keeps the ann suffix
     inst = json.loads((out / "instances.json").read_text())
     assert {i["id"] for i in inst["images"]} == {7, 8, 9}
     assert inst["images"][0]["file_name"] == "COCO_train2014_000000000007.jpg"

@@ -31,7 +31,6 @@ from open_vision_banana.evaluation.object_detection import (
 # Edge Detection Tests
 # ────────────────────────────────────────────
 
-
 class TestEdgeMetrics:
     """Tests for edge detection evaluation metrics."""
 
@@ -73,7 +72,6 @@ class TestEdgeMetrics:
 # Flow Metrics Tests
 # ────────────────────────────────────────────
 
-
 class TestFlowMetrics:
     """Tests for optical flow evaluation metrics."""
 
@@ -103,7 +101,6 @@ class TestFlowMetrics:
 # ────────────────────────────────────────────
 # Keypoint Metrics Tests
 # ────────────────────────────────────────────
-
 
 class TestKeypointMetrics:
     """Tests for 2D keypoint detection metrics."""
@@ -154,7 +151,6 @@ class TestKeypointMetrics:
 # Object Detection Tests
 # ────────────────────────────────────────────
 
-
 class TestObjectDetectionMetrics:
     """Tests for object detection evaluation metrics."""
 
@@ -183,12 +179,8 @@ class TestObjectDetectionMetrics:
         gt_boxes = [[(0.0, 0.0, 10.0, 10.0)]]
         gt_labels = [[1]]
         metrics = evaluate_object_detection(
-            pred_boxes,
-            pred_scores,
-            pred_labels,
-            gt_boxes,
-            gt_labels,
-            num_classes=1,
+            pred_boxes, pred_scores, pred_labels,
+            gt_boxes, gt_labels, num_classes=1,
         )
         assert "mAP@[0.5:0.95]" in metrics
         assert "AP@0.5" in metrics
@@ -204,12 +196,8 @@ class TestObjectDetectionMetrics:
         gt_boxes = [[(0.0, 0.0, 10.0, 10.0)]]
         gt_labels = [[1]]
         metrics = evaluate_object_detection(
-            pred_boxes,
-            pred_scores,
-            pred_labels,
-            gt_boxes,
-            gt_labels,
-            num_classes=1,
+            pred_boxes, pred_scores, pred_labels,
+            gt_boxes, gt_labels, num_classes=1,
             use_pycocotools=True,
         )
         assert metrics["eval_backend"] == "pycocotools"
@@ -222,12 +210,8 @@ class TestObjectDetectionMetrics:
         gt_boxes = [[(0.0, 0.0, 10.0, 10.0)]]
         gt_labels = [[1]]
         metrics = evaluate_object_detection(
-            pred_boxes,
-            pred_scores,
-            pred_labels,
-            gt_boxes,
-            gt_labels,
-            num_classes=1,
+            pred_boxes, pred_scores, pred_labels,
+            gt_boxes, gt_labels, num_classes=1,
         )
         assert metrics["AP@0.5"] == pytest.approx(0.0, abs=1e-4)
 
@@ -235,7 +219,6 @@ class TestObjectDetectionMetrics:
 # ────────────────────────────────────────────
 # Generation Preservation Tests
 # ────────────────────────────────────────────
-
 
 class TestGenerationPreservation:
     """Tests for generation preservation metrics."""
@@ -316,7 +299,6 @@ class TestGenerationPreservation:
 # ────────────────────────────────────────────
 # Evaluator Extended Task Tests
 # ────────────────────────────────────────────
-
 
 class MockModelWithPredict:
     """Mock model that exposes a predict() method."""
@@ -442,29 +424,13 @@ class TestEvaluatorExtendedTasks:
     def test_all_ten_tasks_supported(self):
         """Verify all 10 tasks are accepted by the evaluator."""
         tasks = [
-            "depth",
-            "normal",
-            "semantic",
-            "instance",
-            "referring",
-            "edge",
-            "depth_edge",
-            "flow",
-            "keypoint",
-            "object_detection",
+            "depth", "normal", "semantic", "instance", "referring",
+            "edge", "depth_edge", "flow", "keypoint", "object_detection",
         ]
         for task in tasks:
             assert task in [
-                "depth",
-                "normal",
-                "semantic",
-                "instance",
-                "referring",
-                "edge",
-                "depth_edge",
-                "flow",
-                "keypoint",
-                "object_detection",
+                "depth", "normal", "semantic", "instance", "referring",
+                "edge", "depth_edge", "flow", "keypoint", "object_detection",
             ]
 
 

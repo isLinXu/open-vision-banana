@@ -38,30 +38,21 @@ def test_explicit_data_dir_is_exclusive(tmp_path: Path):
 def test_dedicated_source_training_uses_all_samples_by_default():
     module = load_script("train_sdxl_mps.py")
 
-    assert (
-        module.resolve_max_per_task(
-            None,
-            source_conditioned=True,
-            explicit_data_dir=True,
-        )
-        is None
-    )
-    assert (
-        module.resolve_max_per_task(
-            None,
-            source_conditioned=False,
-            explicit_data_dir=False,
-        )
-        == 300
-    )
-    assert (
-        module.resolve_max_per_task(
-            17,
-            source_conditioned=True,
-            explicit_data_dir=True,
-        )
-        == 17
-    )
+    assert module.resolve_max_per_task(
+        None,
+        source_conditioned=True,
+        explicit_data_dir=True,
+    ) is None
+    assert module.resolve_max_per_task(
+        None,
+        source_conditioned=False,
+        explicit_data_dir=False,
+    ) == 300
+    assert module.resolve_max_per_task(
+        17,
+        source_conditioned=True,
+        explicit_data_dir=True,
+    ) == 17
 
 
 def test_source_training_defaults_enable_real_x0_supervision():

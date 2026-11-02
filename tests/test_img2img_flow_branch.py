@@ -23,7 +23,8 @@ import torch
 import torch.nn.functional as F
 
 
-def flow_noisy_and_target(input_latents, target_latents, noise, t_b, use_img2img_flow, flow_sigma):
+def flow_noisy_and_target(input_latents, target_latents, noise, t_b,
+                          use_img2img_flow, flow_sigma):
     """Replica of tuner.py::_flow_training_step latent-mixing branch (1599-1612)."""
     if use_img2img_flow and input_latents is not None:
         if input_latents.shape != target_latents.shape:
@@ -86,9 +87,8 @@ def test_flow_sigma_zero_is_clean_latent_regression():
     # This is exactly the R7 concern: training never sees noisy latents.
     noisy, vel = flow_noisy_and_target(inp, tgt, nz, t, use_img2img_flow=True, flow_sigma=0.0)
     noise_term = noisy - ((1.0 - t) * inp + t * tgt)
-    assert torch.allclose(noise_term, torch.zeros_like(noise_term)), (
+    assert torch.allclose(noise_term, torch.zeros_like(noise_term)), \
         "flow_sigma=0 must yield a zero noise term (clean regression)"
-    )
     assert torch.allclose(vel, tgt - inp), "clean img2img velocity still target - input"
 
 

@@ -162,9 +162,7 @@ def test_diode_reads_official_layout_and_filters_scene_type(tmp_path):
     _make_diode(tmp_path, "outdoor", "00020_00001_outdoor_000_000", depth_value=30.0)
 
     everything = DIODEDataset(tmp_path, split="val", resolution=16)
-    indoor = DIODEDataset(
-        tmp_path, split="val", resolution=16, scene_type="indoors", native_gt=True
-    )
+    indoor = DIODEDataset(tmp_path, split="val", resolution=16, scene_type="indoors", native_gt=True)
     outdoor = DIODEDataset(tmp_path, split="val", resolution=16, scene_type="outdoor")
     assert len(everything) == 2 and len(indoor) == 1 and len(outdoor) == 1
     assert "outdoor" in str(outdoor.samples[0]["image"])

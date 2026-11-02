@@ -98,10 +98,7 @@ def test_longcat_edit_marks_source_modality_two():
 
     backend = _backend("longcat-image-edit", _Record(produce))
     out = backend.forward(
-        torch.randn(B, C, H, W),
-        torch.full((B,), 0.4),
-        _text(length=5),
-        B,
+        torch.randn(B, C, H, W), torch.full((B,), 0.4), _text(length=5), B,
         context_latents=torch.randn(B, C, H, W),
     )
     assert out.shape == (B, C, H, W)
@@ -122,10 +119,7 @@ def test_flux2_klein_flattens_and_offsets_reference_time():
 
     backend = _backend("flux2-klein", _Record(produce))
     out = backend.forward(
-        torch.randn(B, C, H, W),
-        torch.tensor([0.1, 0.9]),
-        _text(),
-        B,
+        torch.randn(B, C, H, W), torch.tensor([0.1, 0.9]), _text(), B,
         context_latents=torch.randn(B, C, H, W),
     )
     assert out.shape == (B, C, H, W)
@@ -281,10 +275,7 @@ def test_hunyuan_forward_requires_token_batch():
     backend = _backend("hunyuan-image3-instruct", _Record(lambda *_: None))
     try:
         backend.forward(
-            torch.randn(1, C, H, W),
-            torch.tensor([0.5]),
-            _text(1),
-            1,
+            torch.randn(1, C, H, W), torch.tensor([0.5]), _text(1), 1,
             context_latents=torch.randn(1, C, H, W),
         )
     except ValueError as exc:

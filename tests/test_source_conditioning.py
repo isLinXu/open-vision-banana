@@ -301,7 +301,12 @@ def test_structure_loss_matches_values_and_gradients():
 
 def test_soft_colormap_position_recovers_viridis_curve_and_gradients():
     expected = torch.linspace(0, 1, 25).view(1, 1, 5, 5)
-    rgb = DepthRGBMapper("viridis").normalized_to_rgb(expected).detach().requires_grad_(True)
+    rgb = (
+        DepthRGBMapper("viridis")
+        .normalized_to_rgb(expected)
+        .detach()
+        .requires_grad_(True)
+    )
 
     actual = soft_colormap_position(
         rgb,
@@ -323,7 +328,11 @@ def test_scalar_geometry_loss_prefers_correct_depth_order():
     target = mapper.normalized_to_rgb(normalized) * 2.0 - 1.0
     correct = target.detach().clone().requires_grad_(True)
     reversed_prediction = (
-        mapper.normalized_to_rgb(1.0 - normalized).detach().mul(2.0).sub(1.0).requires_grad_(True)
+        mapper.normalized_to_rgb(1.0 - normalized)
+        .detach()
+        .mul(2.0)
+        .sub(1.0)
+        .requires_grad_(True)
     )
 
     correct_loss = decoded_x0_scalar_geometry_loss(
@@ -498,7 +507,9 @@ def test_tuner_pixel_loss_backpropagates_through_frozen_vae():
     vae = nn.Conv2d(4, 3, 1, bias=False)
     vae.requires_grad_(False)
     scheduler = FakeScheduler()
-    tuner.base_model = SimpleNamespace(_t2i_pipe=SimpleNamespace(scheduler=scheduler, vae=vae))
+    tuner.base_model = SimpleNamespace(
+        _t2i_pipe=SimpleNamespace(scheduler=scheduler, vae=vae)
+    )
     tuner.model_config = SimpleNamespace(family="sdxl")
     tuner.use_source_conditioning = True
     tuner.x0_loss_weight = 0.0
@@ -516,7 +527,9 @@ def test_tuner_pixel_loss_backpropagates_through_frozen_vae():
         "pooled_prompt_embeds": torch.zeros(len(prompts), 2, device=device),
         "attention_mask": None,
     }
-    tuner._forward_registry = lambda model_input, *args, **kwargs: tuner.peft_model(model_input)
+    tuner._forward_registry = lambda model_input, *args, **kwargs: tuner.peft_model(
+        model_input
+    )
     batch = {
         "target_rgb": torch.full((1, 3, 8, 8), 0.75),
         "target_rgb_range": "0_1",
@@ -543,7 +556,9 @@ def test_tuner_scalar_geometry_loss_backpropagates_through_frozen_vae():
     vae = nn.Conv2d(4, 3, 1, bias=False)
     vae.requires_grad_(False)
     scheduler = FakeScheduler()
-    tuner.base_model = SimpleNamespace(_t2i_pipe=SimpleNamespace(scheduler=scheduler, vae=vae))
+    tuner.base_model = SimpleNamespace(
+        _t2i_pipe=SimpleNamespace(scheduler=scheduler, vae=vae)
+    )
     tuner.model_config = SimpleNamespace(family="sdxl")
     tuner.use_source_conditioning = True
     tuner.x0_loss_weight = 0.0
@@ -566,7 +581,9 @@ def test_tuner_scalar_geometry_loss_backpropagates_through_frozen_vae():
         "pooled_prompt_embeds": torch.zeros(len(prompts), 2, device=device),
         "attention_mask": None,
     }
-    tuner._forward_registry = lambda model_input, *args, **kwargs: tuner.peft_model(model_input)
+    tuner._forward_registry = lambda model_input, *args, **kwargs: tuner.peft_model(
+        model_input
+    )
     normalized = torch.linspace(0, 1, 64).view(1, 1, 8, 8)
     target = DepthRGBMapper("viridis").normalized_to_rgb(normalized)
     batch = {
@@ -594,7 +611,9 @@ def test_generator_dispatches_configured_image_to_custom_path():
     with patch.object(BaseGenerator, "_load_model"):
         generator = BaseGenerator(model_name="dummy", dtype=torch.float32, device="cpu")
     generator.source_conditioning_config = SourceConditioningConfig()
-    generator._generate_source_conditioned = MagicMock(return_value=torch.zeros(1, 3, 8, 8))
+    generator._generate_source_conditioned = MagicMock(
+        return_value=torch.zeros(1, 3, 8, 8)
+    )
 
     output = generator.generate(
         "depth",
@@ -610,7 +629,9 @@ def test_generator_dispatches_source_checkpoint_t2i_with_zero_condition():
     with patch.object(BaseGenerator, "_load_model"):
         generator = BaseGenerator(model_name="dummy", dtype=torch.float32, device="cpu")
     generator.source_conditioning_config = SourceConditioningConfig()
-    generator._generate_source_conditioned = MagicMock(return_value=torch.zeros(1, 3, 8, 8))
+    generator._generate_source_conditioned = MagicMock(
+        return_value=torch.zeros(1, 3, 8, 8)
+    )
 
     output = generator.generate(
         "a photograph",
@@ -758,7 +779,8 @@ def test_manual_lora_merge_supports_conv2d(tmp_path: Path):
     checkpoint = tmp_path / "adapter"
     checkpoint.mkdir()
     (checkpoint / "adapter_config.json").write_text(
-        '{"r": 2, "lora_alpha": 2, "use_rslora": false, "target_modules": ["proj"]}',
+        '{"r": 2, "lora_alpha": 2, "use_rslora": false, '
+        '"target_modules": ["proj"]}',
         encoding="utf-8",
     )
     factor_a = torch.tensor([[[[1.0]], [[2.0]]], [[[3.0]], [[4.0]]]])
@@ -958,7 +980,9 @@ def test_v3_evaluator_separates_raw_and_calibrated_metrics():
     spec.loader.exec_module(module)
     torch.manual_seed(13)
     raw = torch.rand(1, 3, 8, 8)
-    target = DepthRGBMapper("viridis").normalized_to_rgb(torch.rand(1, 1, 8, 8))
+    target = DepthRGBMapper("viridis").normalized_to_rgb(
+        torch.rand(1, 1, 8, 8)
+    )
     config = SourceConditioningConfig(
         target_colormap="viridis",
         target_channel_mean=(0.33, 0.51, 0.47),

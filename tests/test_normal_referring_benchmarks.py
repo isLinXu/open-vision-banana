@@ -79,9 +79,7 @@ def test_diode_normal_indoor_mask_and_native(tmp_path):
     mask[:, :2] = 1
     np.save(indoor / "00019_00183_indoors_000_010_depth_mask.npy", mask)
 
-    ds = DIODENormalDataset(
-        tmp_path, split="val", resolution=4, scene_type="indoors", native_gt=True
-    )
+    ds = DIODENormalDataset(tmp_path, split="val", resolution=4, scene_type="indoors", native_gt=True)
     assert len(ds) == 1
     item = ds[0]
     assert item["gt_normal_native"].shape == (3, 4, 6)
@@ -93,9 +91,7 @@ def test_diode_normal_indoor_mask_and_native(tmp_path):
 def test_scannet_prefers_image_normal_dirs_over_color_heuristic(tmp_path):
     _rgb(tmp_path / "images" / "frame.png", (8, 8))
     (tmp_path / "normals").mkdir()
-    np.save(
-        tmp_path / "normals" / "frame.npy", np.zeros((8, 8, 3), dtype=np.float32) + (0.0, 0.0, 1.0)
-    )
+    np.save(tmp_path / "normals" / "frame.npy", np.zeros((8, 8, 3), dtype=np.float32) + (0.0, 0.0, 1.0))
     _rgb(tmp_path / "scene_color.png", (8, 8))
     _rgb(tmp_path / "scene_normal.png", (8, 8))
     ds = ScanNetNormalDataset(tmp_path, split="train", resolution=4, native_gt=True)
@@ -149,9 +145,7 @@ def test_normal_per_image_mean_differs_from_pixel_weighted():
 def test_trivial_normals_and_gate():
     gt = torch.zeros(1, 3, 2, 2)
     gt[:, 2] = 1.0
-    baselines = evaluate_normal_baselines(
-        [{"gt_normal": gt, "valid_mask": torch.ones(1, 2, 2, dtype=torch.bool)}]
-    )
+    baselines = evaluate_normal_baselines([{"gt_normal": gt, "valid_mask": torch.ones(1, 2, 2, dtype=torch.bool)}])
     assert baselines["facing_camera"]["Mean Angular Error (°)"] == pytest.approx(0.0, abs=1e-4)
     assert baselines["axis_up"]["Mean Angular Error (°)"] == pytest.approx(90.0, abs=1e-3)
     assert baselines["oracle_image_mean"]["Mean Angular Error (°)"] == pytest.approx(0.0, abs=1e-4)
@@ -243,12 +237,7 @@ def test_refcocog_umd_split_all_sentences_and_native_mask(tmp_path):
     instances = {
         "images": [{"id": 123, "height": 12, "width": 20}],
         "annotations": [
-            {
-                "id": 7,
-                "image_id": 123,
-                "segmentation": [[1, 1, 8, 1, 8, 6, 1, 6]],
-                "bbox": [1, 1, 7, 5],
-            },
+            {"id": 7, "image_id": 123, "segmentation": [[1, 1, 8, 1, 8, 6, 1, 6]], "bbox": [1, 1, 7, 5]},
             {"id": 8, "image_id": 123, "bbox": [0, 0, 4, 4]},
         ],
     }
@@ -268,13 +257,7 @@ def test_benchmark_script_wires_normal_and_referring():
     spec = importlib.util.spec_from_file_location("evaluate_paper_benchmarks", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert {
-        "nyu_normal",
-        "diode_normal",
-        "normal",
-        "vkitti_normal",
-        "referring",
-    } <= module.NATIVE_GT_DATASETS
+    assert {"nyu_normal", "diode_normal", "normal", "vkitti_normal", "referring"} <= module.NATIVE_GT_DATASETS
     assert module.BENCHMARK_DATASET_KWARGS["diode_normal"] == {"scene_type": "indoors"}
     assert module.BENCHMARK_DATASET_KWARGS["referring"] == {"protocol": "umd", "strict": True}
     parser_help = subprocess.run(
@@ -291,9 +274,7 @@ def test_normal_gate_cli(tmp_path):
     model = tmp_path / "model.json"
     base = tmp_path / "base.json"
     model.write_text(
-        json.dumps(
-            {"benchmarks": {"normal/nyu": {"decoded_metrics": {"Mean Angular Error (°)": 8.0}}}}
-        )
+        json.dumps({"benchmarks": {"normal/nyu": {"decoded_metrics": {"Mean Angular Error (°)": 8.0}}}})
     )
     base.write_text(
         json.dumps(
@@ -321,9 +302,7 @@ def test_normal_gate_cli(tmp_path):
     )
     assert passed.returncode == 0, passed.stderr
     model.write_text(
-        json.dumps(
-            {"benchmarks": {"normal/nyu": {"decoded_metrics": {"Mean Angular Error (°)": 20.0}}}}
-        )
+        json.dumps({"benchmarks": {"normal/nyu": {"decoded_metrics": {"Mean Angular Error (°)": 20.0}}}})
     )
     failed = subprocess.run(
         [

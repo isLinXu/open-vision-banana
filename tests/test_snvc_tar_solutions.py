@@ -71,9 +71,7 @@ def test_solution_2_selective_pipe_extraction_script(tmp_path: Path):
     """
     vol_dir = tmp_path / "volumes"
     extract_dir = tmp_path / "extracted"
-    long_subdir = (
-        "Cityscapes/genseg/frankfurt_000000_000294_very_long_subdirectory_name_over_100_chars"
-    )
+    long_subdir = "Cityscapes/genseg/frankfurt_000000_000294_very_long_subdirectory_name_over_100_chars"
     entries = {
         f"SenseNova-Vision-Corpus-50M/{long_subdir}/mask.png": _png_bytes((128, 64, 128)),
         "SenseNova-Vision-Corpus-50M/scannetpp/normal/n001.png": _png_bytes((128, 128, 255)),
@@ -99,9 +97,7 @@ def test_solution_2_selective_pipe_extraction_script(tmp_path: Path):
     )
     assert "Skipping incomplete volume" in res.stdout
     cs_extracted = extract_dir / "SenseNova-Vision-Corpus-50M" / long_subdir / "mask.png"
-    snpp_extracted = (
-        extract_dir / "SenseNova-Vision-Corpus-50M" / "scannetpp" / "normal" / "n001.png"
-    )
+    snpp_extracted = extract_dir / "SenseNova-Vision-Corpus-50M" / "scannetpp" / "normal" / "n001.png"
     unwanted = extract_dir / "SenseNova-Vision-Corpus-50M" / "unwanted_ocr" / "doc001.png"
 
     assert cs_extracted.is_file()

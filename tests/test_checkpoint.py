@@ -172,9 +172,7 @@ class TestPeftAdapterToDiffusers:
         assert payload == str(tmp_path)
 
     @pytest.mark.parametrize(("use_rslora", "expected"), [(True, 4.0), (False, 2.0)])
-    def test_restore_peft_lora_scaling_after_converted_load(
-        self, tmp_path: Path, use_rslora, expected
-    ):
+    def test_restore_peft_lora_scaling_after_converted_load(self, tmp_path: Path, use_rslora, expected):
         import json
 
         import torch

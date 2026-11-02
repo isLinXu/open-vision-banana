@@ -55,72 +55,16 @@ def _write_coco(tmp_path: Path, *, lvis: bool = False) -> tuple[Path, Path]:
     ]
     annotations = [
         # image 1: three dogs (one occluding a bigger one) + one cat
-        {
-            "id": 1,
-            "image_id": 1,
-            "category_id": 1,
-            "segmentation": _rect(2, 2, 30, 40),
-            "area": 1064,
-            "iscrowd": 0,
-        },
-        {
-            "id": 2,
-            "image_id": 1,
-            "category_id": 1,
-            "segmentation": _rect(10, 10, 20, 20),
-            "area": 100,
-            "iscrowd": 0,
-        },
-        {
-            "id": 3,
-            "image_id": 1,
-            "category_id": 1,
-            "segmentation": _rect(40, 4, 60, 44),
-            "area": 800,
-            "iscrowd": 0,
-        },
-        {
-            "id": 4,
-            "image_id": 1,
-            "category_id": 2,
-            "segmentation": _rect(34, 30, 38, 46),
-            "area": 64,
-            "iscrowd": 0,
-        },
+        {"id": 1, "image_id": 1, "category_id": 1, "segmentation": _rect(2, 2, 30, 40), "area": 1064, "iscrowd": 0},
+        {"id": 2, "image_id": 1, "category_id": 1, "segmentation": _rect(10, 10, 20, 20), "area": 100, "iscrowd": 0},
+        {"id": 3, "image_id": 1, "category_id": 1, "segmentation": _rect(40, 4, 60, 44), "area": 800, "iscrowd": 0},
+        {"id": 4, "image_id": 1, "category_id": 2, "segmentation": _rect(34, 30, 38, 46), "area": 64, "iscrowd": 0},
         # image 2: one dog (LVIS marks dog not exhaustively annotated here)
-        {
-            "id": 5,
-            "image_id": 2,
-            "category_id": 1,
-            "segmentation": _rect(0, 0, 20, 20),
-            "area": 400,
-            "iscrowd": 0,
-        },
+        {"id": 5, "image_id": 2, "category_id": 1, "segmentation": _rect(0, 0, 20, 20), "area": 400, "iscrowd": 0},
         # image 3: a crowd of dogs -> ambiguous, must be skipped for category 1
-        {
-            "id": 6,
-            "image_id": 3,
-            "category_id": 1,
-            "segmentation": _rect(0, 0, 10, 10),
-            "area": 100,
-            "iscrowd": 0,
-        },
-        {
-            "id": 7,
-            "image_id": 3,
-            "category_id": 1,
-            "segmentation": {"counts": [0, 3072], "size": [48, 64]},
-            "area": 3072,
-            "iscrowd": 1,
-        },
-        {
-            "id": 8,
-            "image_id": 3,
-            "category_id": 2,
-            "segmentation": _rect(20, 20, 40, 40),
-            "area": 400,
-            "iscrowd": 0,
-        },
+        {"id": 6, "image_id": 3, "category_id": 1, "segmentation": _rect(0, 0, 10, 10), "area": 100, "iscrowd": 0},
+        {"id": 7, "image_id": 3, "category_id": 1, "segmentation": {"counts": [0, 3072], "size": [48, 64]}, "area": 3072, "iscrowd": 1},
+        {"id": 8, "image_id": 3, "category_id": 2, "segmentation": _rect(20, 20, 40, 40), "area": 400, "iscrowd": 0},
     ]
     payload = {
         "images": images,
@@ -228,13 +172,8 @@ def test_instance_filters_and_val_split(tmp_path: Path):
     ann_path, images_dir = _write_coco(tmp_path)
     out = tmp_path / "multi.jsonl"
     audit = build_instance_manifest(
-        ann_path,
-        images_dir,
-        tmp_path / "targets",
-        out,
-        data_root=tmp_path,
-        min_instances=2,
-        val_fraction=0.5,
+        ann_path, images_dir, tmp_path / "targets", out, data_root=tmp_path,
+        min_instances=2, val_fraction=0.5,
     )
     rows = [json.loads(line) for line in out.read_text().splitlines()]
     assert audit["rows_written"] == 1 and rows[0]["num_instances"] == 3
@@ -250,13 +189,8 @@ def test_fig3_background_styles_render_prompt_and_target_in_sync(tmp_path: Path)
     ann_path, images_dir = _write_coco(tmp_path)
     out = tmp_path / "styled.jsonl"
     audit = build_instance_manifest(
-        ann_path,
-        images_dir,
-        tmp_path / "targets",
-        out,
-        data_root=tmp_path,
-        background_styles=("named", "rgb", "hex"),
-        seed=3,
+        ann_path, images_dir, tmp_path / "targets", out, data_root=tmp_path,
+        background_styles=("named", "rgb", "hex"), seed=3,
     )
     rows = [json.loads(line) for line in out.read_text().splitlines()]
     assert rows and all("background_style_black" not in k for k in audit)
@@ -285,24 +219,18 @@ def test_fig3_background_styles_render_prompt_and_target_in_sync(tmp_path: Path)
         assert len(decoder.decode_instance(rgb, background_color=bg)[0]) == row["num_instances"]
 
     with pytest.raises(ValueError, match="background styles"):
-        build_instance_manifest(
-            ann_path, images_dir, tmp_path / "t", out, background_styles=("neon",)
-        )
+        build_instance_manifest(ann_path, images_dir, tmp_path / "t", out, background_styles=("neon",))
 
 
 def test_instance_templates_match_fig3_wording():
     assert PromptBuilder.build_instance_prompt("garlic") == (
         "Generate an instance segmentation visualization of this image. Each garlic is colored differently."
     )
-    assert PromptBuilder.build_instance_prompt(
-        "croissant", (88, 50, 82), 1, background_style="rgb"
-    ) == (
+    assert PromptBuilder.build_instance_prompt("croissant", (88, 50, 82), 1, background_style="rgb") == (
         "This image is a segmentation task derived from the input. The croissant instances are each "
         "represented by a unique, solid color. Background is RGB(88, 50, 82)."
     )
-    assert PromptBuilder.build_instance_prompt(
-        "basketball", (16, 170, 5), 2, background_style="hex"
-    ) == (
+    assert PromptBuilder.build_instance_prompt("basketball", (16, 170, 5), 2, background_style="hex") == (
         "This image shows segmentation masks for the basketball from the input image. The background "
         "is set to #10aa05. Each basketball is represented by a different color."
     )

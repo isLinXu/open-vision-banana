@@ -16,9 +16,9 @@ def test_keypoint_roundtrip() -> None:
     """Test keypoint -> RGB -> keypoint roundtrip."""
     mapper = KeypointRGBMapper(num_keypoints=5, dot_radius=3)
 
-    keypoints = torch.tensor(
-        [[[0.2, 0.3], [0.5, 0.5], [0.8, 0.7], [0.1, 0.9], [0.9, 0.1]]]
-    )  # [1, 5, 2]
+    keypoints = torch.tensor([
+        [[0.2, 0.3], [0.5, 0.5], [0.8, 0.7], [0.1, 0.9], [0.9, 0.1]]
+    ])  # [1, 5, 2]
     visibility = torch.ones(1, 5, dtype=torch.bool)
     visibility[0, 3] = False  # one invisible
 
@@ -81,12 +81,10 @@ def test_keypoint_vectorized_batch() -> None:
     """Test vectorized batch encoding produces correct results (P1-3)."""
     mapper = KeypointRGBMapper(num_keypoints=3, dot_radius=3)
 
-    keypoints = torch.tensor(
-        [
-            [[0.2, 0.3], [0.5, 0.5], [0.8, 0.9]],
-            [[0.1, 0.1], [0.4, 0.6], [0.9, 0.2]],
-        ]
-    )  # [2, 3, 2]
+    keypoints = torch.tensor([
+        [[0.2, 0.3], [0.5, 0.5], [0.8, 0.9]],
+        [[0.1, 0.1], [0.4, 0.6], [0.9, 0.2]],
+    ])  # [2, 3, 2]
     visibility = torch.ones(2, 3, dtype=torch.bool)
 
     rgb = mapper.keypoints_to_rgb(keypoints, visibility)

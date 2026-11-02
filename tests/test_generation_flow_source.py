@@ -21,12 +21,7 @@ FAMILY = "flux"  # rectified flow: v = target - source (SANA uses the opposite s
 
 
 def _backend() -> SimpleNamespace:
-    return SimpleNamespace(
-        flow_scheduler=FlowScheduler(),
-        device=torch.device("cpu"),
-        dtype=torch.float32,
-        family=FAMILY,
-    )
+    return SimpleNamespace(flow_scheduler=FlowScheduler(), device=torch.device("cpu"), dtype=torch.float32, family=FAMILY)
 
 
 def _call(img2img_flow, flow_sigma=0.0):
@@ -34,13 +29,7 @@ def _call(img2img_flow, flow_sigma=0.0):
     target = torch.randn(4, 3, 4, 4)
     inputs = target.clone()  # T2I replay: input == target (the dataset mirrors target into input)
     inputs[:2] = torch.randn(2, 3, 4, 4)  # two vision rows with a genuinely different source
-    return (
-        ModelBackend.prepare_flow_batch(
-            _backend(), target, inputs, 4, img2img_flow=img2img_flow, flow_sigma=flow_sigma
-        ),
-        target,
-        inputs,
-    )
+    return ModelBackend.prepare_flow_batch(_backend(), target, inputs, 4, img2img_flow=img2img_flow, flow_sigma=flow_sigma), target, inputs
 
 
 def test_mixed_batch_mask_gives_replay_rows_a_noise_source():
@@ -83,9 +72,6 @@ def test_trainer_mask_rule_shared_by_train_and_validation():
     mask = Trainer._img2img_mask(trainer, tasks, None, torch.device("cpu"))
     assert mask.tolist() == [True, False, True, False]
     # editors: everything from noise (source is conditioning, not the flow start)
-    assert (
-        Trainer._img2img_mask(trainer, tasks, "sequence_concat", torch.device("cpu")).tolist()
-        == [False] * 4
-    )
+    assert Trainer._img2img_mask(trainer, tasks, "sequence_concat", torch.device("cpu")).tolist() == [False] * 4
     trainer.config = SimpleNamespace(img2img_flow=False)
     assert Trainer._img2img_mask(trainer, tasks, None, torch.device("cpu")).tolist() == [False] * 4

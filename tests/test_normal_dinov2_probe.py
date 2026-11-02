@@ -51,7 +51,6 @@ def test_expanded_metrics_are_zero_for_identical_unit_normals(tmp_path: Path) ->
     normal_path = tmp_path / "frame_normal.png"
     rgb = np.full((4, 4, 4), (128, 128, 255, 255), dtype=np.uint8)
     from PIL import Image
-
     Image.fromarray(rgb, mode="RGBA").save(normal_path)
     pair = module.NormalPair("diode", tmp_path / "frame.png", normal_path)
     prediction = np.zeros((1, 1, 3), dtype=np.float32)
@@ -64,7 +63,6 @@ def test_expanded_metrics_are_zero_for_identical_unit_normals(tmp_path: Path) ->
 
 def test_per_sample_cache_storage_is_not_a_batch_view(tmp_path: Path) -> None:
     import torch
-
     batch = torch.zeros(32, 256, 384)
     cache_path = tmp_path / "feature.pt"
     torch.save(batch[0].clone(), cache_path)

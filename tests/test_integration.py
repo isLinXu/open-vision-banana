@@ -17,10 +17,8 @@ import torch.nn as nn
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 class _TinyModel(nn.Module):
     """Identity-like model used as a stand-in for VisionBanana internals."""
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.clamp(0.0, 1.0)
 
@@ -29,12 +27,11 @@ class _TinyModel(nn.Module):
 # CheckpointManager
 # ---------------------------------------------------------------------------
 
-
 class TestCheckpointManagerIntegration:
+
     def test_numeric_sort_order(self, tmp_path):
         """Checkpoint with highest numeric step is selected as 'latest'."""
         from open_vision_banana.training.checkpoint import CheckpointManager
-
         cm = CheckpointManager(str(tmp_path), max_keep=10)
         for step in [10, 200, 30, 1000, 50]:
             (tmp_path / f"checkpoint-{step}").mkdir()
@@ -45,13 +42,14 @@ class TestCheckpointManagerIntegration:
     def test_prune_keeps_newest(self, tmp_path):
         """Pruning removes oldest (numerically smallest) checkpoints."""
         from open_vision_banana.training.checkpoint import CheckpointManager
-
         cm = CheckpointManager(str(tmp_path), max_keep=3)
         for step in [1, 2, 3, 4, 5]:
             d = tmp_path / f"checkpoint-{step}"
             d.mkdir()
         cm._prune_old_checkpoints()
-        remaining = sorted([int(p.name.split("-")[1]) for p in tmp_path.glob("checkpoint-*")])
+        remaining = sorted(
+            [int(p.name.split("-")[1]) for p in tmp_path.glob("checkpoint-*")]
+        )
         assert remaining == [3, 4, 5], f"Got {remaining}"
 
     def test_metadata_roundtrip(self, tmp_path):
@@ -68,7 +66,6 @@ class TestCheckpointManagerIntegration:
     def test_load_missing_raises(self, tmp_path):
         """Loading from an empty directory raises FileNotFoundError."""
         from open_vision_banana.training.checkpoint import CheckpointManager
-
         cm = CheckpointManager(str(tmp_path), max_keep=3)
 
         class _FakePeft:
@@ -82,10 +79,8 @@ class TestCheckpointManagerIntegration:
 # VisionBanana pipeline (mock generator, no real FLUX weights)
 # ---------------------------------------------------------------------------
 
-
 class _MockGenerator:
     """Stand-in for BaseGenerator that returns a constant RGB tensor."""
-
     def __init__(self, output_val: float = 0.7):
         self._output_val = output_val
 
@@ -95,11 +90,11 @@ class _MockGenerator:
 
 
 class TestVisionBananaPipeline:
+
     def _make_pipeline(self, output_val: float = 0.7):
         from open_vision_banana.core.rgb_mapper import RGBMapper
         from open_vision_banana.inference.decoder import VisualizationDecoder
         from open_vision_banana.inference.pipeline import VisionBanana
-
         gen = _MockGenerator(output_val)
         mapper = RGBMapper()
         decoder = VisualizationDecoder(mapper)
@@ -120,7 +115,7 @@ class TestVisionBananaPipeline:
         assert result["normal"].shape[1] == 3
 
     def test_referring_predict_returns_mask(self):
-        pipe = self._make_pipeline(output_val=0.9)  # bright → mask = True
+        pipe = self._make_pipeline(output_val=0.9)   # bright → mask = True
         image = torch.rand(1, 3, 64, 64)
         result = pipe.predict(image, task="referring", expression="the cat")
         assert "mask" in result
@@ -220,12 +215,11 @@ class TestVisionBananaPipeline:
 # CityscapesSegDataset vectorized _label_to_rgb
 # ---------------------------------------------------------------------------
 
-
 class TestCityscapesLabelToRGB:
+
     def _make_dataset(self):
         """Instantiate without scanning (non-existent dir is OK — scan is a no-op)."""
         from open_vision_banana.data.datasets import CityscapesSegDataset
-
         # Bypass _scan by patching root_dir to a non-existent path
         ds = CityscapesSegDataset.__new__(CityscapesSegDataset)
         ds.root_dir = Path("/nonexistent")
@@ -237,7 +231,7 @@ class TestCityscapesLabelToRGB:
 
     def test_output_shape(self):
         ds = self._make_dataset()
-        label = torch.zeros(64, 64, dtype=torch.long)  # all "road"
+        label = torch.zeros(64, 64, dtype=torch.long)   # all "road"
         rgb = ds._label_to_rgb(label)
         assert rgb.shape == (3, 64, 64), f"Expected (3,64,64), got {rgb.shape}"
 
@@ -248,14 +242,12 @@ class TestCityscapesLabelToRGB:
         rgb = ds._label_to_rgb(label)
         expected = torch.tensor([128, 64, 128], dtype=torch.float32) / 255.0
         actual = rgb[:, 0, 0]
-        assert torch.allclose(actual, expected, atol=1e-6), (
+        assert torch.allclose(actual, expected, atol=1e-6), \
             f"Road color mismatch: {actual} vs {expected}"
-        )
 
     def test_all_classes_present(self):
         """Each class index should map to a distinct non-zero colour."""
         from open_vision_banana.data.datasets import CityscapesSegDataset
-
         ds = self._make_dataset()
         n_classes = len(CityscapesSegDataset.CITYSCAPES_COLORS)
         label = torch.arange(n_classes, dtype=torch.long).reshape(1, n_classes)
@@ -268,7 +260,6 @@ class TestCityscapesLabelToRGB:
         """Vectorized result must match the old per-class loop implementation."""
         ds = self._make_dataset()
         from open_vision_banana.data.datasets import CityscapesSegDataset
-
         colors = list(CityscapesSegDataset.CITYSCAPES_COLORS.values())
         H, W = 16, 16
         label = torch.randint(0, len(colors), (H, W))
@@ -281,9 +272,8 @@ class TestCityscapesLabelToRGB:
                 rgb_ref[ch][mask] = cv / 255.0
 
         rgb_vec = ds._label_to_rgb(label)
-        assert torch.allclose(rgb_vec, rgb_ref, atol=1e-6), (
+        assert torch.allclose(rgb_vec, rgb_ref, atol=1e-6), \
             "Vectorized _label_to_rgb does not match naive loop"
-        )
 
     def test_ignore_index_is_black(self):
         """Void / unlabeled (255) must not collapse onto bicycle."""
@@ -302,27 +292,24 @@ class TestCityscapesLabelToRGB:
 # VisualizationDecoder.decode_referring
 # ---------------------------------------------------------------------------
 
-
 class TestVisualizationDecoderReferring:
+
     def test_bright_image_gives_true_mask(self):
         from open_vision_banana.inference.decoder import VisualizationDecoder
-
         dec = VisualizationDecoder()
-        rgb = torch.ones(1, 3, 8, 8)  # all white
+        rgb = torch.ones(1, 3, 8, 8)   # all white
         result = dec.decode_referring(rgb, threshold=0.5)
         assert result["mask"].all(), "All-white image should give all-True mask"
 
     def test_dark_image_gives_false_mask(self):
         from open_vision_banana.inference.decoder import VisualizationDecoder
-
         dec = VisualizationDecoder()
-        rgb = torch.zeros(1, 3, 8, 8)  # all black
+        rgb = torch.zeros(1, 3, 8, 8)   # all black
         result = dec.decode_referring(rgb, threshold=0.5)
         assert not result["mask"].any(), "All-black image should give all-False mask"
 
     def test_mask_shape(self):
         from open_vision_banana.inference.decoder import VisualizationDecoder
-
         dec = VisualizationDecoder()
         rgb = torch.rand(2, 3, 16, 16)
         result = dec.decode_referring(rgb)
@@ -334,13 +321,12 @@ class TestVisualizationDecoderReferring:
 # VisionTaskDataset flat-directory loader
 # ---------------------------------------------------------------------------
 
-
 class TestVisionTaskDataset:
+
     def _make_fake_data_dir(self, tmp_path, n=4):
         """Create a fake images/targets directory pair."""
         import numpy as np
         from PIL import Image
-
         (tmp_path / "images").mkdir()
         (tmp_path / "targets").mkdir()
         for i in range(n):
@@ -352,14 +338,12 @@ class TestVisionTaskDataset:
     def test_loads_paired_samples(self, tmp_path):
         self._make_fake_data_dir(tmp_path, n=4)
         from open_vision_banana.training.tuner import VisionTaskDataset
-
         ds = VisionTaskDataset(data_path=str(tmp_path), resolution=64)
         assert len(ds) == 4
 
     def test_sample_shapes(self, tmp_path):
         self._make_fake_data_dir(tmp_path, n=2)
         from open_vision_banana.training.tuner import VisionTaskDataset
-
         ds = VisionTaskDataset(data_path=str(tmp_path), resolution=64)
         sample = ds[0]
         assert sample["image"].shape == (3, 64, 64)
@@ -370,7 +354,6 @@ class TestVisionTaskDataset:
         """Image should be in [-1, 1], target_rgb in [0, 1]."""
         self._make_fake_data_dir(tmp_path, n=2)
         from open_vision_banana.training.tuner import VisionTaskDataset
-
         ds = VisionTaskDataset(data_path=str(tmp_path), resolution=64)
         s = ds[0]
         assert s["image"].min() >= -1.0 - 1e-6 and s["image"].max() <= 1.0 + 1e-6
@@ -380,7 +363,6 @@ class TestVisionTaskDataset:
         """Files without a matching target should be silently skipped."""
         import numpy as np
         from PIL import Image
-
         (tmp_path / "images").mkdir()
         (tmp_path / "targets").mkdir()
         arr = (np.random.rand(64, 64, 3) * 255).astype("uint8")
@@ -389,47 +371,32 @@ class TestVisionTaskDataset:
         # This image has no matching target
         Image.fromarray(arr).save(tmp_path / "images" / "orphan.png")
         from open_vision_banana.training.tuner import VisionTaskDataset
-
         ds = VisionTaskDataset(data_path=str(tmp_path), resolution=64)
         assert len(ds) == 1
-
 
 # ---------------------------------------------------------------------------
 # Round 4 tests — training pipeline readiness
 # ---------------------------------------------------------------------------
-
 
 class TestMixedVisionDatasetSampling:
     """Verify MixedVisionDataset random sampling (no idx-bias)."""
 
     def _make_ds(self, n, label):
         import torch
-
         class _D(torch.utils.data.Dataset):
-            def __len__(self):
-                return n
-
+            def __len__(self): return n
             def __getitem__(self, i):
-                return {
-                    "label": label,
-                    "image": torch.zeros(3, 4, 4),
-                    "target_rgb": torch.zeros(3, 4, 4),
-                }
-
+                return {"label": label, "image": torch.zeros(3, 4, 4), "target_rgb": torch.zeros(3, 4, 4)}
         return _D()
 
     def test_vision_only_returns_vision(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
-
-        ds = MixedVisionDataset(
-            [self._make_ds(20, "vision")], generation_dataset=None, vision_ratio=0.5
-        )
+        ds = MixedVisionDataset([self._make_ds(20, "vision")], generation_dataset=None, vision_ratio=0.5)
         for i in range(10):
             assert ds[i]["label"] == "vision"
 
     def test_ratio_respected(self):
         from open_vision_banana.data.mixed import MixedVisionDataset
-
         vision_ds = self._make_ds(100, "vision")
         gen_ds = self._make_ds(100, "generation")
         mds = MixedVisionDataset([vision_ds], generation_dataset=gen_ds, vision_ratio=0.1, seed=0)
@@ -440,7 +407,6 @@ class TestMixedVisionDatasetSampling:
     def test_uniform_dataset_selection(self):
         """When multiple vision datasets, each should be sampled."""
         from open_vision_banana.data.mixed import MixedVisionDataset
-
         ds_a = self._make_ds(50, "A")
         ds_b = self._make_ds(50, "B")
         mds = MixedVisionDataset([ds_a, ds_b], vision_ratio=1.0, seed=99)
@@ -455,10 +421,8 @@ class TestVisionAugmentationClamp:
         import torch
 
         from open_vision_banana.training.utils import VisionAugmentation
-
         aug = VisionAugmentation(
-            resolution=32,
-            hflip_prob=0.0,
+            resolution=32, hflip_prob=0.0,
             crop_scale=(1.0, 1.0),
             color_jitter={"brightness": 0.99},  # extreme brightness
             task="depth",
@@ -466,21 +430,15 @@ class TestVisionAugmentationClamp:
         img = torch.ones(3, 32, 32)  # already at max valid range
         tgt = torch.rand(3, 32, 32)
         aug_img, _ = aug(img, tgt)
-        assert aug_img.max() <= 1.0 + 1e-5, (
-            f"Image exceeded 1.0 after brightness: {aug_img.max():.4f}"
-        )
-        assert aug_img.min() >= -1.0 - 1e-5, (
-            f"Image below -1.0 after brightness: {aug_img.min():.4f}"
-        )
+        assert aug_img.max() <= 1.0 + 1e-5, f"Image exceeded 1.0 after brightness: {aug_img.max():.4f}"
+        assert aug_img.min() >= -1.0 - 1e-5, f"Image below -1.0 after brightness: {aug_img.min():.4f}"
 
     def test_high_contrast_clamped(self):
         import torch
 
         from open_vision_banana.training.utils import VisionAugmentation
-
         aug = VisionAugmentation(
-            resolution=32,
-            hflip_prob=0.0,
+            resolution=32, hflip_prob=0.0,
             crop_scale=(1.0, 1.0),
             color_jitter={"contrast": 0.99},
             task="depth",
@@ -529,7 +487,6 @@ class TestInstructionTunerForwardKwargs:
 
     def test_training_step_finite_loss(self):
         import torch
-
         tuner = self._make_tuner()
         batch = {
             "target_rgb": torch.rand(2, 3, 8, 8),
@@ -542,7 +499,6 @@ class TestInstructionTunerForwardKwargs:
     def test_training_step_device_from_batch(self):
         """Device must be inferred from batch, not from peft_model.parameters()."""
         import torch
-
         tuner = self._make_tuner()
         # Even if peft_model has no parameters, step should not raise
         batch = {
@@ -560,11 +516,8 @@ class TestInstructionTunerNumWorkers:
         import inspect
 
         from open_vision_banana.training.tuner import InstructionTuner
-
         sig = inspect.signature(InstructionTuner.train)
-        assert "num_workers" in sig.parameters, (
-            "num_workers not in InstructionTuner.train() signature"
-        )
+        assert "num_workers" in sig.parameters, "num_workers not in InstructionTuner.train() signature"
         assert sig.parameters["num_workers"].default == 0, "num_workers default should be 0"
 
 
@@ -655,7 +608,7 @@ class TestBaseGeneratorDtypeSync:
 
         from open_vision_banana.inference.generator import BaseGenerator
 
-        with patch.object(BaseGenerator, "_load_model"):
+        with patch.object(BaseGenerator, '_load_model'):
             gen = BaseGenerator(model_name="dummy", dtype=torch.float32, device="cpu")
             assert gen.inference_options.dtype == "float32"
 
@@ -664,7 +617,7 @@ class TestBaseGeneratorDtypeSync:
 
         from open_vision_banana.inference.generator import BaseGenerator
 
-        with patch.object(BaseGenerator, "_load_model"):
+        with patch.object(BaseGenerator, '_load_model'):
             gen = BaseGenerator(model_name="dummy", dtype=torch.bfloat16, device="cpu")
             assert gen.inference_options.dtype == "bfloat16"
 
@@ -673,7 +626,7 @@ class TestBaseGeneratorDtypeSync:
 
         from open_vision_banana.inference.generator import BaseGenerator
 
-        with patch.object(BaseGenerator, "_load_model"):
+        with patch.object(BaseGenerator, '_load_model'):
             gen = BaseGenerator(model_name="dummy", dtype=torch.float16, device="cpu")
             assert gen.inference_options.dtype == "float16"
 
@@ -700,7 +653,7 @@ class TestPromptCacheKey:
         from open_vision_banana.inference.generator import BaseGenerator
         from open_vision_banana.inference.optimization import InferenceOptions
 
-        with patch.object(BaseGenerator, "_load_model"):
+        with patch.object(BaseGenerator, '_load_model'):
             opts = InferenceOptions(dtype="float16")
             gen = BaseGenerator(
                 model_name="dummy", dtype=torch.float32, device="cpu", inference_options=opts

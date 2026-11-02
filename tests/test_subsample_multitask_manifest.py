@@ -17,52 +17,41 @@ def _source(tmp_path: Path) -> tuple[Path, list[dict]]:
     rows = []
     for task in sorted(VISION_TASKS | {"generation"}):
         for index in range(8):
-            rows.append(
-                {
-                    "sample_id": f"{task}-train-{index}",
-                    "task": task,
-                    "split": "train",
-                    "input": f"assets/{task}-{index}.png",
-                    "target": f"assets/{task}-{index}-target.png",
-                    "prompt": f"{task} prompt {index}",
-                }
-            )
-        rows.append(
-            {
-                "sample_id": f"{task}-val",
+            rows.append({
+                "sample_id": f"{task}-train-{index}",
                 "task": task,
-                "split": "val",
-                "input": f"assets/{task}-val.png",
-                "target": f"assets/{task}-val-target.png",
-                "prompt": f"{task} validation",
-            }
-        )
-    rows.append(
-        {
-            "sample_id": "referring-test",
-            "task": "referring",
-            "split": "test",
-            "input": "assets/referring-test.png",
-            "target": "assets/referring-test-target.png",
-        }
-    )
+                "split": "train",
+                "input": f"assets/{task}-{index}.png",
+                "target": f"assets/{task}-{index}-target.png",
+                "prompt": f"{task} prompt {index}",
+            })
+        rows.append({
+            "sample_id": f"{task}-val",
+            "task": task,
+            "split": "val",
+            "input": f"assets/{task}-val.png",
+            "target": f"assets/{task}-val-target.png",
+            "prompt": f"{task} validation",
+        })
+    rows.append({
+        "sample_id": "referring-test",
+        "task": "referring",
+        "split": "test",
+        "input": "assets/referring-test.png",
+        "target": "assets/referring-test-target.png",
+    })
     for row in rows:
         if row["sample_id"] in {"generation-train-0", "depth-val"}:
             row["input"] = "assets/COCO_train2014_000000000123.jpg"
     source = root / "pairs.jsonl"
     source.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
-    source.with_suffix(".audit.json").write_text(
-        json.dumps(
-            {
-                "manifest_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-                "protocol": "strict",
-                "zero_shot_claim_allowed": True,
-                "evaluation_image_id_overlap_by_source": {"refcocog_umd": 0},
-                "rejected_non_metric_depth_rows": 0,
-            }
-        ),
-        encoding="utf-8",
-    )
+    source.with_suffix(".audit.json").write_text(json.dumps({
+        "manifest_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "protocol": "strict",
+        "zero_shot_claim_allowed": True,
+        "evaluation_image_id_overlap_by_source": {"refcocog_umd": 0},
+        "rejected_non_metric_depth_rows": 0,
+    }), encoding="utf-8")
     return source, rows
 
 

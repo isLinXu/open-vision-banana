@@ -22,18 +22,13 @@ def load_module():
 
 def test_patch_mode_uses_dominant_valid_label() -> None:
     module = load_module()
-    labels = np.array(
-        [
-            [1, 1, 2, 2],
-            [1, 255, 2, 2],
-            [3, 3, 4, 4],
-            [3, 3, 4, 255],
-        ],
-        dtype=np.uint8,
-    )
-    assert np.array_equal(
-        module.patch_mode_labels(labels, 2), np.array([1, 2, 3, 4], dtype=np.uint8)
-    )
+    labels = np.array([
+        [1, 1, 2, 2],
+        [1, 255, 2, 2],
+        [3, 3, 4, 4],
+        [3, 3, 4, 255],
+    ], dtype=np.uint8)
+    assert np.array_equal(module.patch_mode_labels(labels, 2), np.array([1, 2, 3, 4], dtype=np.uint8))
 
 
 def test_expanded_grid_restores_requested_shape() -> None:

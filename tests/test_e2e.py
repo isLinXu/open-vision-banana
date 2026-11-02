@@ -1,5 +1,6 @@
 """End-to-end tests for ONNX export and import verification."""
 
+
 import pytest
 import torch
 
@@ -45,7 +46,8 @@ class TestONNXExport:
         pt_output = mapper.depth_to_rgb(depth)
         onnx_output = onnx_mapper(depth)
 
-        assert torch.allclose(pt_output, onnx_output, atol=1e-5), "ONNX and PyTorch outputs differ"
+        assert torch.allclose(pt_output, onnx_output, atol=1e-5), \
+            "ONNX and PyTorch outputs differ"
 
     def test_normal_onnx_numerical_consistency(self):
         """Verify ONNX normal mapper matches PyTorch."""
@@ -60,6 +62,5 @@ class TestONNXExport:
         pt_output = mapper.normal_to_rgb(normal)
         onnx_output = onnx_mapper(normal)
 
-        assert torch.allclose(pt_output, onnx_output, atol=1e-5), (
+        assert torch.allclose(pt_output, onnx_output, atol=1e-5), \
             "ONNX and PyTorch normal outputs differ"
-        )

@@ -25,14 +25,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # ── Skip conditions ─────────────────────────────────────────────────────
 
-
 def _cuda_available() -> bool:
     return torch.cuda.is_available()
 
 
 def _flux_available() -> bool:
     """Check if FLUX.1 model files exist locally."""
-    cache_dir = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface/hub"))
+    cache_dir = os.environ.get(
+        "HF_HOME", os.path.expanduser("~/.cache/huggingface/hub")
+    )
     flux_dirs = list(Path(cache_dir).glob("models--black-forest-labs--FLUX.1*"))
     return len(flux_dirs) > 0
 
@@ -55,7 +56,6 @@ gpu_flag = pytest.mark.skipif(
 
 # ── Fixtures ────────────────────────────────────────────────────────────
 
-
 @pytest.fixture
 def device() -> torch.device:
     # Indexed: tensors report cuda:0, and device("cuda") != device("cuda:0").
@@ -71,7 +71,6 @@ def small_image(device: torch.device) -> torch.Tensor:
 
 
 # ── Core algorithm GPU tests ────────────────────────────────────────────
-
 
 @gpu_required
 class TestCoreAlgorithmsOnGPU:
@@ -91,14 +90,11 @@ class TestCoreAlgorithmsOnGPU:
         """NMS works correctly on GPU."""
         from open_vision_banana.core.object_detection_mapper import _nms
 
-        boxes = torch.tensor(
-            [
-                [0.1, 0.1, 0.3, 0.3],
-                [0.12, 0.12, 0.32, 0.32],  # overlaps with box 0
-                [0.5, 0.5, 0.7, 0.7],  # no overlap
-            ],
-            device=device,
-        )
+        boxes = torch.tensor([
+            [0.1, 0.1, 0.3, 0.3],
+            [0.12, 0.12, 0.32, 0.32],  # overlaps with box 0
+            [0.5, 0.5, 0.7, 0.7],       # no overlap
+        ], device=device)
         scores = torch.tensor([0.9, 0.8, 0.7], device=device)
 
         keep = _nms(boxes, scores, iou_threshold=0.5)
@@ -163,7 +159,9 @@ class TestCoreAlgorithmsOnGPU:
         )
 
         mapper = ObjectDetectionRGBMapper(num_classes=3, line_width=2)
-        bboxes = torch.tensor([[[0.2, 0.3, 0.2, 0.2], [0.5, 0.5, 0.15, 0.15]]], device=device)
+        bboxes = torch.tensor([
+            [[0.2, 0.3, 0.2, 0.2], [0.5, 0.5, 0.15, 0.15]]
+        ], device=device)
         class_ids = torch.tensor([[0, 1]], device=device)
 
         rgb = mapper.bboxes_to_rgb(bboxes, class_ids)
@@ -174,7 +172,6 @@ class TestCoreAlgorithmsOnGPU:
 
 # ── FLUX.1 model tests (require model download) ─────────────────────────
 
-
 @flux_required
 class TestFluxModelGPU:
     """Tests that require the FLUX.1 model to be downloaded."""
@@ -184,7 +181,6 @@ class TestFluxModelGPU:
         """Load FLUX.1 pipeline for testing."""
         try:
             from diffusers import FluxPipeline
-
             pipe = FluxPipeline.from_pretrained(
                 "black-forest-labs/FLUX.1-dev",
                 torch_dtype=torch.bfloat16,
@@ -228,7 +224,6 @@ class TestFluxModelGPU:
 
 
 # ── Memory and performance tests ────────────────────────────────────────
-
 
 @gpu_required
 class TestGPUMemory:

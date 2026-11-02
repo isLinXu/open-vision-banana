@@ -16,7 +16,9 @@ def test_bbox_roundtrip() -> None:
     """Test bbox -> RGB -> bbox roundtrip."""
     mapper = ObjectDetectionRGBMapper(num_classes=3, line_width=2)
 
-    bboxes = torch.tensor([[[0.2, 0.3, 0.2, 0.2], [0.5, 0.5, 0.15, 0.15]]])  # [1, 2, 4]
+    bboxes = torch.tensor([
+        [[0.2, 0.3, 0.2, 0.2], [0.5, 0.5, 0.15, 0.15]]
+    ])  # [1, 2, 4]
     class_ids = torch.tensor([[0, 1]])  # [1, 2]
 
     rgb = mapper.bboxes_to_rgb(bboxes, class_ids)
@@ -56,9 +58,7 @@ def test_bbox_with_scores() -> None:
 
 def test_bbox_dynamic_resolution() -> None:
     """Test bbox encoding with non-default resolution (P1-2)."""
-    mapper = ObjectDetectionRGBMapper(
-        num_classes=2, line_width=2, output_height=256, output_width=256
-    )
+    mapper = ObjectDetectionRGBMapper(num_classes=2, line_width=2, output_height=256, output_width=256)
 
     bboxes = torch.tensor([[[0.2, 0.3, 0.2, 0.2]]])
     class_ids = torch.tensor([[0]])

@@ -127,9 +127,7 @@ def test_qwen_edit_uses_true_cfg_and_not_kontext_resize():
 
     gen = _generator("qwen-image-edit", _Pipe())
     src = Image.new("RGB", (70, 50))
-    out = gen.generate(
-        prompt="make it snow", image=src, num_inference_steps=1, guidance_scale=0.0, seed=3
-    )
+    out = gen.generate(prompt="make it snow", image=src, num_inference_steps=1, guidance_scale=0.0, seed=3)
     kw = calls[0]
     assert kw["image"] is src
     assert kw["prompt"] == "make it snow"
@@ -219,9 +217,7 @@ def test_flux2_klein_passes_guidance_scale():
     calls = []
 
     class _Pipe:
-        def __call__(
-            self, image, prompt, height, width, num_inference_steps, guidance_scale, generator=None
-        ):
+        def __call__(self, image, prompt, height, width, num_inference_steps, guidance_scale, generator=None):
             calls.append(
                 {
                     "height": height,
@@ -273,9 +269,7 @@ def test_joyimage_edit_plus_passes_a_one_image_list():
     calls = []
 
     class _Pipe:
-        def __call__(
-            self, images, prompt, height, width, num_inference_steps, guidance_scale, generator=None
-        ):
+        def __call__(self, images, prompt, height, width, num_inference_steps, guidance_scale, generator=None):
             calls.append(
                 {
                     "n_images": len(images),

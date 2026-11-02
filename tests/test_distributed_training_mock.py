@@ -41,7 +41,9 @@ class TestDDPWrapperMock:
             patch(
                 "open_vision_banana.training.utils.torch.distributed.init_process_group"
             ) as mock_init,
-            patch("open_vision_banana.training.utils.torch.distributed.destroy_process_group"),
+            patch(
+                "open_vision_banana.training.utils.torch.distributed.destroy_process_group"
+            ),
         ):
             ddp = DDPWrapper(world_size=4, rank=0, local_rank=0)
             ddp.initialize()
@@ -57,8 +59,12 @@ class TestDDPWrapperMock:
                 "open_vision_banana.training.utils.torch.distributed.is_initialized",
                 return_value=False,
             ),
-            patch("open_vision_banana.training.utils.torch.distributed.init_process_group"),
-            patch("open_vision_banana.training.utils.torch.distributed.destroy_process_group"),
+            patch(
+                "open_vision_banana.training.utils.torch.distributed.init_process_group"
+            ),
+            patch(
+                "open_vision_banana.training.utils.torch.distributed.destroy_process_group"
+            ),
             patch(
                 "open_vision_banana.training.utils.torch.nn.parallel.DistributedDataParallel",
                 return_value=mock_ddp_instance,
@@ -75,7 +81,9 @@ class TestDDPWrapperMock:
                 "open_vision_banana.training.utils.torch.distributed.is_initialized",
                 return_value=True,
             ),
-            patch("open_vision_banana.training.utils.torch.distributed.barrier") as mock_barrier,
+            patch(
+                "open_vision_banana.training.utils.torch.distributed.barrier"
+            ) as mock_barrier,
         ):
             ddp = DDPWrapper(world_size=4, rank=0)
             ddp.barrier()
@@ -92,7 +100,9 @@ class TestDDPWrapperMock:
                 "open_vision_banana.training.utils.torch.distributed.is_initialized",
                 return_value=False,
             ),
-            patch("open_vision_banana.training.utils.torch.distributed.init_process_group"),
+            patch(
+                "open_vision_banana.training.utils.torch.distributed.init_process_group"
+            ),
             patch(
                 "open_vision_banana.training.utils.torch.distributed.destroy_process_group"
             ) as mock_destroy,
@@ -138,8 +148,12 @@ class TestFSDPWrapperMock:
             patch(
                 "open_vision_banana.training.fsdp_utils.torch.distributed.init_process_group"
             ) as mock_init,
-            patch("open_vision_banana.training.fsdp_utils.torch.distributed.destroy_process_group"),
-            patch("open_vision_banana.training.fsdp_utils.torch.cuda.set_device"),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.distributed.destroy_process_group"
+            ),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.cuda.set_device"
+            ),
         ):
             fsdp = FSDPWrapper(world_size=4, rank=0, local_rank=0)
             fsdp.initialize()
@@ -159,9 +173,15 @@ class TestFSDPWrapperMock:
                 "open_vision_banana.training.fsdp_utils.torch.distributed.is_initialized",
                 return_value=False,
             ),
-            patch("open_vision_banana.training.fsdp_utils.torch.distributed.init_process_group"),
-            patch("open_vision_banana.training.fsdp_utils.torch.distributed.destroy_process_group"),
-            patch("open_vision_banana.training.fsdp_utils.torch.cuda.set_device"),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.distributed.init_process_group"
+            ),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.distributed.destroy_process_group"
+            ),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.cuda.set_device"
+            ),
             patch(
                 "torch.distributed.fsdp.FullyShardedDataParallel",
                 return_value=mock_fsdp_instance,
@@ -254,11 +274,15 @@ class TestFSDPWrapperMock:
                 "open_vision_banana.training.fsdp_utils.torch.distributed.is_initialized",
                 return_value=False,
             ),
-            patch("open_vision_banana.training.fsdp_utils.torch.distributed.init_process_group"),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.distributed.init_process_group"
+            ),
             patch(
                 "open_vision_banana.training.fsdp_utils.torch.distributed.destroy_process_group"
             ) as mock_destroy,
-            patch("open_vision_banana.training.fsdp_utils.torch.cuda.set_device"),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.cuda.set_device"
+            ),
         ):
             fsdp = FSDPWrapper(world_size=4, rank=0)
             fsdp.initialize()
@@ -388,9 +412,15 @@ class TestFSDPTrainerMock:
                 "open_vision_banana.training.fsdp_utils.torch.distributed.is_initialized",
                 return_value=False,
             ),
-            patch("open_vision_banana.training.fsdp_utils.torch.distributed.init_process_group"),
-            patch("open_vision_banana.training.fsdp_utils.torch.distributed.destroy_process_group"),
-            patch("open_vision_banana.training.fsdp_utils.torch.cuda.set_device"),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.distributed.init_process_group"
+            ),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.distributed.destroy_process_group"
+            ),
+            patch(
+                "open_vision_banana.training.fsdp_utils.torch.cuda.set_device"
+            ),
             patch(
                 "torch.distributed.fsdp.FullyShardedDataParallel",
                 return_value=mock_fsdp_instance,
@@ -410,7 +440,9 @@ class TestFSDPTrainerMock:
             assert wrapped is mock_fsdp_instance
 
     def test_barrier_delegates(self):
-        with patch.object(FSDPWrapper, "barrier", return_value=None):
+        with patch.object(
+            FSDPWrapper, "barrier", return_value=None
+        ):
             trainer = FSDPTrainer(world_size=1, rank=0)
             # FSDPTrainer doesn't have a direct FSDPWrapper in multi-process that
             # uses the same mock path, but we can test via patching the internal _fsdp
@@ -677,15 +709,12 @@ class TestNativeTrainerExtended:
         assert torch.allclose(model.weight, model2.weight)
 
     def test_device_selection_cpu(self):
-        with (
-            patch(
-                "open_vision_banana.training.trainer_interface.torch.cuda.is_available",
-                return_value=False,
-            ),
-            patch(
-                "open_vision_banana.training.trainer_interface.torch.backends.mps.is_available",
-                return_value=False,
-            ),
+        with patch(
+            "open_vision_banana.training.trainer_interface.torch.cuda.is_available",
+            return_value=False,
+        ), patch(
+            "open_vision_banana.training.trainer_interface.torch.backends.mps.is_available",
+            return_value=False,
         ):
             trainer = NativeTrainer(device="auto")
             assert str(trainer.device) == "cpu"

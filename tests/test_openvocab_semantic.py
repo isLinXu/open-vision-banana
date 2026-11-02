@@ -46,6 +46,7 @@ def test_distinct_colors_raise_when_infeasible():
         sample_distinct_colors(500, random.Random(0), min_distance=64.0)
 
 
+
 def _assert_pairwise_apart(colors, min_distance):
     for i, a in enumerate(colors):
         for b in colors[i + 1 :]:
@@ -141,23 +142,13 @@ def test_target_roundtrips_under_nearest_color_decoding(style):
         region = labels == idx
         assert (decoded[region] == names.index(phrase)).all()
     # Ignored pixels are painted as background.
-    assert (
-        (decoded[labels == -1] == names.index(BACKGROUND_NAME)).all()
-        if (labels == -1).any()
-        else True
-    )
+    assert (decoded[labels == -1] == names.index(BACKGROUND_NAME)).all() if (labels == -1).any() else True
 
 
 def test_mapping_is_resampled_across_variants():
     labels = _labels()
     maps = {
-        tuple(
-            sorted(
-                sample_openvocab_semantic(
-                    labels, CLASSES, random.Random(s), ignore_index=-1
-                ).mapping.items()
-            )
-        )
+        tuple(sorted(sample_openvocab_semantic(labels, CLASSES, random.Random(s), ignore_index=-1).mapping.items()))
         for s in range(8)
     }
     assert len(maps) > 4  # colors/classes/styles actually vary
@@ -174,12 +165,7 @@ def test_absent_distractors_in_prompt_but_not_in_target():
     found = False
     for seed in range(30):
         s = sample_openvocab_semantic(
-            labels,
-            CLASSES,
-            random.Random(seed),
-            ignore_index=-1,
-            max_absent=6,
-            style_weights={"json_tuple": 1.0},
+            labels, CLASSES, random.Random(seed), ignore_index=-1, max_absent=6, style_weights={"json_tuple": 1.0}
         )
         for phrase in s.absent_classes:
             found = True
@@ -198,9 +184,7 @@ def test_tiny_classes_fall_into_background():
 
 
 def _load_builder():
-    path = (
-        Path(__file__).resolve().parent.parent / "scripts" / "build_openvocab_semantic_manifest.py"
-    )
+    path = Path(__file__).resolve().parent.parent / "scripts" / "build_openvocab_semantic_manifest.py"
     spec = importlib.util.spec_from_file_location("build_openvocab_semantic_manifest", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -238,25 +222,9 @@ def test_builder_end_to_end_and_manifest_loadable(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "sys.argv",
         [
-            "build",
-            "--images",
-            str(images),
-            "--labels",
-            str(labels),
-            "--classes",
-            str(classes),
-            "--source-name",
-            "toy",
-            "--out-dir",
-            str(out),
-            "--label-offset",
-            "1",
-            "--ignore-index",
-            "-1",
-            "--variants",
-            "2",
-            "--val-fraction",
-            "0.0",
+            "build", "--images", str(images), "--labels", str(labels), "--classes", str(classes),
+            "--source-name", "toy", "--out-dir", str(out), "--label-offset", "1",
+            "--ignore-index", "-1", "--variants", "2", "--val-fraction", "0.0",
         ],
     )
     assert builder.main() == 0
@@ -270,13 +238,9 @@ def test_builder_end_to_end_and_manifest_loadable(tmp_path, monkeypatch):
         from open_vision_banana.training.trainer import ManifestVisionDataset
     except Exception as exc:  # optional heavy deps missing in minimal envs
         pytest.skip(f"trainer import unavailable: {exc}")
-    ds = ManifestVisionDataset(
-        out / "pairs.jsonl", resolution=32, split="train", tasks={"semantic"}
-    )
+    ds = ManifestVisionDataset(out / "pairs.jsonl", resolution=32, split="train", tasks={"semantic"})
     assert len(ds) == 6
-    assert {s["prompt"] for s in ds.samples} == {
-        r["prompt"] for r in rows
-    }  # per-row prompt preserved
+    assert {s["prompt"] for s in ds.samples} == {r["prompt"] for r in rows}  # per-row prompt preserved
     item = ds[0]
     assert item["task"] == "semantic" and item["target_rgb"].shape == (3, 32, 32)
 
@@ -292,12 +256,8 @@ def test_normalize_task_prompt_keep_custom_only_for_nonempty_semantic():
     from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT, normalize_task_prompt
 
     assert normalize_task_prompt("semantic", "my mapping", keep_custom=True) == "my mapping"
-    assert (
-        normalize_task_prompt("semantic", "   ", keep_custom=True) == SEMANTIC_SEGMENTATION_PROMPT
-    )
-    assert (
-        normalize_task_prompt("segmentation", "", keep_custom=True) == SEMANTIC_SEGMENTATION_PROMPT
-    )
+    assert normalize_task_prompt("semantic", "   ", keep_custom=True) == SEMANTIC_SEGMENTATION_PROMPT
+    assert normalize_task_prompt("segmentation", "", keep_custom=True) == SEMANTIC_SEGMENTATION_PROMPT
 
 
 @pytest.mark.parametrize("keep", [False, True])
@@ -315,10 +275,6 @@ def test_legacy_datasets_keep_prompts_only_when_opted_in(tmp_path, keep):
 
     expected = '{"sky": <1, 2, 3>}' if keep else SEMANTIC_SEGMENTATION_PROMPT
     flat = V3FlatDataset(root, task_label="semantic", resolution=8, keep_semantic_prompts=keep)
-    assert (
-        (expected in flat.samples[0]["prompt"]) if keep else flat.samples[0]["prompt"] == expected
-    )
+    assert (expected in flat.samples[0]["prompt"]) if keep else flat.samples[0]["prompt"] == expected
     tuned = VisionTaskDataset(str(root), resolution=8, task="semantic", keep_semantic_prompts=keep)
-    assert (
-        (expected in tuned.samples[0]["prompt"]) if keep else tuned.samples[0]["prompt"] == expected
-    )
+    assert (expected in tuned.samples[0]["prompt"]) if keep else tuned.samples[0]["prompt"] == expected

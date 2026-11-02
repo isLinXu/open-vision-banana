@@ -87,15 +87,7 @@ def test_flux_dev_forward_receives_guidance_and_pooled_projections() -> None:
 
     class _VAE:
         def encode(self, images):
-            return type(
-                "Out",
-                (),
-                {
-                    "latent_dist": type(
-                        "D", (), {"mode": lambda self=None: torch.zeros(1, 16, 4, 4)}
-                    )()
-                },
-            )()
+            return type("Out", (), {"latent_dist": type("D", (), {"mode": lambda self=None: torch.zeros(1, 16, 4, 4)})()})()
 
         def decode(self, latents, return_dict=True):
             sample = torch.zeros(1, 3, 32, 32)
@@ -162,15 +154,7 @@ def test_flux_decode_skips_meta_vae_parameters() -> None:
 
     class _VAE:
         def encode(self, images):
-            return type(
-                "Out",
-                (),
-                {
-                    "latent_dist": type(
-                        "D", (), {"mode": lambda self=None: torch.zeros(1, 16, 4, 4)}
-                    )()
-                },
-            )()
+            return type("Out", (), {"latent_dist": type("D", (), {"mode": lambda self=None: torch.zeros(1, 16, 4, 4)})()})()
 
         def decode(self, latents, return_dict=True):
             assert latents.device.type != "meta"

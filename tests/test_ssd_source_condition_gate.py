@@ -117,7 +117,9 @@ def test_sigma_for_timesteps_broadcasts_over_latents():
             return int(torch.nonzero(schedule == timestep)[0])
 
     reference = torch.zeros(2, 4, 3, 3)
-    sigma = module.sigma_for_timesteps(FakeScheduler(), torch.tensor([3.0, 1.0]), reference)
+    sigma = module.sigma_for_timesteps(
+        FakeScheduler(), torch.tensor([3.0, 1.0]), reference
+    )
 
     assert sigma.shape == (2, 1, 1, 1)
     assert sigma[:, 0, 0, 0].tolist() == [4.0, 0.5]
@@ -251,7 +253,9 @@ def test_gate_calibration_projects_prediction_to_audited_curve(tmp_path: Path):
     Image.new("RGB", (32, 32), "black").save(source)
     normalized = torch.linspace(0, 1, 32).view(1, 1, 1, 32).expand(1, 1, 32, 32)
     target_rgb = DepthRGBMapper("viridis").normalized_to_rgb(normalized)[0]
-    target_array = (target_rgb.permute(1, 2, 0).numpy() * 255).round().astype("uint8")
+    target_array = (
+        target_rgb.permute(1, 2, 0).numpy() * 255
+    ).round().astype("uint8")
     Image.fromarray(target_array).save(target)
     audit, _ = module.audit_depth_pairs(tmp_path, [(source, target)])
     off_curve = Image.new("RGB", (32, 32), (180, 140, 120))

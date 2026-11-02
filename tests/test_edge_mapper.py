@@ -64,9 +64,7 @@ def test_edge_luminance_formula() -> None:
     rgb_blue[0, 2, 20:44, 20:44] = 1.0
 
     edge_blue = mapper.rgb_to_edge(rgb_blue)
-    assert not edge_blue[0, 0, 20:44, 20:44].any(), (
-        "Pure blue should not be detected as edge at threshold 0.5"
-    )
+    assert not edge_blue[0, 0, 20:44, 20:44].any(), "Pure blue should not be detected as edge at threshold 0.5"
 
 
 if __name__ == "__main__":

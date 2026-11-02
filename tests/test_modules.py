@@ -122,7 +122,7 @@ class TestDepthRGBMapper:
         torch.manual_seed(0)
         depth = torch.rand(1, 1, 64, 64) * 49.0 + 1.0  # [1, 50]m
         rgb = self.mapper.depth_to_rgb(depth)
-        rgb_q = (rgb * 255).round() / 255.0  # 8-bit quantization
+        rgb_q = (rgb * 255).round() / 255.0            # 8-bit quantization
         recovered = self.mapper.rgb_to_depth(rgb_q)
         abs_rel = ((depth - recovered).abs() / depth).mean().item()
         assert abs_rel < 0.005, f"Quantized depth AbsRel too high: {abs_rel:.4f}"
@@ -244,7 +244,9 @@ class TestNormalRGBMapper:
         rgb = self.mapper.normal_to_rgb(normals)
         rgb_q = (rgb * 255).round() / 255.0
         recovered = self.mapper.rgb_to_normal(rgb_q)
-        cos_sim = torch.nn.functional.cosine_similarity(normals, recovered, dim=1).clamp(-1, 1)
+        cos_sim = torch.nn.functional.cosine_similarity(
+            normals, recovered, dim=1
+        ).clamp(-1, 1)
         mean_angle_deg = (torch.acos(cos_sim).mean() * 180.0 / 3.14159265).item()
         assert mean_angle_deg < 1.0, (
             f"Quantized normal angular error too high: {mean_angle_deg:.3f}°"

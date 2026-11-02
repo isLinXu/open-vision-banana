@@ -15,7 +15,9 @@ from scripts.prepare_kitti_metric import (
 
 
 def _write_kitti_pair(tmp: Path, drive: str, frame: str, *, split: str = "train") -> None:
-    depth_dir = tmp / "depth" / split / drive / "proj_depth" / "groundtruth" / "image_02"
+    depth_dir = (
+        tmp / "depth" / split / drive / "proj_depth" / "groundtruth" / "image_02"
+    )
     rgb_dir = tmp / "rgb" / "2011_09_26" / drive / "image_02" / "data"
     if drive.startswith("2011_09_28"):
         rgb_dir = tmp / "rgb" / "2011_09_28" / drive / "image_02" / "data"
@@ -41,7 +43,9 @@ def test_prepare_encodes_metric_metres(tmp_path: Path) -> None:
     drive = "2011_09_26_drive_0001_sync"
     _write_kitti_pair(tmp_path, drive, "0000000005.png")
     out = tmp_path / "prepared"
-    count = prepare_kitti_metric(tmp_path / "depth", tmp_path / "rgb", out, resolution=8)
+    count = prepare_kitti_metric(
+        tmp_path / "depth", tmp_path / "rgb", out, resolution=8
+    )
     assert count == 1
     metric = np.load(next((out / "metric_depth").glob("*.npy")))
     assert metric.shape == (8, 8)

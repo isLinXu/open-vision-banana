@@ -26,7 +26,7 @@ def test_default_mapper_is_paper_metric_power():
 
     # Regression lock: 1 m under λ=-3, c=10/3.
     depth = torch.ones(1, 1, 2, 2)
-    expected = 1.0 - (1.1**-2)
+    expected = 1.0 - (1.1 ** -2)
     assert abs(float(mapper.depth_to_normalized(depth).mean()) - expected) < 1e-6
 
 
