@@ -312,7 +312,9 @@ def eval_fixture(tmp_path):
         Image.fromarray(np.asarray(array, np.uint8)).save(tmp_path / name)
         return name
 
-    rgb = png("img.png", np.random.default_rng(0).integers(0, 255, (24, 32, 3)))
+    pixels = np.random.default_rng(0).integers(0, 255, (24, 32, 3))
+    rgb = png("img.png", pixels)
+    reference = png("reference.png", pixels)  # same pixels, its own file: not an identity row
     depth = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 24, 32), 2.5))
     depth_png = png("depth.png", (depth[0].permute(1, 2, 0).numpy() * 255).round())
     mask = np.zeros((24, 32, 3))
@@ -372,7 +374,7 @@ def eval_fixture(tmp_path):
             background_color=[0, 0, 0],
             category="box",
         ),
-        dict(task="generation", split="val", input=rgb, target=rgb, prompt="Add a tree"),
+        dict(task="generation", split="val", input=rgb, target=reference, prompt="Add a tree"),
     ]
     manifest = write_manifest(tmp_path / "pairs.jsonl", rows)
     index = tmp_path / "index.json"
