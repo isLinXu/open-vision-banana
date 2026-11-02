@@ -44,14 +44,24 @@ def test_omniedit_parquet_shards_with_embedded_images(tmp_path: Path):
 
     out = tmp_path / "replay" / "omniedit.jsonl"
     audit = build_generation_replay_manifest(
-        shards, out, kind="edit", preset="omniedit", data_root=tmp_path,
-        images_dir=tmp_path / "replay" / "omniedit_images", val_fraction=0.0,
+        shards,
+        out,
+        kind="edit",
+        preset="omniedit",
+        data_root=tmp_path,
+        images_dir=tmp_path / "replay" / "omniedit_images",
+        val_fraction=0.0,
     )
     assert audit["rows_written"] == 3 and audit["skipped_missing_text"] == 1
     written = [json.loads(line) for line in out.read_text().splitlines()]
     assert all(r["task"] == "generation" and r["prompt"] == "make the sky purple" for r in written)
-    assert all(r["input"].startswith("replay/omniedit_images/") and r["input"] != r["target"] for r in written)
-    assert sorted((tmp_path / "replay" / "omniedit_images").glob("*.png"))[0].name == "oe_0_edit.png"
+    assert all(
+        r["input"].startswith("replay/omniedit_images/") and r["input"] != r["target"]
+        for r in written
+    )
+    assert (
+        sorted((tmp_path / "replay" / "omniedit_images").glob("*.png"))[0].name == "oe_0_edit.png"
+    )
 
     ds = ManifestVisionDataset(out, 16, "train", {"generation"}, data_root=tmp_path)
     sample = ds[0]
@@ -61,7 +71,9 @@ def test_omniedit_parquet_shards_with_embedded_images(tmp_path: Path):
     assert float((sample["image"] * 0.5 + 0.5 - sample["target_rgb"]).abs().mean()) > 0.1
 
     with pytest.raises(ValueError, match="images-dir"):
-        build_generation_replay_manifest(shards, tmp_path / "x.jsonl", kind="edit", preset="omniedit")
+        build_generation_replay_manifest(
+            shards, tmp_path / "x.jsonl", kind="edit", preset="omniedit"
+        )
 
 
 def test_cwd_relative_images_dir_inside_the_data_root(tmp_path: Path, monkeypatch):
@@ -145,8 +157,13 @@ def test_webdataset_tar_and_captions_sidecar(tmp_path: Path):
     captions.write_text("\n".join(f"caption {i}" for i in range(200)) + "\n", encoding="utf-8")
     out2 = tmp_path / "blip.jsonl"
     audit2 = build_generation_replay_manifest(
-        blip_tar, out2, kind="t2i", data_root=tmp_path, images_dir=tmp_path / "blip_images",
-        captions_file=captions, caption_index_base=0,
+        blip_tar,
+        out2,
+        kind="t2i",
+        data_root=tmp_path,
+        images_dir=tmp_path / "blip_images",
+        captions_file=captions,
+        caption_index_base=0,
     )
     assert audit2["rows_written"] == 2
     prompts = {}
@@ -161,5 +178,7 @@ def test_webdataset_tar_and_captions_sidecar(tmp_path: Path):
     for idx in (5, 6):
         (img_dir / f"{idx}.png").write_bytes(_png_bytes((1, 2, 3)))
     out3 = tmp_path / "dir.jsonl"
-    audit3 = build_generation_replay_manifest(img_dir, out3, kind="t2i", data_root=tmp_path, captions_file=captions)
+    audit3 = build_generation_replay_manifest(
+        img_dir, out3, kind="t2i", data_root=tmp_path, captions_file=captions
+    )
     assert audit3["rows_written"] == 2

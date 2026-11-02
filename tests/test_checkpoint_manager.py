@@ -209,7 +209,11 @@ class TestCheckpointLoad:
         random.seed(999)
         np.random.seed(999)
         torch.manual_seed(999)
-        mgr.load(MockPEFTModel(), torch.optim.SGD(MockPEFTModel().linear.parameters(), lr=0.01), restore_rng=True)
+        mgr.load(
+            MockPEFTModel(),
+            torch.optim.SGD(MockPEFTModel().linear.parameters(), lr=0.01),
+            restore_rng=True,
+        )
         actual = (random.random(), float(np.random.rand()), torch.rand(1).item())
 
         assert actual == pytest.approx(expected)

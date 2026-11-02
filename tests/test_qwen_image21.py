@@ -156,7 +156,9 @@ def test_manifest_dataset_dynamic_depth_colormaps_and_semantic_remapping(tmp_pat
 
     Image.new("RGB", (32, 32), (100, 100, 100)).save(img_dir / "a.png")
     # Save a valid metric cube_edge depth target at 3.0m
-    depth_rgb = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 32, 32), 3.0))[0]
+    depth_rgb = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 32, 32), 3.0))[
+        0
+    ]
     Image.fromarray((depth_rgb.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)).save(
         tgt_dir / "d.png"
     )
@@ -221,9 +223,7 @@ def test_manifest_dataset_dynamic_depth_colormaps_and_semantic_remapping(tmp_pat
     new_legend = parse_semantic_legend_from_prompt(sem_sample["prompt"])
     assert len(new_legend) == 19
     assert new_legend["road"] != (128, 64, 128)
-    top_pixel = tuple(
-        (sem_sample["target_rgb"][:, 0, 0] * 255.0).round().to(torch.int32).tolist()
-    )
+    top_pixel = tuple((sem_sample["target_rgb"][:, 0, 0] * 255.0).round().to(torch.int32).tolist())
     assert top_pixel == new_legend["road"]
 
 
@@ -245,9 +245,27 @@ def test_build_qwen_baseline_manifest_filters_gray_depth_and_upsamples_cityscape
 
     base = tmp_path / "base.jsonl"
     rows = [
-        {"task": "depth", "input": "images/in.png", "target": "targets/bad_depth.png", "split": "train", "prompt": "Generate a relative depth map."},
-        {"task": "depth", "input": "images/in.png", "target": "targets/good_depth.png", "split": "train", "prompt": "Generate a relative depth map."},
-        {"task": "semantic", "input": "images/in.png", "target": "targets/sem.png", "split": "train", "prompt": SEMANTIC_SEGMENTATION_PROMPT},
+        {
+            "task": "depth",
+            "input": "images/in.png",
+            "target": "targets/bad_depth.png",
+            "split": "train",
+            "prompt": "Generate a relative depth map.",
+        },
+        {
+            "task": "depth",
+            "input": "images/in.png",
+            "target": "targets/good_depth.png",
+            "split": "train",
+            "prompt": "Generate a relative depth map.",
+        },
+        {
+            "task": "semantic",
+            "input": "images/in.png",
+            "target": "targets/sem.png",
+            "split": "train",
+            "prompt": SEMANTIC_SEGMENTATION_PROMPT,
+        },
     ]
     for i in range(9):
         rows.append(
@@ -263,7 +281,9 @@ def test_build_qwen_baseline_manifest_filters_gray_depth_and_upsamples_cityscape
 
     out = tmp_path / "out.jsonl"
     # Cityscapes upsampling is an in-domain feature; strict refuses it (tested below)
-    audit = build_qwen_baseline_manifest(base, out, data_root=tmp_path, min_cityscapes_share=0.50, protocol="in_domain")
+    audit = build_qwen_baseline_manifest(
+        base, out, data_root=tmp_path, min_cityscapes_share=0.50, protocol="in_domain"
+    )
     assert audit["protocol"] == "in_domain" and audit["zero_shot_claim_allowed"] is False
     assert audit["rejected_non_metric_depth_rows"] == 1
     assert audit["task_split_counts"]["depth/train"] == 1
@@ -286,10 +306,30 @@ def test_build_qwen_baseline_manifest_enforces_zero_shot_protocol(tmp_path: Path
         Image.fromarray(depth_png).save(d / "d.png")
 
     rows = [
-        {"task": "depth", "input": "images/in.png", "target": "vkitti2/Scene01/depth/d.png", "split": "train"},
-        {"task": "depth", "input": "images/in.png", "target": "hypersim/ai_001/depth/d.png", "split": "train"},
-        {"task": "depth", "input": "images/in.png", "target": "nyu_depth_v2/train/d.png", "split": "train"},
-        {"task": "referring", "input": "refcocog/train2014/x.jpg", "target": "images/in.png", "split": "train"},
+        {
+            "task": "depth",
+            "input": "images/in.png",
+            "target": "vkitti2/Scene01/depth/d.png",
+            "split": "train",
+        },
+        {
+            "task": "depth",
+            "input": "images/in.png",
+            "target": "hypersim/ai_001/depth/d.png",
+            "split": "train",
+        },
+        {
+            "task": "depth",
+            "input": "images/in.png",
+            "target": "nyu_depth_v2/train/d.png",
+            "split": "train",
+        },
+        {
+            "task": "referring",
+            "input": "refcocog/train2014/x.jpg",
+            "target": "images/in.png",
+            "split": "train",
+        },
     ]
     base = tmp_path / "base.jsonl"
     base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
@@ -299,16 +339,24 @@ def test_build_qwen_baseline_manifest_enforces_zero_shot_protocol(tmp_path: Path
     assert strict["task_split_counts"] == {"depth/train": 1}
 
     with pytest.raises(ValueError, match="does not permit allow_benchmarks"):
-        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", data_root=tmp_path, allow_benchmarks=["vkitti"])
+        build_qwen_baseline_manifest(
+            base, tmp_path / "x.jsonl", data_root=tmp_path, allow_benchmarks=["vkitti"]
+        )
     relaxed = build_qwen_baseline_manifest(
-        base, tmp_path / "relaxed.jsonl", data_root=tmp_path, allow_benchmarks=["vkitti"], protocol="in_domain"
+        base,
+        tmp_path / "relaxed.jsonl",
+        data_root=tmp_path,
+        allow_benchmarks=["vkitti"],
+        protocol="in_domain",
     )
     assert relaxed["rejected_benchmark_leak_rows"] == {"nyu": 1, "refcocog": 1}
     assert relaxed["task_split_counts"]["depth/train"] == 2
     # "virtual_kitti/" also contains "kitti/": an allowed corpus must not be re-flagged as KITTI
     assert benchmark_leak({"target": "virtual_kitti/Scene01/depth/d.png"}, {"vkitti"}) is None
     with pytest.raises(ValueError, match="allow_benchmarks"):
-        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", allow_benchmarks=["bogus"], protocol="in_domain")
+        build_qwen_baseline_manifest(
+            base, tmp_path / "x.jsonl", allow_benchmarks=["bogus"], protocol="in_domain"
+        )
 
 
 def test_strict_protocol_rejects_cityscapes_train_rows_and_manifest(tmp_path: Path):
@@ -316,10 +364,20 @@ def test_strict_protocol_rejects_cityscapes_train_rows_and_manifest(tmp_path: Pa
     img_dir.mkdir()
     Image.new("RGB", (16, 16), (50, 60, 70)).save(img_dir / "in.png")
     rows = [
-        {"task": "semantic", "input": "cityscapes/leftImg8bit/train/aachen/aachen_000000_000019_leftImg8bit.png",
-         "target": "images/in.png", "split": "train", "prompt": SEMANTIC_SEGMENTATION_PROMPT},
-        {"task": "semantic", "input": "images/in.png", "target": "images/in.png", "split": "train",
-         "prompt": 'Generate a semantic segmentation visualization image, using this color mapping: {"wall": <255, 0, 0>}.'},
+        {
+            "task": "semantic",
+            "input": "cityscapes/leftImg8bit/train/aachen/aachen_000000_000019_leftImg8bit.png",
+            "target": "images/in.png",
+            "split": "train",
+            "prompt": SEMANTIC_SEGMENTATION_PROMPT,
+        },
+        {
+            "task": "semantic",
+            "input": "images/in.png",
+            "target": "images/in.png",
+            "split": "train",
+            "prompt": 'Generate a semantic segmentation visualization image, using this color mapping: {"wall": <255, 0, 0>}.',
+        },
     ]
     base = tmp_path / "base.jsonl"
     base.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
@@ -327,11 +385,19 @@ def test_strict_protocol_rejects_cityscapes_train_rows_and_manifest(tmp_path: Pa
     assert strict["rejected_benchmark_leak_rows"] == {"cityscapes": 1}
     assert strict["task_split_counts"] == {"semantic/train": 1}
     with pytest.raises(ValueError, match="min_cityscapes_share == 0"):
-        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", data_root=tmp_path, min_cityscapes_share=0.5)
+        build_qwen_baseline_manifest(
+            base, tmp_path / "x.jsonl", data_root=tmp_path, min_cityscapes_share=0.5
+        )
     with pytest.raises(ValueError, match="Cityscapes train manifest"):
-        build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", data_root=tmp_path, cityscapes_manifest=base)
-    in_domain = build_qwen_baseline_manifest(base, tmp_path / "d.jsonl", data_root=tmp_path, protocol="in_domain")
-    assert in_domain["rejected_benchmark_leak_rows"] == {} and in_domain["task_split_counts"] == {"semantic/train": 2}
+        build_qwen_baseline_manifest(
+            base, tmp_path / "x.jsonl", data_root=tmp_path, cityscapes_manifest=base
+        )
+    in_domain = build_qwen_baseline_manifest(
+        base, tmp_path / "d.jsonl", data_root=tmp_path, protocol="in_domain"
+    )
+    assert in_domain["rejected_benchmark_leak_rows"] == {} and in_domain["task_split_counts"] == {
+        "semantic/train": 2
+    }
     assert in_domain["zero_shot_claim_allowed"] is False
     with pytest.raises(ValueError, match="protocol must be"):
         build_qwen_baseline_manifest(base, tmp_path / "x.jsonl", protocol="loose")
@@ -426,7 +492,6 @@ def test_aspect_preserving_crop_and_generation_ratio_config(tmp_path: Path):
     # Center crop of 64x32 at resolution 32 is x in [16, 48): x=0..15 is red, x=16..31 is blue
     assert torch.allclose(sample["target_rgb"][:, 0, 0], torch.tensor([1.0, 0.0, 0.0]))
     assert torch.allclose(sample["target_rgb"][:, 0, 31], torch.tensor([0.0, 0.0, 1.0]))
-
 
 
 def test_build_pipeline_requires_the_processor():
@@ -608,7 +673,9 @@ def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path:
     img_dir = tmp_path / "coco" / "train2014"
     img_dir.mkdir(parents=True)
     for image_id in (7, 8, 9):
-        Image.new("RGB", (16, 16), (50, 60, 70)).save(img_dir / f"COCO_train2014_{image_id:012d}.jpg")
+        Image.new("RGB", (16, 16), (50, 60, 70)).save(
+            img_dir / f"COCO_train2014_{image_id:012d}.jpg"
+        )
     Image.new("RGB", (16, 16), (128, 64, 128)).save(tmp_path / "sem.png")
 
     refs = tmp_path / "refs(umd).p"
@@ -627,7 +694,13 @@ def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path:
     assert load_excluded_image_ids([refs, txt]) == {7, 8, 9}
 
     rows = [
-        {"task": "semantic", "input": f"coco/train2014/COCO_train2014_{i:012d}.jpg", "target": "sem.png", "split": "train", "prompt": SEMANTIC_SEGMENTATION_PROMPT}
+        {
+            "task": "semantic",
+            "input": f"coco/train2014/COCO_train2014_{i:012d}.jpg",
+            "target": "sem.png",
+            "split": "train",
+            "prompt": SEMANTIC_SEGMENTATION_PROMPT,
+        }
         for i in (7, 8, 9)
     ]
     base = tmp_path / "base.jsonl"
@@ -636,12 +709,20 @@ def test_build_qwen_baseline_manifest_excludes_refcocog_eval_image_ids(tmp_path:
     # strict: COCO rows without an exclusion source are refused outright (review item 1b)
     with pytest.raises(ValueError, match="carry COCO image ids but no exclude_image_ids"):
         build_qwen_baseline_manifest(base, tmp_path / "a.jsonl", data_root=tmp_path)
-    no_ids = build_qwen_baseline_manifest(base, tmp_path / "a.jsonl", data_root=tmp_path, protocol="in_domain")
+    no_ids = build_qwen_baseline_manifest(
+        base, tmp_path / "a.jsonl", data_root=tmp_path, protocol="in_domain"
+    )
     assert no_ids["task_split_counts"] == {"semantic/train": 3}
-    assert no_ids["rejected_benchmark_leak_rows"] == {}  # plain COCO paths are not a benchmark pattern
+    assert (
+        no_ids["rejected_benchmark_leak_rows"] == {}
+    )  # plain COCO paths are not a benchmark pattern
 
     with_ids = build_qwen_baseline_manifest(
-        base, tmp_path / "b.jsonl", data_root=tmp_path, min_cityscapes_share=0.0, exclude_image_ids=[refs]
+        base,
+        tmp_path / "b.jsonl",
+        data_root=tmp_path,
+        min_cityscapes_share=0.0,
+        exclude_image_ids=[refs],
     )
     assert with_ids["rejected_excluded_image_id_rows"] == 2
     assert with_ids["excluded_image_id_count"] == 2
@@ -689,7 +770,12 @@ def test_generation_replay_builder_t2i_and_edit(tmp_path: Path):
     assert audit["rows_written"] == 1 and audit["skipped_missing_file"] == 1
     assert audit["skipped_missing_text"] == 1
     row = json.loads(out.read_text().splitlines()[0])
-    assert row == {"task": "generation", "target": "imgs/a.jpg", "prompt": "a photo of a cat", "split": "train"}
+    assert row == {
+        "task": "generation",
+        "target": "imgs/a.jpg",
+        "prompt": "a photo of a cat",
+        "split": "train",
+    }
 
     edit = tmp_path / "edits.csv"
     edit.write_text(
@@ -744,6 +830,7 @@ def test_editor_rejects_identity_generation_replay_before_loading(monkeypatch, t
     assert not loaded
 
     # A text-to-image backbone may replay T2I rows (input == target is the convention).
-    assert module._reject_identity_generation_replay(
-        types.SimpleNamespace(datasets=[]), "sana-1600m"
-    ) is None
+    assert (
+        module._reject_identity_generation_replay(types.SimpleNamespace(datasets=[]), "sana-1600m")
+        is None
+    )

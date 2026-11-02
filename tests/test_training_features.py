@@ -189,9 +189,7 @@ class TestInstructionTunerEarlyStopping:
             log_every=1,
         )
 
-        assert summary["last_training_metrics"] == {
-            "train/raw_prediction_mse": 1.25
-        }
+        assert summary["last_training_metrics"] == {"train/raw_prediction_mse": 1.25}
 
     def test_vision_sample_contains_input_and_target(self, tmp_path: Path):
         img_dir = tmp_path / "images"

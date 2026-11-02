@@ -235,6 +235,7 @@ class TestPublicAPI:
     def test_resolve_new_model_paths(self):
         """Verify path resolution for new model families."""
         from open_vision_banana.model_registry import resolve_model_config
+
         for basename, expected_family in [
             ("LongCat-Image", "longcat-image"),
             ("Lumina-Next-SFT-diffusers", "lumina"),
@@ -268,21 +269,35 @@ class TestBuildAddedCondKwargs:
 
     def test_none_when_not_needed(self):
         cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1)
-        assert build_added_cond_kwargs(cfg, None, (256, 256), torch.device("cpu"), torch.float32) is None
+        assert (
+            build_added_cond_kwargs(cfg, None, (256, 256), torch.device("cpu"), torch.float32)
+            is None
+        )
 
     def test_none_when_pooled_embeds_missing(self):
-        cfg = ModelConfig(name="t", model_id="t", family="sdxl", num_text_encoders=2, needs_added_cond_kwargs=True)
-        assert build_added_cond_kwargs(cfg, None, (256, 256), torch.device("cpu"), torch.float32) is None
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sdxl", num_text_encoders=2, needs_added_cond_kwargs=True
+        )
+        assert (
+            build_added_cond_kwargs(cfg, None, (256, 256), torch.device("cpu"), torch.float32)
+            is None
+        )
 
     def test_builds_correct_dict(self):
-        cfg = ModelConfig(name="t", model_id="t", family="sdxl", num_text_encoders=2, needs_added_cond_kwargs=True)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sdxl", num_text_encoders=2, needs_added_cond_kwargs=True
+        )
         pooled = torch.randn(2, 1280)
-        result = build_added_cond_kwargs(cfg, pooled, (512, 768), torch.device("cpu"), torch.float32, batch_size=2)
+        result = build_added_cond_kwargs(
+            cfg, pooled, (512, 768), torch.device("cpu"), torch.float32, batch_size=2
+        )
         assert result is not None
         assert "text_embeds" in result
         assert "time_ids" in result
         assert result["time_ids"].shape == (2, 6)
-        assert torch.allclose(result["time_ids"][0], torch.tensor([512, 768, 0, 0, 512, 768], dtype=torch.float32))
+        assert torch.allclose(
+            result["time_ids"][0], torch.tensor([512, 768, 0, 0, 512, 768], dtype=torch.float32)
+        )
 
 
 class TestVaeHelpers:
@@ -292,7 +307,9 @@ class TestVaeHelpers:
         vae = MagicMock()
         vae.encode.return_value.latent_dist.mode.return_value = torch.ones(1, 4, 32, 32)
         vae.config = MagicMock(spec=[])  # no attributes → getattr returns default
-        cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1, vae_scaling_factor=0.5)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sd15", num_text_encoders=1, vae_scaling_factor=0.5
+        )
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         assert torch.allclose(latents, torch.ones(1, 4, 32, 32) * 0.5)
 
@@ -301,7 +318,9 @@ class TestVaeHelpers:
         vae.encode.return_value.latent_dist.mode.return_value = torch.ones(1, 4, 32, 32)
         vae.config = MagicMock(spec=["scaling_factor"])
         vae.config.scaling_factor = 0.25
-        cfg = ModelConfig(name="t", model_id="t", family="sana", num_text_encoders=1, vae_scaling_factor=None)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sana", num_text_encoders=1, vae_scaling_factor=None
+        )
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         assert torch.allclose(latents, torch.ones(1, 4, 32, 32) * 0.25)
 
@@ -311,7 +330,14 @@ class TestVaeHelpers:
         vae.encode.return_value.sample = torch.ones(1, 4, 32, 32)
         vae.config = MagicMock(spec=["scaling_factor"])
         vae.config.scaling_factor = 1.0
-        cfg = ModelConfig(name="t", model_id="t", family="sana", num_text_encoders=1, vae_has_latent_dist=False, vae_scaling_factor=None)
+        cfg = ModelConfig(
+            name="t",
+            model_id="t",
+            family="sana",
+            num_text_encoders=1,
+            vae_has_latent_dist=False,
+            vae_scaling_factor=None,
+        )
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         assert isinstance(latents, torch.Tensor)
         assert torch.allclose(latents, torch.ones(1, 4, 32, 32))
@@ -339,7 +365,14 @@ class TestVaeHelpers:
         vae.encode.return_value.latent = torch.full((1, 4, 32, 32), 2.0)
         vae.config = MagicMock(spec=["scaling_factor"])
         vae.config.scaling_factor = 0.5
-        cfg = ModelConfig(name="t", model_id="t", family="sana", num_text_encoders=1, vae_has_latent_dist=False, vae_scaling_factor=None)
+        cfg = ModelConfig(
+            name="t",
+            model_id="t",
+            family="sana",
+            num_text_encoders=1,
+            vae_has_latent_dist=False,
+            vae_scaling_factor=None,
+        )
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         assert torch.allclose(latents, torch.ones(1, 4, 32, 32))
 
@@ -376,8 +409,12 @@ class TestVaeHelpers:
         vae.encode.return_value.latent_dist.mode.return_value = torch.ones(1, 4, 32, 32)
         vae.config = MagicMock(spec=[])
         cfg = ModelConfig(
-            name="t", model_id="t", family="z-image", num_text_encoders=1,
-            vae_scaling_factor=0.3611, vae_shift_factor=0.1159,
+            name="t",
+            model_id="t",
+            family="z-image",
+            num_text_encoders=1,
+            vae_scaling_factor=0.3611,
+            vae_shift_factor=0.1159,
         )
         latents = vae_encode(vae, torch.zeros(1, 3, 256, 256), cfg)
         expected = (torch.ones(1, 4, 32, 32) - 0.1159) * 0.3611
@@ -386,7 +423,9 @@ class TestVaeHelpers:
     def test_vae_decode_with_scaling(self):
         vae = MagicMock()
         vae.decode.return_value = (torch.ones(1, 3, 256, 256),)
-        cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1, vae_scaling_factor=0.5)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sd15", num_text_encoders=1, vae_scaling_factor=0.5
+        )
         decoded = vae_decode(vae, torch.ones(1, 4, 32, 32), cfg)
         assert torch.allclose(decoded, torch.ones(1, 3, 256, 256))
         vae.decode.assert_called_once()
@@ -396,7 +435,9 @@ class TestVaeHelpers:
         vae.decode.return_value = (torch.ones(1, 3, 256, 256),)
         vae.config.scaling_factor = 0.5
         vae.config.shift_factor = 0.1
-        cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1, vae_scaling_factor=None)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sd15", num_text_encoders=1, vae_scaling_factor=None
+        )
         decoded = vae_decode(vae, torch.ones(1, 4, 32, 32), cfg)
         assert torch.allclose(decoded, torch.ones(1, 3, 256, 256))
 
@@ -417,30 +458,42 @@ class TestPreparePositionIds:
         assert img_ids is None
 
     def test_flux_position_ids(self):
-        cfg = ModelConfig(name="t", model_id="t", family="flux", num_text_encoders=2, needs_position_ids=True)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="flux", num_text_encoders=2, needs_position_ids=True
+        )
         latents = torch.randn(1, 4096, 64)  # 3D packed
         enc = torch.randn(1, 512, 4096)
-        txt_ids, img_ids = prepare_position_ids(latents, enc, cfg, torch.device("cpu"), torch.float32)
+        txt_ids, img_ids = prepare_position_ids(
+            latents, enc, cfg, torch.device("cpu"), torch.float32
+        )
         assert txt_ids is not None
         assert img_ids is not None
         assert txt_ids.shape == (1, 512, 3)
         assert img_ids.shape == (1, 4096, 3)
 
     def test_flux2_position_ids(self):
-        cfg = ModelConfig(name="t", model_id="t", family="flux2", num_text_encoders=1, needs_position_ids=True)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="flux2", num_text_encoders=1, needs_position_ids=True
+        )
         latents = torch.randn(1, 4, 32, 32)
         enc = torch.randn(1, 512, 4096)
-        txt_ids, img_ids = prepare_position_ids(latents, enc, cfg, torch.device("cpu"), torch.float32)
+        txt_ids, img_ids = prepare_position_ids(
+            latents, enc, cfg, torch.device("cpu"), torch.float32
+        )
         assert txt_ids is not None
         assert img_ids is not None
         assert txt_ids.shape == (1, 512, 4)
         assert img_ids.shape == (1, 1024, 4)  # 32*32 = 1024
 
     def test_chroma_position_ids(self):
-        cfg = ModelConfig(name="t", model_id="t", family="chroma", num_text_encoders=1, needs_position_ids=True)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="chroma", num_text_encoders=1, needs_position_ids=True
+        )
         latents = torch.randn(1, 4, 32, 32)
         enc = torch.randn(1, 512, 4096)
-        txt_ids, img_ids = prepare_position_ids(latents, enc, cfg, torch.device("cpu"), torch.float32)
+        txt_ids, img_ids = prepare_position_ids(
+            latents, enc, cfg, torch.device("cpu"), torch.float32
+        )
         assert txt_ids is not None
         assert img_ids is not None
         assert txt_ids.shape == (1, 512, 3)
@@ -470,8 +523,11 @@ class TestEncodeText:
         te, tokenizer = self._make_te_and_tokenizer()
         cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1)
         comps = PipelineComponents(
-            unet=MagicMock(), vae=MagicMock(),
-            text_encoder=te, text_encoder_2=None, tokenizer=tokenizer,
+            unet=MagicMock(),
+            vae=MagicMock(),
+            text_encoder=te,
+            text_encoder_2=None,
+            tokenizer=tokenizer,
             config=cfg,
         )
         hidden, pooled = encode_text(comps, ["a cat"], torch.device("cpu"), torch.float32)
@@ -481,11 +537,17 @@ class TestEncodeText:
     def test_sdxl(self):
         te1, tok1 = self._make_te_and_tokenizer((1, 77, 768), has_text_embeds=True)
         te2, tok2 = self._make_te_and_tokenizer((1, 77, 1280), has_text_embeds=True)
-        cfg = ModelConfig(name="t", model_id="t", family="sdxl", num_text_encoders=2, cross_attention_dim=2048)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sdxl", num_text_encoders=2, cross_attention_dim=2048
+        )
         comps = PipelineComponents(
-            unet=MagicMock(), vae=MagicMock(),
-            text_encoder=te1, text_encoder_2=te2, tokenizer=tok1,
-            tokenizer_2=tok2, config=cfg,
+            unet=MagicMock(),
+            vae=MagicMock(),
+            text_encoder=te1,
+            text_encoder_2=te2,
+            tokenizer=tok1,
+            tokenizer_2=tok2,
+            config=cfg,
         )
         hidden, pooled = encode_text(comps, ["a cat"], torch.device("cpu"), torch.float32)
         assert hidden.shape == (1, 77, 2048)  # 768 + 1280
@@ -495,11 +557,17 @@ class TestEncodeText:
     def test_flux(self):
         te1, tok1 = self._make_te_and_tokenizer((1, 77, 768))
         te2, tok2 = self._make_te_and_tokenizer((1, 77, 4096))
-        cfg = ModelConfig(name="t", model_id="t", family="flux", num_text_encoders=2, cross_attention_dim=3072)
+        cfg = ModelConfig(
+            name="t", model_id="t", family="flux", num_text_encoders=2, cross_attention_dim=3072
+        )
         comps = PipelineComponents(
-            unet=MagicMock(), vae=MagicMock(),
-            text_encoder=te1, text_encoder_2=te2, tokenizer=tok1,
-            tokenizer_2=tok2, config=cfg,
+            unet=MagicMock(),
+            vae=MagicMock(),
+            text_encoder=te1,
+            text_encoder_2=te2,
+            tokenizer=tok1,
+            tokenizer_2=tok2,
+            config=cfg,
         )
         hidden, pooled = encode_text(comps, ["a cat"], torch.device("cpu"), torch.float32)
         assert hidden.shape == (1, 77, 4096)
@@ -510,14 +578,24 @@ class TestEncodeText:
         te2, tok2 = self._make_te_and_tokenizer((1, 256, 1280))
         te3, tok3 = self._make_te_and_tokenizer((1, 256, 2048))  # match concatenated CLIP dim
         cfg = ModelConfig(
-            name="t", model_id="t", family="sd3", num_text_encoders=3,
-            cross_attention_dim=4096, text_encoder_max_length=256,
-            needs_pooled_projections=True, needs_attention_mask=True,
+            name="t",
+            model_id="t",
+            family="sd3",
+            num_text_encoders=3,
+            cross_attention_dim=4096,
+            text_encoder_max_length=256,
+            needs_pooled_projections=True,
+            needs_attention_mask=True,
         )
         comps = PipelineComponents(
-            unet=MagicMock(), vae=MagicMock(),
-            text_encoder=te1, text_encoder_2=te2, text_encoder_3=te3,
-            tokenizer=tok1, tokenizer_2=tok2, tokenizer_3=tok3,
+            unet=MagicMock(),
+            vae=MagicMock(),
+            text_encoder=te1,
+            text_encoder_2=te2,
+            text_encoder_3=te3,
+            tokenizer=tok1,
+            tokenizer_2=tok2,
+            tokenizer_3=tok3,
             config=cfg,
         )
         hidden, pooled = encode_text(comps, ["a cat"], torch.device("cpu"), torch.float32)
@@ -540,13 +618,21 @@ class TestEncodeText:
             attention_mask=torch.ones(1, 77),
         )
         cfg = ModelConfig(
-            name="t", model_id="t", family="hunyuandit", num_text_encoders=2,
-            cross_attention_dim=1024, text_encoder_max_length=77,
+            name="t",
+            model_id="t",
+            family="hunyuandit",
+            num_text_encoders=2,
+            cross_attention_dim=1024,
+            text_encoder_max_length=77,
         )
         comps = PipelineComponents(
-            unet=MagicMock(), vae=MagicMock(),
-            text_encoder=te1, text_encoder_2=te2, tokenizer=tok1,
-            tokenizer_2=tok2, config=cfg,
+            unet=MagicMock(),
+            vae=MagicMock(),
+            text_encoder=te1,
+            text_encoder_2=te2,
+            tokenizer=tok1,
+            tokenizer_2=tok2,
+            config=cfg,
         )
         hidden, aux = encode_text(comps, ["a cat"], torch.device("cpu"), torch.float32)
         assert hidden.shape == (1, 77, 1024)
@@ -562,12 +648,19 @@ class TestEncodeText:
             attention_mask=torch.ones(1, 256),
         )
         cfg = ModelConfig(
-            name="t", model_id="t", family="kolors", num_text_encoders=1,
-            cross_attention_dim=4096, text_encoder_max_length=256,
+            name="t",
+            model_id="t",
+            family="kolors",
+            num_text_encoders=1,
+            cross_attention_dim=4096,
+            text_encoder_max_length=256,
         )
         comps = PipelineComponents(
-            unet=MagicMock(), vae=MagicMock(),
-            text_encoder=te, text_encoder_2=None, tokenizer=tokenizer,
+            unet=MagicMock(),
+            vae=MagicMock(),
+            text_encoder=te,
+            text_encoder_2=None,
+            tokenizer=tokenizer,
             config=cfg,
         )
         hidden, mask = encode_text(comps, ["a cat"], torch.device("cpu"), torch.float32)
@@ -584,12 +677,18 @@ class TestEncodeText:
             attention_mask=torch.ones(1, 77),
         )
         cfg = ModelConfig(
-            name="t", model_id="t", family="sana", num_text_encoders=1,
+            name="t",
+            model_id="t",
+            family="sana",
+            num_text_encoders=1,
             needs_attention_mask=True,
         )
         comps = PipelineComponents(
-            unet=MagicMock(), vae=MagicMock(),
-            text_encoder=te, text_encoder_2=None, tokenizer=tokenizer,
+            unet=MagicMock(),
+            vae=MagicMock(),
+            text_encoder=te,
+            text_encoder_2=None,
+            tokenizer=tokenizer,
             config=cfg,
         )
         hidden, mask = encode_text(comps, ["a cat"], torch.device("cpu"), torch.float32)
@@ -634,8 +733,12 @@ class TestBackboneForward:
         backbone = self._make_unet_backbone()
         added_cond = {"text_embeds": torch.randn(1, 1280), "time_ids": torch.randn(1, 6)}
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, added_cond_kwargs=added_cond
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            added_cond_kwargs=added_cond,
         )
         backbone.assert_called_once()
         _, kwargs = backbone.call_args
@@ -646,8 +749,12 @@ class TestBackboneForward:
         backbone = self._make_unet_backbone()
         mask = torch.ones(1, 77)
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, attention_mask=mask
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            attention_mask=mask,
         )
         _, kwargs = backbone.call_args
         assert kwargs["encoder_attention_mask"] is mask
@@ -656,20 +763,31 @@ class TestBackboneForward:
         cfg = self._make_config("flux", "transformer", num_text_encoders=2)
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg,
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
             pooled_embeds=torch.randn(1, 1280),
-            txt_ids=torch.randn(1, 77, 3), img_ids=torch.randn(1, 1024, 3),
+            txt_ids=torch.randn(1, 77, 3),
+            img_ids=torch.randn(1, 1024, 3),
         )
         _, kwargs = backbone.call_args
         assert kwargs["return_dict"] is False
 
     def test_qwen_image(self):
-        cfg = self._make_config("qwen-image", "transformer", needs_guidance_in_forward=True, needs_attention_mask=True)
+        cfg = self._make_config(
+            "qwen-image", "transformer", needs_guidance_in_forward=True, needs_attention_mask=True
+        )
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, guidance=4.0, attention_mask=torch.ones(1, 77)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            guidance=4.0,
+            attention_mask=torch.ones(1, 77),
         )
         _, kwargs = backbone.call_args
         assert kwargs["guidance"] == 4.0
@@ -678,8 +796,7 @@ class TestBackboneForward:
         cfg = self._make_config("z-image", "transformer")
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg
+            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]), torch.randn(1, 77, 768), cfg
         )
         args = backbone.call_args
         assert len(args[0]) == 3  # positional args
@@ -688,8 +805,12 @@ class TestBackboneForward:
         cfg = self._make_config("sana", "transformer", needs_attention_mask=True)
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, attention_mask=torch.ones(1, 77)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            attention_mask=torch.ones(1, 77),
         )
         _, kwargs = backbone.call_args
         assert kwargs["encoder_attention_mask"] is not None
@@ -698,8 +819,12 @@ class TestBackboneForward:
         cfg = self._make_config("lumina2", "transformer", needs_attention_mask=True)
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, attention_mask=torch.ones(1, 77)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            attention_mask=torch.ones(1, 77),
         )
         _, kwargs = backbone.call_args
         assert kwargs["encoder_attention_mask"] is not None
@@ -708,21 +833,32 @@ class TestBackboneForward:
         cfg = self._make_config("chroma", "transformer", needs_position_ids=True)
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg,
-            txt_ids=torch.randn(1, 77, 3), img_ids=torch.randn(1, 1024, 3)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            txt_ids=torch.randn(1, 77, 3),
+            img_ids=torch.randn(1, 1024, 3),
         )
         _, kwargs = backbone.call_args
         assert kwargs["txt_ids"] is not None
         assert kwargs["img_ids"] is not None
 
     def test_flux2(self):
-        cfg = self._make_config("flux2", "transformer", needs_guidance_in_forward=True, needs_position_ids=True)
+        cfg = self._make_config(
+            "flux2", "transformer", needs_guidance_in_forward=True, needs_position_ids=True
+        )
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg,
-            guidance=3.5, txt_ids=torch.randn(1, 77, 4), img_ids=torch.randn(1, 1024, 4),
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            guidance=3.5,
+            txt_ids=torch.randn(1, 77, 4),
+            img_ids=torch.randn(1, 1024, 4),
         )
         _, kwargs = backbone.call_args
         assert kwargs["guidance"] == 3.5
@@ -731,9 +867,14 @@ class TestBackboneForward:
         cfg = self._make_config("cogview4", "transformer", needs_size_kwargs=True)
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg,
-            original_size=(1024, 1024), target_size=(512, 512), crop_coords=(0, 0)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            original_size=(1024, 1024),
+            target_size=(512, 512),
+            crop_coords=(0, 0),
         )
         _, kwargs = backbone.call_args
         assert kwargs["original_size"] == (1024, 1024)
@@ -744,42 +885,63 @@ class TestBackboneForward:
         cfg = self._make_config("aura-flow", "transformer")
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg
+            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]), torch.randn(1, 77, 768), cfg
         )
         _, kwargs = backbone.call_args
         assert kwargs["return_dict"] is False
 
     def test_sd3(self):
-        cfg = self._make_config("sd3", "transformer", num_text_encoders=3, needs_pooled_projections=True)
+        cfg = self._make_config(
+            "sd3", "transformer", num_text_encoders=3, needs_pooled_projections=True
+        )
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, pooled_embeds=torch.randn(1, 2048)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            pooled_embeds=torch.randn(1, 2048),
         )
         _, kwargs = backbone.call_args
         assert kwargs["pooled_projections"] is not None
 
     def test_pixart(self):
-        cfg = self._make_config("pixart", "transformer", needs_attention_mask=True, needs_added_cond_kwargs_dit=True)
+        cfg = self._make_config(
+            "pixart", "transformer", needs_attention_mask=True, needs_added_cond_kwargs_dit=True
+        )
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, attention_mask=torch.ones(1, 77)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            attention_mask=torch.ones(1, 77),
         )
         _, kwargs = backbone.call_args
         assert kwargs["encoder_attention_mask"] is not None
         assert "added_cond_kwargs" in kwargs
 
     def test_hunyuandit(self):
-        cfg = self._make_config("hunyuandit", "transformer", needs_t5_and_clip=True, needs_image_meta_size=True, needs_attention_mask=True)
+        cfg = self._make_config(
+            "hunyuandit",
+            "transformer",
+            needs_t5_and_clip=True,
+            needs_image_meta_size=True,
+            needs_attention_mask=True,
+        )
         backbone = self._make_transformer_backbone()
         t5_hidden = torch.randn(1, 77, 1024)
         clip_mask = torch.ones(1, 77)
         t5_mask = torch.ones(1, 77)
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, attention_mask=(t5_hidden, clip_mask, t5_mask)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            attention_mask=(t5_hidden, clip_mask, t5_mask),
         )
         _, kwargs = backbone.call_args
         assert kwargs["encoder_hidden_states_t5"] is t5_hidden
@@ -789,11 +951,18 @@ class TestBackboneForward:
         assert kwargs["style"] is not None
 
     def test_sana_sprint(self):
-        cfg = self._make_config("sana-sprint", "transformer", needs_guidance_in_forward=True, needs_attention_mask=True)
+        cfg = self._make_config(
+            "sana-sprint", "transformer", needs_guidance_in_forward=True, needs_attention_mask=True
+        )
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 768), cfg, guidance=0.0, attention_mask=torch.ones(1, 77)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 768),
+            cfg,
+            guidance=0.0,
+            attention_mask=torch.ones(1, 77),
         )
         _, kwargs = backbone.call_args
         assert kwargs["guidance"] == 0.0
@@ -804,19 +973,27 @@ class TestBackboneForward:
         backbone = self._make_transformer_backbone()
         with pytest.raises(ValueError, match="Unsupported family"):
             backbone_forward(
-                backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-                torch.randn(1, 77, 768), cfg
+                backbone,
+                torch.randn(1, 4, 32, 32),
+                torch.tensor([1.0]),
+                torch.randn(1, 77, 768),
+                cfg,
             )
 
     # ── New model families (2026-07-12) ──
 
     def test_longcat_image(self):
-        cfg = self._make_config("longcat-image", "transformer",
-                                needs_guidance_in_forward=True, needs_position_ids=True)
+        cfg = self._make_config(
+            "longcat-image", "transformer", needs_guidance_in_forward=True, needs_position_ids=True
+        )
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 2048), cfg, guidance=4.0,
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 2048),
+            cfg,
+            guidance=4.0,
         )
         _, kwargs = backbone.call_args
         assert kwargs["guidance"] == 4.0
@@ -827,19 +1004,28 @@ class TestBackboneForward:
         cfg = self._make_config("lumina", "transformer", needs_attention_mask=True)
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 2048), cfg, attention_mask=torch.ones(1, 77)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 2048),
+            cfg,
+            attention_mask=torch.ones(1, 77),
         )
         _, kwargs = backbone.call_args
         assert kwargs["encoder_mask"] is not None
 
     def test_nucleusmoe_image(self):
-        cfg = self._make_config("nucleusmoe-image", "transformer",
-                                needs_attention_mask=True, vae_downsample_factor=16)
+        cfg = self._make_config(
+            "nucleusmoe-image", "transformer", needs_attention_mask=True, vae_downsample_factor=16
+        )
         backbone = self._make_transformer_backbone()
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 2048), cfg, attention_mask=torch.ones(1, 77)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 2048),
+            cfg,
+            attention_mask=torch.ones(1, 77),
         )
         _, kwargs = backbone.call_args
         assert "img_shapes" in kwargs
@@ -851,24 +1037,32 @@ class TestBackboneForward:
         mask = torch.ones(1, 77)
         text_lens = mask.sum(dim=1).to(dtype=torch.long)
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 2048), cfg, attention_mask=(mask, text_lens)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 2048),
+            cfg,
+            attention_mask=(mask, text_lens),
         )
         _, kwargs = backbone.call_args
         assert kwargs["text_bth"] is not None
         assert kwargs["text_lens"] is not None
 
     def test_hidream_image(self):
-        cfg = self._make_config("hidream-image", "transformer",
-                                needs_t5_and_clip=True, vae_downsample_factor=16)
+        cfg = self._make_config(
+            "hidream-image", "transformer", needs_t5_and_clip=True, vae_downsample_factor=16
+        )
         backbone = self._make_transformer_backbone()
         pooled = torch.randn(1, 1024)
         llama_hidden = torch.randn(1, 77, 4096)
         llama_mask = torch.ones(1, 77)
         backbone_forward(
-            backbone, torch.randn(1, 4, 32, 32), torch.tensor([1.0]),
-            torch.randn(1, 77, 4096), cfg,
-            attention_mask=(pooled, llama_hidden, llama_mask)
+            backbone,
+            torch.randn(1, 4, 32, 32),
+            torch.tensor([1.0]),
+            torch.randn(1, 77, 4096),
+            cfg,
+            attention_mask=(pooled, llama_hidden, llama_mask),
         )
         _, kwargs = backbone.call_args
         assert kwargs["encoder_hidden_states_t5"] is not None
@@ -881,9 +1075,13 @@ class TestApplyLora:
 
     def test_applies_lora(self):
         mock_unet = MagicMock()
-        cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1, lora_target_modules=["to_q"])
-        with patch("peft.LoraConfig") as mock_lora_cfg, \
-             patch("peft.get_peft_model") as mock_get_peft:
+        cfg = ModelConfig(
+            name="t", model_id="t", family="sd15", num_text_encoders=1, lora_target_modules=["to_q"]
+        )
+        with (
+            patch("peft.LoraConfig") as mock_lora_cfg,
+            patch("peft.get_peft_model") as mock_get_peft,
+        ):
             mock_get_peft.return_value = mock_unet
             result = apply_lora(mock_unet, cfg, rank=8, alpha=16, use_rslora=False)
             mock_lora_cfg.assert_called_once()
@@ -897,9 +1095,18 @@ class TestApplyLora:
 
     def test_defaults_from_config(self):
         mock_unet = MagicMock()
-        cfg = ModelConfig(name="t", model_id="t", family="sd15", num_text_encoders=1, default_lora_rank=32, default_lora_alpha=64)
-        with patch("peft.LoraConfig") as mock_lora_cfg, \
-             patch("peft.get_peft_model") as mock_get_peft:
+        cfg = ModelConfig(
+            name="t",
+            model_id="t",
+            family="sd15",
+            num_text_encoders=1,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+        )
+        with (
+            patch("peft.LoraConfig") as mock_lora_cfg,
+            patch("peft.get_peft_model") as mock_get_peft,
+        ):
             mock_get_peft.return_value = mock_unet
             apply_lora(mock_unet, cfg)
             call_kwargs = mock_lora_cfg.call_args.kwargs
@@ -919,9 +1126,7 @@ class TestUnetForwardAlias:
             t = torch.tensor([1.0])
             enc = torch.randn(1, 77, 768)
             added = {"text_embeds": torch.randn(1, 1280)}
-            result = unet_forward(
-                unet, latents, t, enc, cfg, added_cond_kwargs=added
-            )
+            result = unet_forward(unet, latents, t, enc, cfg, added_cond_kwargs=added)
             mock_bfw.assert_called_once()
             assert result is mock_bfw.return_value
 

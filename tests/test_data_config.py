@@ -143,7 +143,7 @@ class TestConfigSystem:
         assert cfg.training.use_ema is True
         assert cfg.training.ema_decay == 0.9999
         assert cfg.depth_mapping.lam == -3.0
-        assert abs(cfg.depth_mapping.c - 10.0/3.0) < 1e-6
+        assert abs(cfg.depth_mapping.c - 10.0 / 3.0) < 1e-6
         assert cfg.segmentation.color_tolerance == 14.0
         assert cfg.segmentation.min_area_fraction == 2e-4
 
@@ -197,9 +197,7 @@ class TestConfigSystem:
 
     def test_invalid_data_mix_is_rejected(self):
         with pytest.raises(ValueError, match="must equal 1"):
-            VisionBananaConfig.from_dict(
-                {"data": {"vision_ratio": 0.2, "generation_ratio": 0.9}}
-            )
+            VisionBananaConfig.from_dict({"data": {"vision_ratio": 0.2, "generation_ratio": 0.9}})
 
     def test_subconfig_independence(self):
         """Modifying one sub-config shouldn't affect defaults."""
@@ -246,9 +244,7 @@ class TestConfigSystem:
         assert loaded.rs_lora is False
 
     def test_optimizer_config_roundtrip(self):
-        cfg = OptimizerConfig(
-            lr=1e-4, scheduler="linear", betas=(0.8, 0.95), eps=1e-7
-        )
+        cfg = OptimizerConfig(lr=1e-4, scheduler="linear", betas=(0.8, 0.95), eps=1e-7)
         d = cfg.to_dict()
         loaded = OptimizerConfig.from_dict(d)
         assert loaded.lr == 1e-4

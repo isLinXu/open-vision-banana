@@ -90,8 +90,5 @@ def test_source_split_keeps_tasks_separate_without_source_leakage(tmp_path: Path
         for dataset_index, subset in enumerate(train_datasets)
         for local_index in subset.indices
     }
-    val_sources = {
-        Path(val_dataset[index]["image"])
-        for index in range(len(val_dataset))
-    }
+    val_sources = {Path(val_dataset[index]["image"]) for index in range(len(val_dataset))}
     assert train_sources.isdisjoint(val_sources)

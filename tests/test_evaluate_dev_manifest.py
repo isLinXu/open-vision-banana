@@ -396,6 +396,9 @@ def test_eval_end_to_end_on_cpu(tmp_path, monkeypatch):
     from open_vision_banana.inference import pipeline
 
     manifest, index = eval_fixture(tmp_path)
+    base = tmp_path / "base"
+    (base / "transformer").mkdir(parents=True)
+    (base / "model_index.json").write_text("{}")
     loads = []
     monkeypatch.setattr(
         pipeline.VisionBanana,
@@ -423,6 +426,8 @@ def test_eval_end_to_end_on_cpu(tmp_path, monkeypatch):
             str(index),
             "--device",
             "cpu",
+            "--model-path",
+            str(base),
             "--resolution",
             "16",
             "--num-shards",
@@ -486,6 +491,8 @@ def test_eval_end_to_end_on_cpu(tmp_path, monkeypatch):
         str(index),
         "--device",
         "cpu",
+        "--model-path",
+        str(base),
         "--resolution",
         "16",
         "--num-shards",
@@ -506,3 +513,112 @@ def test_dataset_prompt_matches_dataset():
     assert dev.dataset_prompt(row, "referring") == build_binary_referring_prompt("the box")
     assert dev.dataset_prompt({"prompt": "p"}, "semantic") == "p"
     assert dev.dataset_prompt({}, "depth")
+
+
+def pipeline_dir(root):
+    (root / "transformer").mkdir(parents=True)
+    (root / "vae").mkdir()
+    (root / "model_index.json").write_text("{}")
+    return root
+
+
+def test_resolve_weights_base_lora_full(tmp_path):
+    base = pipeline_dir(tmp_path / "base")
+    assert dev.resolve_weights(base, None, tmp_path / "view")["kind"] == "base"
+    lora = tmp_path / "lora_ckpt"
+    (lora / "lora_adapter").mkdir(parents=True)
+    (lora / "lora_adapter/adapter_model.safetensors").write_bytes(b"a")
+    (lora / "metadata.json").write_text("{}")
+    w = dev.resolve_weights(base, lora, tmp_path / "view")
+    assert w["kind"] == "lora" and w["lora_path"] == str(lora) and w["adapter_sha256"]
+    full = tmp_path / "full_ckpt"
+    (full / "transformer").mkdir(parents=True)
+    (full / "transformer/x.safetensors").write_bytes(b"xx")
+    for _ in range(2):  # idempotent view
+        w = dev.resolve_weights(base, full, tmp_path / "view")
+    view = tmp_path / "view"
+    assert w["kind"] == "full" and w["model_path"] == str(view) and w["lora_path"] is None
+    assert (view / "transformer").resolve() == (full / "transformer").resolve()
+    assert (view / "vae").resolve() == (base / "vae").resolve()
+    assert w["transformer_bytes"] == {"x.safetensors": 2}
+    (tmp_path / "view/transformer").unlink()
+    (tmp_path / "view/transformer").symlink_to(base / "vae")
+    dev.resolve_weights(base, full, view)
+    assert (view / "transformer").resolve() == (full / "transformer").resolve()
+    with pytest.raises(ValueError, match="neither"):
+        dev.resolve_weights(base, tmp_path, tmp_path / "v2")
+    with pytest.raises(ValueError, match="not a diffusers pipeline"):
+        dev.resolve_weights(tmp_path, None, tmp_path / "v3")
+
+
+def test_eval_refuses_records_of_another_identity(tmp_path):
+    manifest, index = eval_fixture(tmp_path)
+    base = pipeline_dir(tmp_path / "base")
+    out = tmp_path / "shard.jsonl"
+    out.write_text(
+        json.dumps({"position": 0, "task": "depth", "status": "ok", "identity": "other"}) + "\n"
+    )
+    args = [
+        "eval",
+        "--manifest",
+        str(manifest),
+        "--index",
+        str(index),
+        "--model-path",
+        str(base),
+        "--device",
+        "cpu",
+        "--output-jsonl",
+        str(out),
+    ]
+    with pytest.raises(ValueError, match="another model"):
+        dev.main(args)
+
+
+def test_eval_requires_model_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPEN_VISION_BANANA_MODEL_PATH", raising=False)
+    with pytest.raises(SystemExit):
+        dev.main(["eval", "--manifest", "m", "--index", "i", "--output-jsonl", str(tmp_path / "o")])
+
+
+def test_merge_flags_outside_index_and_mixed_identities(tmp_path):
+    m = write_manifest(tmp_path / "pairs.jsonl", rows())
+    index = tmp_path / "index.json"
+    dev.main(["index", "--manifest", str(m), "--counts", "semantic=2", "--output", str(index)])
+    ok = {"per_class": {"a": [1, 1]}, "correct": 1, "pixels": 1}
+    shard = tmp_path / "s.jsonl"
+    out = tmp_path / "summary.json"
+
+    def merge(*recs):
+        shard.write_text("".join(json.dumps(r) + "\n" for r in recs))
+        code = dev.main(
+            ["merge", "--index", str(index), "--shards", str(shard), "--output-json", str(out)]
+        )
+        return code, json.loads(out.read_text())
+
+    same = dict(identity="x")
+    code, result = merge(
+        record(0, "semantic", ok, **same),
+        record(1, "semantic", ok, **same),
+        record(9, "semantic", ok, **same),
+    )
+    assert code == 3 and result["coverage"]["outside_index"] == 1
+    code, result = merge(
+        record(0, "semantic", ok, identity="x"), record(1, "semantic", ok, identity="y")
+    )
+    assert code == 3 and result["coverage"]["identities"] == 2 and result["identity"] is None
+    detail = dict(identity="x", identity_detail={"sha256": "x"})
+    code, result = merge(record(0, "semantic", ok, **detail), record(1, "semantic", ok, **same))
+    assert code == 0 and result["identity"] == {"sha256": "x"}
+
+
+def test_index_skips_generation_rows_that_edit_their_reference(tmp_path):
+    m = write_manifest(
+        tmp_path / "pairs.jsonl",
+        [
+            dict(task="generation", split="val", input="a.png", target="a.png", prompt="x"),
+            dict(task="generation", split="val", input="b.png", target="c.png", prompt="y"),
+        ],
+    )
+    index = dev.build_index(m, {"generation": 2}, "s")
+    assert [e["input"] for e in index["entries"]] == ["b.png"]

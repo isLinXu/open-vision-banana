@@ -37,7 +37,11 @@ def test_guidance_scale_reaches_predict_only_when_set():
     ev = VisionEvaluator(model, device="cpu")
     batch = {"image": torch.rand(1, 3, 8, 8), "target_rgb": torch.rand(1, 3, 8, 8)}
     ev.evaluate([batch], task="depth", num_inference_steps=20, guidance_scale=4.0, seed=7)
-    assert model.calls[0]["num_inference_steps"] == 20 and model.calls[0]["guidance_scale"] == 4.0 and model.calls[0]["seed"] == 7
+    assert (
+        model.calls[0]["num_inference_steps"] == 20
+        and model.calls[0]["guidance_scale"] == 4.0
+        and model.calls[0]["seed"] == 7
+    )
     model.calls.clear()
     ev.evaluate([batch], task="depth")  # default 0.0 -> not forwarded (third-party predict APIs)
     assert "guidance_scale" not in model.calls[0]
@@ -67,17 +71,30 @@ def test_semantic_native_resolution_scores_at_gt_size(tmp_path: Path):
     model = _RecordingModel(pred_rgb)
     ev = VisionEvaluator(model, device="cpu")
     batch = {
-        "image": sample["image"].unsqueeze(0), "target_rgb": pred_rgb,
-        "gt_labels": sample["gt_labels"].unsqueeze(0), "gt_labels_native": sample["gt_labels_native"].unsqueeze(0),
+        "image": sample["image"].unsqueeze(0),
+        "target_rgb": pred_rgb,
+        "gt_labels": sample["gt_labels"].unsqueeze(0),
+        "gt_labels_native": sample["gt_labels_native"].unsqueeze(0),
     }
-    metrics = ev.evaluate([batch], task="semantic", num_classes=19, class_color_map=CityscapesSegDataset.CITYSCAPES_COLORS, native_resolution=True)
+    metrics = ev.evaluate(
+        [batch],
+        task="semantic",
+        num_classes=19,
+        class_color_map=CityscapesSegDataset.CITYSCAPES_COLORS,
+        native_resolution=True,
+    )
     assert metrics["mIoU"] > 0.99, metrics
     # without the native GT the flag must fail loudly, not silently fall back to 32x32
     ds_plain = CityscapesSegDataset(tmp_path, split="val", resolution=32)
     assert "gt_labels_native" not in ds_plain[0]
     try:
-        ev.evaluate([{k: v for k, v in batch.items() if k != "gt_labels_native"}], task="semantic", num_classes=19,
-                    class_color_map=CityscapesSegDataset.CITYSCAPES_COLORS, native_resolution=True)
+        ev.evaluate(
+            [{k: v for k, v in batch.items() if k != "gt_labels_native"}],
+            task="semantic",
+            num_classes=19,
+            class_color_map=CityscapesSegDataset.CITYSCAPES_COLORS,
+            native_resolution=True,
+        )
     except ValueError as exc:
         assert "gt_labels_native" in str(exc)
     else:
@@ -85,10 +102,21 @@ def test_semantic_native_resolution_scores_at_gt_size(tmp_path: Path):
 
 
 def test_paper_benchmark_script_exposes_inference_protocol_flags():
-    out = subprocess.run([sys.executable, str(ROOT / "scripts" / "evaluate_paper_benchmarks.py"), "--help"],
-                         capture_output=True, text=True, cwd=ROOT, env={"PYTHONPATH": "src"})
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "evaluate_paper_benchmarks.py"), "--help"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        env={"PYTHONPATH": "src"},
+    )
     assert out.returncode == 0, out.stderr
-    for flag in ("--num-inference-steps", "--guidance-scale", "--strength", "--seed", "--native-resolution"):
+    for flag in (
+        "--num-inference-steps",
+        "--guidance-scale",
+        "--strength",
+        "--seed",
+        "--native-resolution",
+    ):
         assert flag in out.stdout
     src = (ROOT / "scripts" / "evaluate_paper_benchmarks.py").read_text()
     assert '"inference_protocol"' in src and "num_inference_steps=1 is a smoke setting" in src

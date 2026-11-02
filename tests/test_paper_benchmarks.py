@@ -271,9 +271,7 @@ def test_preflight_cli_does_not_require_model_name(tmp_path: Path, monkeypatch) 
     label_dir = tmp_path / "gtFine" / "val" / "demo"
     image_dir.mkdir(parents=True)
     label_dir.mkdir(parents=True)
-    Image.new("RGB", (2, 2), (10, 20, 30)).save(
-        image_dir / "demo_000000_000000_leftImg8bit.png"
-    )
+    Image.new("RGB", (2, 2), (10, 20, 30)).save(image_dir / "demo_000000_000000_leftImg8bit.png")
     Image.fromarray(np.zeros((2, 2), dtype=np.uint8)).save(
         label_dir / "demo_000000_000000_gtFine_labelIds.png"
     )
@@ -401,7 +399,9 @@ def test_instance_decoding_cli_override_defaults_to_paper_and_rejects_unknown_fi
     from scripts.evaluate_paper_benchmarks import parse_instance_decoding
 
     assert parse_instance_decoding(None) == PAPER_INSTANCE_DECODING_CONFIG
-    ablation = parse_instance_decoding("seed_merge_rule=pixel_and_seed, spatial_merge_area_basis=pixel")
+    ablation = parse_instance_decoding(
+        "seed_merge_rule=pixel_and_seed, spatial_merge_area_basis=pixel"
+    )
     assert ablation.seed_merge_rule == "pixel_and_seed"
     assert ablation.spatial_merge_area_basis == "pixel"
     assert ablation.color_tolerance == 14.0

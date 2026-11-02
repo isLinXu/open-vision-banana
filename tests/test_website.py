@@ -13,7 +13,10 @@ SITE = ROOT / "website"
 
 def test_results_json_schema_and_paper_reference_values():
     data = json.loads((SITE / "data" / "results.json").read_text())
-    assert data["inference_protocol"]["num_inference_steps"] == 50 and data["inference_protocol"]["guidance_scale"] == 4.0
+    assert (
+        data["inference_protocol"]["num_inference_steps"] == 50
+        and data["inference_protocol"]["guidance_scale"] == 4.0
+    )
     for table in data["tables"]:
         keys = {c["key"] for c in table["columns"]}
         kinds = [r["kind"] for r in table["rows"]]
@@ -27,7 +30,9 @@ def test_results_json_schema_and_paper_reference_values():
         for r in t["rows"]:
             if r["kind"] == "paper":
                 paper_values.update(r["values"])
-    assert paper_values["cityscapes_miou"] == 69.9 and paper_values["cgf1"] == 47.5  # Tables 2 and 3 of the paper
+    assert (
+        paper_values["cityscapes_miou"] == 69.9 and paper_values["cgf1"] == 47.5
+    )  # Tables 2 and 3 of the paper
 
 
 def test_gallery_json_and_html_reference_existing_assets():
@@ -40,6 +45,11 @@ def test_gallery_json_and_html_reference_existing_assets():
 
 
 def test_publish_script_dry_run():
-    res = subprocess.run(["bash", str(ROOT / "scripts" / "publish_site.sh"), "--dry-run"], capture_output=True, text=True, cwd=ROOT)
+    res = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "publish_site.sh"), "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
     assert res.returncode == 0, res.stderr
     assert "json ok" in res.stdout and "index.html" in res.stdout and "results.json" in res.stdout

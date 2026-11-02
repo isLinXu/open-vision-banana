@@ -36,15 +36,42 @@ def _write_res(tmp_path: Path) -> Path:
     mask("a_ball.png", 40, 64)  # overlaps the dog on 40..44
     mask("b_only.png", 0, 10)
     rows = [
-        {"task": "referring", "split": "train", "input": "images/a.jpg", "target": "masks/a_cat.png",
-         "expression": "the stretching cat", "prompt": build_binary_referring_prompt("the stretching cat"),
-         "encoding": "binary_white_black_v1", "sample_id": "a1"},
-        {"task": "referring", "split": "train", "input": "images/a.jpg", "target": "masks/a_dog.png",
-         "prompt": build_binary_referring_prompt("the sleeping dog"), "sample_id": "a2"},  # no expression field
-        {"task": "referring", "split": "train", "input": "images/a.jpg", "target": "masks/a_ball.png",
-         "expression": "a red ball", "prompt": build_binary_referring_prompt("a red ball"), "sample_id": "a3"},
-        {"task": "referring", "split": "train", "input": "images/b.jpg", "target": "masks/b_only.png",
-         "expression": "the lamp", "prompt": build_binary_referring_prompt("the lamp"), "sample_id": "b1"},
+        {
+            "task": "referring",
+            "split": "train",
+            "input": "images/a.jpg",
+            "target": "masks/a_cat.png",
+            "expression": "the stretching cat",
+            "prompt": build_binary_referring_prompt("the stretching cat"),
+            "encoding": "binary_white_black_v1",
+            "sample_id": "a1",
+        },
+        {
+            "task": "referring",
+            "split": "train",
+            "input": "images/a.jpg",
+            "target": "masks/a_dog.png",
+            "prompt": build_binary_referring_prompt("the sleeping dog"),
+            "sample_id": "a2",
+        },  # no expression field
+        {
+            "task": "referring",
+            "split": "train",
+            "input": "images/a.jpg",
+            "target": "masks/a_ball.png",
+            "expression": "a red ball",
+            "prompt": build_binary_referring_prompt("a red ball"),
+            "sample_id": "a3",
+        },
+        {
+            "task": "referring",
+            "split": "train",
+            "input": "images/b.jpg",
+            "target": "masks/b_only.png",
+            "expression": "the lamp",
+            "prompt": build_binary_referring_prompt("the lamp"),
+            "sample_id": "b1",
+        },
         {"task": "depth", "split": "train", "input": "images/a.jpg", "target": "masks/a_cat.png"},
     ]
     manifest = tmp_path / "pairs.jsonl"
@@ -61,8 +88,14 @@ def test_multi_rows_have_fig4_prompts_and_colour_targets_in_sync(tmp_path: Path)
     manifest = _write_res(tmp_path)
     out = tmp_path / "multi.jsonl"
     audit = build_multi_referring_manifest(
-        manifest, out, tmp_path / "multi_targets", data_root=tmp_path,
-        max_expressions=3, rows_per_image=4, expression_from_prompt=True, seed=1,
+        manifest,
+        out,
+        tmp_path / "multi_targets",
+        data_root=tmp_path,
+        max_expressions=3,
+        rows_per_image=4,
+        expression_from_prompt=True,
+        seed=1,
     )
     rows = [json.loads(line) for line in out.read_text().splitlines()]
     assert audit["images_with_multiple_expressions"] == 1  # only image a
@@ -90,7 +123,11 @@ def test_multi_rows_have_fig4_prompts_and_colour_targets_in_sync(tmp_path: Path)
     # rows load through the trainer dataset with nearest-neighbour resizing (no blended colours)
     ds = ManifestVisionDataset(out, 32, "train", {TASK_NAME}, data_root=tmp_path)
     sample = ds[0]
-    cols = {tuple((sample["target_rgb"][:, y, x] * 255).round().int().tolist()) for y in range(32) for x in range(32)}
+    cols = {
+        tuple((sample["target_rgb"][:, y, x] * 255).round().int().tolist())
+        for y in range(32)
+        for x in range(32)
+    }
     assert cols <= {(0, 0, 0)} | set(NAMED_COLORS.values())
 
 

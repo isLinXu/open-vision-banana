@@ -167,7 +167,9 @@ class TestMultiColormapReencoding:
         mapper.set_colormap("cube_edge")
 
         # The re-encoded RGB should be different from the cube_edge RGB
-        assert not torch.allclose(rgb_cube, rgb_rainbow, atol=0.01), "Rainbow should differ from cube_edge"
+        assert not torch.allclose(rgb_cube, rgb_rainbow, atol=0.01), (
+            "Rainbow should differ from cube_edge"
+        )
 
         # Rainbow RGB should be in valid [0, 1] range
         assert rgb_rainbow.min() >= 0.0 and rgb_rainbow.max() <= 1.0
@@ -253,8 +255,17 @@ class TestLatentCacheDataset:
             def encode(self, x):
                 # Simulate VAE encoding: downsample by 8
                 import torch.nn.functional as F
+
                 latent = F.avg_pool2d(x, 8)
-                return type("obj", (object,), {"latent_dist": type("obj", (object,), {"sample": lambda self: latent * self.scaling_factor})})
+                return type(
+                    "obj",
+                    (object,),
+                    {
+                        "latent_dist": type(
+                            "obj", (object,), {"sample": lambda self: latent * self.scaling_factor}
+                        )
+                    },
+                )
 
         class MockModelCfg:
             def __init__(self):
@@ -272,6 +283,7 @@ class TestLatentCacheDataset:
         # Override _encode to avoid VAE dependency
         def mock_encode(pixels):
             import torch.nn.functional as F
+
             return F.avg_pool2d(pixels, 8).squeeze(0)
 
         cached_ds._encode = mock_encode  # type: ignore[method-assign]

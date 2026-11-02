@@ -84,7 +84,9 @@ def test_validation_covers_late_tasks_and_macro_averages():
     normal = dict(depth, task=["normal"] * B)
     trainer.val_loader = [depth] * 25 + [normal]
     trainer.losses.compute_flow_loss = lambda pred, target, t, tasks, device: (
-        torch.tensor(1.0 if tasks[0] == "depth" else 3.0), None, None
+        torch.tensor(1.0 if tasks[0] == "depth" else 3.0),
+        None,
+        None,
     )
     assert trainer.validate() == 2.0
     assert trainer.validation_metrics["sample_counts"] == {"depth": 40, "normal": 2}
@@ -115,7 +117,9 @@ def test_macro_loss_weights_samples_not_batches():
     tail = {k: v[:1] for k, v in batch.items()}
     trainer.val_loader = [batch, tail]
     trainer.losses.compute_flow_loss = lambda pred, target, t, tasks, device: (
-        torch.tensor(2.0 if len(tasks) == 2 else 8.0), None, None
+        torch.tensor(2.0 if len(tasks) == 2 else 8.0),
+        None,
+        None,
     )
     assert trainer.validate() == 4.0
 

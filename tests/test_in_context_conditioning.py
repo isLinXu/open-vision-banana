@@ -105,7 +105,10 @@ def test_context_rejected_for_text_to_image_model():
     backend = _backend("flux-schnell", _tiny_transformer())
     with pytest.raises(ValueError, match="in-context"):
         backend.forward(
-            torch.randn(1, C, H, W), torch.tensor([0.5]), _text(1), 1,
+            torch.randn(1, C, H, W),
+            torch.tensor([0.5]),
+            _text(1),
+            1,
             context_latents=torch.randn(1, C, H, W),
         )
 

@@ -29,6 +29,7 @@ import ast
 import hashlib
 import json
 import math
+import os
 import sys
 import time
 from collections import Counter, defaultdict
@@ -96,6 +97,9 @@ def build_index(manifest: Path, counts: dict[str, int], salt: str) -> dict:
         for line_no, line in enumerate(stream, 1):
             row = json.loads(line)
             if row.get("split") != "val" or row.get("task") not in counts:
+                continue
+            if row["task"] == "generation" and row.get("input") in (None, "", row.get("target")):
+                # An edit of its own reference would score reconstruction, not generation.
                 continue
             order = hashlib.sha256(f"{salt}\x1f{row_key(row)}".encode()).hexdigest()
             by_task[row["task"]][row_source(row)].append((order, line_no, row))
@@ -357,12 +361,11 @@ def to_pil(tensor):
 def score_depth(ctx, sample, pred, target) -> dict:
     import numpy as np
     import torch
-    from PIL import Image
 
-    with Image.open(sample.image_path) as source:
-        input_size = source.size
-    with Image.open(sample.target_path) as native_png:
-        native = np.asarray(native_png.convert("RGB"), np.float32) / 255.0
+    s = sample.spec  # ManifestVisionDataset sample: disk path or tar key, as the dataset reads it
+    input_size = ctx.open_rgb(s["image_path"], s.get("input_tar_key", "")).size
+    native_png = ctx.open_rgb(s["target_path"], s.get("target_tar_key", ""))
+    native = np.asarray(native_png, np.float32) / 255.0
     native_m = ctx.mapper.rgb_to_depth(
         torch.from_numpy(native).permute(2, 0, 1).unsqueeze(0).to(pred.device)
     )
@@ -389,9 +392,15 @@ def score_referring(ctx, sample, pred, target) -> dict:
 
 
 def score_semantic(ctx, sample, pred, target) -> dict:
-    mapping = sample.row.get("mapping")
+    from open_vision_banana.training.trainer import parse_semantic_legend_from_prompt
+
+    mapping = sample.spec.get("mapping") or sample.row.get("mapping")
     if isinstance(mapping, str):
         mapping = ast.literal_eval(mapping)
+    if not mapping:
+        mapping = parse_semantic_legend_from_prompt(sample.item["prompt"])
+    if not mapping:
+        raise ValueError("semantic row has no legend")
     cmap = {k: tuple(int(c) for c in v) for k, v in mapping.items()}
     labels = [ctx.seg.decode_semantic(x, cmap).squeeze(1) for x in (pred, target)]
     return {"metrics": semantic_sums(*labels, list(cmap))}
@@ -448,6 +457,69 @@ SCORERS = {
 }
 
 
+def resolve_weights(model_path: Path, checkpoint: Path | None, view_dir: Path) -> dict:
+    """Pipeline dir and LoRA path for a base snapshot plus an optional LoRA or full checkpoint.
+
+    A full checkpoint (``transformer/`` only) is served through a symlinked pipeline view of the
+    base with its transformer swapped in.
+    """
+    if not (model_path / "model_index.json").is_file():
+        raise ValueError(f"{model_path} is not a diffusers pipeline snapshot")
+    weights = {"model_path": str(model_path), "checkpoint": None, "kind": "base", "lora_path": None}
+    if checkpoint is None:
+        return weights
+    weights["checkpoint"] = str(checkpoint)
+    meta = checkpoint / "metadata.json"
+    weights["checkpoint_metadata_sha256"] = sha256_file(meta) if meta.is_file() else None
+    if (checkpoint / "lora_adapter").is_dir():
+        adapter = checkpoint / "lora_adapter" / "adapter_model.safetensors"
+        return {
+            **weights,
+            "kind": "lora",
+            "lora_path": str(checkpoint),
+            "adapter_sha256": sha256_file(adapter),
+        }
+    if (checkpoint / "transformer").is_dir():
+        view_dir.mkdir(parents=True, exist_ok=True)
+        for item in model_path.iterdir():
+            if item.name != "transformer":
+                _link(view_dir / item.name, item.resolve())
+        _link(view_dir / "transformer", (checkpoint / "transformer").resolve())
+        files = sorted((checkpoint / "transformer").iterdir())
+        return {
+            **weights,
+            "kind": "full",
+            "model_path": str(view_dir),
+            "transformer_bytes": {f.name: f.stat().st_size for f in files},
+        }
+    raise ValueError(f"{checkpoint} has neither lora_adapter/ nor transformer/")
+
+
+def _link(link: Path, target: Path) -> None:
+    if link.is_symlink() and link.resolve() == target:
+        return
+    if link.is_symlink():
+        link.unlink()
+    link.symlink_to(target)
+
+
+def eval_identity(args, weights: dict) -> dict:
+    """Everything that determines a sample's score; records carry its hash."""
+    identity = {
+        "index_sha256": sha256_file(args.index),
+        "model_name": args.model_name,
+        "base_model": str(args.model_path),
+        **{k: v for k, v in weights.items() if k != "model_path"},
+        "resolution": args.resolution,
+        "num_inference_steps": args.num_inference_steps,
+        "guidance_scale": args.guidance_scale,
+        "strength": args.strength,
+        "seed": args.seed,
+    }
+    blob = json.dumps(identity, sort_keys=True).encode()
+    return {**identity, "sha256": hashlib.sha256(blob).hexdigest()}
+
+
 def dataset_prompt(row: dict, task: str) -> str:
     """The prompt ManifestVisionDataset gives this row (RES prompts are resolved, others defaulted)."""
     from open_vision_banana.data.res_contract import resolve_referring_prompt
@@ -468,9 +540,18 @@ def run_eval(args) -> int:
 
     index = load_index(args.index, args.manifest)
     entries = shard_entries(index["entries"], args.num_shards, args.shard_index)
+    view = args.output_jsonl.parent / f"model_view.{args.output_jsonl.stem}"
+    weights = resolve_weights(args.model_path, args.checkpoint, view)
+    identity = eval_identity(args, weights)
     if args.output_jsonl.exists():
+        previous = read_jsonl(args.output_jsonl)
+        foreign = {r.get("identity") for r in previous} - {identity["sha256"]}
+        if foreign:
+            raise ValueError(
+                f"{args.output_jsonl} holds records of another model/index/protocol; use a new file"
+            )
         # Failed samples are retried; scored ones are not recomputed.
-        done = {r["position"] for r in read_jsonl(args.output_jsonl) if r.get("status") == "ok"}
+        done = {r["position"] for r in previous if r.get("status") == "ok"}
         entries = [e for e in entries if e["position"] not in done]
     if not entries:
         return 0
@@ -491,9 +572,10 @@ def run_eval(args) -> int:
     with args.manifest.open(encoding="utf-8") as stream:
         rows = {n: json.loads(line) for n, line in enumerate(stream, 1) if n in wanted}
 
+    os.environ["OPEN_VISION_BANANA_MODEL_PATH"] = weights["model_path"]
     model = VisionBanana.from_pretrained(
         model_name=args.model_name,
-        lora_path=args.lora_path,
+        lora_path=weights["lora_path"],
         device=args.device,
         dtype=torch.bfloat16,
     )
@@ -502,6 +584,7 @@ def run_eval(args) -> int:
         seg=SegmentationDecoder(),
         resolution=args.resolution,
         aspect_preserving=dataset.aspect_preserving_crop,
+        open_rgb=dataset._open_pil_rgb,
         clip=None,
     )
     if "generation" in tasks:
@@ -529,11 +612,13 @@ def run_eval(args) -> int:
                 "task": task,
                 "line": entry["line"],
                 "source": entry["source"],
+                "identity": identity["sha256"],
             }
             started = time.perf_counter()
             try:
                 if key not in lookup:
                     raise KeyError("index entry not found in the val dataset")
+                sample.spec = dataset.samples[lookup[key]]
                 sample.item = dataset[lookup[key]]
                 # [0, 1] on purpose: generator._tensor_to_pil reads a tensor without negative pixels
                 # as [0, 1], so a bright image in the documented [-1, 1] range would be misread.
@@ -568,6 +653,8 @@ def run_eval(args) -> int:
                 record["status"] = "failed"
                 record["error"] = f"{type(exc).__name__}: {exc}"[:500]
             record["seconds"] = round(time.perf_counter() - started, 2)
+            if entry is entries[0]:
+                record["identity_detail"] = identity
             out.write(json.dumps(record) + "\n")
             out.flush()
     return 0
@@ -584,7 +671,12 @@ def run_merge(args) -> int:
                 continue
             records[r["position"]] = r
     expected = {e["position"] for e in index["entries"]}
+    foreign = sorted(set(records) - expected)
+    for position in foreign:
+        del records[position]
     missing = sorted(expected - set(records))
+    identities = sorted({str(r.get("identity")) for r in records.values()})
+    details = [r["identity_detail"] for r in records.values() if "identity_detail" in r]
     result = {
         "index_manifest_sha256": index["manifest_sha256"],
         "index_salt": index["salt"],
@@ -593,10 +685,16 @@ def run_merge(args) -> int:
             "scored_or_failed": len(records),
             "missing": len(missing),
             "duplicates_ignored": duplicates,
+            "outside_index": len(foreign),
+            "identities": len(identities),
             "failed": Counter(r["task"] for r in records.values() if r.get("status") != "ok"),
         },
+        "identity": details[0] if len(identities) == 1 and details else None,
         "metrics": aggregate(list(records.values())),
-        "complete": not missing and all(r.get("status") == "ok" for r in records.values()),
+        "complete": not missing
+        and not foreign
+        and len(identities) == 1
+        and all(r.get("status") == "ok" for r in records.values()),
     }
     if args.meta:
         result["meta"] = json.loads(args.meta.read_text(encoding="utf-8"))
@@ -619,7 +717,15 @@ def main(argv=None) -> int:
     e.add_argument("--manifest", type=Path, required=True)
     e.add_argument("--index", type=Path, required=True)
     e.add_argument("--model-name", default="qwen-image-2.1")
-    e.add_argument("--lora-path")
+    e.add_argument(
+        "--model-path",
+        type=Path,
+        default=os.environ.get("OPEN_VISION_BANANA_MODEL_PATH"),
+        help="base pipeline snapshot the run trained from (E: merged, Q: official)",
+    )
+    e.add_argument(
+        "--checkpoint", type=Path, help="LoRA (lora_adapter/) or full (transformer/) checkpoint"
+    )
     e.add_argument("--resolution", type=int, default=512)
     e.add_argument("--num-inference-steps", type=int, default=50)
     e.add_argument("--guidance-scale", type=float, default=4.0)
@@ -647,7 +753,10 @@ def main(argv=None) -> int:
         print(json.dumps({"sha256": sha256_file(a.output), "tasks": index["tasks"]}, indent=1))
         return 0
     if a.command == "eval":
-        a.manifest = a.manifest.resolve()
+        if a.model_path is None:
+            p.error("eval needs --model-path (or OPEN_VISION_BANANA_MODEL_PATH)")
+        a.manifest, a.model_path = a.manifest.resolve(), Path(a.model_path).resolve()
+        a.checkpoint = a.checkpoint.resolve() if a.checkpoint else None
         return run_eval(a)
     return run_merge(a)
 

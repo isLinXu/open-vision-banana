@@ -203,7 +203,12 @@ def check_initialization(
         record.update(merged=False, parent_adapter_sha256=None)
     else:
         raise ValueError("init must be E or Q")
-    expected = {**merged, **(pins or {})}
+    pins = pins or {}
+    if any(merged.get(name, digest) != digest for name, digest in pins.items()):
+        raise ValueError(
+            "Pins disagree with merge_metadata.json; the merge record is authoritative"
+        )
+    expected = {**merged, **pins}
     if expected and set(expected) != set(shards):
         raise ValueError("Pinned transformer shards differ from the snapshot")
     if verify_weights:
@@ -211,9 +216,12 @@ def check_initialization(
         if expected and actual != expected:
             raise ValueError("Transformer shard hashes differ from the pinned values")
         record["transformer_shard_sha256"] = actual
-    record["weights_check"] = (
-        "sha256" if verify_weights else "sizes only (pass --verify-weights to hash)"
-    )
+    if not verify_weights:
+        record["weights_check"] = "sizes only (pass --verify-weights to hash)"
+    elif expected:
+        record["weights_check"] = "sha256 against pins"
+    else:
+        record["weights_check"] = "sha256 recorded, no reference to compare (pass --weight-pins)"
     return record
 
 

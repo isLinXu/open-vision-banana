@@ -69,4 +69,6 @@ def test_vae_scaling_round_trip() -> None:
         config = DummyConfig()
 
     latents = torch.randn(2, 32, 4, 4)
-    assert torch.allclose(denormalize_vae_latents(normalize_vae_latents(latents, DummyVae()), DummyVae()), latents)
+    assert torch.allclose(
+        denormalize_vae_latents(normalize_vae_latents(latents, DummyVae()), DummyVae()), latents
+    )

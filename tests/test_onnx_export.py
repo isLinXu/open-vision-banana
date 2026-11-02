@@ -240,6 +240,7 @@ class TestExportFluxTransformerOnnx:
 
     def test_export_with_mock_transformer(self, tmp_path):
         """Should export a FLUX-shaped transformer and component manifest."""
+
         class MockModel:
             def __init__(self):
                 self.transformer = TestExportFluxTransformerOnnx.MockTransformer()
@@ -262,6 +263,7 @@ class TestExportFluxTransformerOnnx:
 
     def test_export_creates_output_dir(self, tmp_path):
         """Should create output directory."""
+
         class MockModel:
             def __init__(self):
                 self.transformer = TestExportFluxTransformerOnnx.MockTransformer()
@@ -279,6 +281,7 @@ class TestExportFluxTransformerOnnx:
 
     def test_export_resolves_nested_pipeline_transformer(self, tmp_path):
         """VisionBanana-style nesting should resolve the transformer module."""
+
         class MockPipe:
             transformer = TestExportFluxTransformerOnnx.MockTransformer()
 
@@ -299,6 +302,7 @@ class TestExportFluxTransformerOnnx:
 
     def test_rejects_non_flux_forward_signature(self, tmp_path):
         """A generic three-input module must not masquerade as a FLUX export."""
+
         class NonFluxTransformer(nn.Module):
             def forward(self, hidden, timestep, text_emb):
                 return hidden
@@ -314,9 +318,7 @@ class TestExportFluxTransformerOnnx:
     def test_rejects_unet_pipeline_with_actionable_error(self, tmp_path):
         """SDXL/SSD-1B pipelines should report the unsupported architecture."""
         model = SimpleNamespace(
-            generator=SimpleNamespace(
-                _t2i_pipe=SimpleNamespace(unet=nn.Identity())
-            )
+            generator=SimpleNamespace(_t2i_pipe=SimpleNamespace(unet=nn.Identity()))
         )
 
         with pytest.raises(TypeError, match="supports FLUX transformers only"):

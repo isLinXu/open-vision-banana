@@ -21,8 +21,8 @@ def _two_block_image(size: int = 64) -> torch.Tensor:
     """Synthetic image with two well-separated solid color blocks."""
     img = torch.zeros(1, 3, size, size)
     h = size // 2
-    img[0, 0, :h, :h] = 1.0          # red block top-left
-    img[0, 1, h:, h:] = 1.0          # green block bottom-right
+    img[0, 0, :h, :h] = 1.0  # red block top-left
+    img[0, 1, h:, h:] = 1.0  # green block bottom-right
     return img
 
 

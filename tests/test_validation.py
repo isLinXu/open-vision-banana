@@ -177,13 +177,18 @@ class TestValidateManifestContract:
             encoding="utf-8",
         )
         # flux-dev has default text_encoder_max_length=77 (CLIP truncation)
-        report_flux = validate_manifest_contract(manifest, data_root=tmp_path, model_name="flux-dev")
+        report_flux = validate_manifest_contract(
+            manifest, data_root=tmp_path, model_name="flux-dev"
+        )
         assert not report_flux.ok
-        assert any("exceed flux-dev text_encoder_max_length=77" in i.message for i in report_flux.errors)
+        assert any(
+            "exceed flux-dev text_encoder_max_length=77" in i.message for i in report_flux.errors
+        )
 
         # Fixed sana-1600m has text_encoder_max_length=300 and attention LoRA targets
-        report_sana = validate_manifest_contract(manifest, data_root=tmp_path, model_name="sana-1600m")
+        report_sana = validate_manifest_contract(
+            manifest, data_root=tmp_path, model_name="sana-1600m"
+        )
         assert report_sana.ok
         assert report_sana.stats["cityscapes_semantic_rows"] == 1
         assert report_sana.stats["has_attention_lora"] is True
-

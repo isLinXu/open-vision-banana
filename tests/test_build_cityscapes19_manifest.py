@@ -75,4 +75,7 @@ def test_manifest_writer_uses_cityscapes_prompt(tmp_path: Path, monkeypatch) -> 
     row = json.loads(rows[0])
     assert row["prompt"] == SEMANTIC_SEGMENTATION_PROMPT
     assert row["palette"] == "cityscapes_19_official"
-    assert json.loads((out / "metadata.json").read_text())["palette_source"] == "cityscapes_19_official"
+    assert (
+        json.loads((out / "metadata.json").read_text())["palette_source"]
+        == "cityscapes_19_official"
+    )

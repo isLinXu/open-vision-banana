@@ -375,7 +375,12 @@ def test_fresh_arms(data, tmp_path, snapshots, arm, kwargs, expect):
     assert audit["lora_rank"] == expect["rank"] and audit["resolution"] == expect["res"]
     assert audit["initialization"]["init_source"] == expect["init"]
     assert audit["initialization"]["merged"] is (expect["init"] == "E")
-    assert audit["initialization"]["weights_check"] == "sha256"
+    check = audit["initialization"]["weights_check"]
+    assert check == (
+        "sha256 against pins"
+        if expect["init"] == "E"
+        else "sha256 recorded, no reference to compare (pass --weight-pins)"
+    )
     assert audit["global_batch"] == 32 and not (tmp_path / "run").exists()
 
 
@@ -545,3 +550,12 @@ def test_cli_legacy_arm_prints(data, tmp_path, monkeypatch, capsys):
     )
     run.main()
     assert "--resume-weights-only" in capsys.readouterr().out
+
+
+def test_e_pins_cannot_override_merge_metadata(snapshots):
+    e_dir, _ = snapshots
+    with pytest.raises(ValueError, match="Pins disagree"):
+        run.check_initialization("E", e_dir, "a" * 40, pins={"shard-1.safetensors": "0" * 64})
+    same = {"shard-1.safetensors": hashlib.sha256(WEIGHTS).hexdigest()}
+    record = run.check_initialization("E", e_dir, "a" * 40, verify_weights=True, pins=same)
+    assert record["weights_check"] == "sha256 against pins"

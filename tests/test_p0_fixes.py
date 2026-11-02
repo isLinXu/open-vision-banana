@@ -18,6 +18,7 @@ from open_vision_banana.core.segmentation import SegmentationDecoder
 
 # ── NMS Tests ───────────────────────────────────────────────────────────
 
+
 class TestNMS:
     """Tests for Non-Maximum Suppression implementation."""
 
@@ -38,10 +39,12 @@ class TestNMS:
 
     def test_nms_overlapping(self) -> None:
         """NMS removes overlapping boxes."""
-        boxes = torch.tensor([
-            [0.1, 0.1, 0.4, 0.4],
-            [0.12, 0.12, 0.42, 0.42],  # high overlap with box 0
-        ])
+        boxes = torch.tensor(
+            [
+                [0.1, 0.1, 0.4, 0.4],
+                [0.12, 0.12, 0.42, 0.42],  # high overlap with box 0
+            ]
+        )
         scores = torch.tensor([0.9, 0.8])
         keep = _nms(boxes, scores, iou_threshold=0.5)
         assert len(keep) == 1
@@ -49,21 +52,25 @@ class TestNMS:
 
     def test_nms_non_overlapping(self) -> None:
         """NMS keeps non-overlapping boxes."""
-        boxes = torch.tensor([
-            [0.1, 0.1, 0.3, 0.3],
-            [0.5, 0.5, 0.7, 0.7],
-            [0.8, 0.8, 1.0, 1.0],
-        ])
+        boxes = torch.tensor(
+            [
+                [0.1, 0.1, 0.3, 0.3],
+                [0.5, 0.5, 0.7, 0.7],
+                [0.8, 0.8, 1.0, 1.0],
+            ]
+        )
         scores = torch.tensor([0.9, 0.8, 0.7])
         keep = _nms(boxes, scores, iou_threshold=0.5)
         assert len(keep) == 3
 
     def test_nms_low_threshold(self) -> None:
         """NMS with low threshold removes more boxes."""
-        boxes = torch.tensor([
-            [0.1, 0.1, 0.4, 0.4],
-            [0.15, 0.15, 0.45, 0.45],  # moderate overlap
-        ])
+        boxes = torch.tensor(
+            [
+                [0.1, 0.1, 0.4, 0.4],
+                [0.15, 0.15, 0.45, 0.45],  # moderate overlap
+            ]
+        )
         scores = torch.tensor([0.9, 0.8])
         # High threshold → keep both
         keep_high = _nms(boxes, scores, iou_threshold=0.9)
@@ -74,10 +81,12 @@ class TestNMS:
 
     def test_nms_sorting(self) -> None:
         """NMS keeps highest score regardless of input order."""
-        boxes = torch.tensor([
-            [0.1, 0.1, 0.4, 0.4],   # lower score, same region
-            [0.12, 0.12, 0.42, 0.42],  # higher score, same region
-        ])
+        boxes = torch.tensor(
+            [
+                [0.1, 0.1, 0.4, 0.4],  # lower score, same region
+                [0.12, 0.12, 0.42, 0.42],  # higher score, same region
+            ]
+        )
         scores = torch.tensor([0.7, 0.95])
         keep = _nms(boxes, scores, iou_threshold=0.5)
         assert len(keep) == 1
@@ -88,9 +97,7 @@ class TestNMS:
         mapper = ObjectDetectionRGBMapper(num_classes=2, line_width=2)
 
         # Create two overlapping bboxes of the same class
-        bboxes = torch.tensor([
-            [[0.2, 0.2, 0.3, 0.3], [0.22, 0.22, 0.3, 0.3]]
-        ])
+        bboxes = torch.tensor([[[0.2, 0.2, 0.3, 0.3], [0.22, 0.22, 0.3, 0.3]]])
         class_ids = torch.tensor([[0, 0]])
 
         rgb = mapper.bboxes_to_rgb(bboxes, class_ids)
@@ -105,6 +112,7 @@ class TestNMS:
 
 
 # ── Union-Find Seed-Based Fix Tests ─────────────────────────────────────
+
 
 class TestSeedBasedUnionFindFix:
     """Tests for the P0 fix in _seed_based_union_find.

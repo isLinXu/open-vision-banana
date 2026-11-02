@@ -16,9 +16,7 @@ from open_vision_banana.evaluation.generation_preservation import (
 def _transport_with_text(text: str, captured: list):
     def transport(request, timeout):
         captured.append((request, timeout, json.loads(request.data)))
-        return json.dumps(
-            {"candidates": [{"content": {"parts": [{"text": text}]}}]}
-        ).encode()
+        return json.dumps({"candidates": [{"content": {"parts": [{"text": text}]}}]}).encode()
 
     return transport
 
@@ -64,9 +62,7 @@ def test_gemini_judge_requires_credentials(monkeypatch) -> None:
 
 
 def test_pairwise_win_rate_counts_ties_as_half() -> None:
-    metrics = evaluate_pairwise_preferences(
-        ["candidate", "candidate", "baseline", "tie"]
-    )
+    metrics = evaluate_pairwise_preferences(["candidate", "candidate", "baseline", "tie"])
     assert metrics == {
         "wins": 2,
         "losses": 1,

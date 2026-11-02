@@ -121,9 +121,7 @@ class FakeUNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.config = SimpleNamespace(in_channels=4)
-        self.down_blocks = nn.ModuleList(
-            [FakeDownBlock(4, 8), FakeDownBlock(8, 16)]
-        )
+        self.down_blocks = nn.ModuleList([FakeDownBlock(4, 8), FakeDownBlock(8, 16)])
         self.mid_block = FakeMidBlock(16)
         self.output = nn.Conv2d(16, 4, 1)
 

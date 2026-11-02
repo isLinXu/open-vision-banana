@@ -29,9 +29,7 @@ def test_prepare_flux_paper_gate_symlinks_expected_layout(tmp_path: Path) -> Non
         _write_png(image)
         _write_png(target)
         hypersim_rows.append({"input": str(image), "target": str(target)})
-    (hypersim / "pairs.jsonl").write_text(
-        "".join(json.dumps(row) + "\n" for row in hypersim_rows)
-    )
+    (hypersim / "pairs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in hypersim_rows))
 
     city_rows = []
     for index in range(2):
@@ -41,9 +39,7 @@ def test_prepare_flux_paper_gate_symlinks_expected_layout(tmp_path: Path) -> Non
         _write_png(image)
         _write_png(target)
         city_rows.append({"input": str(image), "target": str(target)})
-    (cityscapes / "pairs.jsonl").write_text(
-        "".join(json.dumps(row) + "\n" for row in city_rows)
-    )
+    (cityscapes / "pairs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in city_rows))
 
     (generation / "images").mkdir(parents=True, exist_ok=True)
     captions = []

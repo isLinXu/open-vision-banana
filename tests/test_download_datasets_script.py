@@ -15,7 +15,19 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "download_datasets.sh"
 REGISTRY = ROOT / "configs" / "datasets" / "sources.tsv"
-COLUMNS = ["name", "group", "tasks", "source", "locator", "include", "dest", "post", "size_gb", "license", "note"]
+COLUMNS = [
+    "name",
+    "group",
+    "tasks",
+    "source",
+    "locator",
+    "include",
+    "dest",
+    "post",
+    "size_gb",
+    "license",
+    "note",
+]
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 
@@ -26,14 +38,18 @@ def _rows() -> list[dict[str, str]]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         fields = line.split("\t")
-        assert len(fields) == len(COLUMNS), f"{fields[0]}: expected {len(COLUMNS)} tab-separated fields, got {len(fields)}"
+        assert len(fields) == len(COLUMNS), (
+            f"{fields[0]}: expected {len(COLUMNS)} tab-separated fields, got {len(fields)}"
+        )
         rows.append(dict(zip(COLUMNS, fields, strict=True)))
     return rows
 
 
 def _run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     full_env = {**os.environ, "PYTHON": sys.executable, **(env or {})}
-    return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=full_env, timeout=120)
+    return subprocess.run(
+        ["bash", str(SCRIPT), *args], capture_output=True, text=True, env=full_env, timeout=120
+    )
 
 
 def test_registry_rows_are_well_formed_and_cover_the_paper_tasks():
@@ -44,15 +60,52 @@ def test_registry_rows_are_well_formed_and_cover_the_paper_tasks():
         assert row["group"] in {"train", "eval", "replay"}, row["name"]
         assert row["source"] in {"ms", "hf", "url", "manual"}, row["name"]
         for step in row["post"].split("+"):
-            assert step in {"none", "unzip", "untar", "unzip_each", "unzip_envs", "untar_each", "coco2014_links", "refer_umd", "refer_unc", "nyu_mat", "genai_prompts", "un7z", "un7z_each"}, row["name"]
-        assert set(row["tasks"].split(",")) <= {"depth", "normal", "semantic", "instance", "referring", "generation"}, row["name"]
+            assert step in {
+                "none",
+                "unzip",
+                "untar",
+                "unzip_each",
+                "unzip_envs",
+                "untar_each",
+                "coco2014_links",
+                "refer_umd",
+                "refer_unc",
+                "nyu_mat",
+                "genai_prompts",
+                "un7z",
+                "un7z_each",
+            }, row["name"]
+        assert set(row["tasks"].split(",")) <= {
+            "depth",
+            "normal",
+            "semantic",
+            "instance",
+            "referring",
+            "generation",
+        }, row["name"]
     train_tasks = {t for r in rows if r["group"] == "train" for t in r["tasks"].split(",")}
     assert {"depth", "normal", "semantic", "instance", "referring"} <= train_tasks
     assert any(r["group"] == "replay" for r in rows)
     # Paper benchmarks must never be in the train group
-    for name in ("refcocog", "reasonseg", "nyu-depth-v2-labeled", "kitti-depth", "cityscapes", "genai-bench",
-                 "diode-val", "diode-val-normals", "eth3d-dslr-depth", "imgedit-bench", "saco-gold", "saco-gold-images", "ibims1",
-                 "scannet-normals", "nuscenes", "vkitti2", "nyu-normals"):
+    for name in (
+        "refcocog",
+        "reasonseg",
+        "nyu-depth-v2-labeled",
+        "kitti-depth",
+        "cityscapes",
+        "genai-bench",
+        "diode-val",
+        "diode-val-normals",
+        "eth3d-dslr-depth",
+        "imgedit-bench",
+        "saco-gold",
+        "saco-gold-images",
+        "ibims1",
+        "scannet-normals",
+        "nuscenes",
+        "vkitti2",
+        "nyu-normals",
+    ):
         assert next(r for r in rows if r["name"] == name)["group"] == "eval"
 
 
@@ -67,13 +120,24 @@ def test_list_and_filters():
 
 def test_dry_run_expands_macros_without_touching_the_network(tmp_path: Path):
     res = _run(
-        "--only", "hypersim,tartanair,omniedit", "--dry-run", "--root", str(tmp_path),
-        env={"HYPERSIM_SCENES": "ai_001_001 ai_009_003", "TARTANAIR_ENVS": "office carwelding", "OMNIEDIT_SHARDS": "1"},
+        "--only",
+        "hypersim,tartanair,omniedit",
+        "--dry-run",
+        "--root",
+        str(tmp_path),
+        env={
+            "HYPERSIM_SCENES": "ai_001_001 ai_009_003",
+            "TARTANAIR_ENVS": "office carwelding",
+            "OMNIEDIT_SHARDS": "1",
+        },
     )
     assert res.returncode == 0, res.stderr
     # CLI form: "--include raw/a.zip raw/b.zip"; Python-API fallback form: "['raw/a.zip','raw/b.zip',]"
     assert "raw/ai_001_001.zip" in res.stdout and "raw/ai_009_003.zip" in res.stdout
-    assert "office/Easy/image_left.zip" in res.stdout and "carwelding/Easy/depth_left.zip" in res.stdout
+    assert (
+        "office/Easy/image_left.zip" in res.stdout
+        and "carwelding/Easy/depth_left.zip" in res.stdout
+    )
     assert "office/Easy/depth_left.zip" in res.stdout and "japanesealley" not in res.stdout
     assert "data/train-00000-of-00571.parquet" in res.stdout
     assert not any(tmp_path.iterdir())  # nothing written in dry-run
@@ -83,13 +147,16 @@ def test_unzip_envs_extracts_tartanair_environment_archives(tmp_path: Path):
     root = tmp_path / "root"
     env_dir = root / "tartanair" / "office" / "Easy"
     env_dir.mkdir(parents=True)
-    with zipfile.ZipFile(env_dir / "depth_left.zip", "w") as zf:  # members carry the <env>/Easy/ prefix
+    with zipfile.ZipFile(
+        env_dir / "depth_left.zip", "w"
+    ) as zf:  # members carry the <env>/Easy/ prefix
         zf.writestr("office/Easy/P000/depth_left/000000_left_depth.npy", b"npy")
     stub = tmp_path / "stub.txt"
     stub.write_text("x", encoding="utf-8")
     registry = tmp_path / "registry.tsv"
     registry.write_text(
-        f"tartanair\ttrain\tdepth\turl\tfile://{stub}\t-\ttartanair\tunzip_envs\t0\tCC\tfixture\n", encoding="utf-8"
+        f"tartanair\ttrain\tdepth\turl\tfile://{stub}\t-\ttartanair\tunzip_envs\t0\tCC\tfixture\n",
+        encoding="utf-8",
     )
     for _ in range(2):  # the marker makes the second run a no-op
         res = _run("--registry", str(registry), "--root", str(root))
@@ -132,7 +199,10 @@ def test_whole_repo_ms_row_without_include_dry_runs(tmp_path: Path):
     """A ModelScope row with include='-' (whole repo) must not trip `set -u` on the empty pattern array (bash 3.2)."""
     res = subprocess.run(
         ["bash", str(SCRIPT), "--only", "saco-gold", "--dry-run"],
-        capture_output=True, text=True, cwd=ROOT, env={**os.environ, "DATA_ROOT": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        env={**os.environ, "DATA_ROOT": str(tmp_path)},
     )
     assert res.returncode == 0, res.stderr
     combined = res.stdout + res.stderr  # log lines go to stderr, commands to stdout

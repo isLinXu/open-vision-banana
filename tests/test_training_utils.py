@@ -14,6 +14,7 @@ from open_vision_banana.training.utils import DDPWrapper, EMAModel, VisionAugmen
 # EMAModel Tests
 # ──────────────────────────────────────────────────────────────
 
+
 class TestEMAModel:
     """Tests for Exponential Moving Average."""
 
@@ -64,6 +65,7 @@ class TestEMAModel:
 # VisionAugmentation Tests
 # ──────────────────────────────────────────────────────────────
 
+
 class TestVisionAugmentation:
     """Tests for task-aware augmentation."""
 
@@ -92,9 +94,7 @@ class TestVisionAugmentation:
         assert torch.allclose(aug_tgt, target)
 
     def test_per_sample_normal_task_corrects_horizontal_flip(self):
-        aug = VisionAugmentation(
-            resolution=2, hflip_prob=1.0, crop_scale=(1.0, 1.0), task="depth"
-        )
+        aug = VisionAugmentation(resolution=2, hflip_prob=1.0, crop_scale=(1.0, 1.0), task="depth")
         image = torch.zeros(3, 2, 2)
         target = torch.tensor(
             [
@@ -111,6 +111,7 @@ class TestVisionAugmentation:
 # ──────────────────────────────────────────────────────────────
 # Referring Evaluation Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestReferringMetrics:
     """Tests for referring expression segmentation metrics."""
@@ -143,6 +144,7 @@ class TestReferringMetrics:
 # SqRel Metric Fix Verification
 # ──────────────────────────────────────────────────────────────
 
+
 class TestSqRelMetric:
     """Verify SqRel is computed correctly (not as AbsRel copy)."""
 
@@ -150,13 +152,15 @@ class TestSqRelMetric:
         pred2 = torch.tensor([[[[3.0]]]])
         gt2 = torch.tensor([[[[1.0]]]])
         metrics2 = evaluate_depth(pred2, gt2)
-        assert metrics2["SqRel"] > metrics2["AbsRel"], \
+        assert metrics2["SqRel"] > metrics2["AbsRel"], (
             "SqRel should be larger than AbsRel for errors > 1"
+        )
 
 
 # ──────────────────────────────────────────────────────────────
 # DDPWrapper Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestDDPWrapper:
     """Tests for DDP wrapper (single-process mode)."""

@@ -61,13 +61,22 @@ def test_gate_input_validation():
 def test_check_depth_gate_cli_exit_codes(tmp_path):
     def run(model_metrics):
         model_json = tmp_path / "model.json"
-        model_json.write_text(json.dumps({"benchmarks": {"depth/nyu": {"decoded_metrics": model_metrics}}}))
+        model_json.write_text(
+            json.dumps({"benchmarks": {"depth/nyu": {"decoded_metrics": model_metrics}}})
+        )
         base_json = tmp_path / "base.json"
         base_json.write_text(json.dumps({"baselines": BASELINES}))
         return subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "check_depth_gate.py"),
-             "--model-json", str(model_json), "--baseline-json", str(base_json)],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "check_depth_gate.py"),
+                "--model-json",
+                str(model_json),
+                "--baseline-json",
+                str(base_json),
+            ],
+            capture_output=True,
+            text=True,
         )
 
     assert run(_model()).returncode == 0
@@ -114,7 +123,9 @@ def test_generate_kontext_uses_official_pipeline_conventions():
     kw = calls[0]
     assert kw["_auto_resize"] is False  # keep the input raster; no preferred-size resize
     assert (kw["height"], kw["width"]) == (48, 64)
-    assert kw["num_inference_steps"] == 30  # 1 means "unspecified": model default, never single step
+    assert (
+        kw["num_inference_steps"] == 30
+    )  # 1 means "unspecified": model default, never single step
     assert kw["guidance_scale"] == 2.5
     assert out.shape == (1, 3, 50, 70)  # resized back to the input raster
     assert 0.0 <= float(out.min()) and float(out.max()) <= 1.0
@@ -130,7 +141,10 @@ def test_generate_kontext_prompt_count_mismatch():
     gen.device = "cpu"
     with pytest.raises(ValueError, match="prompts"):
         gen._generate_kontext(
-            prompt=["a", "b"], image=Image.new("RGB", (32, 32)), num_inference_steps=20,
-            guidance_scale=2.0, seed=None,
+            prompt=["a", "b"],
+            image=Image.new("RGB", (32, 32)),
+            num_inference_steps=20,
+            guidance_scale=2.0,
+            seed=None,
         )
     assert torch  # silence unused import in minimal envs

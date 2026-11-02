@@ -35,10 +35,13 @@ def test_diode_discovery_requires_matching_rgb_input(tmp_path: Path) -> None:
 
 def test_decode_excludes_opaque_black_non_unit_background(tmp_path: Path) -> None:
     module = load_module()
-    pixels = np.array([
-        [[128, 128, 255, 255], [0, 0, 0, 255]],
-        [[128, 128, 255, 0], [128, 255, 128, 255]],
-    ], dtype=np.uint8)
+    pixels = np.array(
+        [
+            [[128, 128, 255, 255], [0, 0, 0, 255]],
+            [[128, 128, 255, 0], [128, 255, 128, 255]],
+        ],
+        dtype=np.uint8,
+    )
     path = tmp_path / "normal.png"
     Image.fromarray(pixels, mode="RGBA").save(path)
     normal, valid = module.decode_normal(path, resolution=2, normal_length_tolerance=0.12)

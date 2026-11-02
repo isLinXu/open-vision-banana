@@ -99,6 +99,7 @@ def test_failed_best_save_restores_online_and_does_not_commit_best(setup, monkey
     if failure == "adapter":
         model.fail_export = True
     elif failure == "payload":
+
         def fail_save(*args, **kwargs):
             raise OSError("payload save failed")
 
@@ -111,6 +112,7 @@ def test_failed_best_save_restores_online_and_does_not_commit_best(setup, monkey
 
         monkeypatch.setattr(Path, "write_text", fail_write)
     else:
+
         def fail_apply(module):
             with torch.no_grad():
                 module.weight.fill_(5.0)
@@ -135,7 +137,12 @@ def test_best_without_ema_exports_online_and_records_custom_protocol(setup, empt
     else:
         ema = None
     assert callbacks.on_validate(
-        3, 1.0, model, optimizer, scheduler, ema=ema,
+        3,
+        1.0,
+        model,
+        optimizer,
+        scheduler,
+        ema=ema,
         selection_protocol="heldout_depth_v1",
     )
     _, metadata, adapter = read_checkpoint(callbacks.output_dir / "checkpoint-3_best")

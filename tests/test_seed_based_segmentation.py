@@ -64,7 +64,10 @@ def test_seed_merge_rule_switch_pixel_only_vs_pixel_and_seed() -> None:
     n_strict = int(strict._seed_based_union_find(img, bg_mask).unique().numel())
     assert n_strict >= n_lenient
     assert strict.instance_config.to_dict()["seed_merge_rule"] == "pixel_and_seed"
-    assert RGBMapper(instance_decoding_config=strict.instance_config).seg_decoder.seed_merge_rule == "pixel_and_seed"
+    assert (
+        RGBMapper(instance_decoding_config=strict.instance_config).seg_decoder.seed_merge_rule
+        == "pixel_and_seed"
+    )
     with pytest.raises(ValueError, match="seed_merge_rule"):
         InstanceDecodingConfig(seed_merge_rule="bogus")
 
@@ -127,7 +130,9 @@ def test_seed_vs_adjacent_on_gradients() -> None:
 
     # This is a tricky case: seed-based should be more compact
     instances_seed = decoder.decode_instance(rgb, background_color=(0, 0, 0), grouping_mode="seed")
-    instances_adj = decoder.decode_instance(rgb, background_color=(0, 0, 0), grouping_mode="adjacent")
+    instances_adj = decoder.decode_instance(
+        rgb, background_color=(0, 0, 0), grouping_mode="adjacent"
+    )
 
     # Seed-based should produce fewer, more compact components on gradients
     count_seed = len(instances_seed[0])
@@ -180,7 +185,6 @@ def test_stage2_converges_on_large_nonconvex_instance_over_32px() -> None:
     ):
         fg_labels = labels[~bg_mask].unique()
         assert len(fg_labels) == 1 and int(fg_labels[0].item()) > 0
-
 
 
 if __name__ == "__main__":

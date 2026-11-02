@@ -203,7 +203,9 @@ class TestHypersimRayDistanceToPlanarDepth:
         z = ray_distance_to_planar_depth(distance)
         assert z[0, 0, 384, 512] == pytest.approx(10.0, abs=1e-3)  # on-axis pixel unchanged
         corner_ratio = 10.0 / float(z[0, 0, 0, 0])
-        assert corner_ratio == pytest.approx((511.5**2 + 383.5**2 + 886.81**2) ** 0.5 / 886.81, abs=1e-3)
+        assert corner_ratio == pytest.approx(
+            (511.5**2 + 383.5**2 + 886.81**2) ** 0.5 / 886.81, abs=1e-3
+        )
         assert corner_ratio > 1.2  # the bias the unconverted pipeline baked in
         assert torch.isnan(z[0, 0, 5, 5]) and z[0, 0, 6, 6] == 0.0  # invalid markers survive
         # a flat wall at constant z is recovered exactly from its ray distances
@@ -229,7 +231,9 @@ class TestHypersimRayDistanceToPlanarDepth:
         Image.fromarray(np.full((4, 8), 2000, dtype=np.uint16)).save(png)
         depth_png, converted_png = _load_depth_meters(png)
         assert not converted_png and float(depth_png.min()) == 2.0  # mm export: planar, untouched
-        depth_forced, converted_forced = _load_depth_meters(png, ray_distance="always", focal_px=10.0)
+        depth_forced, converted_forced = _load_depth_meters(
+            png, ray_distance="always", focal_px=10.0
+        )
         assert converted_forced and float(depth_forced.max()) < 2.0
         with pytest.raises(ValueError, match="ray_distance"):
             _load_depth_meters(png, ray_distance="sometimes")
@@ -239,8 +243,12 @@ class TestHypersimRayDistanceToPlanarDepth:
         source = tmp_path / "raw" / "ai_001_001" / "images"
         (source / "scene_cam_00_final_preview").mkdir(parents=True)
         (source / "scene_cam_00_geometry_hdf5").mkdir()
-        Image.new("RGB", (16, 8), (90, 90, 90)).save(source / "scene_cam_00_final_preview" / "frame.0000.color.jpg")
-        with h5py.File(source / "scene_cam_00_geometry_hdf5" / "frame.0000.depth_meters.hdf5", "w") as handle:
+        Image.new("RGB", (16, 8), (90, 90, 90)).save(
+            source / "scene_cam_00_final_preview" / "frame.0000.color.jpg"
+        )
+        with h5py.File(
+            source / "scene_cam_00_geometry_hdf5" / "frame.0000.depth_meters.hdf5", "w"
+        ) as handle:
             handle.create_dataset("dataset", data=np.full((8, 16), 4.0, dtype=np.float32))
 
         out = tmp_path / "prepared"
@@ -256,8 +264,13 @@ class TestHypersimRayDistanceToPlanarDepth:
         # The encoded RGB target decodes back to the planar depth, not the ray distance
         from open_vision_banana.core.depth_mapper import DepthRGBMapper
 
-        target = np.asarray(Image.open(next((out / "targets").glob("*.png"))).convert("RGB"), np.float32) / 255.0
-        decoded = DepthRGBMapper().rgb_to_depth(torch.from_numpy(target).permute(2, 0, 1).unsqueeze(0))[0, 0]
+        target = (
+            np.asarray(Image.open(next((out / "targets").glob("*.png"))).convert("RGB"), np.float32)
+            / 255.0
+        )
+        decoded = DepthRGBMapper().rgb_to_depth(
+            torch.from_numpy(target).permute(2, 0, 1).unsqueeze(0)
+        )[0, 0]
         assert float(decoded[0, 0]) < float(decoded[4, 8]) <= 4.05
 
 
@@ -274,15 +287,24 @@ def test_prepare_synthetic_depth_hypersim_path_finds_hdf5_and_converts(tmp_path:
     (raw / "scene_cam_00_final_preview").mkdir(parents=True)
     (raw / "scene_cam_00_geometry_hdf5").mkdir()
     Image.new("RGB", (64, 32)).save(raw / "scene_cam_00_final_preview" / "frame.0000.color.jpg")
-    with h5py.File(raw / "scene_cam_00_geometry_hdf5" / "frame.0000.depth_meters.hdf5", "w") as handle:
+    with h5py.File(
+        raw / "scene_cam_00_geometry_hdf5" / "frame.0000.depth_meters.hdf5", "w"
+    ) as handle:
         handle.create_dataset("dataset", data=np.full((32, 64), 4.0, dtype=np.float32))
 
     def decoded_corner_and_centre(mode: str) -> tuple[float, float]:
         out = tmp_path / f"out_{mode}"
-        args = argparse.Namespace(resolution=64, max_samples=None, overwrite=False, ray_distance=mode, focal_px=None)
+        args = argparse.Namespace(
+            resolution=64, max_samples=None, overwrite=False, ray_distance=mode, focal_px=None
+        )
         assert prepare_multi(tmp_path / "raw", out, args) == 1
-        rgb = np.asarray(Image.open(next((out / "targets").glob("*.png"))).convert("RGB"), np.float32) / 255.0
-        dec = DepthRGBMapper().rgb_to_depth(torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0))[0, 0]
+        rgb = (
+            np.asarray(Image.open(next((out / "targets").glob("*.png"))).convert("RGB"), np.float32)
+            / 255.0
+        )
+        dec = DepthRGBMapper().rgb_to_depth(torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0))[
+            0, 0
+        ]
         return float(dec[0, 0]), float(dec[32, 32])
 
     corner, centre = decoded_corner_and_centre("auto")
@@ -321,7 +343,10 @@ class TestHypersimMultiTaskExport:
         instance[semantic == 1] = 1
         instance[semantic == 22] = 2
         for name, arr in (
-            ("depth_meters", depth), ("normal_cam", normal), ("semantic", semantic), ("semantic_instance", instance)
+            ("depth_meters", depth),
+            ("normal_cam", normal),
+            ("semantic", semantic),
+            ("semantic_instance", instance),
         ):
             with h5py.File(geo / f"frame.0000.{name}.hdf5", "w") as handle:
                 handle.create_dataset("dataset", data=arr)
@@ -331,19 +356,37 @@ class TestHypersimMultiTaskExport:
         from open_vision_banana.core.normal_mapper import NormalRGBMapper
         from open_vision_banana.core.segmentation import SegmentationDecoder
         from open_vision_banana.data.hypersim import INVALID_NORMAL_RGB
-        from open_vision_banana.training.trainer import ManifestVisionDataset, parse_semantic_legend_from_prompt
+        from open_vision_banana.training.trainer import (
+            ManifestVisionDataset,
+            parse_semantic_legend_from_prompt,
+        )
 
         raw = self._scene(tmp_path)
         out = tmp_path / "prepared"
-        assert prepare_hypersim(raw, out, tasks=("depth", "normal", "semantic", "instance"), semantic_variants=2) == 1
+        assert (
+            prepare_hypersim(
+                raw, out, tasks=("depth", "normal", "semantic", "instance"), semantic_variants=2
+            )
+            == 1
+        )
         rows = [json.loads(line) for line in (out / "pairs.jsonl").read_text().splitlines()]
         by_task = {}
         for row in rows:
             by_task.setdefault(row["task"], []).append(row)
         # instance: one row per class present (wall, ceiling, chair) -> 3
-        assert {k: len(v) for k, v in by_task.items()} == {"metric_depth": 1, "normal": 1, "semantic": 2, "instance": 3}
+        assert {k: len(v) for k, v in by_task.items()} == {
+            "metric_depth": 1,
+            "normal": 1,
+            "semantic": 2,
+            "instance": 3,
+        }
         manifest = json.loads((out / "manifest.json").read_text())
-        assert manifest["tasks"]["rows_per_task"] == {"depth": 1, "normal": 1, "semantic": 2, "instance": 3}
+        assert manifest["tasks"]["rows_per_task"] == {
+            "depth": 1,
+            "normal": 1,
+            "semantic": 2,
+            "instance": 3,
+        }
         assert manifest["tasks"]["normal_backfacing_frames"] == 0
 
         # normal: wall pixel decodes to (0,0,1), ceiling to (0,-1,0), invalid rows are the grey marker
@@ -353,11 +396,18 @@ class TestHypersimMultiTaskExport:
         assert torch.allclose(decoded[:, 12, 40], torch.tensor([0.0, 0.0, 1.0]), atol=0.02)
         assert torch.allclose(decoded[:, 2, 20], torch.tensor([0.0, -1.0, 0.0]), atol=0.02)
         assert tuple(normal_png[31, 0]) == INVALID_NORMAL_RGB
-        assert by_task["normal"][0]["prompt"] == "Generate a surface normal estimation visualization of this image."
+        assert (
+            by_task["normal"][0]["prompt"]
+            == "Generate a surface normal estimation visualization of this image."
+        )
 
         # semantic: prompt legend colours match the painted target; unlabelled strip is black
         sem_row = by_task["semantic"][0]
-        legend = parse_semantic_legend_from_prompt(sem_row["prompt"]) if sem_row["style"] == "json_tuple" else None
+        legend = (
+            parse_semantic_legend_from_prompt(sem_row["prompt"])
+            if sem_row["style"] == "json_tuple"
+            else None
+        )
         sem_png = np.asarray(Image.open(out / sem_row["target"]).convert("RGB"))
         assert {"wall", "ceiling", "chair"} <= set(sem_row["mapping"])
         assert tuple(sem_png[12, 40]) == tuple(sem_row["mapping"]["wall"])
@@ -371,7 +421,9 @@ class TestHypersimMultiTaskExport:
         assert set(inst_rows) == {"wall", "ceiling", "chair"}
         assert inst_rows["wall"]["num_instances"] == 1
         chair = inst_rows["chair"]
-        assert chair["num_instances"] == 2 and chair["prompt"].endswith("Each chair is colored differently.")
+        assert chair["num_instances"] == 2 and chair["prompt"].endswith(
+            "Each chair is colored differently."
+        )
         inst_png = np.asarray(Image.open(out / chair["target"]).convert("RGB"))
         rgb = torch.from_numpy(inst_png).permute(2, 0, 1).float().unsqueeze(0) / 255.0
         assert len(SegmentationDecoder.paper_reproduction().decode_instance(rgb)[0]) == 2
@@ -387,18 +439,29 @@ class TestHypersimMultiTaskExport:
         raw = self._scene(tmp_path, flip_normals=True)
         out = tmp_path / "flipped"
         prepare_hypersim(raw, out, tasks=("depth", "normal"))
-        assert json.loads((out / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"] == 1
+        assert (
+            json.loads((out / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"]
+            == 1
+        )
         # a rerun over the existing targets still counts it
         prepare_hypersim(raw, out, tasks=("depth", "normal"))
-        assert json.loads((out / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"] == 1
+        assert (
+            json.loads((out / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"]
+            == 1
+        )
         out2 = tmp_path / "fixed"
         prepare_hypersim(raw, out2, tasks=("depth", "normal"), normal_flip="z")
         # measured after the flip: the fixed run reports no back-facing frame
-        assert json.loads((out2 / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"] == 0
+        assert (
+            json.loads((out2 / "manifest.json").read_text())["tasks"]["normal_backfacing_frames"]
+            == 0
+        )
         from open_vision_banana.core.normal_mapper import NormalRGBMapper
 
         png = np.asarray(Image.open(next((out2 / "normal_targets").glob("*.png"))).convert("RGB"))
-        decoded = NormalRGBMapper().rgb_to_normal(torch.from_numpy(png).permute(2, 0, 1).float().unsqueeze(0) / 255.0)[0]
+        decoded = NormalRGBMapper().rgb_to_normal(
+            torch.from_numpy(png).permute(2, 0, 1).float().unsqueeze(0) / 255.0
+        )[0]
         assert decoded[2, 12, 40] > 0.98
 
     def test_unknown_task_rejected(self, tmp_path: Path):

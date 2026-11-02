@@ -38,5 +38,7 @@ def test_constant_normal_has_zero_neighbour_variation() -> None:
 
 def test_angular_error_detects_orthogonal_directions() -> None:
     module = load_module()
-    angles = module.angular_error_degrees(torch.tensor([[1.0, 0.0, 0.0]]), torch.tensor([0.0, 1.0, 0.0]))
+    angles = module.angular_error_degrees(
+        torch.tensor([[1.0, 0.0, 0.0]]), torch.tensor([0.0, 1.0, 0.0])
+    )
     assert float(angles.item()) == pytest.approx(90.0, abs=1e-4)

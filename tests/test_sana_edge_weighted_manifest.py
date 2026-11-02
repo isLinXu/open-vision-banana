@@ -66,4 +66,7 @@ def test_builder_duplicates_only_top_edge_train_row_and_preserves_val(tmp_path: 
     assert weighted[-1]["input"] == str(edged)
     assert weighted[-1]["sampling"]["copy_index"] == 2
     assert summary["reweighting"]["effective_train_rows"] == 3
-    assert json.loads(stats.read_text(encoding="utf-8"))["base_split_counts"] == {"train": 2, "val": 1}
+    assert json.loads(stats.read_text(encoding="utf-8"))["base_split_counts"] == {
+        "train": 2,
+        "val": 1,
+    }

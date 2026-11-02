@@ -40,7 +40,11 @@ def train_and_save(trainer: Trainer, steps: int = 3):
         trainer.ema.update(model)
     trainer.callbacks.best_val_loss = 0.25
     return trainer.callbacks.on_checkpoint(
-        steps, model, trainer.optimizer, trainer.lr_scheduler, ema=trainer.ema,
+        steps,
+        model,
+        trainer.optimizer,
+        trainer.lr_scheduler,
+        ema=trainer.ema,
         selection_protocol=trainer._selection_protocol(),
     )
 
@@ -180,7 +184,10 @@ def test_training_without_ema(tmp_path):
     trainer.val_loader = None
     trainer._train_step = lambda batch, step: {
         "loss": trainer.backend.peft_model(torch.ones(1, 4)).sum(),
-        "total_loss": 0.0, "flow_loss": 0.0, "depth_aux": 0.0, "normal_aux": 0.0,
+        "total_loss": 0.0,
+        "flow_loss": 0.0,
+        "depth_aux": 0.0,
+        "normal_aux": 0.0,
     }
     trainer.train()
     checkpoint = torch.load(trainer.callbacks.output_dir / "checkpoint-1_final/lora.pt")
