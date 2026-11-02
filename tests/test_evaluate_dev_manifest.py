@@ -52,10 +52,7 @@ def test_parse_counts():
 
 def test_allocate_is_proportional_and_capped():
     assert dev.allocate({"a": 20, "b": 10}, 6) == {"a": 4, "b": 2}
-    assert (
-        dev.allocate({"a": 1, "b": 10}, 5) == {"a": 1, "b": 4}
-        or dev.allocate({"a": 1, "b": 10}, 5)["a"] <= 1
-    )
+    assert dev.allocate({"a": 1, "b": 10}, 5) == {"a": 0, "b": 5}
     assert sum(dev.allocate({"a": 2, "b": 1}, 10).values()) == 3
 
 
@@ -99,6 +96,46 @@ def test_shard_entries():
         dev.shard_entries(entries, 3, 3)
 
 
+def test_depth_geometry_matches_dataset_crop(tmp_path):
+    """The metric map lands on the same pixels as ManifestVisionDataset's val canvas."""
+    from PIL import Image
+
+    from open_vision_banana.training.trainer import ManifestVisionDataset
+
+    w, h = 37, 23
+    xs = torch.arange(w, dtype=torch.float32).repeat(h, 1)
+    ys = torch.arange(h, dtype=torch.float32).unsqueeze(1).repeat(1, w)
+    code = torch.stack([xs, ys, torch.zeros_like(xs)]) / 255.0
+    Image.fromarray((code.permute(1, 2, 0).numpy() * 255).round().astype("uint8")).save(
+        tmp_path / "in.png"
+    )
+    write_manifest(
+        tmp_path / "pairs.jsonl",
+        [
+            dict(
+                task="semantic",
+                split="val",
+                input="in.png",
+                target="in.png",
+                prompt="p",
+                mapping={"a": [0, 0, 0]},
+            )
+        ],
+    )
+    for resolution in (8, 16):
+        ds = ManifestVisionDataset(
+            tmp_path / "pairs.jsonl",
+            resolution,
+            "val",
+            {"semantic"},
+            aspect_preserving_crop=True,
+            data_root=tmp_path,
+        )
+        canvas = (ds[0]["target_rgb"] * 255).round()
+        mapped = dev.depth_geometry(code.unsqueeze(0) * 255, (w, h), resolution, True)[0]
+        assert torch.equal(canvas[:2], mapped[:2].round())
+
+
 def test_depth_geometry_matches_center_crop():
     depth = torch.arange(8 * 4, dtype=torch.float32).reshape(1, 1, 4, 8)
     out = dev.depth_geometry(depth, (8, 4), 4, True)
@@ -121,11 +158,16 @@ def test_depth_sums_cap_clamp_and_bins():
     assert dev.depth_sums(pred, torch.zeros(2, 2)) == {"pixels": 0, "pred_out_of_range": 0}
 
 
-def test_referring_and_semantic_sums():
-    p = torch.tensor([[True, False], [True, True]])
-    g = torch.tensor([[True, True], [False, True]])
-    assert dev.referring_sums(p, g) == {"intersection": 2, "union": 4, "iou": 0.5}
-    assert dev.referring_sums(p & False, g & False)["iou"] == 1.0
+def referring_state(pred, gt):
+    from open_vision_banana.evaluation.referring import ReferringAccumulator
+    from open_vision_banana.evaluation.shards import accumulator_state
+
+    accumulator = ReferringAccumulator()
+    accumulator.update(torch.tensor(pred), torch.tensor(gt))
+    return accumulator_state(accumulator)
+
+
+def test_semantic_sums():
     s = dev.semantic_sums(
         torch.tensor([[0, 1], [1, 1]]), torch.tensor([[0, 0], [1, 1]]), ["a", "b", "c"]
     )
@@ -147,8 +189,8 @@ def test_aggregate_all_tasks():
             metrics_cap10=dev.depth_sums(torch.tensor([[1.0, 2.0]]), gt, 10.0),
             gt_floor=depth,
         ),
-        record(1, "referring", {"intersection": 1, "union": 2, "iou": 0.5}),
-        record(2, "referring", {"intersection": 3, "union": 3, "iou": 1.0}),
+        record(1, "referring", referring_state([[True, False]], [[True, True]])),
+        record(2, "referring", referring_state([[True, True, True]], [[True, True, True]])),
         record(3, "semantic", {"per_class": {"a": [1, 2]}, "correct": 3, "pixels": 4}),
         record(4, "instance", {"AP50": 0.5}),
         record(5, "generation", {"clip_text_score": 0.3}),
@@ -158,6 +200,7 @@ def test_aggregate_all_tasks():
     assert out["depth"]["raw"]["abs_rel"] == 0 and out["depth"]["raw"]["delta1"] == 1
     assert out["depth"]["raw_cap10m"]["rmse"] == 0 and out["depth"]["gt_floor"]["delta1"] == 1
     assert out["referring"]["cIoU"] == 0.8 and out["referring"]["gIoU"] == 0.75
+    assert out["referring"]["samples"] == 2
     assert out["semantic"]["mIoU"] == 0.5 and out["semantic"]["pixel_accuracy"] == 0.75
     assert out["instance"]["AP50"] == 0.5
     assert out["generation"]["failed"] == 1 and out["generation"]["proxy"]["clip_text_score"] == 0.3

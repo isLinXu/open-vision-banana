@@ -1,5 +1,6 @@
 """Fail-closed dataset preparation, paired configs, and consumed-sample accounting."""
 
+import hashlib
 import json
 import os
 import sys
@@ -184,14 +185,15 @@ def test_audit_no_rng_effect_and_resume_is_separate(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "prefix, steps, every, warmup",
-    [("d", 10000, 2000, 500), ("p", 10000, 2000, 500), ("m", 20000, 2500, 1000)],
+    "names, steps, every, warmup",
+    [
+        (("d0", "d1"), 10000, 2000, 500),
+        (("p0", "p1"), 10000, 2000, 500),
+        (("fresh_baseline", "fresh_plus_lingbot"), 20000, 2500, 1000),
+    ],
 )
-def test_configs_are_paired(prefix, steps, every, warmup):
-    a, b = [
-        load_config(config_path=ROOT / f"configs/experiments/lingbot_{prefix}{i}.yaml")
-        for i in (0, 1)
-    ]
+def test_configs_are_paired(names, steps, every, warmup):
+    a, b = [load_config(config_path=ROOT / f"configs/experiments/lingbot_{n}.yaml") for n in names]
     assert a.steps == b.steps == steps
     assert a.warmup_steps == b.warmup_steps == warmup and a.ema_warmup == 500
     assert a.batch_size * a.grad_accum * 8 == 32
@@ -203,8 +205,8 @@ def test_configs_are_paired(prefix, steps, every, warmup):
     assert da == db
 
 
-def test_launcher_integrity_and_accumulation(data, tmp_path):
-    prepare(data)
+def legacy_parent(tmp_path):
+    """A pinned-parent checkpoint and a base snapshot accepted by the D/P launcher."""
     parent = tmp_path / "parent"
     (parent / "lora_adapter").mkdir(parents=True)
     config = load_config(config_path=ROOT / "configs/experiments/lingbot_d0.yaml")
@@ -217,10 +219,23 @@ def test_launcher_integrity_and_accumulation(data, tmp_path):
     model = tmp_path / "model"
     model.mkdir()
     dump(model / "model_index.json", {})
+    return parent, model
+
+
+def test_launcher_integrity_and_accumulation(data, tmp_path):
+    prepare(data)
+    parent, model = legacy_parent(tmp_path)
     kwargs = dict(base_model=model, base_revision="a" * 40, world_size=4)
     command, audit = build_command(
         "D1", data[2], parent, sha256_file(parent / "lora.pt"), tmp_path / "run", **kwargs
     )
+    resume = command.index("--resume")
+    assert command[resume : resume + 4] == [
+        "--resume",
+        str(parent),
+        "--resume-weights-only",
+        "--grad-accum",
+    ]
     assert command[command.index("--grad-accum") + 1] == "8"
     assert audit["global_batch"] == 32 and not (tmp_path / "run").exists()
     (data[2] / "full_baseline/pairs.jsonl").write_text("changed")
@@ -256,10 +271,14 @@ def test_prepare_rejects_unknown_split(data):
         prep.prepare(base, ling, output, sha256_file(base), depth_rows=1, replay_rows=1)
 
 
-def snapshot(root, *, merged=None):
+WEIGHTS = b"weights"
+
+
+def snapshot(root, *, merged=None, shard=True):
     (root / "transformer").mkdir(parents=True)
     dump(root / "model_index.json", {})
-    (root / "transformer/shard-1.safetensors").write_bytes(b"weights")
+    if shard:
+        (root / "transformer/shard-1.safetensors").write_bytes(WEIGHTS)
     if merged is not None:
         dump(root / "merge_metadata.json", merged)
     return root
@@ -269,15 +288,9 @@ def merged_metadata(**overrides):
     meta = dict(
         adapter_sha256=run.PARENT_ADAPTER_SHA256,
         base_revision="a" * 40 + " (transformer shard hashes checked)",
-        transformer_shards={"shard-1.safetensors": sha256_file_bytes(b"weights")},
+        transformer_shards={"shard-1.safetensors": hashlib.sha256(WEIGHTS).hexdigest()},
     )
     return {**meta, **overrides}
-
-
-def sha256_file_bytes(payload):
-    import hashlib
-
-    return hashlib.sha256(payload).hexdigest()
 
 
 @pytest.fixture
@@ -350,7 +363,10 @@ def test_fresh_arms(data, tmp_path, snapshots, arm, kwargs, expect):
     flag = lambda name: command[command.index(name) + 1] if name in command else None  # noqa: E731
     assert "--resume" not in command and "--resume-weights-only" not in command
     assert flag("--pair-manifest").endswith(f"{expect['pool']}/pairs.jsonl")
-    assert flag("--steps") == str(expect["steps"]) and flag("--grad-accum") == "4"
+    assert flag("--steps") == ("15000" if expect["mode"] == "full" else None)
+    assert audit["steps"] == expect["steps"] and flag("--grad-accum") == "4"
+    assert flag("--config").endswith(f"lingbot_fresh_{expect['pool'].removeprefix('full_')}.yaml")
+    assert audit["family"] == "fresh"
     assert flag("--train-mode") == ("full" if expect["mode"] == "full" else None)
     assert flag("--lr") == (repr(kwargs["lr"]) if "lr" in kwargs else None)
     assert flag("--lora-rank") == (str(kwargs["lora_rank"]) if "lora_rank" in kwargs else None)
@@ -421,9 +437,7 @@ def test_weight_pins_and_shards(tmp_path, snapshots):
         )
     with pytest.raises(ValueError, match="Pinned transformer shards differ"):
         run.check_initialization("Q", q_dir, "a" * 40, pins={"x.safetensors": "0"})
-    empty = tmp_path / "empty"
-    (empty / "transformer").mkdir(parents=True)
-    dump(empty / "model_index.json", {})
+    empty = snapshot(tmp_path / "empty", shard=False)
     with pytest.raises(ValueError, match="No transformer shards"):
         run.check_initialization("Q", empty, "a" * 40)
 
@@ -507,18 +521,7 @@ def test_cli_rejects_mixed_families(tmp_path, monkeypatch, capsys, extra, messag
 
 def test_cli_legacy_arm_prints(data, tmp_path, monkeypatch, capsys):
     prepare(data)
-    parent = tmp_path / "parent"
-    (parent / "lora_adapter").mkdir(parents=True)
-    config = load_config(config_path=ROOT / "configs/experiments/lingbot_d0.yaml")
-    dump(parent / "metadata.json", {"adapter_weight_source": "online"})
-    dump(
-        parent / "lora_adapter/adapter_config.json",
-        dict(r=32, lora_alpha=64, use_rslora=True, target_modules=config.lora_targets),
-    )
-    (parent / "lora.pt").write_bytes(b"test-state")
-    model = tmp_path / "model"
-    model.mkdir()
-    dump(model / "model_index.json", {})
+    parent, model = legacy_parent(tmp_path)
     monkeypatch.setattr(
         sys,
         "argv",

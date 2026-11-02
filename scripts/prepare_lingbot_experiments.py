@@ -15,12 +15,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
-from PIL import Image
 
 from open_vision_banana.data.manifest import read_jsonl, resolve_manifest_path
 from open_vision_banana.res_bundle import safe_path, sha256_file
-from open_vision_banana.res_preparation import _pixels
-from scripts.merge_main_depth_reasoning import assert_no_heldout_overlap
+from scripts.merge_main_depth_reasoning import assert_no_heldout_overlap, decoded_identity
 
 REVISION = "78946c7b0aff52b87fe2ad15143e93625a43b139"
 FINGERPRINT = "e3a39e02e2b4383d341d59884ed2dc90ef8e5bacdad466744486b2db4c55863c"
@@ -111,19 +109,14 @@ def validate_release(root: Path, *, hash_assets: bool = False) -> list[dict]:
     return rows
 
 
-def _pixel_hash(path: str) -> str:
-    with Image.open(path) as image:
-        return _pixels(image.convert("RGB"))
-
-
 def pixel_hashes(paths, workers: int = 1) -> dict[Path, str]:
     """Decoded-RGB identity of every input image, decoded once (in parallel when workers > 1)."""
-    paths = sorted({str(p) for p in paths})
+    paths = sorted({str(Path(p).resolve()) for p in paths})
     if workers > 1:
         with ProcessPoolExecutor(workers) as pool:
-            digests = list(pool.map(_pixel_hash, paths, chunksize=64))
+            digests = list(pool.map(decoded_identity, paths, chunksize=64))
     else:
-        digests = [_pixel_hash(p) for p in paths]
+        digests = [decoded_identity(p) for p in paths]
     return {Path(p): d for p, d in zip(paths, digests, strict=True)}
 
 
@@ -172,7 +165,7 @@ def prepare(
         raise ValueError("Baseline must contain all six tasks with frozen train and val splits")
     new = validate_release(lingbot, hash_assets=hash_assets)
     combined = old + new
-    # Rows hold absolute paths here, so the cache keys match what the overlap helper resolves.
+    # Keys are resolved paths, the same keys the overlap helper looks up.
     cache = pixel_hashes((r["input"] for r in combined), workers)
     # Existing audited helper checks decoded pixels AND COCO IDs across all tasks.
     overlap = assert_no_heldout_overlap(combined, base, pixel_cache=cache)

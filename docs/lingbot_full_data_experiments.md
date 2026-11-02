@@ -104,7 +104,7 @@ old-data controls. Never selectively clean only an experimental arm.
 | --- | --- |
 | Pinned `.tar.xz` bundle | Existing `download_res_dataset.py`, tar auto-detection, checksum verification |
 | PNG/NPY paths, C1 and five palettes | Existing loader; NPY audit-only as explained above |
-| Six full configurations | `configs/experiments/lingbot_{d0,d1,p0,p1,m0,m1}.yaml` |
+| Full configurations | `configs/experiments/lingbot_{d0,d1,p0,p1}.yaml` (parent continuation); `lingbot_fresh_{baseline,plus_lingbot}.yaml` (issue #97 fresh starts, one per pool) |
 | Strict paired manifests | New `prepare_lingbot_experiments.py`; no missing-file skipping/caps/new splits |
 | Frozen identity and global batch launch | New `run_lingbot_experiment.py`; default validates/prints, `--execute` trains |
 | Source/scene/palette consumption | Per-rank `exposure-rank*-*.jsonl`, including dropped-gradient batches |
@@ -112,8 +112,8 @@ old-data controls. Never selectively clean only an experimental arm.
 | Internal overlap | Decoded RGB and COCO IDs, plus new-vs-base decoded RGB duplicate rejection |
 | External benchmark decontamination | Separate required audit; not established by internal overlap checks |
 | Standard full benchmarks | Existing paper evaluator, preflight/smoke/shard merger |
-| Custom development-set metric inference | Follow-up implementation; built-in validation is flow loss only |
-| Distance bins, off-palette diagnostics, paired/cluster bootstrap | Follow-up analysis; not automatically produced by this PR |
+| Custom development-set metric inference | `scripts/evaluate_dev_manifest.py` (frozen held-out val index, per-row training prompt, sharded, coverage-checked merge); built-in validation is flow loss only |
+| Distance bins, off-palette diagnostics, paired/cluster bootstrap | Distance bins, out-of-range share and the GT codec floor come from the dev evaluator; bootstrap remains follow-up analysis |
 | Per-source sampling weights | Not supported by current sampler; no invented YAML key is added |
 | Full GPU training readiness | Requires resource check, actual weight loading and short training smoke |
 
@@ -130,7 +130,7 @@ The release's NYU screen is partial evidence, not exhaustive decontamination.
 | --- | --- | --- | --- |
 | D0 / D1 | depth .75, replay .25 | cube_edge | old full pool / old + 50k |
 | P0 / P1 | depth .75, replay .25 | five uniformly | old full pool / old + 50k |
-| M0 / M1 | replay .10, five vision tasks .18 each | cube_edge | old six-task / new six-task |
+| M0 / M1 (#97) | replay .10, five vision tasks .18 each | cube_edge | old six-task / new six-task |
 
 Run D first, then P, then M, seed42. Repeat **both D arms** with seeds43/44 even
 for a zero/negative result. Six initial runs cost 60k optimizer steps; D replication
@@ -168,6 +168,42 @@ If 10k is inconclusive, pre-register paired20k runs with the same schedule from 
 same parent; do not only extend D1. Source-weight sweeps (25/45.1/60%) and
 scale-matched comparisons require a separately tested sampler and old-depth audit;
 do not fit source weights on NYU test or duplicate manifest rows to imitate weights.
+
+## Issue #97 fresh-start arms
+
+Issue #97 replaces the M continuation with fresh starts from two explicit
+initializations: **E**, the Qwen-Image-2.1 base with the pinned E2B parent merged
+once (its `merge_metadata.json` must name adapter `ee545bd7…`), and **Q**, the
+unmerged official base. The launcher refuses a merged snapshot as Q and an
+unmerged one as E, and `--verify-weights` hashes every transformer shard against
+`merge_metadata.json` (E) or `--weight-pins` (Q).
+
+| Arm | Init | Mode | Pool | Varied factor |
+| --- | --- | --- | --- | --- |
+| M0 / M1 | E | LoRA r32 | old / old + 50k | data |
+| Q0 / Q1 | Q | LoRA r32 | old / old + 50k | data, initialization (vs M) |
+| F-M1 | E | full DiT (FSDP2), 15k | old + 50k | `--lr` |
+| K-Q0 / K-Q1 | Q | LoRA, `--lora-rank` 64 or 128, alpha 64 | old / old + 50k | rank (r32 = Q0/Q1) |
+| R-M0 / R-M1 | E | LoRA r32, 768 | old / old + 50k | resolution (512 = M0/M1) |
+
+The fresh configs carry the #97 schedule: 20k steps, cosine with warmup 1000,
+save/validate every 2.5k, EMA warmup 500. F-M1 overrides only the steps (15k) and
+LR, so it keeps that warmup and save cadence. Each run writes
+`lingbot-launch.json` with the initialization identity and command.
+
+```bash
+python scripts/run_lingbot_experiment.py --arm F-M1 --lr 5e-6 \
+  --data-root data/lingbot_experiments --init-dir "$MERGED_E" \
+  --base-model-revision "$BASE_REV" --verify-weights --output-dir output/f-m1-lr5e-6
+
+python scripts/evaluate_dev_manifest.py index --manifest data/lingbot_experiments/full_baseline/pairs.jsonl \
+  --output dev_index_v1.json
+python scripts/evaluate_dev_manifest.py eval --manifest data/lingbot_experiments/full_baseline/pairs.jsonl \
+  --index dev_index_v1.json --lora-path output/m1/checkpoint-2500 --num-shards 8 --shard-index 0 \
+  --output-jsonl eval_dev/shard0.jsonl
+python scripts/evaluate_dev_manifest.py merge --index dev_index_v1.json --shards eval_dev/shard*.jsonl \
+  --output-json eval_dev/summary.json
+```
 
 ## Reproducible preparation and launch
 

@@ -14,7 +14,7 @@ Subcommands:
 * ``merge``: check that every index entry was scored exactly once and aggregate the sums.
 
 Depth GT is the stored cube-edge metric PNG decoded to metres at its native resolution, then given
-the dataset's own resize/centre-crop geometry with nearest sampling (resizing the RGB first would
+the dataset's own resize/centre-crop geometry with PIL-style nearest sampling (resizing the RGB first would
 blend palette colours into spurious depths). Valid GT is (0.001, 80] m and predictions are clamped
 to the same range (KITTI / ETH3D convention); a 10 m cap (NYU convention) is reported alongside, as
 are the share of predicted pixels outside the range and ``gt_floor``: the canvas-resized GT RGB
@@ -25,6 +25,7 @@ Raw metrics are primary; median-aligned metrics are structure diagnostics only.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import math
@@ -32,22 +33,19 @@ import sys
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+
+from open_vision_banana.data.manifest import read_jsonl, resolve_manifest_path  # noqa: E402
+from open_vision_banana.evaluation.results_io import write_results  # noqa: E402
+from open_vision_banana.res_bundle import sha256_file  # noqa: E402
 
 DEFAULT_COUNTS = "depth=512,semantic=256,instance=256,referring=256,generation=64"
 MAX_DEPTH, NYU_CAP = 80.0, 10.0
 DEPTH_BINS = ((0.0, 1.0), (1.0, 2.0), (2.0, 3.0), (3.0, 5.0), (5.0, 10.0), (10.0, math.inf))
 FORMAT = "ovb_dev_index_v1"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1 << 24), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def parse_counts(spec: str) -> dict[str, int]:
@@ -78,8 +76,8 @@ def row_key(row: dict) -> str:
 
 def allocate(sizes: dict[str, int], total: int) -> dict[str, int]:
     """Largest-remainder proportional allocation, capped by availability."""
-    total = min(total, sum(sizes.values()))
     pool = sum(sizes.values())
+    total = min(total, pool)
     quota = {k: total * n / pool for k, n in sizes.items()}
     take = {k: min(sizes[k], int(q)) for k, q in quota.items()}
     order = sorted(sizes, key=lambda k: (-(quota[k] - int(quota[k])), k))
@@ -165,18 +163,24 @@ def shard_entries(entries: list[dict], count: int, shard: int) -> list[dict]:
 
 
 def depth_geometry(depth, input_size: tuple[int, int], resolution: int, aspect_preserving: bool):
-    """Apply ManifestVisionDataset's val resize/centre crop to a [1, 1, H, W] metric map (nearest)."""
+    """Apply ManifestVisionDataset's val resize/centre crop to a [1, 1, H, W] metric map.
+
+    ``nearest-exact`` samples pixel centres like PIL's NEAREST, so the map lines up with the canvas.
+    """
     import torch.nn.functional as F
+
+    def resize(t, size):
+        return F.interpolate(t, size=size, mode="nearest-exact")
 
     w, h = input_size
     r = resolution
     if depth.shape[-1] != w or depth.shape[-2] != h:
-        depth = F.interpolate(depth, size=(h, w), mode="nearest")
+        depth = resize(depth, (h, w))
     if not aspect_preserving or (w, h) == (r, r) or min(w, h) <= 0:
-        return F.interpolate(depth, size=(r, r), mode="nearest")
+        return resize(depth, (r, r))
     scale = r / float(min(w, h))
     new_w, new_h = max(r, int(round(w * scale))), max(r, int(round(h * scale)))
-    depth = F.interpolate(depth, size=(new_h, new_w), mode="nearest")
+    depth = resize(depth, (new_h, new_w))
     left, top = (new_w - r) // 2, (new_h - r) // 2
     return depth[..., top : top + r, left : left + r]
 
@@ -203,20 +207,19 @@ def depth_sums(pred, gt, cap: float = MAX_DEPTH) -> dict:
         log_err=float((p.log() - g.log()).sum()),
         median_ratio=float(p.median() / g.median()),
     )
-    scale = g.median() / p.median()
-    pa = p * scale
+    pa = p * (g.median() / p.median())
     out.update(
         aligned_abs_rel=float(((pa - g).abs() / g).sum()),
         aligned_delta1=int((torch.maximum(pa / g, g / pa) < 1.25).sum()),
     )
-    image = {
+    out["per_image"] = {
         "abs_rel": out["abs_rel"] / n,
         "rmse": math.sqrt(out["sq_err"] / n),
         "delta1": out["delta1"] / n,
     }
     bins = {}
     for low, high in DEPTH_BINS:
-        m = (g >= low) & (g < high) if math.isfinite(high) else g >= low
+        m = (g >= low) & (g < high)
         k = int(m.sum())
         if k:
             bins[f"{low:g}-{high:g}"] = {
@@ -225,14 +228,7 @@ def depth_sums(pred, gt, cap: float = MAX_DEPTH) -> dict:
                 "sq_err": float((err[m] ** 2).sum()),
             }
     out["bins"] = bins
-    out["per_image"] = image
     return out
-
-
-def referring_sums(pred_mask, gt_mask) -> dict:
-    inter = int((pred_mask & gt_mask).sum())
-    union = int((pred_mask | gt_mask).sum())
-    return {"intersection": inter, "union": union, "iou": inter / union if union else 1.0}
 
 
 def semantic_sums(pred_labels, gt_labels, names: list[str]) -> dict:
@@ -249,6 +245,88 @@ def semantic_sums(pred_labels, gt_labels, names: list[str]) -> dict:
     }
 
 
+def _pooled(sums: list[dict]) -> dict | None:
+    """Pixel-weighted AbsRel / RMSE / delta1 over per-sample depth sums."""
+    sums = [m for m in sums if m.get("pixels")]
+    n = sum(m["pixels"] for m in sums)
+    if not n:
+        return None
+    return {
+        "abs_rel": sum(m["abs_rel"] for m in sums) / n,
+        "rmse": math.sqrt(sum(m["sq_err"] for m in sums) / n),
+        "delta1": sum(m["delta1"] for m in sums) / n,
+    }
+
+
+def _mean_keys(metrics: list[dict]) -> dict:
+    keys = sorted({k for m in metrics for k in m})
+    return {k: sum(m.get(k, 0.0) for m in metrics) / len(metrics) for k in keys} if metrics else {}
+
+
+def summarize_depth(ok: list[dict]) -> dict:
+    s = [r["metrics"] for r in ok if r["metrics"].get("pixels")]
+    raw = _pooled(s)
+    if raw is None:
+        return {}
+    n = sum(m["pixels"] for m in s)
+    bins = defaultdict(lambda: [0, 0.0, 0.0])
+    for m in s:
+        for name, b in m["bins"].items():
+            bins[name][0] += b["pixels"]
+            bins[name][1] += b["abs_rel"]
+            bins[name][2] += b["sq_err"]
+    ratios = sorted(m["median_ratio"] for m in s)
+    return {
+        "raw": {**raw, "log_scale_bias": sum(m["log_err"] for m in s) / n},
+        "raw_per_image_mean": _mean_keys([m["per_image"] for m in s]),
+        "median_aligned_diagnostic": {
+            "abs_rel": sum(m["aligned_abs_rel"] for m in s) / n,
+            "delta1": sum(m["aligned_delta1"] for m in s) / n,
+        },
+        "median_pred_over_gt": ratios[len(ratios) // 2],
+        "distance_bins_m": {
+            name: {"pixel_share": k / n, "abs_rel": a / k, "rmse": math.sqrt(q / k)}
+            for name, (k, a, q) in sorted(bins.items(), key=lambda kv: float(kv[0].split("-")[0]))
+        },
+        "pred_out_of_range_share": sum(m["pred_out_of_range"] for m in s) / n,
+        "raw_cap10m": _pooled([r.get("metrics_cap10", {}) for r in ok]),
+        "gt_floor": _pooled([r["gt_floor"] for r in ok]),
+    }
+
+
+def summarize_referring(ok: list[dict]) -> dict:
+    from open_vision_banana.evaluation.shards import merge_accumulator_states
+
+    return merge_accumulator_states([r["metrics"] for r in ok]).compute() if ok else {}
+
+
+def summarize_semantic(ok: list[dict]) -> dict:
+    classes = defaultdict(lambda: [0, 0])
+    for r in ok:
+        for name, (inter, union) in r["metrics"]["per_class"].items():
+            classes[name][0] += inter
+            classes[name][1] += union
+    ious = [i / u for i, u in classes.values() if u]
+    px = sum(r["metrics"]["pixels"] for r in ok)
+    return {
+        "mIoU": sum(ious) / len(ious) if ious else None,
+        "classes": len(ious),
+        "pixel_accuracy": sum(r["metrics"]["correct"] for r in ok) / px if px else None,
+    }
+
+
+SUMMARIES = {
+    "depth": summarize_depth,
+    "referring": summarize_referring,
+    "semantic": summarize_semantic,
+    "instance": lambda ok: _mean_keys([r["metrics"] for r in ok]),
+    "generation": lambda ok: {
+        "proxy": _mean_keys([r["metrics"] for r in ok]),
+        "note": "proxy only (CLIP image/text similarity); not a GenAI-Bench or human win rate",
+    },
+}
+
+
 def aggregate(records: list[dict]) -> dict:
     by_task = defaultdict(list)
     for r in records:
@@ -256,92 +334,12 @@ def aggregate(records: list[dict]) -> dict:
     out = {}
     for task, rows in sorted(by_task.items()):
         ok = [r for r in rows if r.get("status") == "ok"]
-        summary = {"samples": len(rows), "scored": len(ok), "failed": len(rows) - len(ok)}
-        if task == "depth":
-            s = [r["metrics"] for r in ok if r["metrics"].get("pixels")]
-            n = sum(m["pixels"] for m in s)
-            if n:
-                summary["raw"] = {
-                    "abs_rel": sum(m["abs_rel"] for m in s) / n,
-                    "rmse": math.sqrt(sum(m["sq_err"] for m in s) / n),
-                    "delta1": sum(m["delta1"] for m in s) / n,
-                    "log_scale_bias": sum(m["log_err"] for m in s) / n,
-                }
-                summary["raw_per_image_mean"] = {
-                    k: sum(m["per_image"][k] for m in s) / len(s)
-                    for k in ("abs_rel", "rmse", "delta1")
-                }
-                summary["median_aligned_diagnostic"] = {
-                    "abs_rel": sum(m["aligned_abs_rel"] for m in s) / n,
-                    "delta1": sum(m["aligned_delta1"] for m in s) / n,
-                }
-                ratios = sorted(m["median_ratio"] for m in s)
-                summary["median_pred_over_gt"] = ratios[len(ratios) // 2]
-                bins = defaultdict(lambda: [0, 0.0, 0.0])
-                for m in s:
-                    for name, b in m["bins"].items():
-                        bins[name][0] += b["pixels"]
-                        bins[name][1] += b["abs_rel"]
-                        bins[name][2] += b["sq_err"]
-                summary["distance_bins_m"] = {
-                    name: {"pixel_share": k / n, "abs_rel": a / k, "rmse": math.sqrt(q / k)}
-                    for name, (k, a, q) in sorted(
-                        bins.items(), key=lambda kv: float(kv[0].split("-")[0])
-                    )
-                }
-                summary["pred_out_of_range_share"] = sum(m["pred_out_of_range"] for m in s) / n
-                capped = [
-                    r["metrics_cap10"] for r in ok if r.get("metrics_cap10", {}).get("pixels")
-                ]
-                n10 = sum(m["pixels"] for m in capped)
-                if n10:
-                    summary["raw_cap10m"] = {
-                        "abs_rel": sum(m["abs_rel"] for m in capped) / n10,
-                        "rmse": math.sqrt(sum(m["sq_err"] for m in capped) / n10),
-                        "delta1": sum(m["delta1"] for m in capped) / n10,
-                    }
-                floor = [r["gt_floor"] for r in ok if r["gt_floor"].get("pixels")]
-                nf = sum(m["pixels"] for m in floor)
-                if nf:
-                    summary["gt_floor"] = {
-                        "abs_rel": sum(m["abs_rel"] for m in floor) / nf,
-                        "rmse": math.sqrt(sum(m["sq_err"] for m in floor) / nf),
-                        "delta1": sum(m["delta1"] for m in floor) / nf,
-                    }
-        elif task == "referring":
-            i = sum(r["metrics"]["intersection"] for r in ok)
-            u = sum(r["metrics"]["union"] for r in ok)
-            summary.update(
-                cIoU=i / u if u else None,
-                gIoU=sum(r["metrics"]["iou"] for r in ok) / len(ok) if ok else None,
-            )
-        elif task == "semantic":
-            classes = defaultdict(lambda: [0, 0])
-            for r in ok:
-                for name, (inter, union) in r["metrics"]["per_class"].items():
-                    classes[name][0] += inter
-                    classes[name][1] += union
-            ious = {k: i / u for k, (i, u) in classes.items() if u}
-            px = sum(r["metrics"]["pixels"] for r in ok)
-            summary.update(
-                mIoU=sum(ious.values()) / len(ious) if ious else None,
-                classes=len(ious),
-                pixel_accuracy=sum(r["metrics"]["correct"] for r in ok) / px if px else None,
-            )
-        elif task == "instance":
-            keys = sorted({k for r in ok for k in r["metrics"]})
-            summary.update(
-                {k: sum(r["metrics"].get(k, 0.0) for r in ok) / len(ok) for k in keys} if ok else {}
-            )
-        elif task == "generation":
-            keys = sorted({k for r in ok for k in r["metrics"]})
-            summary["proxy"] = (
-                {k: sum(r["metrics"][k] for r in ok) / len(ok) for k in keys} if ok else {}
-            )
-            summary["note"] = (
-                "proxy only (CLIP image/text similarity); not a GenAI-Bench or human win rate"
-            )
-        out[task] = summary
+        out[task] = {
+            "samples": len(rows),
+            "scored": len(ok),
+            "failed": len(rows) - len(ok),
+            **SUMMARIES[task](ok),
+        }
     return out
 
 
@@ -356,29 +354,117 @@ def to_pil(tensor):
     return Image.fromarray(array.round().astype("uint8"))
 
 
-def run_eval(args) -> int:
+def score_depth(ctx, sample, pred, target) -> dict:
     import numpy as np
     import torch
     from PIL import Image
 
-    from open_vision_banana.core.depth_mapper import DepthRGBMapper
+    with Image.open(sample.image_path) as source:
+        input_size = source.size
+    with Image.open(sample.target_path) as native_png:
+        native = np.asarray(native_png.convert("RGB"), np.float32) / 255.0
+    native_m = ctx.mapper.rgb_to_depth(
+        torch.from_numpy(native).permute(2, 0, 1).unsqueeze(0).to(pred.device)
+    )
+    gt = depth_geometry(native_m, input_size, ctx.resolution, ctx.aspect_preserving)
+    pred_m = ctx.mapper.rgb_to_depth(pred)
+    return {
+        "metrics": depth_sums(pred_m, gt),
+        "metrics_cap10": depth_sums(pred_m, gt, NYU_CAP),
+        "gt_floor": depth_sums(ctx.mapper.rgb_to_depth(target), gt),
+    }
+
+
+def score_referring(ctx, sample, pred, target) -> dict:
     from open_vision_banana.core.referring import decode_referring_mask, resolve_referring_encoding
-    from open_vision_banana.core.segmentation import SegmentationDecoder
+    from open_vision_banana.evaluation.referring import ReferringAccumulator
+    from open_vision_banana.evaluation.shards import accumulator_state
+
+    encoding = resolve_referring_encoding(sample.item.get("encoding"), (255, 255, 255))
+    pred_mask = decode_referring_mask(pred, encoding=encoding).squeeze(1).bool()
+    gt_mask = decode_referring_mask(target, encoding=encoding, legacy_largest_component=False)
+    accumulator = ReferringAccumulator()
+    accumulator.update(pred_mask, gt_mask.squeeze(1).bool())
+    return {"metrics": accumulator_state(accumulator)}
+
+
+def score_semantic(ctx, sample, pred, target) -> dict:
+    mapping = sample.row.get("mapping")
+    if isinstance(mapping, str):
+        mapping = ast.literal_eval(mapping)
+    cmap = {k: tuple(int(c) for c in v) for k, v in mapping.items()}
+    labels = [ctx.seg.decode_semantic(x, cmap).squeeze(1) for x in (pred, target)]
+    return {"metrics": semantic_sums(*labels, list(cmap))}
+
+
+def score_instance(ctx, sample, pred, target) -> dict:
     from open_vision_banana.evaluation.instance import evaluate_instance
+
+    background = sample.item.get("background_color")
+    if isinstance(background, str):
+        background = json.loads(background)
+    color = tuple(int(c) for c in background) if background else (0, 0, 0)
+    pred_inst, gt_inst = (
+        ctx.seg.decode_instance(x, background_color=color)[0] for x in (pred, target)
+    )
+    return {"metrics": {k: float(v) for k, v in evaluate_instance(pred_inst, gt_inst).items()}}
+
+
+def score_generation(ctx, sample, pred, target) -> dict:
+    import torch
+
+    model, processor = ctx.clip
+    inputs = processor(
+        text=[sample.item["prompt"]],
+        images=[to_pil(pred), to_pil(target)],
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+    ).to(pred.device)
+    # Projected features by hand: get_image_features returns a model output, not a tensor, on
+    # transformers 5.x.
+    with torch.no_grad():
+        vision = model.vision_model(pixel_values=inputs["pixel_values"]).pooler_output
+        text = model.text_model(
+            input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"]
+        ).pooler_output
+    image = torch.nn.functional.normalize(model.visual_projection(vision), dim=-1)
+    caption = torch.nn.functional.normalize(model.text_projection(text), dim=-1)
+    return {
+        "metrics": {
+            "clip_image_to_reference": float(image[0] @ image[1]),
+            "clip_text_score": float(image[0] @ caption[0]),
+            "reference_clip_text_score": float(image[1] @ caption[0]),
+        }
+    }
+
+
+SCORERS = {
+    "depth": score_depth,
+    "referring": score_referring,
+    "semantic": score_semantic,
+    "instance": score_instance,
+    "generation": score_generation,
+}
+
+
+def run_eval(args) -> int:
+    import torch
+
+    from open_vision_banana.core.depth_mapper import DepthRGBMapper
+    from open_vision_banana.core.segmentation import SegmentationDecoder
     from open_vision_banana.inference.pipeline import VisionBanana
     from open_vision_banana.training.trainer import ManifestVisionDataset
 
     index = load_index(args.index, args.manifest)
     entries = shard_entries(index["entries"], args.num_shards, args.shard_index)
-    done = set()
     if args.output_jsonl.exists():
         # Failed samples are retried; scored ones are not recomputed.
-        records = [
-            json.loads(line) for line in args.output_jsonl.read_text().splitlines() if line.strip()
-        ]
-        done = {r["position"] for r in records if r.get("status") == "ok"}
-    entries = [e for e in entries if e["position"] not in done]
-    tasks = {e["task"] for e in index["entries"]}
+        done = {r["position"] for r in read_jsonl(args.output_jsonl) if r.get("status") == "ok"}
+        entries = [e for e in entries if e["position"] not in done]
+    if not entries:
+        return 0
+    tasks = {e["task"] for e in entries}
     dataset = ManifestVisionDataset(
         args.manifest,
         args.resolution,
@@ -387,41 +473,47 @@ def run_eval(args) -> int:
         aspect_preserving_crop=True,
         data_root=args.manifest.parent,
     )
-    lookup = {}
-    for i, s in enumerate(dataset.samples):
-        lookup[(s["task"], str(s["image_path"]), str(s["target_path"]), s["prompt"])] = i
-    rows = {}
+    lookup = {
+        (s["task"], str(s["image_path"]), str(s["target_path"]), s["prompt"]): i
+        for i, s in enumerate(dataset.samples)
+    }
+    wanted = {e["line"] for e in entries}
     with args.manifest.open(encoding="utf-8") as stream:
-        wanted = {e["line"] for e in entries}
-        for line_no, line in enumerate(stream, 1):
-            if line_no in wanted:
-                rows[line_no] = json.loads(line)
-    from open_vision_banana.data.manifest import resolve_manifest_path
+        rows = {n: json.loads(line) for n, line in enumerate(stream, 1) if n in wanted}
 
     model = VisionBanana.from_pretrained(
         model_name=args.model_name, lora_path=args.lora_path, device="cuda", dtype=torch.bfloat16
     )
-    generator = model.generator
-    mapper = DepthRGBMapper(colormap="cube_edge")
-    seg = SegmentationDecoder()
-    clip = None
+    ctx = SimpleNamespace(
+        mapper=DepthRGBMapper(colormap="cube_edge"),
+        seg=SegmentationDecoder(),
+        resolution=args.resolution,
+        aspect_preserving=dataset.aspect_preserving_crop,
+        clip=None,
+    )
     if "generation" in tasks:
         from transformers import CLIPModel, CLIPProcessor
 
-        clip = (
+        ctx.clip = (
             CLIPModel.from_pretrained(args.clip_model).to("cuda").eval(),
             CLIPProcessor.from_pretrained(args.clip_model),
         )
+    if args.save_dir is not None:
+        args.save_dir.mkdir(parents=True, exist_ok=True)
     args.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
     with args.output_jsonl.open("a", encoding="utf-8") as out:
         for entry in entries:
             row = rows[entry["line"]]
-            image_path = resolve_manifest_path(row["input"], args.manifest)
-            target_path = resolve_manifest_path(row["target"], args.manifest)
-            key = (entry["task"], str(image_path), str(target_path), row.get("prompt", ""))
+            task = entry["task"]
+            sample = SimpleNamespace(
+                row=row,
+                image_path=resolve_manifest_path(row["input"], args.manifest),
+                target_path=resolve_manifest_path(row["target"], args.manifest),
+            )
+            key = (task, str(sample.image_path), str(sample.target_path), row.get("prompt", ""))
             record = {
                 "position": entry["position"],
-                "task": entry["task"],
+                "task": task,
                 "line": entry["line"],
                 "source": entry["source"],
             }
@@ -429,14 +521,14 @@ def run_eval(args) -> int:
             try:
                 if key not in lookup:
                     raise KeyError("index entry not found in the val dataset")
-                item = dataset[lookup[key]]
-                # [0, 1]: the generator reads a tensor without negative pixels as [0, 1], so a bright
-                # [-1, 1] image would be misread.
-                image = ((item["image"] + 1.0) / 2.0).unsqueeze(0).to("cuda")
-                target = item["target_rgb"].unsqueeze(0).to("cuda")
+                sample.item = dataset[lookup[key]]
+                # [0, 1] on purpose: generator._tensor_to_pil reads a tensor without negative pixels
+                # as [0, 1], so a bright image in the documented [-1, 1] range would be misread.
+                image = ((sample.item["image"] + 1.0) / 2.0).unsqueeze(0).to("cuda")
+                target = sample.item["target_rgb"].unsqueeze(0).to("cuda")
                 with torch.no_grad():
-                    pred = generator.generate(
-                        prompt=item["prompt"],
+                    pred = model.generator.generate(
+                        prompt=sample.item["prompt"],
                         image=image,
                         num_inference_steps=args.num_inference_steps,
                         guidance_scale=args.guidance_scale,
@@ -452,87 +544,12 @@ def run_eval(args) -> int:
                     )
                 if not torch.isfinite(pred).all():
                     raise ValueError("non-finite generator output")
-                task = entry["task"]
+                pred = pred.clamp(0, 1)
                 if args.save_dir is not None:
-                    args.save_dir.mkdir(parents=True, exist_ok=True)
-                    to_pil(pred).save(args.save_dir / f"{entry['position']:05d}_{task}_pred.png")
-                    to_pil(target).save(
-                        args.save_dir / f"{entry['position']:05d}_{task}_target.png"
-                    )
-                if task == "depth":
-                    with Image.open(image_path) as source:
-                        input_size = source.size
-                    with Image.open(target_path) as native_png:
-                        native = np.asarray(native_png.convert("RGB"), np.float32) / 255.0
-                    native_m = mapper.rgb_to_depth(
-                        torch.from_numpy(native).permute(2, 0, 1).unsqueeze(0).to("cuda")
-                    )
-                    gt = depth_geometry(
-                        native_m, input_size, args.resolution, dataset.aspect_preserving_crop
-                    )
-                    pred_m = mapper.rgb_to_depth(pred.clamp(0, 1))
-                    record["metrics"] = depth_sums(pred_m, gt)
-                    record["metrics_cap10"] = depth_sums(pred_m, gt, NYU_CAP)
-                    record["gt_floor"] = depth_sums(mapper.rgb_to_depth(target), gt)
-                elif task == "referring":
-                    encoding = resolve_referring_encoding(item.get("encoding"), (255, 255, 255))
-                    pm = (
-                        decode_referring_mask(pred.clamp(0, 1), encoding=encoding).squeeze(1).bool()
-                    )
-                    gm = (
-                        decode_referring_mask(
-                            target, encoding=encoding, legacy_largest_component=False
-                        )
-                        .squeeze(1)
-                        .bool()
-                    )
-                    record["metrics"] = referring_sums(pm, gm)
-                elif task == "semantic":
-                    mapping = row.get("mapping")
-                    if isinstance(mapping, str):
-                        import ast
-
-                        mapping = ast.literal_eval(mapping)
-                    cmap = {k: tuple(int(c) for c in v) for k, v in mapping.items()}
-                    names = list(cmap)
-                    record["metrics"] = semantic_sums(
-                        seg.decode_semantic(pred.clamp(0, 1), cmap).squeeze(1),
-                        seg.decode_semantic(target, cmap).squeeze(1),
-                        names,
-                    )
-                elif task == "instance":
-                    background = item.get("background_color")
-                    if isinstance(background, str):
-                        background = json.loads(background)
-                    color = tuple(int(c) for c in background) if background else (0, 0, 0)
-                    pi = seg.decode_instance(pred.clamp(0, 1), background_color=color)[0]
-                    gi = seg.decode_instance(target, background_color=color)[0]
-                    record["metrics"] = {k: float(v) for k, v in evaluate_instance(pi, gi).items()}
-                elif task == "generation":
-                    model_c, proc = clip
-                    inputs = proc(
-                        text=[item["prompt"]],
-                        images=[to_pil(pred), to_pil(target)],
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                    ).to("cuda")
-                    with torch.no_grad():
-                        vision = model_c.vision_model(
-                            pixel_values=inputs["pixel_values"]
-                        ).pooler_output
-                        text = model_c.text_model(
-                            input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"]
-                        ).pooler_output
-                        img = torch.nn.functional.normalize(
-                            model_c.visual_projection(vision), dim=-1
-                        )
-                        txt = torch.nn.functional.normalize(model_c.text_projection(text), dim=-1)
-                    record["metrics"] = {
-                        "clip_image_to_reference": float(img[0] @ img[1]),
-                        "clip_text_score": float(img[0] @ txt[0]),
-                        "reference_clip_text_score": float(img[1] @ txt[0]),
-                    }
+                    stem = f"{entry['position']:05d}_{task}"
+                    to_pil(pred).save(args.save_dir / f"{stem}_pred.png")
+                    to_pil(target).save(args.save_dir / f"{stem}_target.png")
+                record.update(SCORERS[task](ctx, sample, pred, target))
                 record["status"] = "ok"
             except Exception as exc:  # recorded, never silently dropped
                 record["status"] = "failed"
@@ -548,10 +565,7 @@ def run_merge(args) -> int:
     records = {}
     duplicates = 0
     for path in args.shards:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            r = json.loads(line)
+        for r in read_jsonl(path):
             if r["position"] in records and records[r["position"]].get("status") == "ok":
                 duplicates += 1
                 continue
@@ -573,8 +587,8 @@ def run_merge(args) -> int:
     }
     if args.meta:
         result["meta"] = json.loads(args.meta.read_text(encoding="utf-8"))
-    args.output_json.write_text(json.dumps(result, indent=1, default=dict) + "\n", encoding="utf-8")
-    print(json.dumps({k: v for k, v in result.items() if k != "metrics"}, default=dict))
+    write_results(args.output_json, result)
+    print(json.dumps({k: v for k, v in result.items() if k != "metrics"}))
     return 0 if result["complete"] else 3
 
 

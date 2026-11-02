@@ -17,6 +17,9 @@ Two launch families:
   K-Q0/1 Q     LoRA   old / old + LingBot         20k, ``--lora-rank`` 64 or 128 (alpha 64)
   R-M0/1 E     LoRA   old / old + LingBot         20k, resolution 768
   =====  ====  =====  ==========================  ======================================
+
+  Every fresh arm reads ``lingbot_fresh_<pool>.yaml`` (20k, warmup 1000, save every 2500); F-M1
+  overrides only the steps and LR, so it keeps that warmup and save cadence.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
@@ -39,20 +43,30 @@ from scripts.check_eval_checkpoint import check_checkpoint
 from scripts.prepare_lingbot_experiments import FINGERPRINT, REVISION
 
 LEGACY_ARMS = ("D0", "D1", "P0", "P1")
-# arm -> (initialization, training mode, data pool)
+
+
+class Arm(NamedTuple):
+    init: str  # E (merged parent) or Q (official base)
+    mode: str  # lora or full
+    pool: str  # full_baseline or full_plus_lingbot
+    rank_search: bool = False
+    resolution: int | None = None  # None: the config's
+
+
+BASE, PLUS = "full_baseline", "full_plus_lingbot"
 FRESH_ARMS = {
-    "M0": ("E", "lora", "full_baseline"),
-    "M1": ("E", "lora", "full_plus_lingbot"),
-    "Q0": ("Q", "lora", "full_baseline"),
-    "Q1": ("Q", "lora", "full_plus_lingbot"),
-    "F-M1": ("E", "full", "full_plus_lingbot"),
-    "K-Q0": ("Q", "lora", "full_baseline"),
-    "K-Q1": ("Q", "lora", "full_plus_lingbot"),
-    "R-M0": ("E", "lora", "full_baseline"),
-    "R-M1": ("E", "lora", "full_plus_lingbot"),
+    "M0": Arm("E", "lora", BASE),
+    "M1": Arm("E", "lora", PLUS),
+    "Q0": Arm("Q", "lora", BASE),
+    "Q1": Arm("Q", "lora", PLUS),
+    "F-M1": Arm("E", "full", PLUS),
+    "K-Q0": Arm("Q", "lora", BASE, rank_search=True),
+    "K-Q1": Arm("Q", "lora", PLUS, rank_search=True),
+    "R-M0": Arm("E", "lora", BASE, resolution=768),
+    "R-M1": Arm("E", "lora", PLUS, resolution=768),
 }
-LORA_STEPS, FULL_STEPS = 20000, 15000
-RANK_GRID, HIGH_RESOLUTION = (64, 128), 768
+FULL_STEPS = 15000
+RANK_GRID = (64, 128)
 # adapter_model.safetensors of khazic/ovb-e2b_cap10k_s42_20261026_1016@036bc72, checkpoint-10000_final.
 PARENT_ADAPTER_SHA256 = "ee545bd71347c3929b4bb27d63afb1a12f4754f99933fd5a663fcbd6728dac47"
 
@@ -89,6 +103,55 @@ def _check_data(data_root: Path) -> dict:
     return audit
 
 
+def _torchrun(
+    world_size: int,
+    config_path: Path,
+    pool: Path,
+    seed: int,
+    output: Path,
+    *,
+    resume: tuple[str, ...] = (),
+    extra: tuple[str, ...] = (),
+) -> list[str]:
+    if world_size not in (1, 2, 4, 8):
+        raise ValueError("Choose 1/2/4/8 processes with global batch 32")
+    return [
+        sys.executable,
+        "-m",
+        "torch.distributed.run",
+        "--standalone",
+        f"--nproc_per_node={world_size}",
+        str(ROOT / "scripts/train.py"),
+        "--config",
+        str(config_path),
+        "--pair-manifest",
+        str(pool / "pairs.jsonl"),
+        "--data-dir",
+        str(pool),
+        *resume,
+        "--grad-accum",
+        str(32 // world_size),
+        "--seed",
+        str(seed),
+        "--output-dir",
+        str(output),
+        *extra,
+    ]
+
+
+def _provenance(arm, seed, world_size, audit, config_path, command, **extra) -> dict:
+    return {
+        "arm": arm,
+        "seed": seed,
+        "world_size": world_size,
+        "global_batch": 32,
+        **extra,
+        "data_audit": audit,
+        "config_sha256": sha256_file(config_path),
+        "command": command,
+    }
+
+
 def _transformer_shards(model: Path) -> dict[str, int]:
     shards = sorted((model / "transformer").glob("*.safetensors"))
     if not shards:
@@ -115,7 +178,6 @@ def check_initialization(
         "transformer_shard_bytes": shards,
         "model_index_sha256": sha256_file(model / "model_index.json"),
     }
-    expected = dict(pins or {})
     if init == "E":
         if not metadata_path.is_file():
             raise ValueError("E initialization needs a merged snapshot with merge_metadata.json")
@@ -127,7 +189,6 @@ def check_initialization(
         merged = meta.get("transformer_shards") or {}
         if set(merged) != set(shards):
             raise ValueError("Merged transformer shards differ from merge_metadata.json")
-        expected = {**merged, **expected}
         record.update(
             merged=True,
             parent_adapter_sha256=PARENT_ADAPTER_SHA256,
@@ -138,9 +199,11 @@ def check_initialization(
             raise ValueError(
                 "Q initialization must be the unmerged official base, not a merged snapshot"
             )
+        merged = {}
         record.update(merged=False, parent_adapter_sha256=None)
     else:
         raise ValueError("init must be E or Q")
+    expected = {**merged, **(pins or {})}
     if expected and set(expected) != set(shards):
         raise ValueError("Pinned transformer shards differ from the snapshot")
     if verify_weights:
@@ -169,74 +232,53 @@ def build_fresh_command(
     weight_pins: dict[str, str] | None = None,
 ) -> tuple[list[str], dict]:
     """Issue #97 arms: a fresh LoRA adapter or full DiT training from the E or Q initialization."""
-    if world_size not in (1, 2, 4, 8):
-        raise ValueError("Choose 1/2/4/8 processes with global batch 32")
     if arm not in FRESH_ARMS:
         raise ValueError("Unknown experiment arm")
-    init, mode, pool_name = FRESH_ARMS[arm]
-    if (lr is not None) != (arm == "F-M1"):
+    spec = FRESH_ARMS[arm]
+    if (lr is not None) != (spec.mode == "full"):
         raise ValueError("--lr is required for F-M1 (the LR search) and fixed for every other arm")
     if lr is not None and lr <= 0:
         raise ValueError("--lr must be positive")
-    if (lora_rank is not None) != arm.startswith("K-"):
+    if (lora_rank is not None) != spec.rank_search:
         raise ValueError("--lora-rank is required for K-Q0/K-Q1 and fixed at 32 elsewhere")
     if lora_rank is not None and lora_rank not in RANK_GRID:
         raise ValueError(f"The rank grid is {RANK_GRID}; rank 32 reuses Q0/Q1")
     _check_output(output)
     audit = _check_data(data_root)
     identity = check_initialization(
-        init, init_dir, base_revision, verify_weights=verify_weights, pins=weight_pins
+        spec.init, init_dir, base_revision, verify_weights=verify_weights, pins=weight_pins
     )
-    pool = data_root / pool_name
-    config_path = ROOT / f"configs/experiments/lingbot_m{pool_name == 'full_plus_lingbot':d}.yaml"
+    config_path = ROOT / f"configs/experiments/lingbot_fresh_{spec.pool.removeprefix('full_')}.yaml"
     config = load_config(config_path=config_path)
-    steps = FULL_STEPS if mode == "full" else LORA_STEPS
-    overrides = ["--steps", str(steps)]
-    if mode == "full":
-        overrides += ["--train-mode", "full", "--lr", repr(lr)]
+    overrides = []
+    if spec.mode == "full":
+        overrides += ["--train-mode", "full", "--steps", str(FULL_STEPS), "--lr", repr(lr)]
     if lora_rank is not None:
         overrides += ["--lora-rank", str(lora_rank)]
-    if arm.startswith("R-"):
-        overrides += ["--resolution", str(HIGH_RESOLUTION)]
-    command = [
-        sys.executable,
-        "-m",
-        "torch.distributed.run",
-        "--standalone",
-        f"--nproc_per_node={world_size}",
-        str(ROOT / "scripts/train.py"),
-        "--config",
-        str(config_path),
-        "--pair-manifest",
-        str(pool / "pairs.jsonl"),
-        "--data-dir",
-        str(pool),
-        "--grad-accum",
-        str(32 // world_size),
-        "--seed",
-        str(seed),
-        "--output-dir",
-        str(output),
-        *overrides,
-    ]
-    provenance = {
-        "arm": arm,
-        "issue": 97,
-        "mode": mode,
-        "pool": pool_name,
-        "seed": seed,
-        "world_size": world_size,
-        "global_batch": 32,
-        "steps": steps,
-        "lr": lr if lr is not None else config.lr,
-        "lora_rank": None if mode == "full" else (lora_rank or config.lora_rank),
-        "lora_alpha": None if mode == "full" else config.lora_alpha,
-        "resolution": HIGH_RESOLUTION if arm.startswith("R-") else config.resolution,
-        "initialization": identity,
-        "data_audit": audit,
-        "config_sha256": sha256_file(config_path),
-        "command": command,
-    }
+    if spec.resolution is not None:
+        overrides += ["--resolution", str(spec.resolution)]
+    command = _torchrun(
+        world_size, config_path, data_root / spec.pool, seed, output, extra=tuple(overrides)
+    )
+    lora = spec.mode == "lora"
+    provenance = _provenance(
+        arm,
+        seed,
+        world_size,
+        audit,
+        config_path,
+        command,
+        issue=97,
+        family="fresh",
+        mode=spec.mode,
+        pool=spec.pool,
+        steps=FULL_STEPS if not lora else config.steps,
+        lr=lr if lr is not None else config.lr,
+        lora_rank=(lora_rank or config.lora_rank) if lora else None,
+        lora_alpha=config.lora_alpha if lora else None,
+        resolution=spec.resolution or config.resolution,
+        initialization=identity,
+    )
     return command, provenance
 
 
@@ -252,8 +294,6 @@ def build_command(
     world_size: int = 8,
     seed: int = 42,
 ) -> tuple[list[str], dict]:
-    if world_size not in (1, 2, 4, 8):
-        raise ValueError("Choose 1/2/4/8 processes with global batch 32")
     if arm not in LEGACY_ARMS:
         raise ValueError("Unknown parent-continuation arm")
     _check_output(output)
@@ -272,44 +312,28 @@ def build_command(
         or set(adapter.get("target_modules", [])) != set(config.lora_targets)
     ):
         raise ValueError("Parent adapter architecture differs from the experiment")
-    pool = data_root / ("full_plus_lingbot" if arm.endswith("1") else "full_baseline")
-    command = [
-        sys.executable,
-        "-m",
-        "torch.distributed.run",
-        "--standalone",
-        f"--nproc_per_node={world_size}",
-        str(ROOT / "scripts/train.py"),
-        "--config",
-        str(config_path),
-        "--pair-manifest",
-        str(pool / "pairs.jsonl"),
-        "--data-dir",
-        str(pool),
-        "--resume",
-        str(parent),
-        "--resume-weights-only",
-        "--grad-accum",
-        str(32 // world_size),
-        "--seed",
-        str(seed),
-        "--output-dir",
-        str(output),
-    ]
-    provenance = {
-        "arm": arm,
-        "seed": seed,
-        "world_size": world_size,
-        "global_batch": 32,
-        "parent_lora_pt_sha256": parent_sha256,
-        "data_audit": audit,
-        "config_sha256": sha256_file(config_path),
-        "command": command,
-        "base_model_revision": base_revision,
-        "base_model_dir": str(base_model),
-        "base_model_index_sha256": sha256_file(base_model / "model_index.json"),
-        "base_integrity_scope": "index hashed here; weights must be verified by snapshot preparation",
-    }
+    pool = data_root / (PLUS if arm.endswith("1") else BASE)
+    command = _torchrun(
+        world_size,
+        config_path,
+        pool,
+        seed,
+        output,
+        resume=("--resume", str(parent), "--resume-weights-only"),
+    )
+    provenance = _provenance(
+        arm,
+        seed,
+        world_size,
+        audit,
+        config_path,
+        command,
+        parent_lora_pt_sha256=parent_sha256,
+        base_model_revision=base_revision,
+        base_model_dir=str(base_model),
+        base_model_index_sha256=sha256_file(base_model / "model_index.json"),
+        base_integrity_scope="index hashed here; weights must be verified by snapshot preparation",
+    )
     return command, provenance
 
 
@@ -333,20 +357,21 @@ def main():
     fresh.add_argument("--verify-weights", action="store_true", help="hash every transformer shard")
     fresh.add_argument("--weight-pins", type=Path, help="JSON {shard file name: sha256}")
     a = p.parse_args()
+    common = dict(world_size=a.world_size, seed=a.seed)
+    data_root, output = a.data_root.resolve(), a.output_dir.resolve()
     if a.arm in LEGACY_ARMS:
         if not (a.parent and a.parent_sha256 and a.base_model_dir):
             p.error("D/P arms need --parent, --parent-sha256 and --base-model-dir")
         model = a.base_model_dir.resolve()
         command, provenance = build_command(
             a.arm,
-            a.data_root.resolve(),
+            data_root,
             a.parent.resolve(),
             a.parent_sha256,
-            a.output_dir.resolve(),
+            output,
             base_model=model,
             base_revision=a.base_model_revision,
-            world_size=a.world_size,
-            seed=a.seed,
+            **common,
         )
     else:
         if not a.init_dir or a.parent or a.base_model_dir:
@@ -354,14 +379,13 @@ def main():
         model = a.init_dir.resolve()
         command, provenance = build_fresh_command(
             a.arm,
-            a.data_root.resolve(),
-            a.output_dir.resolve(),
+            data_root,
+            output,
             init_dir=model,
             base_revision=a.base_model_revision,
             lr=a.lr,
             lora_rank=a.lora_rank,
-            world_size=a.world_size,
-            seed=a.seed,
+            **common,
             verify_weights=a.verify_weights,
             weight_pins=json.loads(a.weight_pins.read_text()) if a.weight_pins else None,
         )

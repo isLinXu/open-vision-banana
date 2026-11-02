@@ -1,4 +1,4 @@
-# Issue #97 M/Q/F/K/R arms (fresh start from E or Q); launch with scripts/run_lingbot_experiment.py.
+# Issue #97 fresh-start arms (M/Q/F/K/R) on the pool named by this file; launch with scripts/run_lingbot_experiment.py.
 model:
   name: qwen-image-2.1
   dtype: bfloat16
@@ -37,8 +37,8 @@ data:
   semantic_color_remap_prob: 0.5
   aspect_preserving_crop: true
   num_workers: 4
-  dir: data/full_baseline
-  pair_manifest: data/full_baseline/pairs.jsonl
+  dir: data/full_plus_lingbot
+  pair_manifest: data/full_plus_lingbot/pairs.jsonl
   max_samples_per_task: null
 training:
   steps: 20000
@@ -80,7 +80,7 @@ ema:
   decay: 0.9999
   warmup_steps: 500
 checkpoint:
-  output_dir: output/lingbot_m0_s42
+  output_dir: output/lingbot_fresh_plus_lingbot_s42
   save_every: 2500
   eval_every: 2500
   log_every: 50
