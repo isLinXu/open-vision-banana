@@ -1,0 +1,91 @@
+# Full-pool LingBot ablation; use scripts/run_lingbot_experiment.py.
+model:
+  name: qwen-image-2.1
+  dtype: bfloat16
+  resolution: 512
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+  - to_q
+  - to_k
+  - to_v
+  - to_out.0
+  - img_mlp.proj
+  - img_mlp.gate_layer
+  - img_mlp.out
+data:
+  tasks:
+  - depth
+  - normal
+  - semantic
+  - instance
+  - referring
+  - generation
+  task_sampling: uniform
+  task_sampling_weights: {}
+  vision_ratio: 0.9
+  depth_curve: metric_power
+  depth_colormaps:
+  - cube_edge
+  semantic_prompt_styles:
+  - json_named
+  - json_tuple
+  - natural
+  - hex
+  semantic_color_remap_prob: 0.5
+  aspect_preserving_crop: true
+  num_workers: 4
+  dir: data/full_plus_lingbot
+  pair_manifest: data/full_plus_lingbot/pairs.jsonl
+  max_samples_per_task: null
+training:
+  steps: 10000
+  batch_size: 1
+  gradient_accumulation: 4
+  lr: 3.0e-05
+  max_grad_norm: 1.0
+  drop_grad_norm: 10.0
+  seed: 42
+  gradient_checkpointing: true
+optimizer:
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-08
+scheduler:
+  type: cosine
+  warmup_steps: 500
+validation:
+  max_samples_per_task: 40
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: false
+  cfg_dropout_rate: 0.05
+loss:
+  task_loss_weights:
+    depth: 1.0
+    normal: 1.0
+    semantic: 1.0
+    instance: 1.0
+    referring: 1.0
+  normal_angular_loss_weight: 0.0
+  depth_edge_aux_weight: 0.0
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+checkpoint:
+  output_dir: output/lingbot_m1_s42
+  save_every: 2000
+  eval_every: 2000
+  log_every: 50
+  resume_weights_only: true
+wandb:
+  enabled: false
+  project: open-vision-banana
+device: cuda
