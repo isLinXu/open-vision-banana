@@ -430,7 +430,9 @@ def run_eval(args) -> int:
                 if key not in lookup:
                     raise KeyError("index entry not found in the val dataset")
                 item = dataset[lookup[key]]
-                image = item["image"].unsqueeze(0).to("cuda")
+                # [0, 1]: the generator reads a tensor without negative pixels as [0, 1], so a bright
+                # [-1, 1] image would be misread.
+                image = ((item["image"] + 1.0) / 2.0).unsqueeze(0).to("cuda")
                 target = item["target_rgb"].unsqueeze(0).to("cuda")
                 with torch.no_grad():
                     pred = generator.generate(
@@ -451,6 +453,12 @@ def run_eval(args) -> int:
                 if not torch.isfinite(pred).all():
                     raise ValueError("non-finite generator output")
                 task = entry["task"]
+                if args.save_dir is not None:
+                    args.save_dir.mkdir(parents=True, exist_ok=True)
+                    to_pil(pred).save(args.save_dir / f"{entry['position']:05d}_{task}_pred.png")
+                    to_pil(target).save(
+                        args.save_dir / f"{entry['position']:05d}_{task}_target.png"
+                    )
                 if task == "depth":
                     with Image.open(image_path) as source:
                         input_size = source.size
@@ -510,16 +518,16 @@ def run_eval(args) -> int:
                         truncation=True,
                     ).to("cuda")
                     with torch.no_grad():
+                        vision = model_c.vision_model(
+                            pixel_values=inputs["pixel_values"]
+                        ).pooler_output
+                        text = model_c.text_model(
+                            input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"]
+                        ).pooler_output
                         img = torch.nn.functional.normalize(
-                            model_c.get_image_features(pixel_values=inputs["pixel_values"]), dim=-1
+                            model_c.visual_projection(vision), dim=-1
                         )
-                        txt = torch.nn.functional.normalize(
-                            model_c.get_text_features(
-                                input_ids=inputs["input_ids"],
-                                attention_mask=inputs["attention_mask"],
-                            ),
-                            dim=-1,
-                        )
+                        txt = torch.nn.functional.normalize(model_c.text_projection(text), dim=-1)
                     record["metrics"] = {
                         "clip_image_to_reference": float(img[0] @ img[1]),
                         "clip_text_score": float(img[0] @ txt[0]),
@@ -594,6 +602,9 @@ def main(argv=None) -> int:
     e.add_argument("--shard-index", type=int, default=0)
     e.add_argument("--clip-model", default="openai/clip-vit-large-patch14")
     e.add_argument("--output-jsonl", type=Path, required=True)
+    e.add_argument(
+        "--save-dir", type=Path, help="also write each prediction and its canvas target as PNG"
+    )
     m = sub.add_parser("merge")
     m.add_argument("--index", type=Path, required=True)
     m.add_argument("--shards", type=Path, nargs="+", required=True)
