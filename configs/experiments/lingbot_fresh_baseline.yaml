@@ -1,4 +1,4 @@
-# Full-pool LingBot ablation; use scripts/run_lingbot_experiment.py.
+# Issue #97 fresh-start arms (M/Q/F/K/R) on the pool named by this file; launch with scripts/run_lingbot_experiment.py.
 model:
   name: qwen-image-2.1
   dtype: bfloat16
@@ -41,7 +41,7 @@ data:
   pair_manifest: data/full_baseline/pairs.jsonl
   max_samples_per_task: null
 training:
-  steps: 10000
+  steps: 20000
   batch_size: 1
   gradient_accumulation: 4
   lr: 3.0e-05
@@ -56,7 +56,7 @@ optimizer:
   eps: 1.0e-08
 scheduler:
   type: cosine
-  warmup_steps: 500
+  warmup_steps: 1000
 validation:
   max_samples_per_task: 40
 flow:
@@ -80,9 +80,9 @@ ema:
   decay: 0.9999
   warmup_steps: 500
 checkpoint:
-  output_dir: output/lingbot_m0_s42
-  save_every: 2000
-  eval_every: 2000
+  output_dir: output/lingbot_fresh_baseline_s42
+  save_every: 2500
+  eval_every: 2500
   log_every: 50
   resume_weights_only: true
 wandb:

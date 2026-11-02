@@ -48,16 +48,27 @@ def coco_ids(row: dict) -> set[int]:
     return {i for i in ids if i is not None}
 
 
-def assert_no_heldout_overlap(rows: list[dict], manifest: Path) -> dict:
-    """Check actual pixels across all tasks; metadata hashes alone are insufficient."""
-    cache: dict[Path, str] = {}
+def decoded_identity(path: str | Path) -> str:
+    """Identity of an image's decoded RGB pixels, the held-out overlap key."""
+    with Image.open(path) as image:
+        return _pixels(image.convert("RGB"))
+
+
+def assert_no_heldout_overlap(
+    rows: list[dict], manifest: Path, pixel_cache: dict[Path, str] | None = None
+) -> dict:
+    """Check actual pixels across all tasks; metadata hashes alone are insufficient.
+
+    ``pixel_cache`` maps resolved input paths to decoded-RGB identities already computed by the
+    caller; missing paths are decoded here.
+    """
+    cache: dict[Path, str] = dict(pixel_cache or {})
     identities: dict[str, set[str]] = {"train": set(), "heldout": set()}
     image_ids: dict[str, set[int]] = {"train": set(), "heldout": set()}
     for row in rows:
         path = resolve_manifest_path(row["input"], manifest).resolve()
         if path not in cache:
-            with Image.open(path) as image:
-                cache[path] = _pixels(image.convert("RGB"))
+            cache[path] = decoded_identity(path)
         group = "train" if row["split"] == "train" else "heldout"
         identities[group].add(cache[path])
         image_ids[group].update(coco_ids(row))

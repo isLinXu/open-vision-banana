@@ -1,6 +1,9 @@
 """Fail-closed dataset preparation, paired configs, and consumed-sample accounting."""
 
+import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +16,7 @@ from open_vision_banana.training.config import load_config
 from open_vision_banana.training.exposure import ExposureAudit
 from open_vision_banana.training.trainer import ManifestVisionDataset, _collate_fn
 from scripts import prepare_lingbot_experiments as prep
+from scripts import run_lingbot_experiment as run
 from scripts.run_lingbot_experiment import build_command
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,24 +184,29 @@ def test_audit_no_rng_effect_and_resume_is_separate(tmp_path):
     assert ExposureAudit(tmp_path, 0, 1).path != a.path
 
 
-def test_configs_are_paired():
-    for prefix in "DPM":
-        a, b = [
-            load_config(config_path=ROOT / f"configs/experiments/lingbot_{prefix.lower()}{i}.yaml")
-            for i in (0, 1)
-        ]
-        assert a.steps == b.steps == 10000
-        assert a.batch_size * a.grad_accum * 8 == 32
-        assert a.save_every == a.eval_every == 2000 and a.max_samples_per_task is None
-        da, db = a.to_dict(), b.to_dict()
-        for key in ("data_dir", "pair_manifest", "output_dir"):
-            da.pop(key)
-            db.pop(key)
-        assert da == db
+@pytest.mark.parametrize(
+    "names, steps, every, warmup",
+    [
+        (("d0", "d1"), 10000, 2000, 500),
+        (("p0", "p1"), 10000, 2000, 500),
+        (("fresh_baseline", "fresh_plus_lingbot"), 20000, 2500, 1000),
+    ],
+)
+def test_configs_are_paired(names, steps, every, warmup):
+    a, b = [load_config(config_path=ROOT / f"configs/experiments/lingbot_{n}.yaml") for n in names]
+    assert a.steps == b.steps == steps
+    assert a.warmup_steps == b.warmup_steps == warmup and a.ema_warmup == 500
+    assert a.batch_size * a.grad_accum * 8 == 32
+    assert a.save_every == a.eval_every == every and a.max_samples_per_task is None
+    da, db = a.to_dict(), b.to_dict()
+    for key in ("data_dir", "pair_manifest", "output_dir"):
+        da.pop(key)
+        db.pop(key)
+    assert da == db
 
 
-def test_launcher_integrity_and_accumulation(data, tmp_path):
-    prepare(data)
+def legacy_parent(tmp_path):
+    """A pinned-parent checkpoint and a base snapshot accepted by the D/P launcher."""
     parent = tmp_path / "parent"
     (parent / "lora_adapter").mkdir(parents=True)
     config = load_config(config_path=ROOT / "configs/experiments/lingbot_d0.yaml")
@@ -210,10 +219,23 @@ def test_launcher_integrity_and_accumulation(data, tmp_path):
     model = tmp_path / "model"
     model.mkdir()
     dump(model / "model_index.json", {})
+    return parent, model
+
+
+def test_launcher_integrity_and_accumulation(data, tmp_path):
+    prepare(data)
+    parent, model = legacy_parent(tmp_path)
     kwargs = dict(base_model=model, base_revision="a" * 40, world_size=4)
     command, audit = build_command(
         "D1", data[2], parent, sha256_file(parent / "lora.pt"), tmp_path / "run", **kwargs
     )
+    resume = command.index("--resume")
+    assert command[resume : resume + 4] == [
+        "--resume",
+        str(parent),
+        "--resume-weights-only",
+        "--grad-accum",
+    ]
     assert command[command.index("--grad-accum") + 1] == "8"
     assert audit["global_batch"] == 32 and not (tmp_path / "run").exists()
     (data[2] / "full_baseline/pairs.jsonl").write_text("changed")
@@ -221,3 +243,319 @@ def test_launcher_integrity_and_accumulation(data, tmp_path):
         build_command(
             "D1", data[2], parent, sha256_file(parent / "lora.pt"), tmp_path / "run", **kwargs
         )
+
+
+def test_prepare_keeps_test_split_and_parallel_hashes_match(data):
+    base, ling, output = data
+    rows = [json.loads(line) for line in base.read_text().splitlines()]
+    rows.append(dict(rows[-1], split="test"))
+    image = base.parent / "held-out-test.png"
+    Image.new("RGB", (8, 8), (1, 2, 3)).save(image)
+    rows[-1]["input"] = rows[-1]["target"] = image.name
+    jsonl(base, rows)
+    report = prep.prepare(
+        base, ling, output, sha256_file(base), depth_rows=1, replay_rows=1, workers=2
+    )
+    counts = report["manifests"]["full_baseline"]["task_split_counts"]
+    assert counts[f"{rows[-1]['task']}/test"] == 1
+    paths = [base.parent / r["input"] for r in rows]
+    assert prep.pixel_hashes(paths, 2) == prep.pixel_hashes(paths, 1)
+
+
+def test_prepare_rejects_unknown_split(data):
+    base, ling, output = data
+    rows = [json.loads(line) for line in base.read_text().splitlines()]
+    rows[0]["split"] = "dev"
+    jsonl(base, rows)
+    with pytest.raises(ValueError, match="task/split"):
+        prep.prepare(base, ling, output, sha256_file(base), depth_rows=1, replay_rows=1)
+
+
+WEIGHTS = b"weights"
+
+
+def snapshot(root, *, merged=None, shard=True):
+    (root / "transformer").mkdir(parents=True)
+    dump(root / "model_index.json", {})
+    if shard:
+        (root / "transformer/shard-1.safetensors").write_bytes(WEIGHTS)
+    if merged is not None:
+        dump(root / "merge_metadata.json", merged)
+    return root
+
+
+def merged_metadata(**overrides):
+    meta = dict(
+        adapter_sha256=run.PARENT_ADAPTER_SHA256,
+        base_revision="a" * 40 + " (transformer shard hashes checked)",
+        transformer_shards={"shard-1.safetensors": hashlib.sha256(WEIGHTS).hexdigest()},
+    )
+    return {**meta, **overrides}
+
+
+@pytest.fixture
+def snapshots(tmp_path):
+    return snapshot(tmp_path / "E", merged=merged_metadata()), snapshot(tmp_path / "Q")
+
+
+@pytest.mark.parametrize(
+    "arm, kwargs, expect",
+    [
+        (
+            "M0",
+            {},
+            dict(pool="full_baseline", mode="lora", init="E", steps=20000, rank=32, res=512),
+        ),
+        (
+            "M1",
+            {},
+            dict(pool="full_plus_lingbot", mode="lora", init="E", steps=20000, rank=32, res=512),
+        ),
+        (
+            "Q0",
+            {},
+            dict(pool="full_baseline", mode="lora", init="Q", steps=20000, rank=32, res=512),
+        ),
+        (
+            "Q1",
+            {},
+            dict(pool="full_plus_lingbot", mode="lora", init="Q", steps=20000, rank=32, res=512),
+        ),
+        (
+            "F-M1",
+            {"lr": 5e-6},
+            dict(pool="full_plus_lingbot", mode="full", init="E", steps=15000, rank=None, res=512),
+        ),
+        (
+            "K-Q0",
+            {"lora_rank": 64},
+            dict(pool="full_baseline", mode="lora", init="Q", steps=20000, rank=64, res=512),
+        ),
+        (
+            "K-Q1",
+            {"lora_rank": 128},
+            dict(pool="full_plus_lingbot", mode="lora", init="Q", steps=20000, rank=128, res=512),
+        ),
+        (
+            "R-M0",
+            {},
+            dict(pool="full_baseline", mode="lora", init="E", steps=20000, rank=32, res=768),
+        ),
+        (
+            "R-M1",
+            {},
+            dict(pool="full_plus_lingbot", mode="lora", init="E", steps=20000, rank=32, res=768),
+        ),
+    ],
+)
+def test_fresh_arms(data, tmp_path, snapshots, arm, kwargs, expect):
+    prepare(data)
+    init_dir = snapshots[0] if expect["init"] == "E" else snapshots[1]
+    command, audit = run.build_fresh_command(
+        arm,
+        data[2],
+        tmp_path / "run",
+        init_dir=init_dir,
+        base_revision="a" * 40,
+        verify_weights=True,
+        **kwargs,
+    )
+    flag = lambda name: command[command.index(name) + 1] if name in command else None  # noqa: E731
+    assert "--resume" not in command and "--resume-weights-only" not in command
+    assert flag("--pair-manifest").endswith(f"{expect['pool']}/pairs.jsonl")
+    assert flag("--steps") == ("15000" if expect["mode"] == "full" else None)
+    assert audit["steps"] == expect["steps"] and flag("--grad-accum") == "4"
+    assert flag("--config").endswith(f"lingbot_fresh_{expect['pool'].removeprefix('full_')}.yaml")
+    assert audit["family"] == "fresh"
+    assert flag("--train-mode") == ("full" if expect["mode"] == "full" else None)
+    assert flag("--lr") == (repr(kwargs["lr"]) if "lr" in kwargs else None)
+    assert flag("--lora-rank") == (str(kwargs["lora_rank"]) if "lora_rank" in kwargs else None)
+    assert flag("--resolution") == ("768" if expect["res"] == 768 else None)
+    assert audit["mode"] == expect["mode"] and audit["pool"] == expect["pool"]
+    assert audit["lora_rank"] == expect["rank"] and audit["resolution"] == expect["res"]
+    assert audit["initialization"]["init_source"] == expect["init"]
+    assert audit["initialization"]["merged"] is (expect["init"] == "E")
+    check = audit["initialization"]["weights_check"]
+    assert check == (
+        "sha256 against pins"
+        if expect["init"] == "E"
+        else "sha256 recorded, no reference to compare (pass --weight-pins)"
+    )
+    assert audit["global_batch"] == 32 and not (tmp_path / "run").exists()
+
+
+@pytest.mark.parametrize(
+    "arm, kwargs, match",
+    [
+        ("M1", {"lr": 1e-5}, "--lr is required for F-M1"),
+        ("F-M1", {}, "--lr is required for F-M1"),
+        ("F-M1", {"lr": 0.0}, "must be positive"),
+        ("Q0", {"lora_rank": 64}, "--lora-rank is required"),
+        ("K-Q1", {}, "--lora-rank is required"),
+        ("K-Q1", {"lora_rank": 32}, "rank grid"),
+        ("X1", {}, "Unknown experiment arm"),
+        ("M1", {"world_size": 3}, "global batch 32"),
+    ],
+)
+def test_fresh_arm_arguments(data, tmp_path, snapshots, arm, kwargs, match):
+    prepare(data)
+    with pytest.raises(ValueError, match=match):
+        run.build_fresh_command(
+            arm, data[2], tmp_path / "run", init_dir=snapshots[0], base_revision="a" * 40, **kwargs
+        )
+
+
+def test_initializations_cannot_be_swapped(tmp_path, snapshots):
+    e_dir, q_dir = snapshots
+    with pytest.raises(ValueError, match="needs a merged snapshot"):
+        run.check_initialization("E", q_dir, "a" * 40)
+    with pytest.raises(ValueError, match="unmerged official base"):
+        run.check_initialization("Q", e_dir, "a" * 40)
+    with pytest.raises(ValueError, match="E or Q"):
+        run.check_initialization("Z", q_dir, "a" * 40)
+    assert run.check_initialization("Q", q_dir, "a" * 40)["weights_check"].startswith("sizes")
+
+
+@pytest.mark.parametrize(
+    "meta, match",
+    [
+        (dict(adapter_sha256="0" * 64), "pinned E2B parent"),
+        (dict(base_revision="b" * 40), "different base revision"),
+        (dict(transformer_shards={"other.safetensors": "0"}), "differ from merge_metadata"),
+        (dict(transformer_shards={"shard-1.safetensors": "0" * 64}), "hashes differ"),
+    ],
+)
+def test_merged_snapshot_identity(tmp_path, meta, match):
+    model = snapshot(tmp_path / "E", merged=merged_metadata(**meta))
+    with pytest.raises(ValueError, match=match):
+        run.check_initialization("E", model, "a" * 40, verify_weights=True)
+
+
+def test_weight_pins_and_shards(tmp_path, snapshots):
+    _, q_dir = snapshots
+    good = {"shard-1.safetensors": sha256_file(q_dir / "transformer/shard-1.safetensors")}
+    record = run.check_initialization("Q", q_dir, "a" * 40, verify_weights=True, pins=good)
+    assert record["transformer_shard_sha256"] == good
+    with pytest.raises(ValueError, match="hashes differ"):
+        run.check_initialization(
+            "Q", q_dir, "a" * 40, verify_weights=True, pins={"shard-1.safetensors": "0"}
+        )
+    with pytest.raises(ValueError, match="Pinned transformer shards differ"):
+        run.check_initialization("Q", q_dir, "a" * 40, pins={"x.safetensors": "0"})
+    empty = snapshot(tmp_path / "empty", shard=False)
+    with pytest.raises(ValueError, match="No transformer shards"):
+        run.check_initialization("Q", empty, "a" * 40)
+
+
+def test_legacy_launcher_rejects_fresh_arms(data, tmp_path):
+    with pytest.raises(ValueError, match="parent-continuation"):
+        build_command(
+            "M1",
+            data[2],
+            tmp_path,
+            "0",
+            tmp_path / "run",
+            base_model=tmp_path,
+            base_revision="a" * 40,
+        )
+
+
+def test_cli_fresh_arm_prints_and_executes(data, tmp_path, snapshots, monkeypatch, capsys):
+    prepare(data)
+    calls = []
+    monkeypatch.setattr(run.subprocess, "run", lambda cmd, **kw: calls.append((cmd, kw)))
+    pins = tmp_path / "pins.json"
+    dump(
+        pins, {"shard-1.safetensors": sha256_file(snapshots[1] / "transformer/shard-1.safetensors")}
+    )
+    out = tmp_path / "run"
+    argv = [
+        "run",
+        "--arm",
+        "K-Q1",
+        "--lora-rank",
+        "64",
+        "--data-root",
+        str(data[2]),
+        "--output-dir",
+        str(out),
+        "--base-model-revision",
+        "a" * 40,
+        "--init-dir",
+        str(snapshots[1]),
+        "--weight-pins",
+        str(pins),
+        "--verify-weights",
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    run.main()
+    assert "--lora-rank 64" in capsys.readouterr().out and not calls and not out.exists()
+    monkeypatch.setattr(sys, "argv", [*argv, "--execute"])
+    run.main()
+    ((command, kwargs),) = calls
+    launch = json.loads((out / "lingbot-launch.json").read_text())
+    assert launch["arm"] == "K-Q1" and launch["initialization"]["init_source"] == "Q"
+    assert kwargs["env"]["OPEN_VISION_BANANA_MODEL_PATH"] == str(snapshots[1].resolve())
+    assert kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0] == str(ROOT / "src")
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        (["--arm", "M1"], "take --init-dir"),
+        (["--arm", "M1", "--init-dir", "x", "--parent", "p"], "never a parent adapter"),
+        (["--arm", "D1"], "need --parent"),
+    ],
+)
+def test_cli_rejects_mixed_families(tmp_path, monkeypatch, capsys, extra, message):
+    argv = [
+        "run",
+        "--data-root",
+        str(tmp_path),
+        "--output-dir",
+        str(tmp_path / "o"),
+        "--base-model-revision",
+        "a" * 40,
+        *extra,
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        run.main()
+    assert message in capsys.readouterr().err
+
+
+def test_cli_legacy_arm_prints(data, tmp_path, monkeypatch, capsys):
+    prepare(data)
+    parent, model = legacy_parent(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run",
+            "--arm",
+            "D0",
+            "--data-root",
+            str(data[2]),
+            "--output-dir",
+            str(tmp_path / "run"),
+            "--base-model-revision",
+            "a" * 40,
+            "--parent",
+            str(parent),
+            "--parent-sha256",
+            sha256_file(parent / "lora.pt"),
+            "--base-model-dir",
+            str(model),
+        ],
+    )
+    run.main()
+    assert "--resume-weights-only" in capsys.readouterr().out
+
+
+def test_e_pins_cannot_override_merge_metadata(snapshots):
+    e_dir, _ = snapshots
+    with pytest.raises(ValueError, match="Pins disagree"):
+        run.check_initialization("E", e_dir, "a" * 40, pins={"shard-1.safetensors": "0" * 64})
+    same = {"shard-1.safetensors": hashlib.sha256(WEIGHTS).hexdigest()}
+    record = run.check_initialization("E", e_dir, "a" * 40, verify_weights=True, pins=same)
+    assert record["weights_check"] == "sha256 against pins"
