@@ -220,6 +220,8 @@ python scripts/infer_sana_512.py \
 
 For supervised referring expression segmentation, see the [RES data and evaluation guide](docs/res_data.md): validated RefCOCO-family data, a versioned binary mask contract, a pinned Hugging Face release, and native-resolution evaluation.
 
+For category-conditioned semantic and instance supervision, see the [COCONut-B supplement](docs/coconut_segmentation.md): source-verified masks, explicit class/color prompts, held-out COCO ID filtering, portable data bundles, and sampled target visualizations.
+
 ### Paper-aligned recipe (recommended)
 
 The paper's regime is instruction-tuning a *natively image-conditioned* generator on
