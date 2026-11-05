@@ -9,7 +9,9 @@ Examples:
         --normal-root /data/benchmarks \
         --cityscapes-root /data/cityscapes \
         --benchmark all \
-        --output-json output/eval/paper_metrics.json
+        --output-json output/eval/paper_metrics.json \
+        --write-sft-gate output/sft_gate/post_sft_gate.json \
+        --depth-oracle-colormaps cube_edge,plasma,inferno,viridis,grayscale
 
     python scripts/evaluate_paper_benchmarks.py \
         --benchmark semantic --cityscapes-root /data/cityscapes \
@@ -53,6 +55,7 @@ from open_vision_banana.evaluation.paper_capabilities import (  # noqa: E402
 from open_vision_banana.evaluation.results_io import write_metrics_csv, write_results  # noqa: E402
 from open_vision_banana.evaluation.shards import SHARDABLE_BENCHMARKS, shard_range  # noqa: E402
 from open_vision_banana.inference.checkpoint import read_training_prompts  # noqa: E402
+from open_vision_banana.inference.checkpoint import read_task_prompt_stats  # noqa: E402
 from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT  # noqa: E402
 
 ADE150_SEMANTIC_MARKERS = (
@@ -254,6 +257,17 @@ def parse_args() -> argparse.Namespace:
         help="Override the depth prompt. Use the checkpoint's training prompt when metadata.json has none.",
     )
     parser.add_argument(
+        "--depth-oracle-colormaps",
+        default=None,
+        help=(
+            "Comma-separated candidate colormaps for a per-image oracle depth decode "
+            "(e.g. cube_edge,plasma,inferno,viridis,grayscale). Each image is decoded "
+            "with the colormap whose roundtrip best reconstructs its RGB; the chosen-"
+            "colormap histogram and oracle metrics land under decoded_metrics.oracle*. "
+            "Diagnostic only — not a paper-protocol reading."
+        ),
+    )
+    parser.add_argument(
         "--relative-luminance",
         action="store_true",
         help="Also score a closer=brighter luminance map after median scale (relative_delta_1.25_aligned).",
@@ -285,6 +299,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-csv", type=Path, default=None)
+    parser.add_argument(
+        "--write-sft-gate",
+        type=Path,
+        default=None,
+        help=(
+            "After a real (non-preflight) eval, write post_sft_gate.json from NYU "
+            "decoded_metrics. colormap_ok uses oracle_colormap_hist vs --depth-colormap; "
+            "raw/aligned δ1.25 decide whether gated depth GRPO is indicated."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -510,6 +534,8 @@ def preflight_jobs(
 
 def main() -> int:
     args = parse_args()
+    if args.write_sft_gate is not None and args.preflight_only:
+        raise SystemExit("--write-sft-gate requires a real evaluation, not --preflight-only")
     if not args.preflight_only and not args.model_name:
         raise SystemExit("--model-name is required unless --preflight-only is set")
     args.num_inference_steps = resolve_inference_steps(args.model_name, args.num_inference_steps)
@@ -573,7 +599,12 @@ def main() -> int:
 
     if any(job[0] == "semantic" for job in jobs) and args.lora_path and not args.allow_semantic_palette_mismatch:
         recorded = read_training_prompts(args.lora_path).get("semantic", "")
-        if recorded and any(marker in recorded for marker in ADE150_SEMANTIC_MARKERS):
+        semantic_stats = read_task_prompt_stats(args.lora_path).get("semantic", {})
+        ade150_trained = bool(semantic_stats.get("ade150_palette")) or (
+            bool(recorded)
+            and any(marker in recorded for marker in ADE150_SEMANTIC_MARKERS)
+        )
+        if ade150_trained:
             raise SystemExit(
                 "LoRA semantic prompt is the ADE-150 / SNVC palette; official "
                 "Cityscapes val needs the 19-color specialist "
@@ -613,6 +644,12 @@ def main() -> int:
     results["metadata"]["depth_log_alpha"] = args.depth_log_alpha
     results["metadata"]["invert_depth"] = bool(args.invert_depth)
     results["metadata"]["depth_prompt"] = args.depth_prompt
+    oracle_colormaps = (
+        [name.strip() for name in args.depth_oracle_colormaps.split(",") if name.strip()]
+        if args.depth_oracle_colormaps
+        else None
+    )
+    results["metadata"]["depth_oracle_colormaps"] = oracle_colormaps
     results["metadata"]["relative_luminance"] = bool(args.relative_luminance)
     results["metadata"]["inference_protocol"] = {
         "num_inference_steps": args.num_inference_steps,
@@ -720,6 +757,7 @@ def main() -> int:
             depth_log_alpha=args.depth_log_alpha,
             invert_depth=args.invert_depth,
             report_relative_luminance=args.relative_luminance,
+            depth_oracle_colormaps=oracle_colormaps,
         )
         if benchmark == "generation":
             metrics = dict(metrics)
@@ -735,6 +773,26 @@ def main() -> int:
     write_results(args.output_json, results)
     if args.output_csv is not None:
         write_metrics_csv(args.output_csv, results)
+    if args.write_sft_gate is not None:
+        from open_vision_banana.training.post_training import sft_gate_from_eval, write_sft_gate
+
+        try:
+            gate = sft_gate_from_eval(
+                results,
+                trained_colormap=args.depth_colormap,
+                source=str(args.output_json),
+            )
+        except ValueError as exc:
+            logger.error("SFT gate not written: %s", exc)
+            return 3
+        write_sft_gate(args.write_sft_gate, gate)
+        logger.info(
+            "SFT gate written to %s (colormap_ok=%s raw=%s aligned=%s)",
+            args.write_sft_gate,
+            gate["colormap_ok"],
+            gate.get("raw_delta_1.25"),
+            gate.get("aligned_delta_1.25"),
+        )
     return 0
 
 

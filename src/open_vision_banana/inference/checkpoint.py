@@ -199,14 +199,8 @@ def resolve_lora_path(
     return str(local)
 
 
-def read_training_prompts(lora_path: str | Path | None) -> dict[str, str]:
-    """Return the per-task prompts a local LoRA checkpoint was trained with.
-
-    The unified trainer records them as ``task_prompts`` in the checkpoint's
-    ``metadata.json``. ``lora_path`` may be the checkpoint directory or its
-    ``lora_adapter`` subdirectory. Returns ``{}`` for remote specs and for checkpoints
-    without the record.
-    """
+def _read_checkpoint_metadata(lora_path: str | Path | None) -> dict:
+    """Return the checkpoint's ``metadata.json`` contents, or ``{}``."""
     if lora_path is None or not is_local_path(str(lora_path)):
         return {}
     directory = Path(lora_path)
@@ -221,14 +215,38 @@ def read_training_prompts(lora_path: str | Path | None) -> dict[str, str]:
         if not meta_path.is_file():
             continue
         try:
-            prompts = json.loads(meta_path.read_text(encoding="utf-8")).get("task_prompts")
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (OSError, ValueError, AttributeError):
-            logger.warning("Could not read task prompts from %s", meta_path)
+            logger.warning("Could not read checkpoint metadata from %s", meta_path)
             return {}
-        if isinstance(prompts, dict):
-            return {str(task): str(prompt) for task, prompt in prompts.items() if prompt}
-        return {}
+        return meta if isinstance(meta, dict) else {}
     return {}
+
+
+def read_training_prompts(lora_path: str | Path | None) -> dict[str, str]:
+    """Return the per-task prompts a local LoRA checkpoint was trained with.
+
+    The unified trainer records them as ``task_prompts`` in the checkpoint's
+    ``metadata.json``. ``lora_path`` may be the checkpoint directory or its
+    ``lora_adapter`` subdirectory. Returns ``{}`` for remote specs and for checkpoints
+    without the record.
+    """
+    prompts = _read_checkpoint_metadata(lora_path).get("task_prompts")
+    if isinstance(prompts, dict):
+        return {str(task): str(prompt) for task, prompt in prompts.items() if prompt}
+    return {}
+
+
+def read_task_prompt_stats(lora_path: str | Path | None) -> dict[str, dict]:
+    """Return the per-task prompt summary recorded as ``task_prompt_stats``.
+
+    Multi-prompt tasks (semantic legends, referring expressions) have no single
+    training prompt; the summary still exposes their palette contract flags so
+    evaluators can enforce them. Returns ``{}`` when the checkpoint predates the
+    record or is remote.
+    """
+    stats = _read_checkpoint_metadata(lora_path).get("task_prompt_stats")
+    return stats if isinstance(stats, dict) else {}
 
 
 def peft_adapter_state_to_diffusers(
