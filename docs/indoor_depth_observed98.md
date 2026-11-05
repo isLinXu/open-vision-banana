@@ -5,6 +5,52 @@ to NYU Depth V2 and Hypersim. Preparation selects images and converts their
 metric targets. It does not modify the training implementation. There is no
 fixed 500k quota: observed depth quality and visual diversity determine the count.
 
+## Published release
+
+| Source | Train | Validation |
+|---|---:|---:|
+| ARKitScenes | 290,391 | 8,602 |
+| DIODE indoor training subset | 996 | 0 |
+| SUN RGB-D non-NYU | 766 | 0 |
+| **Total** | **292,153** | **8,602** |
+
+The release contains **300,755 unique pairs**, 1,203,020 native PNG assets and
+134 TAR shards (37.83 GB indexed payload). All 5,061 eligible Apple videos were
+acquired successfully; final frames represent 1,664 distinct ARKit visit IDs.
+The minimum retained native observed fraction is 98.000081%, and the frame-mean
+fraction is 99.420076%. Independent validation measured 2.085 mm mean RGB-depth
+encoding error and 49.759 mm maximum error across observed pixels. Full bundle
+restoration passed. The unchanged training loader at 512 resolution passed on
+64 samples covering all three sources and the ARKit validation split.
+
+[Hugging Face component](https://huggingface.co/datasets/Melo111/open-vision-banana-depth/tree/b65093931678929d0e5c98b6cac153561865ced0/indoor-observed98-v1)
+contains source metadata, original license notices, exclusion records, checksummed
+asset inventories, native validation and transport reports, and deterministic
+[ARKitScenes](https://huggingface.co/datasets/Melo111/open-vision-banana-depth/resolve/5a864bd118b5bca23e814917b62c0cb9f1f56da6/indoor-observed98-v1/visualizations/arkitscenes_samples.png),
+[DIODE](https://huggingface.co/datasets/Melo111/open-vision-banana-depth/resolve/5a864bd118b5bca23e814917b62c0cb9f1f56da6/indoor-observed98-v1/visualizations/diode_indoor_samples.png),
+[SUN RGB-D](https://huggingface.co/datasets/Melo111/open-vision-banana-depth/resolve/5a864bd118b5bca23e814917b62c0cb9f1f56da6/indoor-observed98-v1/visualizations/sunrgbd_nonnyu_samples.png)
+sample sheets.
+
+Download only this component at its immutable data revision:
+
+```bash
+python scripts/download_res_dataset.py \
+  --repo-id Melo111/open-vision-banana-depth \
+  --revision 5a864bd118b5bca23e814917b62c0cb9f1f56da6 \
+  --subfolder indoor-observed98-v1 \
+  --output-dir data/indoor-observed98-v1
+```
+
+Dataset fingerprint:
+`b888c55be9c801fd0d1c723baa05df8de6dd71ec56089f4d53dd2fc65338575d`.
+The data card is pinned separately so that its download command refers to the
+immutable payload commit without altering the bundle checksums.
+
+[Anonymous publication verification](https://huggingface.co/datasets/Melo111/open-vision-banana-depth/blob/b65093931678929d0e5c98b6cac153561865ced0/indoor-observed98-v1/publication_verification.json)
+checks all uploaded file sizes and hashes, the complete downloaded manifest and
+representative downloaded TARs for all four asset roles. Existing Hub payloads
+are preserved.
+
 ## Sources and evaluation boundaries
 
 | Source | Eligible data | Exclusions / interpretation |
