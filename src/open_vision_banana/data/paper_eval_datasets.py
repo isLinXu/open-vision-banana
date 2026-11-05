@@ -45,6 +45,18 @@ def _find_image(root: Path, name: str | None) -> Path | None:
     return matches[0] if matches else None
 
 
+def _reasonseg_query(payload: dict) -> str:
+    """Select the first expression, preserving one evaluation item per image."""
+    value = payload.get("rewritten_text") or payload.get("text") or payload.get("query")
+    if isinstance(value, list):
+        if not value or any(not isinstance(x, str) or not x.strip() for x in value):
+            raise ValueError("ReasonSeg query list must contain nonempty strings")
+        value = value[0]
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("ReasonSeg requires a nonempty query")
+    return value.strip()
+
+
 class ReasonSegDataset(BaseVisionDataset):
     """ReasonSeg val/test referring queries (LISA JSON-next-to-image layout).
 
@@ -109,7 +121,7 @@ class ReasonSegDataset(BaseVisionDataset):
                 if not isinstance(row, dict):
                     continue
                 image = _find_image(self.root_dir, row.get("image") or row.get("file_name"))
-                text = str(row.get("rewritten_text") or row.get("text") or row.get("query") or "").strip()
+                text = _reasonseg_query(row)
                 if image is None or not text:
                     continue
                 self.samples.append({"image": image, "annotation": None, "expression": text, "row": row})
@@ -152,9 +164,7 @@ class ReasonSegDataset(BaseVisionDataset):
             payload = _read_json(sample["annotation"])
             if not isinstance(payload, dict):
                 payload = {}
-            expression = str(
-                payload.get("rewritten_text") or payload.get("text") or payload.get("query") or ""
-            ).strip()
+            expression = _reasonseg_query(payload)
             native = self._mask_from_shapes(payload.get("shapes") or [], sample["image"])
             return expression, native
         row = sample.get("row") or {}

@@ -72,6 +72,7 @@ class TrainingConfig:
     depth_log_alpha: float = 0.4
     depth_colormaps: list[str] | None = None
     semantic_prompt_styles: list[str] | None = None
+    referring_prompt_version: str = "query_v2"
     semantic_color_remap_prob: float = 0.0
     aspect_preserving_crop: bool = False
 
@@ -175,6 +176,11 @@ class TrainingConfig:
                     setattr(self, f.name, value)
                 if not isinstance(value, str) or not value.strip():
                     raise ValueError(f"{f.name} must be a non-empty string")
+
+        from ..referring_contract import REFERRING_PROMPT_VERSIONS
+
+        if self.referring_prompt_version not in REFERRING_PROMPT_VERSIONS:
+            raise ValueError("Unknown referring_prompt_version")
 
         for name in ("tasks", "lora_targets", "depth_colormaps", "semantic_prompt_styles"):
             value = getattr(self, name)
@@ -318,6 +324,7 @@ _YAML_SECTIONS = {
              "task_weights": "task_sampling_weights",
              "depth_curve": "depth_curve", "depth_log_alpha": "depth_log_alpha",
              "depth_colormaps": "depth_colormaps",
+             "referring_prompt_version": "referring_prompt_version",
              "semantic_prompt_styles": "semantic_prompt_styles",
              "semantic_color_remap_prob": "semantic_color_remap_prob",
              "aspect_preserving_crop": "aspect_preserving_crop"},

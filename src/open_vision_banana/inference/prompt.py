@@ -194,6 +194,7 @@ class PromptBuilder:
         template_idx: int | None = None,
         *,
         encoding: str | None = None,
+        prompt_version: str = "query_v2",
     ) -> str:
         """Build an expression-conditioned prompt; default to white on black.
 
@@ -213,7 +214,7 @@ class PromptBuilder:
             color == "white" and bg_color == "black" and not legacy
             and template_idx == cls.BINARY_REFERRING_TEMPLATE_IDX
         ):
-            return build_binary_referring_prompt(expression)
+            return build_binary_referring_prompt(expression, prompt_version)
         return cls.REFERRING_TEMPLATES[template_idx].format(
             expression=normalize_referring_expression(expression)
             if template_idx == cls.BINARY_REFERRING_TEMPLATE_IDX

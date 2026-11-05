@@ -322,6 +322,7 @@ def build_res_pairs(
                     "split": "train",
                     "expression": question,
                     "prompt": prompt,
+                    "prompt_version": "query_v2",
                     "cot_answer": raw["cot_answer"],
                     "encoding": BINARY_REFERRING_ENCODING,
                     "width": image.width,

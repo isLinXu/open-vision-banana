@@ -285,6 +285,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-csv", type=Path, default=None)
+    parser.add_argument("--referring-prompt-version", default="query_v2",
+                        choices=("query_v2", "fig4_v1", "segment_v0"))
     return parser.parse_args()
 
 
@@ -605,6 +607,7 @@ def main() -> int:
         quantize=args.quantize,
         instance_decoding_config=instance_decoding,
     )
+    model.referring_prompt_version = args.referring_prompt_version
     if args.depth_prompt:
         model.training_prompts["depth"] = args.depth_prompt
     evaluator = VisionEvaluator(model, device=device)
@@ -612,6 +615,8 @@ def main() -> int:
     results["metadata"]["depth_curve"] = args.depth_curve
     results["metadata"]["depth_log_alpha"] = args.depth_log_alpha
     results["metadata"]["invert_depth"] = bool(args.invert_depth)
+    results["metadata"]["referring_prompt_version"] = args.referring_prompt_version
+    results["metadata"]["reasonseg_expression_selection"] = "first; one sample per image"
     results["metadata"]["depth_prompt"] = args.depth_prompt
     results["metadata"]["relative_luminance"] = bool(args.relative_luminance)
     results["metadata"]["inference_protocol"] = {
@@ -628,7 +633,7 @@ def main() -> int:
         "depth": "decoded RGB to metric depth with curve=metric_power (paper Eq.1); log_relative is an opt-in relative ablation and must not be cited as paper AbsRel; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap / nuScenes 80m cap (no paper crop) when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
         "normal": "decoded RGB to unit camera-space normals; valid pixels are finite, non-zero GT (plus DIODE mask when present); mean_angle_deg_per_image is the mean of per-image means; NYU/ScanNet require community normal maps; VKITTI2 ships no normals, so VirtualKITTINormalDataset derives them from its centimetre depth + intrinsic.txt in the paper frame (used only to build GT, never as model input); DIODE is indoors",
         "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix; official gtFine only, never cityscapes8; with --native-resolution the canvas is decoded first and the label map nearest-upsampled to the 2048x1024 GT (interpolating RGB would blend boundary colours into phantom classes)",
-        "referring": "RefCOCOg requires refs(umd).p with no protocol fallback and validates images, expressions, and nonempty native COCO polygon/RLE masks using pycocotools; ReasonSeg val uses LISA JSON-next-to-image; every sentence/query is a sample; cIoU/gIoU from masks, never from bounding boxes; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
+        "referring": "RefCOCOg requires refs(umd).p with no protocol fallback and validates images, expressions, and nonempty native COCO polygon/RLE masks using pycocotools; ReasonSeg val uses LISA JSON-next-to-image; RefCOCOg uses one sample per expression; ReasonSeg deterministically selects the first expression per image; cIoU/gIoU from masks, never from bounding boxes; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
         "instance": "SA-Co/Gold query JSONL when present, else color/instance pairs; cgF1 = 100 * pmF1 * IL_MCC; paper IL_MCC uses Gemini 3.1 Flash-Lite presence filtering, which this command does not invent",
         "generation": "paper GenAI-Bench / ImgEdit numbers are human pairwise win rates; this command only scores an optional CLIP/FID proxy when images exist and never writes those proxies into the paper win-rate column",
         "aggregation": "pixel-weighted across the complete selected dataset, not batch mean",

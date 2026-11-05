@@ -66,6 +66,8 @@ def parse_args():
                              "(e.g. the prompt a LoRA was trained with)")
     parser.add_argument("--class-map", type=str, default=None,
                         help="JSON class-color map for semantic segmentation")
+    parser.add_argument("--referring-prompt-version", default="query_v2",
+                        choices=("query_v2", "fig4_v1", "segment_v0"))
     return parser.parse_args()
 
 
@@ -176,6 +178,7 @@ def main():
         device=device,
         inference_options=inference_options,
     )
+    model.referring_prompt_version = args.referring_prompt_version
 
     class_color_map = None
     if args.class_map:

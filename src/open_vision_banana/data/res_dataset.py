@@ -11,8 +11,9 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from ..referring_contract import BINARY_REFERRING_ENCODING, build_binary_referring_prompt
+from ..referring_contract import BINARY_REFERRING_ENCODING
 from ..res_manifest import portable_path, sha256_file
+from .res_contract import resolve_referring_prompt
 
 
 class RESManifestDataset(Dataset):
@@ -37,6 +38,7 @@ class RESManifestDataset(Dataset):
         source_protocol: str | None = None,
         source_split: str | None = None,
         resolution: int = 512,
+        prompt_version: str = "query_v2",
     ) -> None:
         if split not in {"val", "test"}:
             raise ValueError("RES evaluation split must explicitly be 'val' or 'test'")
@@ -86,11 +88,7 @@ class RESManifestDataset(Dataset):
                     {"val"} if split == "val" else {"test", "testA", "testB"}
                 ):
                     raise ValueError(f"RES manifest line {line_number}: inconsistent source_split")
-                prompt = build_binary_referring_prompt(row.get("expression"))
-                if row.get("prompt") != prompt:
-                    raise ValueError(
-                        f"RES manifest line {line_number}: prompt differs from binary expression contract"
-                    )
+                prompt = resolve_referring_prompt(row, prompt_version=prompt_version)
                 if row["sample_id"] in identifiers:
                     raise ValueError(f"Duplicate RES sample_id={row['sample_id']}")
                 identifiers.add(row["sample_id"])
@@ -107,7 +105,7 @@ class RESManifestDataset(Dataset):
                         raise FileNotFoundError(
                             f"RES sample {row['sample_id']}: missing {key}: {path}"
                         )
-                self.samples.append(row)
+                self.samples.append({**row, "prompt": prompt, "prompt_version": prompt_version})
         if not self.samples:
             raise ValueError(f"No RES evaluation samples match {self.filters}")
 

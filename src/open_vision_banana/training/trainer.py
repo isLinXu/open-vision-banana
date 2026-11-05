@@ -173,6 +173,7 @@ class ManifestVisionDataset(Dataset):
         tar_index_path: Path | None = None,
         inner_prefix: str = "SenseNova-Vision-Corpus-50M",
         disk_cache_dir: Path | None = None,
+        referring_prompt_version: str = "query_v2",
     ):
         self.resolution = resolution
         self.split = split
@@ -259,7 +260,7 @@ class ManifestVisionDataset(Dataset):
                     from ..data.res_contract import resolve_referring_prompt
 
                     try:
-                        prompt = resolve_referring_prompt(row)
+                        prompt = resolve_referring_prompt(row, prompt_version=referring_prompt_version)
                     except ValueError as exc:
                         raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 mapping = row.get("mapping") if mapped == "semantic" else None
@@ -914,6 +915,7 @@ class Trainer:
                 semantic_color_remap_prob=config.semantic_color_remap_prob,
                 aspect_preserving_crop=config.aspect_preserving_crop,
                 seed=config.seed,
+                referring_prompt_version=config.referring_prompt_version,
             )
             for t in sorted(tasks_to_load)
         ]
@@ -933,6 +935,7 @@ class Trainer:
                 depth_log_alpha=config.depth_log_alpha,
                 aspect_preserving_crop=config.aspect_preserving_crop,
                 seed=config.seed,
+                referring_prompt_version=config.referring_prompt_version,
             )
             for t in sorted(tasks_to_load)
         ]
