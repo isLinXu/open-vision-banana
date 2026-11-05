@@ -85,6 +85,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Score only the first N selected rows; all selected assets are still validated",
     )
     parser.add_argument("--output-json", type=Path, default=Path("res_metrics.json"))
+    parser.add_argument(
+        "--referring-prompt-version",
+        default="query_v2",
+        choices=("query_v2", "fig4_v1", "segment_v0"),
+    )
     args = parser.parse_args(argv)
     if not args.preflight and not args.model_name:
         parser.error("--model-name is required unless --preflight is selected")
@@ -100,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         source_protocol=args.source_protocol,
         source_split=args.source_split,
         resolution=args.resolution,
+        prompt_version=args.referring_prompt_version,
     )
     counts = dataset.validate_assets()
     results = {
@@ -111,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         "protocol": {
             "task": "referring",
             "encoding": BINARY_REFERRING_ENCODING,
+            "prompt_version": args.referring_prompt_version,
             "native_resolution": True,
             "batch_size": 1,
             "ground_truth": "native lossless binary PNG; one sample per expression",
@@ -138,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             enable_sequential_cpu_offload=args.cpu_offload,
             quantize=args.quantize,
         )
+        model.referring_prompt_version = args.referring_prompt_version
         sample_count = min(len(dataset), args.max_samples or len(dataset))
         loader = DataLoader(
             Subset(dataset, range(sample_count)), batch_size=1, shuffle=False, num_workers=0

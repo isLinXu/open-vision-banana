@@ -188,6 +188,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vkitti-root", type=Path, default=None)
     parser.add_argument("--refcocog-root", type=Path, default=None)
     parser.add_argument("--reasonseg-root", type=Path, default=None)
+    parser.add_argument(
+        "--reasonseg-query-mode", choices=("all", "first"), default="all",
+        help="ReasonSeg: score every query (default), or only the first for historical comparisons.",
+    )
     parser.add_argument("--saco-root", type=Path, default=None)
     parser.add_argument(
         "--instance-decoding",
@@ -285,6 +289,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-csv", type=Path, default=None)
+    parser.add_argument("--referring-prompt-version", default="query_v2",
+                        choices=("query_v2", "fig4_v1", "segment_v0"))
     return parser.parse_args()
 
 
@@ -461,6 +467,7 @@ def preflight_jobs(
     split: str,
     resolution: int,
     optional: Container[tuple[str, str]] = frozenset(),
+    reasonseg_query_mode: str = "all",
 ) -> dict[str, Any]:
     """Check requested benchmark adapters before allocating model resources.
 
@@ -489,6 +496,7 @@ def preflight_jobs(
                     split=dataset_split,
                     resolution=resolution,
                     **BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
+                    **({"query_mode": reasonseg_query_mode} if dataset_key == "reasonseg" else {}),
                 )
                 record["samples"] = len(dataset)
                 if len(dataset) == 0 and (benchmark, name) in optional:
@@ -527,7 +535,8 @@ def main() -> int:
         )
 
     preflight = preflight_jobs(
-        jobs, split=args.split, resolution=args.resolution, optional=optional_normal_jobs(args)
+        jobs, split=args.split, resolution=args.resolution, optional=optional_normal_jobs(args),
+        reasonseg_query_mode=args.reasonseg_query_mode,
     )
     skipped = {(record["benchmark"], record["dataset"]): record for record in preflight["skipped"]}
     for (benchmark, name), record in skipped.items():
@@ -544,6 +553,8 @@ def main() -> int:
             "dtype": args.dtype,
             "resolution": args.resolution,
             "batch_size": args.batch_size,
+            "reasonseg_query_mode": args.reasonseg_query_mode,
+            "reasonseg_protocol": f"{args.reasonseg_query_mode}_queries_v1",
             "num_inference_steps": args.num_inference_steps,
             "strength": args.strength,
             "seed": args.seed,
@@ -605,6 +616,7 @@ def main() -> int:
         quantize=args.quantize,
         instance_decoding_config=instance_decoding,
     )
+    model.referring_prompt_version = args.referring_prompt_version
     if args.depth_prompt:
         model.training_prompts["depth"] = args.depth_prompt
     evaluator = VisionEvaluator(model, device=device)
@@ -612,6 +624,8 @@ def main() -> int:
     results["metadata"]["depth_curve"] = args.depth_curve
     results["metadata"]["depth_log_alpha"] = args.depth_log_alpha
     results["metadata"]["invert_depth"] = bool(args.invert_depth)
+    results["metadata"]["referring_prompt_version"] = args.referring_prompt_version
+    results["metadata"]["reasonseg_expression_selection"] = args.reasonseg_query_mode
     results["metadata"]["depth_prompt"] = args.depth_prompt
     results["metadata"]["relative_luminance"] = bool(args.relative_luminance)
     results["metadata"]["inference_protocol"] = {
@@ -628,10 +642,10 @@ def main() -> int:
         "depth": "decoded RGB to metric depth with curve=metric_power (paper Eq.1); log_relative is an opt-in relative ablation and must not be cited as paper AbsRel; valid GT pixels only; NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap / nuScenes 80m cap (no paper crop) when those datasets are named; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
         "normal": "decoded RGB to unit camera-space normals; valid pixels are finite, non-zero GT (plus DIODE mask when present); mean_angle_deg_per_image is the mean of per-image means; NYU/ScanNet require community normal maps; VKITTI2 ships no normals, so VirtualKITTINormalDataset derives them from its centimetre depth + intrinsic.txt in the paper frame (used only to build GT, never as model input); DIODE is indoors",
         "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix; official gtFine only, never cityscapes8; with --native-resolution the canvas is decoded first and the label map nearest-upsampled to the 2048x1024 GT (interpolating RGB would blend boundary colours into phantom classes)",
-        "referring": "RefCOCOg requires refs(umd).p with no protocol fallback and validates images, expressions, and nonempty native COCO polygon/RLE masks using pycocotools; ReasonSeg val uses LISA JSON-next-to-image; every sentence/query is a sample; cIoU/gIoU from masks, never from bounding boxes; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
+        "referring": "RefCOCOg requires refs(umd).p with no protocol fallback and validates images, expressions, and nonempty native COCO polygon/RLE masks using pycocotools; ReasonSeg val uses LISA JSON-next-to-image; one sample per expression, ReasonSeg expands all queries by default (first is an explicit historical option); gIoU/IoU is the equal-weight mean over queries, cIoU is summed intersection / summed union over queries; no image-level averaging; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
         "instance": "SA-Co/Gold query JSONL when present, else color/instance pairs; cgF1 = 100 * pmF1 * IL_MCC; paper IL_MCC uses Gemini 3.1 Flash-Lite presence filtering, which this command does not invent",
         "generation": "paper GenAI-Bench / ImgEdit numbers are human pairwise win rates; this command only scores an optional CLIP/FID proxy when images exist and never writes those proxies into the paper win-rate column",
-        "aggregation": "pixel-weighted across the complete selected dataset, not batch mean",
+        "aggregation": "task-specific global accumulators over the selected dataset; referring gIoU is query-weighted and cIoU is cumulative intersection / union, not batch mean",
     }
 
     for benchmark, name, root, dataset_key in jobs:
@@ -645,12 +659,15 @@ def main() -> int:
                 f"--native-resolution is not implemented for dataset {dataset_key!r}; "
                 f"supported: {sorted(NATIVE_GT_DATASETS)}"
             )
+        dataset_kwargs = dict(BENCHMARK_DATASET_KWARGS.get(dataset_key, {}))
+        if dataset_key == "reasonseg":
+            dataset_kwargs["query_mode"] = args.reasonseg_query_mode
         dataset = build_dataset(
             dataset_key,
             str(root),
             split=split,
             resolution=args.resolution,
-            **BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
+            **dataset_kwargs,
             **({"native_gt": True} if native else {}),
         )
         if len(dataset) == 0:
@@ -662,7 +679,7 @@ def main() -> int:
             "root": str(root),
             "split": split,
             "native_resolution": native,
-            "dataset_kwargs": BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
+            "dataset_kwargs": dataset_kwargs,
             "samples": len(dataset) if args.max_samples is None else min(len(dataset), args.max_samples),
             "source_samples": len(dataset),
             "dataset_fingerprint": fingerprint_dataset(dataset),

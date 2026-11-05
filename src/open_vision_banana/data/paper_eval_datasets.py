@@ -45,6 +45,20 @@ def _find_image(root: Path, name: str | None) -> Path | None:
     return matches[0] if matches else None
 
 
+def _reasonseg_queries(payload: dict) -> list[str]:
+    """Read all expressions from the selected text field without joining them."""
+    if not isinstance(payload, dict):
+        raise ValueError("ReasonSeg annotation must be an object")
+    value = payload.get("rewritten_text") or payload.get("text") or payload.get("query")
+    if isinstance(value, list):
+        if not value or any(not isinstance(x, str) or not x.strip() for x in value):
+            raise ValueError("ReasonSeg query list must contain nonempty strings")
+        return [query.strip() for query in value]
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("ReasonSeg requires a nonempty query")
+    return [value.strip()]
+
+
 class ReasonSegDataset(BaseVisionDataset):
     """ReasonSeg val/test referring queries (LISA JSON-next-to-image layout).
 
@@ -56,6 +70,8 @@ class ReasonSegDataset(BaseVisionDataset):
     Each JSON uses the LISA fields ``text`` / ``is_sentence`` / ``shapes``.
     The paper's gIoU uses Gemini 2.5 Pro to rewrite reasoning queries first;
     this adapter scores the raw query unless ``rewritten_text`` is present.
+    Each expression becomes a separate evaluation item in source order;
+    ``query_mode='first'`` opts into the historical first-expression subset.
     """
 
     TASK_TYPE = "referring"
@@ -66,9 +82,13 @@ class ReasonSegDataset(BaseVisionDataset):
         split="val",
         resolution=512,
         native_gt=False,
+        query_mode="all",
         **kwargs,
     ) -> None:
         self.native_gt = bool(native_gt)
+        if query_mode not in {"all", "first"}:
+            raise ValueError("ReasonSeg query_mode must be 'all' or 'first'")
+        self.query_mode = query_mode
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -91,9 +111,7 @@ class ReasonSegDataset(BaseVisionDataset):
                 if img_path.resolve() in seen:
                     continue
                 seen.add(img_path.resolve())
-                self.samples.append(
-                    {"image": img_path, "annotation": json_path, "expression": None}
-                )
+                self._append_queries(img_path, _read_json(json_path), annotation=json_path)
             if self.samples:
                 return
         manifest = self.root_dir / "annotations.json"
@@ -109,10 +127,23 @@ class ReasonSegDataset(BaseVisionDataset):
                 if not isinstance(row, dict):
                     continue
                 image = _find_image(self.root_dir, row.get("image") or row.get("file_name"))
-                text = str(row.get("rewritten_text") or row.get("text") or row.get("query") or "").strip()
-                if image is None or not text:
+                if image is None:
                     continue
-                self.samples.append({"image": image, "annotation": None, "expression": text, "row": row})
+                self._append_queries(image, row)
+
+    def _append_queries(self, image: Path, payload: dict, annotation: Path | None = None) -> None:
+        queries = _reasonseg_queries(payload)
+        if self.query_mode == "first":
+            queries = queries[:1]
+        try:
+            image_id = image.resolve().relative_to(self.root_dir.resolve()).as_posix()
+        except ValueError:
+            image_id = image.resolve().as_posix()
+        for query_index, expression in enumerate(queries):
+            self.samples.append({
+                "image": image, "annotation": annotation, "row": payload,
+                "expression": expression, "image_id": image_id, "query_index": query_index,
+            })
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -138,6 +169,8 @@ class ReasonSegDataset(BaseVisionDataset):
             "target_rgb": target_rgb,
             "gt_mask": gt_mask,
             "expression": expression,
+            "image_id": sample["image_id"],
+            "query_index": sample["query_index"],
         }
         if self.native_gt:
             item["gt_mask_native"] = (
@@ -149,12 +182,8 @@ class ReasonSegDataset(BaseVisionDataset):
 
     def _expression_and_mask(self, sample: dict) -> tuple[str, np.ndarray | None]:
         if sample.get("annotation") is not None:
-            payload = _read_json(sample["annotation"])
-            if not isinstance(payload, dict):
-                payload = {}
-            expression = str(
-                payload.get("rewritten_text") or payload.get("text") or payload.get("query") or ""
-            ).strip()
+            payload = sample["row"]
+            expression = sample["expression"]
             native = self._mask_from_shapes(payload.get("shapes") or [], sample["image"])
             return expression, native
         row = sample.get("row") or {}

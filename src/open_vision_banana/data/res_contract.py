@@ -17,8 +17,9 @@ from ..referring_contract import (
 BINARY_RES_ENCODING = BINARY_REFERRING_ENCODING
 
 
-def resolve_referring_prompt(row: dict[str, Any]) -> str:
+def resolve_referring_prompt(row: dict[str, Any], *, prompt_version: str | None = None) -> str:
     """Return a conditioned prompt, rejecting missing or conflicting text."""
+    version = prompt_version or row.get("prompt_version") or "query_v2"
     encoding = row.get("encoding")
     if encoding not in (None, "", BINARY_RES_ENCODING):
         raise ValueError(f"Unsupported RES manifest encoding: {encoding!r}")
@@ -34,11 +35,14 @@ def resolve_referring_prompt(row: dict[str, Any]) -> str:
         raise ValueError("Versioned RES rows require an explicit expression")
     if expression is not None:
         if not prompt:
-            return build_binary_referring_prompt(expression)
-        # Canonical construction normalizes a leading article ("a cat" -> "The cat").
+            return build_binary_referring_prompt(expression, version)
+        # Historical templates may normalize the leading article.
         # Exact template matching already verifies the full expression binding.
+        declared = row.get("prompt_version")
+        if declared and prompt != build_binary_referring_prompt(expression, declared):
+            raise ValueError("RES prompt differs from its declared prompt_version")
         if is_binary_referring_prompt(prompt, expression):
-            return prompt
+            return build_binary_referring_prompt(expression, version)
         if encoding == BINARY_RES_ENCODING:
             raise ValueError("Versioned binary RES rows require the canonical white/black prompt")
 

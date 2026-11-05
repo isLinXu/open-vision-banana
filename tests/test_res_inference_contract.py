@@ -98,7 +98,7 @@ def test_default_prompt_uses_current_expression_and_shared_binary_template():
     second = model._build_prompt("referring", expression="both right dogs")
     assert first == build_binary_referring_prompt("the left dog")
     assert "both right dogs" in second
-    assert "The left dog is represented by a solid white" in first
+    assert "Query: the left dog" in first
     assert "previous training example" not in first
     assert model._build_prompt("depth") == "DEPTH"
 
@@ -293,23 +293,23 @@ def test_other_benchmarks_and_unmarked_res_keep_input_values(task, image_range):
     assert torch.equal(seen[0], rgb)
 
 
-def test_referring_prompt_is_the_paper_template_everywhere():
-    """Rea2Seg / RES builders, inference and evaluation share one Fig. 4 (c)/(d) string."""
-    from scripts.build_rea2seg_manifest import referring_prompt
-
+def test_referring_prompt_is_the_versioned_query_template_everywhere():
+    """Rea2Seg / RES builders, inference and evaluation share query_v2."""
     from open_vision_banana.data.res_contract import resolve_referring_prompt
     from open_vision_banana.referring_contract import (
         BINARY_REFERRING_TEMPLATE,
         is_binary_referring_prompt,
     )
+    from scripts.build_rea2seg_manifest import referring_prompt
 
     expected = (
-        "This image shows segmentation masks from the given image. The background is "
-        "black color. The red car is represented by a solid white."
+        "Identify the object or region referred to by the following query in the image.\n"
+        "Query: the red car\n"
+        "Render its segmentation mask in solid white and all other pixels in black."
     )
-    assert BINARY_REFERRING_TEMPLATE.format(expression="red car") == expected
+    assert BINARY_REFERRING_TEMPLATE.format(query="the red car") == expected
     assert build_binary_referring_prompt("the red car") == expected
-    assert build_binary_referring_prompt("  red car ") == expected
+    assert build_binary_referring_prompt("  the red car ") == expected
     assert PromptBuilder.build_referring_prompt("the red car") == expected
     assert referring_prompt("the red car") == expected
     assert resolve_referring_prompt({"expression": "the red car"}) == expected
@@ -318,12 +318,19 @@ def test_referring_prompt_is_the_paper_template_everywhere():
     # Pre-template manifests stay loadable but are not re-emitted.
     old = "Segment the red car in solid white. Render all other pixels black."
     assert is_binary_referring_prompt(old, "the red car")
-    assert resolve_referring_prompt(
-        {"expression": "the red car", "prompt": old, "encoding": BINARY_REFERRING_ENCODING}
-    ) == old
+    assert (
+        resolve_referring_prompt(
+            {"expression": "the red car", "prompt": old, "encoding": BINARY_REFERRING_ENCODING}
+        )
+        == expected
+    )
     with pytest.raises(ValueError, match="canonical"):
         resolve_referring_prompt(
-            {"expression": "the red car", "prompt": "Paint it white.", "encoding": BINARY_REFERRING_ENCODING}
+            {
+                "expression": "the red car",
+                "prompt": "Paint it white.",
+                "encoding": BINARY_REFERRING_ENCODING,
+            }
         )
 
     # Fig. 4 (a) and the legacy green-distractor wording remain reachable explicitly.
@@ -331,3 +338,18 @@ def test_referring_prompt_is_the_paper_template_everywhere():
     assert legacy.startswith("A segmentation map image.") and "green" in legacy
     for template in PromptBuilder.REFERRING_TEMPLATES:
         assert "Other objects are" not in template and "all other pixels" not in template
+
+
+def test_explicit_prompt_version_reaches_prediction_metadata():
+    model = _pipeline(_two_regions())
+    model.referring_prompt_version = "fig4_v1"
+    captured = {}
+
+    def generate(**kwargs):
+        captured.update(kwargs)
+        return _two_regions()
+
+    model.generator.generate = generate
+    result = model.predict(torch.zeros(1, 3, 9, 11), task="referring", expression="What animal?")
+    assert captured["prompt"] == build_binary_referring_prompt("What animal?", "fig4_v1")
+    assert result["metadata"]["referring_prompt_version"] == "fig4_v1"
