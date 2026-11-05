@@ -21,11 +21,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import numpy as np
-import requests
 import torch
-from remotezip import RemoteZip
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from open_vision_banana.data.indoor_depth import POLICY, orient, read_png, save_pair, sha
@@ -49,6 +45,10 @@ def nearest(times, t):
 
 
 def session():
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
     s = requests.Session()
     s.trust_env = False
     routes = [p.strip() for p in os.getenv("INDOOR_DATA_PROXIES", "").split(",") if p.strip()]
@@ -123,6 +123,8 @@ def load_small_archive(client, archive):
 
 
 def process_video(meta, root, quota):
+    from remotezip import RemoteZip
+
     video, fold = meta["video_id"], meta["fold"]
     dest = root / "records" / f"{video}.json"
     if dest.exists():
@@ -259,6 +261,8 @@ def process_video(meta, root, quota):
 
 
 def main():
+    import requests
+
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--metadata", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)

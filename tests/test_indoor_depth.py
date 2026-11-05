@@ -283,6 +283,7 @@ def test_small_archive_transport_checks_etag_and_size():
 
 
 def test_acquisition_distributes_sessions_across_configured_routes(monkeypatch):
+    pytest.importorskip("requests")
     from scripts.prepare_arkitscenes_indoor import session
 
     routes = {"http://127.0.0.1:18001", "http://127.0.0.1:18002"}
