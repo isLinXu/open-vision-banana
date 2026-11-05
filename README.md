@@ -249,6 +249,11 @@ For the pinned LingBot 50k supplement, see the [full-pool depth experiment plan]
 paired D/P/M configurations, strict data preparation, audited launches and benchmark protocols.
 These are experiment recipes, not claims of improved model results.
 
+For real indoor depth pairs from ARKitScenes, DIODE and non-NYU SUN RGB-D, see
+the [observed-depth supplement](docs/indoor_depth_observed98.md). Preparation
+requires >=98% native observed pixels, preserves official held-out splits and
+uses the existing training format without changing training code.
+
 ### Unified Training Framework
 
 `scripts/train.py` is one entry point for all registered models (Qwen-Image, SANA,
