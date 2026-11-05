@@ -21,6 +21,8 @@ _RECTIFIED_FLOW_FAMILIES = frozenset(
     {
         "flux",
         "flux2",
+        "flux3",
+        "moss",
         "sd3",
         "chroma",
         "hidream-image",
