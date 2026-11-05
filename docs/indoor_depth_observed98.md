@@ -103,7 +103,8 @@ authors; its source IDs, procedure and results accompany the release.
 ## Merge with existing manifests
 
 Use an already-audited base mixture. The existing merge helper preserves the
-source validation rows when depth already has a validation partition:
+source validation rows when depth already has a validation partition. This PR
+also teaches it to rebase optional `valid_mask` paths with the core assets:
 
 ```bash
 python scripts/merge_multitask_manifest.py \
@@ -119,6 +120,9 @@ the other audit arguments for your base mixture. That mode also permits
 Cityscapes in the current builder: exclude Cityscapes from the input if retaining
 its zero-shot protocol. NYU and other unallowed benchmark guards remain active.
 The release includes a real-pair compatibility check for both protocol modes.
+That audit copies path strings: keep its output beside the combined manifest,
+or retain the combined directory as the loader's data root. The existing
+`--absolute` merge option is also available for a machine-local mixture.
 
 ## Rebuild and verify
 

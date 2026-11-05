@@ -169,6 +169,25 @@ def test_selection_validation_and_existing_bundle_restore(tmp_path):
     for row in rows:
         for key in ("input", "target", "metric_depth", "valid_mask"):
             assert (restored / row[key]).read_bytes() == (data / row[key]).read_bytes()
+    # The mask is provenance, but its path must remain usable in a local mixture.
+    merged = tmp_path / "combined" / "pairs.jsonl"
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts/merge_multitask_manifest.py"),
+            "--inputs",
+            str(restored / "pairs.jsonl"),
+            "--out",
+            str(merged),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    merged_rows = [json.loads(line) for line in merged.read_text().splitlines()]
+    assert {r["split"] for r in merged_rows} == {"train", "val"}
+    for row in merged_rows:
+        for key in ("input", "target", "metric_depth", "valid_mask"):
+            assert (merged.parent / row[key]).is_file()
 
 
 def test_zip_range_reader_checks_content_and_crc():
