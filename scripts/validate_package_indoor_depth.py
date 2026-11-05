@@ -28,6 +28,13 @@ from open_vision_banana.res_bundle import package_dataset, safe_path
 
 def check(record, root):
     row = record["row"]
+    required = {row[key] for key in ("input", "target", "metric_depth", "valid_mask")}
+    if (
+        len(required) != 4
+        or len(record["assets"]) != 4
+        or {asset["path"] for asset in record["assets"]} != required
+    ):
+        raise ValueError("Expected four distinct, checksummed native assets")
     for asset in record["assets"]:
         path = safe_path(root, asset["path"])
         if path.stat().st_size != asset["bytes"] or file_sha256(path) != asset["sha256"]:
@@ -38,6 +45,8 @@ def check(record, root):
     mask_raw = np.array(Image.open(safe_path(root, row["valid_mask"])))
     if (
         native.dtype != np.uint16
+        or target.dtype != np.uint8
+        or mask_raw.dtype != np.uint8
         or native.shape != rgb.shape[:2]
         or target.shape != rgb.shape
         or mask_raw.shape != native.shape

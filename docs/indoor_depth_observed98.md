@@ -93,6 +93,33 @@ observed fractions, exposure/blur statistics and encoding errors accompany the
 release. Train/validation groups stay disjoint. No NYU or Hypersim measurement
 is added by this supplement.
 
+DIODE raw depths follow the existing OVB DIODE evaluation convention, without a
+ray-distance correction. A separate geometric consistency check on four large
+planar views supports camera z-depth: a 3 mm plane fit explains 44.6–68.0% of
+valid pixels using raw depth, versus 4.8–11.2% after treating it as ray distance.
+This is an empirical check, not an explicit convention statement by the source
+authors; its source IDs, procedure and results accompany the release.
+
+## Merge with existing manifests
+
+Use an already-audited base mixture. The existing merge helper preserves the
+source validation rows when depth already has a validation partition:
+
+```bash
+python scripts/merge_multitask_manifest.py \
+  --inputs data/base/pairs.jsonl data/indoor-observed98-v1/pairs.jsonl \
+  --out data/combined/pairs.jsonl
+```
+
+The combined manifest can be consumed directly by the current trainer. If you
+rerun `build_qwen_baseline_manifest.py`, its strict paper protocol deliberately
+filters every DIODE path, including official training data. To retain DIODE,
+use its existing `--protocol in_domain --allow-benchmark diode` options and keep
+the other audit arguments for your base mixture. That mode also permits
+Cityscapes in the current builder: exclude Cityscapes from the input if retaining
+its zero-shot protocol. NYU and other unallowed benchmark guards remain active.
+The release includes a real-pair compatibility check for both protocol modes.
+
 ## Rebuild and verify
 
 Preparation dependencies are the existing OVB environment plus `remotezip`,

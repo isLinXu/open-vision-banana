@@ -26,9 +26,12 @@ def rank(s):
 
 def visual_signature(path):
     with Image.open(path) as im:
-        gray = im.convert("L")
-        small = np.array(gray.resize((9, 8), Image.Resampling.BOX), dtype=np.int16)
-        thumb = np.array(gray.resize((16, 16), Image.Resampling.BOX), dtype=np.int16)
+        return signature_from_gray(im.convert("L"))
+
+
+def signature_from_gray(gray):
+    small = np.array(gray.resize((9, 8), Image.Resampling.BOX), dtype=np.int16)
+    thumb = np.array(gray.resize((16, 16), Image.Resampling.BOX), dtype=np.int16)
     bits = (small[:, 1:] > small[:, :-1]).ravel()
     return int.from_bytes(np.packbits(bits).tobytes(), "big"), thumb
 
@@ -36,15 +39,33 @@ def visual_signature(path):
 def content_statistics(path):
     """Measure spatially distributed structure after suppressing sensor texture/noise."""
     with Image.open(path) as image:
-        gray = image.convert("L")
-        gray.thumbnail((256, 256), Image.Resampling.BOX)
-        smooth = gaussian_filter(np.array(gray, dtype=np.float32), 1)
+        return content_from_gray(image.convert("L"))
+
+
+def content_from_gray(gray):
+    gray.thumbnail((256, 256), Image.Resampling.BOX)
+    smooth = gaussian_filter(np.array(gray, dtype=np.float32), 1)
     gradient = np.hypot(sobel(smooth, axis=0) / 8, sobel(smooth, axis=1) / 8)
     edges = gradient > 5
-    occupied = []
-    for block in np.array_split(edges, 8, axis=0):
-        occupied.extend(float(tile.mean()) >= 0.01 for tile in np.array_split(block, 8, axis=1))
-    return dict(edge_density_256=float(edges.mean()), edge_tile_fraction=float(np.mean(occupied)))
+    starts = []
+    for size in edges.shape:
+        indices = np.arange(8)
+        offsets = indices * (size // 8) + np.minimum(indices, size % 8)
+        starts.append(offsets[offsets < size])
+    sums = np.add.reduceat(edges, starts[0], axis=0, dtype=np.int64)
+    sums = np.add.reduceat(sums, starts[1], axis=1, dtype=np.int64)
+    areas = np.outer(
+        np.diff(np.r_[starts[0], edges.shape[0]]), np.diff(np.r_[starts[1], edges.shape[1]])
+    )
+    occupied = np.count_nonzero(sums / areas >= 0.01)
+    return dict(edge_density_256=float(edges.mean()), edge_tile_fraction=float(occupied / 64))
+
+
+def image_features(path):
+    """Decode once; retain the same native signature and exact uneven 8x8 grid."""
+    with Image.open(path) as image:
+        gray = image.convert("L")
+        return content_from_gray(gray.copy()), signature_from_gray(gray)
 
 
 def main():
@@ -115,18 +136,15 @@ def main():
                 elif r["rgb_pixels_sha256"] in seen:
                     reason = "duplicate_decoded_rgb"
                 else:
-                    content = content_statistics(root / row["input"])
+                    content, (dh, thumb) = image_features(root / row["input"])
                     r["statistics"].update(content)
                     if content["edge_density_256"] < 0.01 or content["edge_tile_fraction"] < 0.2:
                         exclusions.append(
                             dict(identity=identity, reason="low_visual_structure", **content)
                         )
                         continue
-                    dh, thumb = visual_signature(root / row["input"])
-                    if any(
-                        (dh ^ h).bit_count() <= 4 and np.abs(thumb - t).mean() < 5
-                        for h, t in signatures
-                    ):
+                    similar = [t for h, t in signatures if (dh ^ h).bit_count() <= 4]
+                    if similar and (np.abs(np.stack(similar) - thumb).mean(axis=(1, 2)) < 5).any():
                         reason = "near_duplicate_within_scene"
                 if reason:
                     exclusions.append(dict(identity=identity, reason=reason))
