@@ -38,6 +38,8 @@ from .edit_forward import (
     channel_concat_edit_forward,
     edit_latent_layout,
     flux2_edit_forward,
+    flux3_edit_forward,
+    moss_panel_edit_forward,
     hunyuan_edit_forward,
     joy_edit_forward,
     longcat_edit_forward,
@@ -59,6 +61,8 @@ _FLOW_EDIT_FORWARDS = {
     "qwen_packed": qwen_edit_forward,
     "longcat_packed": longcat_edit_forward,
     "flux2_packed": flux2_edit_forward,
+    "flux3_packed": flux3_edit_forward,
+    "moss_panel": moss_panel_edit_forward,
     "joy_slots": joy_edit_forward,
     "hunyuan": hunyuan_edit_forward,
 }
@@ -101,6 +105,23 @@ def _tensors_to_pils(images: torch.Tensor):
     return [Image.fromarray(pixels[index].permute(1, 2, 0).numpy()) for index in range(pixels.shape[0])]
 
 
+def _attach_full_ft_save(module: torch.nn.Module) -> None:
+    """Give a non-PEFT backbone the ``save_pretrained`` the checkpoint callback calls."""
+
+    def save_pretrained(directory, **_kwargs) -> None:
+        path = Path(directory)
+        path.mkdir(parents=True, exist_ok=True)
+        trainable = {
+            name: param.detach().cpu().clone()
+            for name, param in module.named_parameters()
+            if param.requires_grad
+        }
+        torch.save(trainable, path / "full_ft.pt")
+        (path / "tune_mode.txt").write_text("full\n", encoding="utf-8")
+
+    module.save_pretrained = save_pretrained  # type: ignore[method-assign]
+
+
 def reject_unimplemented_instruction_edit(model_config) -> None:
     """Refuse an instruction editor that has no training forward."""
     if getattr(model_config, "instruction_editing", False) and edit_latent_layout(model_config) is None:
@@ -133,6 +154,7 @@ class ModelBackend:
         use_rslora: bool = True,
         lora_targets: list[str] | None = None,
         enable_gradient_checkpointing: bool = True,
+        tune_mode: str = "lora",
     ):
         """Load pipeline and setup backend.
 
@@ -146,6 +168,8 @@ class ModelBackend:
             use_rslora: Whether to use rsLoRA scaling.
             lora_targets: Override LoRA target modules.
             enable_gradient_checkpointing: Enable gradient checkpointing on backbone.
+            tune_mode: ``lora`` (default) wraps the backbone in PEFT; ``full``
+                trains every backbone parameter and freezes VAE / text encoder.
         """
         self.device = device
         self.dtype = dtype
@@ -200,17 +224,25 @@ class ModelBackend:
                 self.components, self.model_config.pipeline_class
             )
 
-        # Apply LoRA
-        logger.info(
-            "Applying LoRA (rank=%d, alpha=%d, rsLoRA=%s)...", lora_rank, lora_alpha, use_rslora
-        )
-        self.peft_model = apply_lora(
-            self.backbone,
-            config=self.model_config,
-            rank=lora_rank,
-            alpha=lora_alpha,
-            use_rslora=use_rslora,
-        )
+        if tune_mode not in {"lora", "full"}:
+            raise ValueError("tune_mode must be lora or full")
+        if tune_mode == "full":
+            logger.info("Full-parameter fine-tune: freezing VAE/text encoder, training backbone")
+            self._freeze_non_backbone()
+            self.backbone.requires_grad_(True)
+            self.peft_model = self.backbone
+            _attach_full_ft_save(self.peft_model)
+        else:
+            logger.info(
+                "Applying LoRA (rank=%d, alpha=%d, rsLoRA=%s)...", lora_rank, lora_alpha, use_rslora
+            )
+            self.peft_model = apply_lora(
+                self.backbone,
+                config=self.model_config,
+                rank=lora_rank,
+                alpha=lora_alpha,
+                use_rslora=use_rslora,
+            )
 
         trainable = sum(p.numel() for p in self.peft_model.parameters() if p.requires_grad)
         total = sum(p.numel() for p in self.peft_model.parameters())
@@ -220,13 +252,34 @@ class ModelBackend:
             f"{total:,}",
             100 * trainable / total,
         )
-        logger.info(
-            "Trainable parameter names: %s",
-            [name for name, parameter in self.peft_model.named_parameters() if parameter.requires_grad],
-        )
+        names = [
+            name for name, parameter in self.peft_model.named_parameters() if parameter.requires_grad
+        ]
+        if tune_mode == "full" and len(names) > 32:
+            logger.info("Trainable parameter names: %s ... (%d total)", names[:8], len(names))
+        else:
+            logger.info("Trainable parameter names: %s", names)
 
         # Flow scheduler
         self.flow_scheduler = FlowScheduler()
+
+    def _freeze_non_backbone(self) -> None:
+        """Keep VAE and text encoders frozen during full-parameter backbone training."""
+        for name in ("vae",):
+            module = getattr(self, name, None)
+            if module is not None and hasattr(module, "requires_grad_"):
+                module.requires_grad_(False)
+                if hasattr(module, "eval"):
+                    module.eval()
+        components = getattr(self, "components", None)
+        if components is None:
+            return
+        for attr in ("vae", "text_encoder", "text_encoder_2", "text_encoder_3"):
+            module = getattr(components, attr, None)
+            if module is not None and hasattr(module, "requires_grad_"):
+                module.requires_grad_(False)
+                if hasattr(module, "eval"):
+                    module.eval()
 
     def _load_hunyuan_instruct(self) -> None:
         """Load HunyuanImage-3.0-Instruct for its published ``forward``.

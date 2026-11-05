@@ -25,6 +25,11 @@ def check_training_config(config) -> None:
     if config.batch_size != 1:
         raise ValueError(
             "Qwen-Image-2.1 training uses batch_size 1; raise gradient_accumulation instead"
+            + (
+                " (GRPO group_size is sequential rollouts of that one prompt)"
+                if getattr(config, "objective", "sft") == "grpo"
+                else ""
+            )
         )
     if config.resolution % 32 or config.resolution < 256:
         raise ValueError("Qwen-Image-2.1 needs a resolution that is a multiple of 32, at least 256")
