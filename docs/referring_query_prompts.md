@@ -36,11 +36,32 @@ prompt remains the caller's override. This option concerns binary referring
 queries; legacy colored/multi-expression protocols remain separate.
 
 ReasonSeg accepts string or list text in both sidecar JSON and `annotations.json`.
-Priority remains `rewritten_text`, then `text`, then `query`. A list is validated
-as nonempty strings and its first expression is selected deterministically:
-**one evaluation record per image**, without joining alternative expressions or
-serializing Python brackets/quotes. Invalid text fails instead of becoming a
-stringified object. Paper benchmark metadata records selection and prompt version.
+Priority remains `rewritten_text`, then `text`, then `query`: the highest-priority
+nonempty field supplies the queries (rewrites replace raw text, not append to it).
+A list is validated as nonempty strings and **all entries are expanded into
+separate evaluation records**, in source order, sharing the image and target mask.
+Repeated entries are retained. A string produces one record. Invalid text fails
+instead of becoming a stringified object. Records carry `image_id` and `query_index`
+for auditing; neither changes metric weights.
+
+The default ReasonSeg protocol is `all_queries_v1`. Only query-level statistics
+are reported: `gIoU` (also `IoU`) is the arithmetic mean of the IoU of every query;
+`cIoU` is the sum of intersections divided by the sum of unions over those queries.
+`Precision@0.5` is the fraction of queries whose IoU is at least 0.5. `samples`
+counts evaluated queries, not unique images. There is no image-level averaging.
+An image with three queries therefore contributes three equally weighted gIoU
+observations. Shards merge raw sums, preserving the same query weights.
+
+`--max-samples` limits expanded queries, and can stop within an image's list;
+omit it for full evaluation. Referring evaluation requires `--batch-size 1`.
+The paper benchmark evaluator fails on nonfinite generation by default rather
+than silently reporting a complete result with missing queries.
+
+For historical subset comparisons only, pass `--reasonseg-query-mode first`
+(`first_queries_v1`). Preflight and execution use the same selection. Metadata
+records the query mode, evaluation protocol and independent prompt version.
+Scores from first-query and all-query runs are different protocols and must not
+be presented as the same benchmark setting.
 
 Historical checkpoints are not automatically relabeled as trained with v2.
 Changing their evaluation prompt is a prompt ablation; keep checkpoint, samples,
