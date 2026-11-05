@@ -61,6 +61,14 @@ def lora_setup(monkeypatch):
     return SimpleNamespace(config=config, calls=calls, make_backend=make_backend)
 
 
+def test_full_tune_mode_skips_lora(lora_setup):
+    backend = lora_setup.make_backend(tune_mode="full")
+    assert lora_setup.calls == []
+    assert backend.peft_model is backend.backbone
+    assert all(parameter.requires_grad for parameter in backend.backbone.parameters())
+    assert hasattr(backend.peft_model, "save_pretrained")
+
+
 @pytest.mark.parametrize("quantize", [None, "4bit"])
 def test_override_reaches_apply_lora_on_each_loading_path(lora_setup, quantize):
     backend = lora_setup.make_backend(

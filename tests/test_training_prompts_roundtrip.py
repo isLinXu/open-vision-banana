@@ -12,12 +12,16 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import numpy as np
 import torch
+from PIL import Image
 
+from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.inference import pipeline as pipeline_module
 from open_vision_banana.inference.checkpoint import read_training_prompts
 from open_vision_banana.inference.pipeline import VisionBanana
 from open_vision_banana.inference.prompt import PromptBuilder
+from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT
 from open_vision_banana.training.callbacks import TrainingCallbacks
 from open_vision_banana.training.trainer import TASK_PROMPTS, uniform_task_prompts
 
@@ -146,3 +150,83 @@ def test_from_pretrained_loads_the_checkpoint_prompts(tmp_path, monkeypatch):
 
     assert model.training_prompts == TASK_PROMPTS
     assert model._build_prompt("depth") == TASK_PROMPTS["depth"]
+
+
+def test_multi_colormap_training_names_the_decode_colormap_in_metadata():
+    """cube_edge rows get an explicit palette prompt, and the recorded inference
+    prompt names the default decode colormap — no bare 'metric depth' ambiguity."""
+    from open_vision_banana.training.trainer import depth_colormap_prompt
+
+    assert depth_colormap_prompt("cube_edge", "metric_power") == (
+        "Generate a metric depth visualization of this image using the cube_edge colormap."
+    )
+    assert depth_colormap_prompt("viridis", "log_relative") == (
+        "Generate a relative depth map of this image using the viridis RGB palette."
+    )
+
+
+def test_task_prompt_stats_records_palette_contract_flags(tmp_path):
+    from open_vision_banana.training.trainer import task_prompt_stats
+
+    part = SimpleNamespace(
+        samples=[
+            {"task": "semantic", "prompt": SEMANTIC_SEGMENTATION_PROMPT},
+            {"task": "semantic", "prompt": "Generate a 150-class semantic segmentation mask."},
+            {"task": "referring", "prompt": "the red car"},
+            {"task": "depth", "prompt": "Generate a metric depth visualization of this image."},
+        ]
+    )
+    stats = task_prompt_stats(SimpleNamespace(datasets=[part]))
+    assert stats["semantic"]["ade150_palette"] is True
+    assert stats["semantic"]["cityscapes_legend"] is True
+    assert stats["semantic"]["distinct_prompts"] == 2
+    assert stats["depth"]["ade150_palette"] is False
+    assert stats["referring"]["distinct_prompts"] == 1
+
+
+def test_read_task_prompt_stats_from_metadata(tmp_path):
+    ckpt_dir = save_checkpoint(tmp_path, TASK_PROMPTS)
+    meta_path = ckpt_dir / "metadata.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["task_prompt_stats"] = {"semantic": {"ade150_palette": True}}
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    from open_vision_banana.inference.checkpoint import read_task_prompt_stats
+
+    assert read_task_prompt_stats(str(ckpt_dir))["semantic"]["ade150_palette"] is True
+    assert read_task_prompt_stats(str(ckpt_dir / "missing_meta")) == {}
+
+
+def test_cube_edge_train_rows_get_a_named_colormap_prompt(tmp_path):
+    """With depth_colormaps active, even the default-colormap rows name their palette."""
+    img_dir = tmp_path / "images"
+    tgt_dir = tmp_path / "targets"
+    img_dir.mkdir()
+    tgt_dir.mkdir()
+    Image.new("RGB", (32, 32), (90, 90, 90)).save(img_dir / "a.png")
+    depth_rgb = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 32, 32), 2.0))[0]
+    Image.fromarray((depth_rgb.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)).save(
+        tgt_dir / "d.png"
+    )
+    manifest = tmp_path / "pairs.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "task": "depth",
+                "input": "images/a.png",
+                "target": "targets/d.png",
+                "split": "train",
+                "prompt": "Generate a metric depth visualization of this image.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    from open_vision_banana.training.trainer import ManifestVisionDataset
+
+    ds = ManifestVisionDataset(
+        manifest, 32, "train", {"depth"}, data_root=tmp_path, depth_colormaps=["cube_edge"], seed=1
+    )
+    assert ds[0]["prompt"] == (
+        "Generate a metric depth visualization of this image using the cube_edge colormap."
+    )
