@@ -33,7 +33,12 @@ from ..conditioning import (
     sigma_for_timesteps,
     validate_scheduler_prediction_type,
 )
-from ..model_registry import ModelConfig, resolve_model_config, resolve_pretrained_source
+from ..model_registry import (
+    ModelConfig,
+    _register_remote_pipeline_module,
+    resolve_model_config,
+    resolve_pretrained_source,
+)
 from ..spatial_adapter import (
     SPATIAL_ADAPTER_STATE_NAME,
     create_source_spatial_adapter,
@@ -284,17 +289,6 @@ class BaseGenerator:
             logger.info(f"{pipe_class_name} loaded successfully (family={family})")
             return
 
-        # Lazy-import the correct pipeline class
-        import importlib
-        try:
-            mod = importlib.import_module("diffusers")
-            PipeClass = getattr(mod, pipe_class_name)
-        except (ImportError, AttributeError) as e:
-            raise ImportError(
-                f"Pipeline class '{pipe_class_name}' not found in diffusers. "
-                f"This may require a newer diffusers version. Error: {e}"
-            ) from e
-
         model_source = resolve_pretrained_source(self.model_config, self.model_name)
         pipe_kwargs: dict[str, Any] = {
             "torch_dtype": self.dtype,
@@ -306,10 +300,37 @@ class BaseGenerator:
             default_transformer = Path(model_source) / "transformer" / "diffusion_pytorch_model.safetensors"
             if fp16_transformer.is_file() and not default_transformer.is_file():
                 pipe_kwargs["variant"] = "fp16"
-        if getattr(self.inference_options, "quantize", None) == "4bit" and family == "flux":
-            pipe = self._load_flux_quantized_pipeline(model_source, PipeClass)
+
+        # Pipelines that ship their own module in the HF repo rather than diffusers
+        _remote_code_pipelines = {"MOSSImagePipeline": "pipeline_moss_image"}
+        if pipe_class_name in _remote_code_pipelines:
+            from diffusers import DiffusionPipeline
+
+            _register_remote_pipeline_module(
+                model_source, _remote_code_pipelines[pipe_class_name]
+            )
+            pipe = DiffusionPipeline.from_pretrained(
+                model_source,
+                custom_pipeline=_remote_code_pipelines[pipe_class_name],
+                trust_remote_code=True,
+                # Official MOSS recipe: VAE stays fp32 — bf16 decode overflows.
+                torch_dtype={"default": self.dtype, "vae": torch.float32},
+            )
         else:
-            pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
+            # Lazy-import the correct pipeline class
+            import importlib
+            try:
+                mod = importlib.import_module("diffusers")
+                PipeClass = getattr(mod, pipe_class_name)
+            except (ImportError, AttributeError) as e:
+                raise ImportError(
+                    f"Pipeline class '{pipe_class_name}' not found in diffusers. "
+                    f"This may require a newer diffusers version. Error: {e}"
+                ) from e
+            if getattr(self.inference_options, "quantize", None) == "4bit" and family == "flux":
+                pipe = self._load_flux_quantized_pipeline(model_source, PipeClass)
+            else:
+                pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
         if family == "sdxl" and hasattr(pipe, "scheduler"):
             # SSD-1B/SDXL LoRA training uses epsilon prediction. Keep the base
             # pipeline on that contract before any checkpoint-specific setup.
@@ -369,6 +390,10 @@ class BaseGenerator:
         applied = apply_pipeline_optimizations(pipe, self.inference_options)
         if applied:
             logger.info("Applied inference optimizations: %s", ", ".join(applied))
+        if family == "moss":
+            # apply_pipeline_optimizations casts every component to options.dtype;
+            # the MOSS recipe keeps the FLUX.2 VAE fp32 (bf16 decode overflows).
+            pipe.vae.to(torch.float32)
         if (
             not self.inference_options.enable_sequential_cpu_offload
             and getattr(self.inference_options, "quantize", None) != "4bit"
@@ -779,6 +804,14 @@ class BaseGenerator:
                 encode_prompt = True
 
         family = getattr(getattr(self, "model_config", None), "family", None)
+        if image is not None and family == "moss":
+            return self._generate_moss_panel(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                seed=seed,
+            )
         if image is not None and family == "sana":
             return self._generate_sana_img2img(
                 prompt=prompt,
@@ -931,6 +964,14 @@ class BaseGenerator:
                 guidance_scale=guidance_scale,
                 seed=seed,
             )
+        if self.model_config.family == "flux3":
+            return self._generate_flux3_edit(
+                prompt=prompt,
+                image=image,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                seed=seed,
+            )
         if self.model_config.pipeline_class == "HunyuanImage3Instruct":
             return self._generate_hunyuan_image3_instruct(
                 prompt=prompt,
@@ -999,6 +1040,148 @@ class BaseGenerator:
         return torch.cat(outputs, dim=0).clamp(0, 1)
 
     @torch.no_grad()
+    def _generate_flux3_edit(
+        self,
+        *,
+        prompt: str | list[str],
+        image: torch.Tensor | Image.Image,
+        num_inference_steps: int,
+        guidance_scale: float,
+        seed: int | None,
+    ) -> torch.Tensor:
+        """FLUX.3 Klein image-conditioned generation through the modular pipeline.
+
+        The modular ``__call__`` resolves ``image``, ``prompt``,
+        ``num_inference_steps``, ``guidance_scale`` and ``generator`` from the
+        block-graph inputs, so signature inspection cannot be used here.
+        """
+        pipe = self._t2i_pipe
+        if pipe is None:
+            raise RuntimeError("Flux3 modular pipeline is not loaded")
+        pil_images = self._to_pil_list(image)
+        prompts = [prompt] * len(pil_images) if isinstance(prompt, str) else list(prompt)
+        if len(prompts) != len(pil_images):
+            raise ValueError(f"{len(prompts)} prompts for {len(pil_images)} images")
+        steps = int(self.model_config.default_num_inference_steps or 50)
+        if num_inference_steps > 1:
+            steps = num_inference_steps
+        guidance = guidance_scale if guidance_scale > 0 else float(
+            self.model_config.default_guidance_scale
+        )
+        outputs = []
+        for index, (pil, text) in enumerate(zip(pil_images, prompts, strict=True)):
+            call: dict[str, Any] = {
+                "image": pil,
+                "prompt": text,
+                "num_inference_steps": steps,
+                "guidance_scale": guidance,
+            }
+            if seed is not None:
+                call["generator"] = torch.Generator(device=self.device).manual_seed(seed + index)
+            result = pipe(**call)
+            tensor = self._output_to_tensor(result)
+            width, height = pil.size
+            if tensor.shape[-2:] != (height, width):
+                tensor = torch.nn.functional.interpolate(
+                    tensor, size=(height, width), mode="bilinear", align_corners=False
+                )
+            outputs.append(tensor)
+        return torch.cat(outputs, dim=0).clamp(0, 1)
+
+    @torch.no_grad()
+    def _generate_moss_panel(
+        self,
+        *,
+        prompt: str | list[str],
+        image: torch.Tensor | Image.Image,
+        num_inference_steps: int,
+        guidance_scale: float,
+        seed: int | None,
+    ) -> torch.Tensor:
+        """MOSS-Image vision-task inference via the in-context panel trick.
+
+        MOSS-Image-Base has no reference-image input, matching the training
+        forward (``moss_panel_edit_forward``): the VAE-encoded source is kept
+        clean on the left half of the latent canvas while the right half is
+        denoised from pure noise. ``strength`` does not apply — the target is
+        always fully noised, as in training.
+        """
+        from open_vision_banana.model_registry import vae_decode, vae_encode
+
+        pipe = self._t2i_pipe
+        if pipe is None:
+            raise RuntimeError("MOSS-Image pipeline is not loaded")
+        device = torch.device(self.device)
+        cfg = self.model_config
+
+        tensors = (
+            self._to_pil_list(image)
+            if not isinstance(image, torch.Tensor)
+            else (list(image) if image.dim() == 4 else [image])
+        )
+        batch = len(tensors)
+        prompts = [prompt] * batch if isinstance(prompt, str) else list(prompt)
+        if len(prompts) != batch:
+            raise ValueError(f"{len(prompts)} prompts for {batch} images")
+
+        # Input rasters must be multiples of 16 (VAE /8 then 2x2 patchify /2).
+        if isinstance(image, torch.Tensor):
+            src = image if image.dim() == 4 else image.unsqueeze(0)
+            in_h, in_w = src.shape[-2:]
+        else:
+            in_w, in_h = tensors[0].size
+            src = torch.stack([_pil_to_tensor(t, self.device, self.dtype) for t in tensors]) * 2 - 1
+        src = src.to(device=device, dtype=torch.float32)
+        h16, w16 = max(16, in_h // 16 * 16), max(16, in_w // 16 * 16)
+        if (in_h, in_w) != (h16, w16):
+            src = torch.nn.functional.interpolate(src, size=(h16, w16), mode="bilinear")
+
+        source = vae_encode(pipe.vae, src.to(dtype=pipe.vae.dtype), cfg).float()
+        target_shape = source.shape
+        latents = torch.randn(
+            target_shape,
+            generator=(
+                torch.Generator(device=device).manual_seed(seed) if seed is not None else None
+            ),
+            device=device,
+            dtype=torch.float32,
+        )
+
+        embeds, mask = pipe.encode_prompt(prompts, 4096)
+        embeds = embeds.to(device)
+        mask = mask.to(device)
+        do_cfg = guidance_scale not in (0.0, 1.0)
+        if do_cfg:
+            neg_embeds, neg_mask = pipe.encode_prompt([""] * batch, 4096)
+            neg_embeds, neg_mask = neg_embeds.to(device), neg_mask.to(device)
+
+        steps = num_inference_steps if num_inference_steps > 1 else int(
+            self.model_config.default_num_inference_steps or 28
+        )
+        pipe.scheduler.set_timesteps(steps, device=device)
+        width = target_shape[-1]
+        for timestep in pipe.scheduler.timesteps:
+            canvas = torch.cat([source, latents], dim=-1)
+            prediction = pipe.transformer(
+                canvas, timestep, embeds, mask, return_dict=False
+            )[0].float()[..., width:]
+            if do_cfg:
+                uncond = pipe.transformer(
+                    canvas, timestep, neg_embeds, neg_mask, return_dict=False
+                )[0].float()[..., width:]
+                prediction = uncond + guidance_scale * (prediction - uncond)
+            latents = pipe.scheduler.step(
+                prediction, timestep, latents, return_dict=False
+            )[0]
+
+        decoded = vae_decode(pipe.vae, latents, cfg)  # [-1, 1]
+        out = ((decoded + 1.0) / 2.0).clamp(0, 1)
+        if out.shape[-2:] != (in_h, in_w):
+            out = torch.nn.functional.interpolate(
+                out, size=(in_h, in_w), mode="bilinear", align_corners=False
+            )
+        return out.clamp(0, 1)
+
     def _generate_hunyuan_image3_instruct(
         self,
         *,

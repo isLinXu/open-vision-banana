@@ -19,6 +19,15 @@ observed value; the exit code is 1 if any required gate fails.
 
     # after evaluation (E0.3 / E1.3)
     python scripts/check_experiment_gates.py eval --eval-json output/<run>/eval.json --profile e1
+
+    # after NYU eval: write the GRPO SFT gate (or use --write-sft-gate on evaluate_paper_benchmarks)
+    python scripts/write_sft_gate.py output/<run>/eval.json \\
+        --output output/sft_gate/post_sft_gate.json
+
+    # before OPD / GRPO (refuses aesthetic RL and GRPO without an SFT gate)
+    python scripts/check_experiment_gates.py post \\
+        --config configs/experiments/qwen_image_21_grpo_depth.yaml \\
+        --sft-gate output/sft_gate/post_sft_gate.json
 """
 
 from __future__ import annotations
@@ -211,6 +220,10 @@ def check_run(*, run_dir: Path, tasks: list[str], vision_ratio: float | None) ->
     report.add("run.preflight_not_skipped", not preflight.get("skipped", False), f"skipped={preflight.get('skipped')} errors={len(preflight.get('errors', []))}")
     report.add("run.preflight_no_errors", not preflight.get("errors"), "; ".join(preflight.get("errors", []))[:200])
     report.add("run.optimizer_recorded", all(k in effective for k in ("weight_decay", "adam_beta1", "adam_beta2", "adam_eps")), "")
+    objective = effective.get("objective", "sft")
+    report.add("run.objective", objective in {"sft", "opd", "grpo"}, str(objective))
+    tune_mode = effective.get("tune_mode", "lora")
+    report.add("run.tune_mode", tune_mode in {"lora", "full"}, str(tune_mode))
     checkpoints = sorted(p for p in run_dir.glob("checkpoint-*") if p.is_dir())
     report.add("run.checkpoints_present", bool(checkpoints), ", ".join(p.name for p in checkpoints)[:120])
     report.add("run.best_checkpoint", any(p.name.endswith("_best") for p in checkpoints), "")
@@ -321,6 +334,55 @@ def check_generation(*, eval_json: Path, reference_dir: Path) -> GateReport:
     return report
 
 
+def check_post_training(*, config_path: Path, sft_gate: Path | None = None) -> GateReport:
+    """Refuse OPD/GRPO launches that skip teachers, mix generation into GRPO, or lack the SFT gate."""
+    from open_vision_banana.training.config import load_config
+    from open_vision_banana.training.post_training import grpo_sft_gate_status, load_sft_gate
+
+    report = GateReport()
+    try:
+        config = load_config(config_path=config_path)
+    except Exception as exc:
+        report.add("post.config_loads", False, str(exc))
+        return report
+    report.add("post.config_loads", True, f"objective={config.objective} tune_mode={config.tune_mode}")
+    if config.objective == "sft":
+        report.add("post.sft_default", True, "no post-training requested")
+        return report
+    if config.objective == "opd":
+        report.add("post.teachers_present", bool(config.opd_teachers), json.dumps(config.opd_teachers))
+        covered = set(config.opd_teachers)
+        missing = [task for task in config.tasks if task not in covered and "*" not in covered]
+        report.add("post.teachers_cover_tasks", not missing, f"missing={missing}")
+        for task, path in config.opd_teachers.items():
+            candidate = Path(path)
+            exists = path == "self" or candidate.is_file() or (candidate / "lora.pt").is_file()
+            report.add(f"post.teacher.{task}.exists", exists, path)
+        report.add(
+            "post.rollout_steps",
+            config.opd_rollout_steps >= 2 and config.opd_train_timesteps <= config.opd_rollout_steps,
+            f"steps={config.opd_rollout_steps} train={config.opd_train_timesteps}",
+        )
+        return report
+    report.add("post.reward_decoded_metric", config.grpo_reward == "decoded_metric", config.grpo_reward)
+    report.add("post.no_generation_task", "generation" not in config.tasks, str(config.tasks))
+    report.add("post.group_size", config.grpo_group_size >= 2, str(config.grpo_group_size))
+    report.add("post.sde_sigma", config.grpo_sde_sigma > 0, str(config.grpo_sde_sigma))
+    gate_path = sft_gate or (Path(config.sft_gate_path) if config.sft_gate_path else None)
+    if config.allow_grpo_without_sft_gate and gate_path is None:
+        report.add("post.sft_gate", False, "bypassed via allow_without_sft_gate", warn_only=True)
+        return report
+    if gate_path is None:
+        report.add("post.sft_gate", False, "sft_gate path not set")
+        return report
+    try:
+        ok, detail = grpo_sft_gate_status(load_sft_gate(gate_path))
+        report.add("post.sft_gate", ok, detail)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        report.add("post.sft_gate", False, str(exc))
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="stage", required=True)
@@ -343,7 +405,10 @@ def main() -> int:
     g = sub.add_parser("generation")
     g.add_argument("--eval-json", type=Path, required=True)
     g.add_argument("--reference-dir", type=Path, required=True)
-    for p in (d, r, e, g):
+    p_post = sub.add_parser("post")
+    p_post.add_argument("--config", type=Path, required=True)
+    p_post.add_argument("--sft-gate", type=Path, default=None)
+    for p in (d, r, e, g, p_post):
         p.add_argument("--json-out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -356,6 +421,8 @@ def main() -> int:
         report = check_run(run_dir=args.run_dir, tasks=[t for t in args.tasks.split(",") if t], vision_ratio=args.vision_ratio)
     elif args.stage == "generation":
         report = check_generation(eval_json=args.eval_json, reference_dir=args.reference_dir)
+    elif args.stage == "post":
+        report = check_post_training(config_path=args.config, sft_gate=args.sft_gate)
     else:
         report = check_eval(eval_json=args.eval_json, required_metrics=[m for m in args.require.split(",") if m], profile=args.profile)
     print(report.render())

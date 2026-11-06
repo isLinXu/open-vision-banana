@@ -1,0 +1,83 @@
+# Generation/edit replay specialist for OPD. Vision-only SFT erodes the
+# instruction-editing backbone; this teacher restores it when distilled.
+# Manifest rows must be edit pairs (input != target); identity replay is rejected.
+# Pass --pair-manifest / --data-dir the same way as the paper-aligned SFT run.
+model:
+  name: qwen-image-2.1
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - to_q
+    - to_k
+    - to_v
+    - to_out.0
+    - img_mlp.proj
+    - img_mlp.gate_layer
+    - img_mlp.out
+
+data:
+  tasks: [generation]
+  task_sampling: uniform
+  task_sampling_weights: {}
+  vision_ratio: 1.0
+  aspect_preserving_crop: true
+  num_workers: 4
+
+training:
+  tune_mode: lora
+  objective: sft
+  steps: 10000
+  batch_size: 1
+  gradient_accumulation: 32
+  lr: 1.0e-4
+  max_grad_norm: 1.0
+  drop_grad_norm: 10.0
+  seed: 42
+  gradient_checkpointing: true
+
+optimizer:
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-8
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+validation:
+  max_samples_per_task: 40
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: false
+  cfg_dropout_rate: 0.05
+
+loss:
+  task_loss_weights: {}
+  depth_edge_aux_weight: 0.0
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+
+checkpoint:
+  output_dir: output/specialists/generation
+  save_every: 1000
+  eval_every: 500
+  log_every: 50
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+
+device: cuda

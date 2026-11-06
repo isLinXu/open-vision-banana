@@ -27,7 +27,10 @@ from .early_stopping import EarlyStopping
 from .flow_matching import FlowScheduler, pack_latents, unpack_latents
 from .fsdp_utils import FSDPWrapper
 from .logging import TrainingLogger, create_training_logger_from_config
+from .grpo import clipped_surrogate, decoded_metric_reward, group_advantages
 from .losses import TrainingLosses
+from .opd import TeacherBank, opd_loss, rollout_euler
+from .post_training import grpo_sft_gate_status, load_sft_gate, sft_gate_from_eval, write_sft_gate
 from .lr_finder import LRFinder
 from .model_backend import ModelBackend
 from .trainer import Trainer
@@ -50,6 +53,16 @@ __all__ = [
     "ModelBackend",
     "FlowScheduler",
     "TrainingLosses",
+    "TeacherBank",
+    "opd_loss",
+    "rollout_euler",
+    "clipped_surrogate",
+    "decoded_metric_reward",
+    "group_advantages",
+    "grpo_sft_gate_status",
+    "load_sft_gate",
+    "sft_gate_from_eval",
+    "write_sft_gate",
     "TrainingCallbacks",
     "build_arg_parser",
     "load_config",

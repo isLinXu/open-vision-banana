@@ -905,6 +905,98 @@ def _build_registry() -> None:
     )
 
     _register_model(
+        "flux3-klein",
+        lambda: ModelConfig(
+            name="flux3-klein",
+            model_id="black-forest-labs/flux-3-image-klein-base",
+            family="flux3",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=20480,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=16.0,
+            pipeline_class="Flux3ModularPipeline",
+            default_resolution=1024,
+            default_guidance_scale=3.5,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            instruction_editing=True,
+            lora_target_modules=[
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out",
+                "linear_in",
+                "linear_out",
+                "x_embedder",
+                "context_embedder",
+                "proj_out",
+            ],
+            needs_guidance_in_forward=False,
+            needs_position_ids=True,
+            vae_has_latent_dist=True,
+            description=(
+                "FLUX.3 Image Klein base 5.6B — native multi-reference editing via "
+                "Flux3ModularPipeline (Qwen3-VL-4B text encoder, reference tokens on "
+                "the l axis). Gated BFL repo; FLUX Kommunity License."
+            ),
+        ),
+    )
+
+    _register_model(
+        "moss-image",
+        lambda: ModelConfig(
+            name="moss-image",
+            model_id="OpenMOSS-Team/MOSS-Image-Base",
+            family="moss",
+            backbone_type="transformer",
+            num_text_encoders=1,
+            needs_added_cond_kwargs=False,
+            cross_attention_dim=4096,
+            vae_scaling_factor=None,
+            vae_downsample_factor=8,
+            memory_budget_gb=12.0,
+            pipeline_class="MOSSImagePipeline",
+            default_resolution=1024,
+            default_guidance_scale=3.0,
+            default_num_inference_steps=50,
+            default_lora_rank=32,
+            default_lora_alpha=64,
+            lora_target_modules=[
+                # Video DiT layers: attention q/k/v/o and fused FFN under the
+                # layers.N.proj ModuleDict (the dict itself is not a Linear).
+                "q",
+                "k",
+                "v",
+                "o",
+                "ffn_up_gate",
+                "ffn_down",
+                # Text-refinement blocks inside text_embedder.
+                "qkv",
+                "ffn_gate",
+                "ffn_up",
+                "video_embedder",
+                "final_linear_video",
+            ],
+            needs_guidance_in_forward=False,
+            needs_position_ids=False,
+            needs_attention_mask=True,
+            vae_has_latent_dist=True,
+            description=(
+                "MOSS-Image-Base 5.6B — OpenMOSS single-stream DiT (Qwen3.5-9B text "
+                "encoder, FLUX.2-small VAE). Ships custom pipeline_moss_image; loaded "
+                "with trust_remote_code. T2I only — vision tasks via the panel "
+                "(in-context [source|target] canvas) path. The Qwen3.5 GDN text "
+                "encoder needs the official CUDA kernels; CPU reference kernels "
+                "produce NaN, and MPS hits float64 in the transformer."
+            ),
+        ),
+    )
+
+    _register_model(
         "cogview4",
         lambda: ModelConfig(
             name="cogview4",
@@ -1823,6 +1915,29 @@ def resolve_pretrained_source(config: ModelConfig, model_name: str | None = None
     return config.model_id
 
 
+def _register_remote_pipeline_module(model_source: str, module_name: str) -> None:
+    """Make a repo-bundled pipeline module importable for component loading.
+
+    Remote-code pipelines like MOSSImagePipeline declare their transformer and
+    scheduler with library ``pipeline_moss_image`` in model_index.json.
+    Diffusers only imports the file for the pipeline class itself; the
+    component loader resolves the library name in ``sys.modules``, so a local
+    checkout must have the module imported under that exact name first.
+    """
+    import sys
+    import importlib.util
+
+    if module_name in sys.modules:
+        return
+    module_path = Path(model_source) / f"{module_name}.py"
+    if not module_path.is_file():
+        return  # hub id: diffusers fetches and registers it itself
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+
 def _clone_config_with_path(cfg: ModelConfig, model_id: str) -> ModelConfig:
     """Clone a ModelConfig with a new model_id (for local paths)."""
     import copy
@@ -1839,8 +1954,11 @@ def _auto_detect_family(model_path: str) -> ModelConfig | None:
     import json
     import os
 
-    # Check for model_index.json (diffusers format)
+    # Check for model_index.json (diffusers format); modular pipelines (FLUX.3,
+    # some Qwen-Image builds) ship modular_model_index.json instead.
     index_path = os.path.join(model_path, "model_index.json")
+    if not os.path.isfile(index_path):
+        index_path = os.path.join(model_path, "modular_model_index.json")
     if not os.path.isfile(index_path):
         return None
 
@@ -1859,6 +1977,9 @@ def _auto_detect_family(model_path: str) -> ModelConfig | None:
         "FluxPipeline": "flux-schnell",
         "FluxKontextPipeline": "flux-kontext",
         "Flux2KleinPipeline": "flux2-klein",
+        "Flux3ModularPipeline": "flux3-klein",
+        "Flux3DistilledModularPipeline": "flux3-klein",
+        "MOSSImagePipeline": "moss-image",
         "QwenImageEditPipeline": "qwen-image-edit",
         "QwenImageEditPlusPipeline": "qwen-image-edit-2509",
         "QwenImage21Pipeline": "qwen-image-2.1",
@@ -1972,6 +2093,8 @@ def load_pipeline(
         "FluxPipeline": "diffusers",
         "FluxKontextPipeline": "diffusers",
         "Flux2KleinPipeline": "diffusers",
+        "Flux3ModularPipeline": "diffusers",
+        "Flux3DistilledModularPipeline": "diffusers",
         "QwenImagePipeline": "diffusers",
         "QwenImageEditPipeline": "diffusers",
         "QwenImageEditPlusPipeline": "diffusers",
@@ -2004,7 +2127,28 @@ def load_pipeline(
     }
 
     cls_name = config.pipeline_class
-    if cls_name in _pipeline_imports:
+    _remote_code_pipelines = {
+        # Ships its own pipeline module in the HF repo; loaded through
+        # DiffusionPipeline.from_pretrained(custom_pipeline=..., trust_remote_code=True)
+        "MOSSImagePipeline": "pipeline_moss_image",
+    }
+
+    pipe = None
+    if cls_name in _remote_code_pipelines:
+        from diffusers import DiffusionPipeline
+
+        model_source = resolve_pretrained_source(config)
+        _register_remote_pipeline_module(
+            model_source, _remote_code_pipelines[cls_name]
+        )
+        pipe = DiffusionPipeline.from_pretrained(
+            model_source,
+            custom_pipeline=_remote_code_pipelines[cls_name],
+            trust_remote_code=True,
+            # Official MOSS recipe: VAE stays fp32 — bf16 decode overflows.
+            torch_dtype={"default": dtype, "vae": torch.float32},
+        )
+    elif cls_name in _pipeline_imports:
         import importlib
 
         mod = importlib.import_module(_pipeline_imports[cls_name])
@@ -2027,7 +2171,8 @@ def load_pipeline(
         if fp16_transformer.is_file() and not default_transformer.is_file():
             pipe_kwargs["variant"] = "fp16"
 
-    pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
+    if pipe is None:
+        pipe = PipeClass.from_pretrained(model_source, **pipe_kwargs)
 
     # Extract backbone (unet for SD family, transformer for DiT models)
     if config.backbone_type == "transformer":
@@ -2179,6 +2324,29 @@ def encode_text(
     def _pooled(output: Any) -> torch.Tensor | None:
         candidate = getattr(output, "text_embeds", None)
         return candidate if isinstance(candidate, torch.Tensor) else None
+
+    # ── MOSS-Image: Qwen3.5 chat template, one unpadded forward per prompt ──
+    if config.family == "moss":
+        rows = []
+        for prompt in prompts:
+            formatted = tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=True,
+            )
+            inputs = tokenizer(
+                formatted, return_tensors="pt", truncation=True, max_length=4096
+            ).to(device)
+            output = text_encoder(**inputs, use_cache=False, return_dict=True)
+            rows.append(output.last_hidden_state[0])
+        length = max(row.shape[0] for row in rows)
+        embeds = rows[0].new_zeros(len(rows), length, rows[0].shape[-1])
+        mask = torch.zeros(len(rows), length, device=embeds.device, dtype=torch.bool)
+        for index, row in enumerate(rows):
+            embeds[index, : row.shape[0]] = row
+            mask[index, : row.shape[0]] = True
+        return embeds.to(dtype), mask
 
     # ── SD3: triple text encoder (CLIP×2 + T5) ──
     if config.family == "sd3":
@@ -2732,6 +2900,27 @@ def backbone_forward(
             return_dict=False,
         )[0]
 
+    elif config.family == "flux3":
+        return backbone(
+            hidden_states=latents,
+            timestep=timesteps / 1000,
+            encoder_hidden_states=encoder_hidden_states,
+            txt_ids=txt_ids,
+            img_ids=img_ids,
+            return_dict=False,
+        )[0]
+
+    elif config.family == "moss":
+        # MOSSImageTransformer: [B, 128, H/16, W/16], scheduler timesteps (sigma * 1000)
+        mask = attention_mask if isinstance(attention_mask, torch.Tensor) else None
+        return backbone(
+            hidden_states=latents,
+            timestep=timesteps,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=None if mask is None else mask.bool(),
+            return_dict=False,
+        )[0]
+
     elif config.family == "cogview4":
         cogview_kwargs = {}
         if original_size is not None:
@@ -3065,6 +3254,19 @@ def _qwen_image21_latent_stats(vae, like: torch.Tensor) -> tuple[torch.Tensor, t
     return mean, std
 
 
+# FLUX.2-VAE families whose transformer consumes the 2x2-patchified, batch-norm
+# normalised latents [B, 4C, H/16, W/16] (MOSSImagePipeline, Flux3 modular pipeline).
+_FLUX2_VAE_PATCHIFIED_FAMILIES = frozenset({"moss", "flux3"})
+
+
+def _flux2_vae_bn_stats(vae: torch.nn.Module, latents: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    bn = vae.bn
+    eps = vae.config.batch_norm_eps
+    mean = bn.running_mean.to(latents).view(1, -1, 1, 1)
+    std = (bn.running_var + eps).sqrt().to(latents).view(1, -1, 1, 1)
+    return mean, std
+
+
 def vae_encode(
     vae: torch.nn.Module,
     images: torch.Tensor,
@@ -3086,6 +3288,14 @@ def vae_encode(
         latents = vae.encode(rgba).latent_dist.mode()
         mean, std = _qwen_image21_latent_stats(vae, latents)
         return ((latents - mean) / std).squeeze(2)
+
+    if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
+        latents = vae.encode(images).latent_dist.mode()
+        b, c, h, w = latents.shape
+        latents = latents.reshape(b, c, h // 2, 2, w // 2, 2).permute(0, 1, 3, 5, 2, 4)
+        latents = latents.reshape(b, c * 4, h // 2, w // 2)
+        mean, std = _flux2_vae_bn_stats(vae, latents)
+        return (latents - mean) / std
 
     # Encode
     if config.vae_has_latent_dist:
@@ -3126,6 +3336,14 @@ def vae_decode(
         latents = latents.unsqueeze(2)
         mean, std = _qwen_image21_latent_stats(vae, latents)
         return vae.decode(latents * std + mean, return_dict=False)[0][:, :3, 0]
+
+    if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
+        latents = latents.to(vae.dtype)
+        mean, std = _flux2_vae_bn_stats(vae, latents)
+        z = latents * std + mean
+        b, c, h, w = z.shape
+        z = z.reshape(b, c // 4, 2, 2, h, w).permute(0, 1, 4, 2, 5, 3).reshape(b, c // 4, 2 * h, 2 * w)
+        return vae.decode(z, return_dict=False)[0]
 
     scaling = config.vae_scaling_factor
     shift = 0.0
@@ -3169,11 +3387,11 @@ def prepare_position_ids(
 
     # txt_ids: [B, text_seq_len, 4] for FLUX.2, [B, text_seq_len, 3] for Chroma
     text_seq_len = encoder_hidden_states.shape[1]
-    id_dim = 4 if config.family == "flux2" else 3
+    id_dim = 4 if config.family in ("flux2", "flux3") else 3
     txt_ids = torch.zeros(batch_size, text_seq_len, id_dim, device=device, dtype=dtype)
 
     # img_ids: depends on latent shape
-    if config.family in ("flux", "flux2"):
+    if config.family in ("flux", "flux2", "flux3"):
         # FLUX uses packed latents: seq_len = (H/16) * (W/16) * 4
         # But for training, we use the actual latent sequence length
         img_seq_len = (

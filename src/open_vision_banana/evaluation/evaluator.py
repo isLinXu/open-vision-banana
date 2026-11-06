@@ -59,6 +59,38 @@ def decode_depth_rgb(
 def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
     """Unitless closer=brighter map in (0, 1], before any metric calibration."""
     return (1.0 - rgb.mean(dim=1, keepdim=True)).clamp(1e-3, 1.0)
+
+
+def oracle_depth_decode(
+    rgb: torch.Tensor,
+    mappers: dict[str, DepthRGBMapper],
+    *,
+    invert: bool = False,
+) -> tuple[torch.Tensor, list[str]]:
+    """Decode ``rgb`` with the per-image best-fitting colormap.
+
+    For each candidate colormap, decode then re-encode; the colormap whose
+    roundtrip has the lowest mean absolute error is assumed to be the palette
+    the model actually painted. Diagnostic for multi-colormap training: tells
+    "model emitted a consistent but different palette" apart from "the output
+    is not on any trained colormap manifold".
+
+    Returns ``(depth [B,1,H,W], chosen colormap name per image)``.
+    """
+    names = list(mappers)
+    errors: list[torch.Tensor] = []
+    decoded: list[torch.Tensor] = []
+    for name in names:
+        mapper = mappers[name]
+        depth = decode_depth_rgb(rgb, mapper, invert=invert)
+        recon = mapper.depth_to_rgb(depth)
+        errors.append((recon - rgb).abs().mean(dim=(1, 2, 3)))
+        decoded.append(depth)
+    stacked_errors = torch.stack(errors)  # [C, B]
+    stacked_decoded = torch.stack(decoded)  # [C, B, 1, H, W]
+    best = stacked_errors.argmin(dim=0)  # [B]
+    batch = torch.arange(rgb.shape[0], device=rgb.device)
+    return stacked_decoded[best, batch], [names[int(b)] for b in best]
 from .edge import evaluate_edge
 from .flow import evaluate_flow
 from .generation_preservation import evaluate_generation_preservation
@@ -236,6 +268,7 @@ class VisionEvaluator:
         depth_log_alpha: float = DEFAULT_LOG_ALPHA,
         invert_depth: bool = False,
         report_relative_luminance: bool = False,
+        depth_oracle_colormaps: list[str] | None = None,
         referring_encoding: str | None = None,
         referring_target_color: tuple[int, int, int] = (255, 255, 255),
         referring_threshold: float | None = None,
@@ -276,6 +309,11 @@ class VisionEvaluator:
             referring_target_color: RGB target color for legacy RES checkpoints.
             referring_threshold: Optional intensity (binary) or distance (legacy)
                 threshold, forwarded to prediction and reused for scoring.
+            depth_oracle_colormaps: Candidate colormaps for a per-image oracle
+                decode. Each image is decoded with the colormap whose roundtrip
+                best reconstructs its RGB. Diagnostic only — report the chosen
+                colormap histogram and metrics under ``oracle_*`` keys, never as
+                protocol numbers.
 
         Returns:
             Dictionary of metric name → value (averaged over all batches).
@@ -310,6 +348,16 @@ class VisionEvaluator:
         relative_accumulator = (
             DepthAccumulator() if task == "depth" and report_relative_luminance else None
         )
+        oracle_mappers = (
+            {
+                name: DepthRGBMapper(colormap=name, curve=depth_curve, log_alpha=depth_log_alpha)
+                for name in depth_oracle_colormaps
+            }
+            if task == "depth" and depth_oracle_colormaps
+            else {}
+        )
+        oracle_accumulator = DepthAccumulator() if oracle_mappers else None
+        oracle_colormap_hist: dict[str, int] = {}
         normal_mapper = NormalRGBMapper() if task == "normal" else None
         seg_decoder = SegmentationDecoder() if task in ("semantic", "instance") else None
 
@@ -408,6 +456,23 @@ class VisionEvaluator:
                 )
                 if depth_accumulator is not None:
                     depth_accumulator.update(pred_depth, gt_depth, valid_mask)
+                if oracle_accumulator is not None:
+                    oracle_depth, oracle_names = oracle_depth_decode(
+                        pred_rgb, oracle_mappers, invert=invert_depth
+                    )
+                    if oracle_depth.shape[-2:] != gt_depth.shape[-2:]:
+                        oracle_depth = torch.nn.functional.interpolate(
+                            oracle_depth,
+                            size=gt_depth.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False,
+                        )
+                    oracle_depth, oracle_gt, oracle_mask = apply_depth_benchmark_protocol(
+                        dataset_name or "", oracle_depth, gt_depth, valid_mask
+                    )
+                    oracle_accumulator.update(oracle_depth, oracle_gt, oracle_mask)
+                    for name in oracle_names:
+                        oracle_colormap_hist[name] = oracle_colormap_hist.get(name, 0) + 1
                 if relative_accumulator is not None:
                     relative_depth = torch.nn.functional.interpolate(
                         relative_depth,
@@ -676,6 +741,9 @@ class VisionEvaluator:
                 ),
                 **depth_extras,
             }
+            if oracle_accumulator is not None:
+                self.last_accumulator_states["oracle"] = accumulator_state(oracle_accumulator)
+                self.last_accumulator_states["oracle_colormap_hist"] = dict(oracle_colormap_hist)
         elif task == "semantic" and semantic_accumulator is not None:
             self.last_accumulator_states = {"main": accumulator_state(semantic_accumulator)}
         elif task == "referring" and referring_accumulator is not None:
@@ -686,7 +754,13 @@ class VisionEvaluator:
             return {}
 
         if task == "depth" and depth_accumulator is not None:
-            return depth_report(depth_accumulator, relative_accumulator, **depth_extras)
+            report = depth_report(depth_accumulator, relative_accumulator, **depth_extras)
+            if oracle_accumulator is not None:
+                report["oracle_colormap_hist"] = dict(
+                    sorted(oracle_colormap_hist.items(), key=lambda kv: -kv[1])
+                )
+                report["oracle"] = dict(oracle_accumulator.compute())
+            return report
         if task == "normal" and normal_accumulator is not None:
             return normal_accumulator.compute()
         if task == "semantic" and semantic_accumulator is not None:

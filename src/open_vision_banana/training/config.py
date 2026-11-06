@@ -37,9 +37,8 @@ class TrainingConfig:
     lora_alpha: int = 64
     rslora: bool = True
     lora_targets: list[str] | None = None
-    # "lora": train a LoRA adapter (data-parallel); "full": train every backbone weight,
-    # sharded with FSDP2 (training/full_finetune.py). The lora_* fields apply to "lora" only.
-    train_mode: str = "lora"
+    tune_mode: str = "lora"  # "lora" | "full"
+    objective: str = "sft"  # "sft" | "opd" | "grpo"
 
     # ── Data ───────────────────────────────────────────────────────────
     data_dir: str | None = None
@@ -129,6 +128,18 @@ class TrainingConfig:
     # Skipping is possible but recorded in effective_config.json.
     skip_preflight: bool = False
 
+    # ── Post-training (OPD / GRPO); ignored when objective is sft ──────
+    opd_teachers: dict[str, str] = field(default_factory=dict)
+    opd_rollout_steps: int = 8
+    opd_train_timesteps: int = 2
+    opd_offload_teachers: bool = True
+    grpo_group_size: int = 4
+    grpo_clip_eps: float = 0.2
+    grpo_sde_sigma: float = 0.7
+    grpo_reward: str = "decoded_metric"
+    sft_gate_path: str | None = None
+    allow_grpo_without_sft_gate: bool = False
+
     def get_dtype(self) -> torch.dtype:
         """Convert dtype string to torch.dtype."""
         return {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}[
@@ -136,11 +147,28 @@ class TrainingConfig:
         ]
 
     def get_device(self) -> torch.device:
-        """Get torch device, auto-detecting if needed."""
+        """Get torch device, auto-detecting if needed.
+
+        Preference is CUDA, then MPS, then CPU. YAML files in this repo pin
+        ``device: cuda`` for the lab; on an Apple Silicon Mac that request
+        falls back to MPS with a warning so ``--device mps`` is not required
+        just to smoke the trainer.
+        """
+        mps_ok = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
         if self.device:
-            return torch.device(self.device)
+            requested = torch.device(self.device)
+            if requested.type == "cuda" and not torch.cuda.is_available():
+                if mps_ok:
+                    logger.warning("device=cuda requested but CUDA is unavailable; using mps")
+                    return torch.device("mps")
+                raise ValueError("device=cuda but CUDA is not available")
+            if requested.type == "mps" and not mps_ok:
+                raise ValueError("device=mps but MPS is not available")
+            return requested
         if torch.cuda.is_available():
             return torch.device("cuda")
+        if mps_ok:
+            return torch.device("mps")
         return torch.device("cpu")
 
     def parse_task_weights(self) -> dict[str, float]:
@@ -212,8 +240,10 @@ class TrainingConfig:
         self.task_sampling_weights = _parse_weights(
             self.task_sampling_weights, "task_sampling_weights", allow_empty=True
         )
+        self.opd_teachers = _parse_teacher_map(self.opd_teachers)
         for name in ("resolution", "lora_rank", "lora_alpha", "steps", "batch_size", "grad_accum",
-                     "save_every", "eval_every", "log_every", "val_max_samples_per_task"):
+                     "save_every", "eval_every", "log_every", "val_max_samples_per_task",
+                     "opd_rollout_steps", "opd_train_timesteps", "grpo_group_size"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
         for name in ("num_workers", "ema_warmup", "seed"):
@@ -279,11 +309,70 @@ class TrainingConfig:
             raise ValueError(
                 "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
             )
+        if self.tune_mode not in {"lora", "full"}:
+            raise ValueError("tune_mode must be lora or full")
+        if self.objective not in {"sft", "opd", "grpo"}:
+            raise ValueError("objective must be sft, opd, or grpo")
+        if self.opd_train_timesteps > self.opd_rollout_steps:
+            raise ValueError("opd_train_timesteps cannot exceed opd_rollout_steps")
+        if not 0.0 < self.grpo_clip_eps <= 1.0:
+            raise ValueError("grpo_clip_eps must be in (0, 1]")
+        if self.grpo_sde_sigma <= 0:
+            raise ValueError("grpo_sde_sigma must be positive")
+        from .post_training import FORBIDDEN_GRPO_REWARDS, VISION_GT_TASKS
+
+        if self.grpo_reward in FORBIDDEN_GRPO_REWARDS:
+            raise ValueError(
+                "aesthetic / T2I GRPO rewards are not implemented because they destroy "
+                "Vision Banana RGB contracts; use decoded_metric"
+            )
+        if self.grpo_reward != "decoded_metric":
+            raise ValueError("grpo_reward must be decoded_metric")
+        if self.objective == "sft":
+            if self.opd_teachers:
+                raise ValueError("opd_teachers is only used when objective=opd")
+            if self.allow_grpo_without_sft_gate:
+                raise ValueError("allow_grpo_without_sft_gate is only used when objective=grpo")
+            if self.sft_gate_path:
+                raise ValueError("sft_gate_path is only used when objective=grpo")
+        elif self.objective == "opd":
+            if not self.opd_teachers:
+                raise ValueError("objective=opd requires post_training.teachers")
+            covered = set(self.opd_teachers)
+            missing = [
+                task for task in self.tasks if task not in covered and "*" not in covered
+            ]
+            if missing:
+                raise ValueError(
+                    "OPD teachers must cover every training task (or include '*'): "
+                    f"missing {missing}"
+                )
+        else:
+            if self.opd_teachers:
+                raise ValueError("opd_teachers is only used when objective=opd")
+            if self.grpo_group_size < 2:
+                raise ValueError("grpo_group_size must be >= 2")
+            unknown = [task for task in self.tasks if task not in VISION_GT_TASKS]
+            if unknown:
+                raise ValueError(
+                    "GRPO decoded_metric needs ground-truth RGB; drop "
+                    f"{unknown} (keep generation on SFT/OPD)"
+                )
+            if not self.allow_grpo_without_sft_gate and not self.sft_gate_path:
+                raise ValueError(
+                    "objective=grpo requires post_training.sft_gate (or allow_without_sft_gate)"
+                )
 
     def to_dict(self) -> dict:
         """Return the validated, JSON-compatible effective configuration."""
         self.validate()
         return asdict(self)
+
+
+def _parse_teacher_map(value) -> dict[str, str]:
+    from .post_training import parse_teacher_map
+
+    return parse_teacher_map(value)
 
 
 def _parse_weights(value, name: str, *, allow_empty: bool = False) -> dict[str, float]:
@@ -330,8 +419,21 @@ _YAML_SECTIONS = {
              "aspect_preserving_crop": "aspect_preserving_crop"},
     "training": {"steps": "steps", "batch_size": "batch_size", "gradient_accumulation": "grad_accum",
                  "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
-                 "seed": "seed", "mode": "train_mode",
-                 "gradient_checkpointing": "gradient_checkpointing", "skip_preflight": "skip_preflight"},
+                 "seed": "seed",
+                 "gradient_checkpointing": "gradient_checkpointing", "skip_preflight": "skip_preflight",
+                 "tune_mode": "tune_mode", "objective": "objective"},
+    "post_training": {
+        "teachers": "opd_teachers",
+        "rollout_steps": "opd_rollout_steps",
+        "train_timesteps": "opd_train_timesteps",
+        "offload_teachers": "opd_offload_teachers",
+        "group_size": "grpo_group_size",
+        "clip_eps": "grpo_clip_eps",
+        "sde_sigma": "grpo_sde_sigma",
+        "reward": "grpo_reward",
+        "sft_gate": "sft_gate_path",
+        "allow_without_sft_gate": "allow_grpo_without_sft_gate",
+    },
     "optimizer": {"weight_decay": "weight_decay", "beta1": "adam_beta1", "beta2": "adam_beta2",
                   "eps": "adam_eps"},
     "scheduler": {"type": "scheduler", "warmup_ratio": "warmup_ratio", "warmup_steps": "warmup_steps"},
@@ -389,8 +491,13 @@ def _load_yaml_config(config_path: str | Path | None) -> dict:
             if key in extras:
                 continue
             target = aliases[key]
-            if target in {"resume", "resume_weights_only"} and (
-                value is None or (target == "resume" and isinstance(value, str) and not value.strip())
+            if target in {"resume", "resume_weights_only", "sft_gate_path"} and (
+                value is None
+                or (
+                    target in {"resume", "sft_gate_path"}
+                    and isinstance(value, str)
+                    and not value.strip()
+                )
             ):
                 continue
             if section == "data" and key == "task_weights" and isinstance(value, str):
@@ -439,8 +546,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
             p.add_argument(option, dest=name, action=argparse.BooleanOptionalAction, default=None)
         elif name in {"tasks", "lora_targets", "depth_colormaps", "semantic_prompt_styles"}:
             p.add_argument(option, nargs="+", default=None)
-        elif name in {"task_loss_weights", "task_sampling_weights"}:
-            p.add_argument(option, default=None, help="task=weight,task=weight")
+        elif name in {"task_loss_weights", "task_sampling_weights", "opd_teachers"}:
+            p.add_argument(
+                option,
+                default=None,
+                help="task=weight,task=weight" if name != "opd_teachers" else "task=path,task=path",
+            )
         else:
             arg_type = int if hints[name] in (int, int | None) else float if hints[name] is float else str
             p.add_argument(option, type=arg_type, default=None)

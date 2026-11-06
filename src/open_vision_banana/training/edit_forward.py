@@ -27,6 +27,9 @@ def edit_latent_layout(model_config) -> str | None:
         "QwenImage21Pipeline": "qwen21",
         "LongCatImageEditPipeline": "longcat_packed",
         "Flux2KleinPipeline": "flux2_packed",
+        "Flux3ModularPipeline": "flux3_packed",
+        "Flux3DistilledModularPipeline": "flux3_packed",
+        "MOSSImagePipeline": "moss_panel",
         "JoyImageEditPipeline": "joy_slots",
         "JoyImageEditPlusPipeline": "joy_slots",
         "StableDiffusionInstructPix2PixPipeline": "channel_concat",
@@ -154,6 +157,77 @@ def flux2_edit_forward(
         return_dict=False,
     )[0]
     return _unflatten_latents(predicted[:, : height * width], channels, height, width)
+
+
+def flux3_edit_forward(
+    backbone: torch.nn.Module,
+    noisy_latents: torch.Tensor,
+    context_latents: torch.Tensor,
+    timesteps: torch.Tensor,
+    text_cond: dict[str, Any],
+) -> torch.Tensor:
+    """FLUX.3 Klein: native multi-reference path — the source goes to image_cond_*.
+
+    Unlike flux2 (which concatenates reference tokens into ``hidden_states`` with
+    T=10), Flux3Transformer2DModel takes the target tokens as ``hidden_states`` and
+    the references separately as ``image_cond_hidden_states`` / ``image_cond_ids``,
+    distinguished on the L position axis (target L=0, reference L=-1), mirroring
+    ``Flux3PrepareImageCondLatentsStep`` in the modular pipeline.
+    """
+    _, channels, height, width = noisy_latents.shape
+    device = noisy_latents.device
+    text = text_cond["encoder_hidden_states"]
+    txt_ids = torch.cartesian_prod(
+        torch.arange(1), torch.arange(1), torch.arange(1), torch.arange(text.shape[1])
+    ).to(device=device, dtype=torch.float32)
+    predicted = backbone(
+        hidden_states=_flatten_latents(noisy_latents),
+        timestep=timesteps,
+        encoder_hidden_states=text,
+        txt_ids=txt_ids,
+        img_ids=_flux3_ids(height, width, device, l_coord=0),
+        image_cond_hidden_states=_flatten_latents(context_latents),
+        image_cond_ids=_flux3_ids(height, width, device, l_coord=-1),
+        return_dict=False,
+    )[0]
+    return _unflatten_latents(predicted[:, : height * width], channels, height, width)
+
+
+def _flux3_ids(height: int, width: int, device, l_coord: int = 0, rope_scale: float = 0.5) -> torch.Tensor:
+    # (T, H, W, L) of shape (H*W, 4), as Flux3 _prepare_image_ids: H/W scaled by the image
+    # RoPE scale, the generated image at L=0 and references at L=-1, -2, ...
+    ids = torch.cartesian_prod(
+        torch.arange(1), torch.arange(height), torch.arange(width), torch.tensor([l_coord])
+    ).to(dtype=torch.float32)
+    ids[:, 1:3] = ids[:, 1:3] * rope_scale
+    return ids.to(device)
+
+
+def moss_panel_edit_forward(
+    backbone: torch.nn.Module,
+    noisy_latents: torch.Tensor,
+    context_latents: torch.Tensor,
+    timesteps: torch.Tensor,
+    text_cond: dict[str, Any],
+) -> torch.Tensor:
+    """MOSS-Image (text-to-image only): in-context panel [source | target] along width.
+
+    MOSSImageTransformer has no reference-image input and builds its own RoPE from the
+    latent grid, so the clean source is placed left of the noisy target on one canvas and
+    only the right half of the prediction is kept. ``timesteps`` is sigma in [0, 1];
+    the transformer embeds scheduler timesteps (sigma * 1000).
+    """
+    width = noisy_latents.shape[-1]
+    text = text_cond["encoder_hidden_states"]
+    mask = text_cond.get("attention_mask")
+    predicted = backbone(
+        hidden_states=torch.cat([context_latents, noisy_latents], dim=-1),
+        timestep=timesteps * 1000,
+        encoder_hidden_states=text,
+        encoder_attention_mask=None if mask is None else mask.bool(),
+        return_dict=False,
+    )[0]
+    return predicted[..., width:]
 
 
 def _flatten_latents(latents: torch.Tensor) -> torch.Tensor:

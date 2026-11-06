@@ -44,6 +44,9 @@ class TrainingCallbacks:
         # Default instruction per task, stored with every checkpoint so inference
         # can prompt the LoRA the way it was trained.
         self.task_prompts = dict(task_prompts or {})
+        # Per-task prompt summary (distinct count, palette-contract flags) for
+        # multi-prompt tasks that cannot be recorded as a single prompt.
+        self.task_prompt_stats: dict = {}
 
         # W&B initialization
         if wandb_enabled:
@@ -194,6 +197,11 @@ class TrainingCallbacks:
         """``metadata.json`` of a checkpoint, with the task prompts the run trained with."""
         if self.task_prompts:
             meta["task_prompts"] = self.task_prompts
+        if self.task_prompt_stats:
+            meta["task_prompt_stats"] = self.task_prompt_stats
+        extra = getattr(self, "extra_meta", None)
+        if extra:
+            meta.update(extra)
         (ckpt_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
     def on_validation_loss(

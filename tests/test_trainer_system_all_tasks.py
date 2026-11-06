@@ -64,17 +64,19 @@ class _FakePeftModel(nn.Sequential):
 
 
 class FakeBackend:
-    """CPU stand-in for ModelBackend: 8x 'VAE', text-conditioned conv 'transformer'."""
+    """Stand-in for ModelBackend: 8x 'VAE', text-conditioned conv 'transformer'."""
 
-    def __init__(self, model_name: str, **_: object) -> None:
+    def __init__(self, model_name: str, **kwargs: object) -> None:
         self.model_name = model_name
         self.model_config = get_model_config(model_name)
         self.family = self.model_config.family
-        self.device = torch.device("cpu")
-        self.dtype = torch.float32
+        device = kwargs.get("device", torch.device("cpu"))
+        self.device = device if isinstance(device, torch.device) else torch.device(str(device))
+        dtype = kwargs.get("dtype", torch.float32)
+        self.dtype = dtype if isinstance(dtype, torch.dtype) else torch.float32
         self.flow_scheduler = FlowScheduler()
         torch.manual_seed(0)
-        self.peft_model = _FakePeftModel()
+        self.peft_model = _FakePeftModel().to(self.device)
         self.seen_prompts: list[str] = []
         self.seen_tasks: list[str] = []
         self.forward_calls = 0
@@ -101,7 +103,7 @@ class FakeBackend:
     def encode_text(self, prompts, device, dtype):
         self.seen_prompts.extend(prompts)
         emb = torch.stack([torch.tensor([float(ord(c)) for c in p[:8].ljust(8)]) / 128.0 for p in prompts])
-        return {"encoder_hidden_states": emb}
+        return {"encoder_hidden_states": emb.to(device=device, dtype=dtype)}
 
     def encode_edit_text(self, prompts, images, cfg_dropout_rate=0.0):
         return self.encode_text(prompts, self.device, self.dtype)
@@ -213,6 +215,13 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
     metadata = json.loads((with_meta / "metadata.json").read_text())
     assert metadata["step"] >= 6
     assert metadata.get("val_loss") is None or torch.isfinite(torch.tensor(float(metadata["val_loss"])))
+    # multi-colormap training names the palette in every depth prompt, so the
+    # recorded inference prompt names the default decode colormap too
+    assert metadata["task_prompts"]["depth"] == (
+        "Generate a metric depth visualization of this image using the cube_edge colormap."
+    )
+    assert metadata["task_prompt_stats"]["depth"]["distinct_prompts"] >= 1
+    assert "semantic" in metadata["task_prompt_stats"]
 
 
 def test_manifest_dataset_per_task_behaviours(tmp_path: Path):

@@ -72,6 +72,16 @@ def test_edit_forwards_execute_on_real_diffusers_modules():
     )
     _finite("flux2-klein", flux2, text16)
 
+    flux3 = diffusers.Flux3Transformer2DModel(
+        num_layers=1,
+        num_single_layers=1,
+        joint_attention_dim=16,
+        attention_head_dim=8,
+        num_attention_heads=2,
+        axes_dims_rope=(2, 2, 2, 2),
+    )
+    _finite("flux3-klein", flux3, text16, latent_channels=128)
+
     joy = diffusers.JoyImageEditTransformer3DModel(
         num_layers=1,
         hidden_size=32,
@@ -117,3 +127,82 @@ def test_edit_forwards_execute_on_real_diffusers_modules():
         sdxl,
         {**text16, "pooled_embeds": torch.randn(1, pooled_dim)},
     )
+
+
+class _MossStandIn(torch.nn.Module):
+    """Records MOSSImageTransformer call args and echoes a [B, C, H, W] map."""
+
+    def forward(
+        self,
+        hidden_states,
+        timestep,
+        encoder_hidden_states,
+        encoder_attention_mask=None,
+        return_dict=True,
+        skip_layers=None,
+    ):
+        self.calls = {
+            "shape": tuple(hidden_states.shape),
+            "timestep": timestep.clone(),
+            "mask": encoder_attention_mask,
+            "skip_layers": skip_layers,
+        }
+        return (hidden_states,) if not return_dict else type(
+            "Out", (), {"sample": hidden_states}
+        )()
+
+
+def test_moss_panel_edit_forward_plumbing():
+    """MOSS is T2I-only: the panel forward must paste [source | target] on one
+    canvas, feed scheduler timesteps (sigma * 1000), and keep the right half."""
+    backend = _backend("moss-image", _MossStandIn())
+    noisy = torch.randn(1, 128, 8, 8)
+    context = torch.randn(1, 128, 8, 8)
+    mask = torch.tensor([[1, 1, 0, 0]], dtype=torch.bool)
+    text = {
+        "encoder_hidden_states": torch.randn(1, 4, 16),
+        "attention_mask": mask,
+    }
+    with torch.no_grad():
+        out = backend.forward(noisy, torch.tensor([0.25]), text, 1, context_latents=context)
+    calls = backend.peft_model.calls
+    assert calls["shape"] == (1, 128, 8, 16)  # [source | target] along width
+    assert torch.equal(calls["timestep"], torch.tensor([750.0]))  # sigma 0.75 -> t*1000
+    assert calls["mask"].dtype == torch.bool and calls["mask"].eq(mask).all()
+    assert out.shape == noisy.shape
+    # The edit wrapper negates native v = noise - x0 into the repo's v = x0 - noise.
+    assert torch.equal(out, -noisy)  # echo: right half is the noisy target
+
+
+def test_flux2_vae_patchified_encode_decode_roundtrip():
+    """moss/flux3 share AutoencoderKLFlux2: latents are 2x2-patchified to 128
+    channels and normalised by the VAE's running BN stats."""
+    from open_vision_banana.model_registry import vae_decode, vae_encode
+
+    vae = diffusers.AutoencoderKLFlux2(
+        block_out_channels=(32, 32),
+        layers_per_block=1,
+        latent_channels=32,
+        down_block_types=("DownEncoderBlock2D", "DownEncoderBlock2D"),
+        up_block_types=("UpDecoderBlock2D", "UpDecoderBlock2D"),
+    ).eval()
+    image = torch.rand(1, 3, 64, 64) * 2 - 1
+    for name in ("moss-image", "flux3-klein"):
+        cfg = get_model_config(name)
+        with torch.no_grad():
+            z = vae_encode(vae, image, cfg)
+            out = vae_decode(vae, z, cfg)
+        assert z.shape == (1, 128, 16, 16), name
+        raw = vae.encode(image).latent_dist.mode()
+        b, c, h, w = raw.shape
+        packed = (
+            raw.reshape(b, c, h // 2, 2, w // 2, 2)
+            .permute(0, 1, 3, 5, 2, 4)
+            .reshape(b, c * 4, h // 2, w // 2)
+        )
+        bn = vae.bn
+        ref = (packed - bn.running_mean.view(1, -1, 1, 1)) / (
+            bn.running_var.view(1, -1, 1, 1) + vae.config.batch_norm_eps
+        ).sqrt()
+        assert torch.allclose(z, ref, atol=1e-5), name
+        assert out.shape == image.shape and torch.isfinite(out).all(), name

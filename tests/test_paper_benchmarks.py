@@ -299,6 +299,24 @@ def test_preflight_cli_does_not_require_model_name(tmp_path: Path, monkeypatch) 
     assert output.is_file()
 
 
+def test_write_sft_gate_rejected_on_preflight(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "evaluate_paper_benchmarks.py",
+            "--preflight-only",
+            "--write-sft-gate",
+            str(tmp_path / "post_sft_gate.json"),
+            "--output-json",
+            str(tmp_path / "preflight.json"),
+        ],
+    )
+    with pytest.raises(SystemExit, match="write-sft-gate"):
+        main()
+    assert not (tmp_path / "post_sft_gate.json").exists()
+
+
 def test_evaluate_compatible_drops_unknown_kwargs() -> None:
     class OldEvaluator:
         def evaluate(self, dataloader, task: str, seed: int = 0):

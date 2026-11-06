@@ -1,0 +1,95 @@
+# Depth-only Flow-GRPO with decoded δ1.25 as the reward.
+# Do not launch until scripts/check_experiment_gates.py post passes: colormap_ok
+# and raw δ1.25 still below aligned (scale drift). Aesthetic/T2I rewards are
+# rejected by TrainingConfig — they would paint over the cube-edge contract.
+model:
+  name: qwen-image-2.1
+  dtype: bfloat16
+  resolution: 512
+
+lora:
+  rank: 32
+  alpha: 64
+  rs_lora: true
+  target_modules:
+    - to_q
+    - to_k
+    - to_v
+    - to_out.0
+    - img_mlp.proj
+    - img_mlp.gate_layer
+    - img_mlp.out
+
+data:
+  tasks: [depth]
+  task_sampling: uniform
+  task_sampling_weights: {}
+  vision_ratio: 1.0
+  depth_curve: metric_power
+  depth_colormaps: [cube_edge]
+  aspect_preserving_crop: true
+  num_workers: 4
+
+training:
+  tune_mode: lora
+  objective: grpo
+  steps: 2000
+  batch_size: 1
+  gradient_accumulation: 8
+  lr: 1.0e-5
+  max_grad_norm: 1.0
+  drop_grad_norm: 10.0
+  seed: 42
+  gradient_checkpointing: true
+
+post_training:
+  reward: decoded_metric
+  group_size: 4
+  clip_eps: 0.2
+  sde_sigma: 0.7
+  rollout_steps: 8
+  train_timesteps: 2
+  sft_gate: output/sft_gate/post_sft_gate.json
+  allow_without_sft_gate: false
+
+optimizer:
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-8
+
+scheduler:
+  type: cosine
+  warmup_ratio: 0.05
+
+validation:
+  max_samples_per_task: 40
+
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: false
+  cfg_dropout_rate: 0.0
+
+loss:
+  task_loss_weights: {depth: 1.0}
+  depth_edge_aux_weight: 0.0
+
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 100
+
+checkpoint:
+  output_dir: output/qwen_image_21_grpo_depth
+  save_every: 200
+  eval_every: 200
+  log_every: 10
+
+wandb:
+  enabled: true
+  project: open-vision-banana
+
+device: cuda

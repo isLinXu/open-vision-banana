@@ -15,6 +15,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import random
 import re
 import shutil
@@ -28,7 +29,8 @@ from PIL import Image, ImageFile
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
 
 from ..model_registry import resolve_model_config
-from . import full_finetune, qwen_image21
+from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT
+from . import qwen_image21
 from .callbacks import TrainingCallbacks
 from .config import TrainingConfig
 from .distributed import (
@@ -42,9 +44,19 @@ from .distributed import (
     init_distributed,
 )
 from .edit_forward import edit_latent_layout
+from .grpo import (
+    clipped_surrogate,
+    decoded_metric_reward,
+    gaussian_transition_log_prob,
+    group_advantages,
+    rollout_sde,
+    to_unit_rgb,
+)
 from .losses import TrainingLosses
 from .model_backend import ModelBackend
+from .opd import build_teacher_bank, high_noise_indices, opd_loss, rollout_euler
 from .optimization import SchedulerFactory
+from .post_training import grpo_sft_gate_status, load_sft_gate
 from .sampling import TaskWeightedSampler
 from .utils import EMAModel
 
@@ -104,6 +116,56 @@ def uniform_task_prompts(dataset: Dataset) -> dict[str, str]:
         task: next(iter(found))
         for task, found in prompts.items()
         if len(found) == 1 and next(iter(found))
+    }
+
+
+def depth_colormap_prompt(colormap: str, curve: str) -> str:
+    """Depth prompt that names the palette explicitly.
+
+    Used whenever multi-colormap augmentation is active so the
+    prompt→palette binding is trained rather than inferred: the bare
+    "metric depth visualization" prompt only ever pairs with the default
+    colormap, leaving it an ambiguous entry at inference time.
+    """
+    if curve == "metric_power":
+        return f"Generate a metric depth visualization of this image using the {colormap} colormap."
+    return f"Generate a relative depth map of this image using the {colormap} RGB palette."
+
+
+def task_prompt_stats(dataset: Dataset) -> dict[str, dict]:
+    """Per-task manifest-prompt summary for checkpoint metadata.
+
+    Tasks with per-sample prompts (semantic legends, referring expressions)
+    have no single prompt to record, but evaluators still need to know which
+    palette contract the task was trained under — e.g. whether semantic rows
+    used the fixed ADE-150 palette or explicit class-RGB legends.
+    """
+    stats: dict[str, dict] = {}
+    for part in getattr(dataset, "datasets", [dataset]):
+        for sample in part.samples:
+            task = sample["task"]
+            prompt = str(sample.get("prompt") or "")
+            entry = stats.setdefault(
+                task,
+                {
+                    "distinct_prompts": set(),
+                    "ade150_palette": False,
+                    "cityscapes_legend": False,
+                },
+            )
+            entry["distinct_prompts"].add(prompt)
+            if task == "semantic":
+                if "150-class" in prompt or "fixed training palette" in prompt:
+                    entry["ade150_palette"] = True
+                if prompt == SEMANTIC_SEGMENTATION_PROMPT:
+                    entry["cityscapes_legend"] = True
+    return {
+        task: {
+            "distinct_prompts": len(entry["distinct_prompts"]),
+            "ade150_palette": entry["ade150_palette"],
+            "cityscapes_legend": entry["cityscapes_legend"],
+        }
+        for task, entry in stats.items()
     }
 
 
@@ -427,12 +489,11 @@ class ManifestVisionDataset(Dataset):
                 )
                 metric = paper.rgb_to_depth(tgt.unsqueeze(0))
                 tgt = alt.depth_to_rgb(metric).squeeze(0)
-            if self.split == "train" and self.depth_colormaps and target_cmap != "cube_edge":
-                prompt = (
-                    f"Generate a metric depth visualization of this image using the {target_cmap} colormap."
-                    if self.depth_curve == "metric_power"
-                    else f"Generate a relative depth map of this image using the {target_cmap} RGB palette."
-                )
+            if self.depth_colormaps:
+                # Val rows name the default decode colormap too: it is the
+                # prompt inference will use, and the bare canonical prompt is
+                # a distribution the model never sees under augmentation.
+                prompt = depth_colormap_prompt(target_cmap, self.depth_curve)
         elif s["task"] == "semantic" and self.split == "train" and (
             self.semantic_prompt_styles or self.semantic_color_remap_prob > 0.0
         ):
@@ -541,11 +602,21 @@ class Trainer:
         if self.dist.enabled and self.device.type == "cuda":
             self.device = torch.device("cuda", self.dist.local_rank)
         self.dtype = config.get_dtype()
+        if self.device.type == "mps":
+            os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+            if self.dtype != torch.float32:
+                logger.warning(
+                    "Training on MPS with dtype=%s; SANA-family ops may be non-finite. "
+                    "Use --dtype float32 if the smoke run produces NaNs.",
+                    config.dtype,
+                )
 
         # Seed
         torch.manual_seed(config.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(config.seed)
+        if self.device.type == "mps" and hasattr(torch, "mps"):
+            torch.mps.manual_seed(config.seed)
 
         logger.info("=" * 70)
         logger.info("Vision Banana — Unified Training")
@@ -553,9 +624,16 @@ class Trainer:
         logger.info(
             "Model: %s | Device: %s | dtype: %s", config.model_name, self.device, config.dtype
         )
-        logger.info(
-            "LoRA: rank=%d, alpha=%d, rsLoRA=%s", config.lora_rank, config.lora_alpha, config.rslora
-        )
+        if config.tune_mode == "full":
+            logger.info("Tune mode: full-parameter backbone")
+        else:
+            logger.info(
+                "LoRA: rank=%d, alpha=%d, rsLoRA=%s",
+                config.lora_rank,
+                config.lora_alpha,
+                config.rslora,
+            )
+        logger.info("Objective: %s", config.objective)
         logger.info(
             "Steps: %d | LR: %s | eff_batch: %d (%d rank(s))",
             config.steps,
@@ -581,6 +659,12 @@ class Trainer:
         self.preflight_report = self._run_preflight()
 
         # ── Model backend ──────────────────────────────────────────────
+        if config.objective == "grpo" and not config.allow_grpo_without_sft_gate:
+            ok, detail = grpo_sft_gate_status(load_sft_gate(config.sft_gate_path))
+            if not ok:
+                raise ValueError(f"GRPO refused by SFT gate: {detail}")
+            logger.info("SFT gate passed: %s", detail)
+
         self.backend = ModelBackend(
             model_name=config.model_name,
             device=self.device,
@@ -591,7 +675,7 @@ class Trainer:
             use_rslora=config.rslora,
             lora_targets=config.lora_targets,
             enable_gradient_checkpointing=config.gradient_checkpointing,
-            train_mode=config.train_mode,
+            tune_mode=config.tune_mode,
         )
         # Full-parameter mode shards the backbone (FSDP2); every rank loaded the same weights.
         if self.full:
@@ -608,6 +692,8 @@ class Trainer:
             torch.manual_seed(config.seed + self.dist.rank)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(config.seed + self.dist.rank)
+            if self.device.type == "mps" and hasattr(torch, "mps"):
+                torch.mps.manual_seed(config.seed + self.dist.rank)
 
         # ── Losses ─────────────────────────────────────────────────────
         task_weights = config.parse_task_weights()
@@ -645,7 +731,32 @@ class Trainer:
 
         # ── Datasets ───────────────────────────────────────────────────
         self.callbacks.task_prompts = uniform_task_prompts(self.train_loader.dataset)
+        depth_ds = next(
+            (
+                d
+                for d in getattr(self.train_loader.dataset, "datasets", [])
+                if getattr(d, "depth_colormaps", None)
+            ),
+            None,
+        )
+        if depth_ds is not None and "depth" in self.callbacks.task_prompts:
+            # Multi-colormap training names the palette in every depth prompt,
+            # so the recorded inference prompt for the default decode colormap
+            # must name it too — a bare "metric depth" prompt is a distribution
+            # the model never saw during training.
+            self.callbacks.task_prompts["depth"] = depth_colormap_prompt(
+                depth_ds.depth_colormap, depth_ds.depth_curve
+            )
+        self.callbacks.task_prompt_stats = task_prompt_stats(self.train_loader.dataset)
+        self.callbacks.extra_meta = {
+            "tune_mode": config.tune_mode,
+            "objective": config.objective,
+        }
+        self._teacher_bank = (
+            build_teacher_bank(config, self.backend) if config.objective == "opd" else None
+        )
         effective = config.to_dict()
+        effective["resolved_device"] = str(self.device)
         effective["task_sample_counts"] = {
             ds.samples[0]["task"]: len(ds)
             for ds in getattr(self.train_loader.dataset, "datasets", [self.train_loader.dataset])
@@ -1284,6 +1395,14 @@ class Trainer:
 
     def _train_step(self, batch: dict, global_step: int) -> dict:
         """Execute a single training step (forward + loss)."""
+        if self.config.objective == "opd":
+            return self._opd_step(batch, global_step)
+        if self.config.objective == "grpo":
+            return self._grpo_step(batch, global_step)
+        return self._sft_step(batch, global_step)
+
+    def _sft_step(self, batch: dict, global_step: int) -> dict:
+        """Teacher-forced flow-matching step (the default objective)."""
         config = self.config
         prompts = batch["prompt"]
         batch_size = len(prompts)
@@ -1368,6 +1487,144 @@ class Trainer:
             "depth_aux": depth_aux_loss.item(),
             "normal_aux": normal_aux_loss.item(),
             "task_loss_acc": task_loss_acc,
+        }
+
+    def _condition_batch(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor, dict, list[str], int]:
+        """Encode source/target latents and text for a post-training step."""
+        prompts = batch["prompt"]
+        batch_size = len(prompts)
+        target_rgb = batch["target_rgb"].to(device=self.device, dtype=self.dtype)
+        input_images = batch["image"].to(device=self.device, dtype=self.dtype)
+        with torch.no_grad():
+            target_latents = self.backend.encode_image(target_rgb * 2.0 - 1.0)
+            input_latents = self.backend.encode_image(input_images)
+            if input_latents.shape != target_latents.shape:
+                input_latents = F.adaptive_avg_pool2d(input_latents, target_latents.shape[-2:])
+            text_cond = self._encode_edit_text(prompts, input_images, cfg_dropout_rate=0.0)
+        tasks = batch.get("task", ["depth"] * batch_size)
+        return input_latents, target_rgb, text_cond, tasks, batch_size
+
+    def _opd_step(self, batch: dict, global_step: int) -> dict:
+        """Match teacher velocity on the student's own ODE trajectory."""
+        if self._teacher_bank is None:
+            raise RuntimeError("OPD teacher bank was not built")
+        config = self.config
+        input_latents, _target_rgb, text_cond, tasks, batch_size = self._condition_batch(batch)
+        edit_layout = self._edit_layout()
+        context = input_latents if edit_layout else None
+        noise = torch.randn_like(input_latents)
+
+        def student_fn(latents, timesteps, cond, size, context_latents=None):
+            kwargs = {"context_latents": context_latents} if context_latents is not None else {}
+            return self.backend.forward(latents, timesteps, cond, size, **kwargs)
+
+        with torch.no_grad():
+            trajectory, times = rollout_euler(
+                student_fn, noise, config.opd_rollout_steps, self.backend.family, text_cond, context
+            )
+        indices = high_noise_indices(config.opd_rollout_steps, config.opd_train_timesteps)
+        losses = []
+        task = tasks[0]
+        for index in indices.tolist():
+            latents = trajectory[index].detach()
+            timesteps = times[index].detach()
+            student_v = student_fn(latents, timesteps, text_cond, batch_size, context)
+            teacher_v = self._teacher_bank.predict(
+                task, latents, timesteps, text_cond, batch_size, context
+            )
+            losses.append(opd_loss(student_v, teacher_v.detach()))
+        total = torch.stack(losses).mean()
+        if not torch.isfinite(total).all():
+            raise FloatingPointError(f"Non-finite OPD loss at step {global_step}")
+        return {
+            "loss": total,
+            "total_loss": total.item(),
+            "flow_loss": total.item(),
+            "depth_aux": 0.0,
+            "normal_aux": 0.0,
+            "task_loss_acc": {task: [total.item()]},
+        }
+
+    def _grpo_step(self, batch: dict, global_step: int) -> dict:
+        """Group-relative policy gradient with decoded-metric rewards."""
+        config = self.config
+        input_latents, target_rgb, text_cond, tasks, batch_size = self._condition_batch(batch)
+        if batch_size != 1:
+            raise ValueError("GRPO rolls a group per prompt; use batch_size 1 and grpo_group_size")
+        task = tasks[0]
+        edit_layout = self._edit_layout()
+        context = input_latents if edit_layout else None
+        colormap = (config.depth_colormaps or ["cube_edge"])[0]
+        family = self.backend.family
+        dt = 1.0 / config.opd_rollout_steps
+
+        def student_fn(latents, timesteps, cond, size, context_latents=None):
+            kwargs = {"context_latents": context_latents} if context_latents is not None else {}
+            return self.backend.forward(latents, timesteps, cond, size, **kwargs)
+
+        rollouts = []
+        rewards = []
+        for _ in range(config.grpo_group_size):
+            noise = torch.randn_like(input_latents)
+            with torch.no_grad():
+                rolled = rollout_sde(
+                    student_fn,
+                    noise,
+                    config.opd_rollout_steps,
+                    family,
+                    config.grpo_sde_sigma,
+                    text_cond,
+                    context,
+                )
+                decoded = to_unit_rgb(self.backend.decode_latents(rolled["final"]))
+                reward = decoded_metric_reward(
+                    task, decoded, target_rgb, colormap=colormap
+                )
+            rollouts.append(rolled)
+            rewards.append(reward)
+        reward_tensor = torch.cat(rewards)
+        advantages = group_advantages(reward_tensor)
+        indices = high_noise_indices(config.opd_rollout_steps, config.opd_train_timesteps)
+        surrogates = []
+        for index in indices.tolist():
+            new_logps = []
+            old_logps = []
+            for rolled in rollouts:
+                x_t = rolled["states"][index]
+                x_next = rolled["next_states"][index]
+                time = rolled["times"][index]
+                with torch.no_grad():
+                    old_v = student_fn(x_t, time, text_cond, batch_size, context)
+                    old_logps.append(
+                        gaussian_transition_log_prob(
+                            x_next, x_t, old_v, dt, config.grpo_sde_sigma, family
+                        )
+                    )
+                new_v = student_fn(x_t, time, text_cond, batch_size, context)
+                new_logps.append(
+                    gaussian_transition_log_prob(
+                        x_next.detach(), x_t.detach(), new_v, dt, config.grpo_sde_sigma, family
+                    )
+                )
+            surrogates.append(
+                clipped_surrogate(
+                    torch.cat(new_logps),
+                    torch.cat(old_logps).detach(),
+                    advantages.detach(),
+                    config.grpo_clip_eps,
+                )
+            )
+        total = torch.stack(surrogates).mean()
+        if not torch.isfinite(total).all():
+            raise FloatingPointError(f"Non-finite GRPO loss at step {global_step}")
+        return {
+            "loss": total,
+            "total_loss": total.item(),
+            "flow_loss": total.item(),
+            "depth_aux": 0.0,
+            "normal_aux": 0.0,
+            "reward_mean": float(reward_tensor.mean()),
+            "task_loss_acc": {task: [total.item()]},
         }
 
     @torch.no_grad()
