@@ -268,6 +268,7 @@ class VisionBanana:
         )
         result["metadata"]["latency_ms"] = (time.perf_counter() - started) * 1000.0
         if task == "referring":
+            result["metadata"]["referring_prompt_version"] = getattr(self, "referring_prompt_version", "query_v2")
             result["metadata"]["referring_encoding"] = resolve_referring_encoding(
                 referring_encoding, target_color,
             )
@@ -364,6 +365,7 @@ class VisionBanana:
             )
             result["metadata"]["latency_ms"] = (time.perf_counter() - started) * 1000.0
             if task == "referring":
+                result["metadata"]["referring_prompt_version"] = getattr(self, "referring_prompt_version", "query_v2")
                 result["metadata"]["referring_encoding"] = resolve_referring_encoding(
                     kwargs.get("referring_encoding"), kwargs.get("target_color", (255, 255, 255)),
                 )
@@ -521,7 +523,10 @@ class VisionBanana:
             color = "white" if tuple(target_color) == (255, 255, 255) else (
                 f"<{target_color[0]}, {target_color[1]}, {target_color[2]}>"
             )
-            return self.prompt_builder.build_referring_prompt(expression, color=color, encoding=encoding)
+            return self.prompt_builder.build_referring_prompt(
+                expression, color=color, encoding=encoding,
+                prompt_version=getattr(self, "referring_prompt_version", "query_v2"),
+            )
 
         elif task == "depth":
             return self.prompt_builder.build_depth_prompt()
@@ -890,6 +895,7 @@ class VisionBanana:
             "tiled": True,
         }
         if task == "referring":
+            result["metadata"]["referring_prompt_version"] = getattr(self, "referring_prompt_version", "query_v2")
             result["metadata"]["referring_encoding"] = resolve_referring_encoding(
                 kwargs.get("referring_encoding"), kwargs.get("target_color", (255, 255, 255)),
             )

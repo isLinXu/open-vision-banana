@@ -522,6 +522,7 @@ def build_res_manifest(
                 "target": target_paths[target_key],
                 "expression": expression,
                 "prompt": build_binary_referring_prompt(expression),
+                "prompt_version": "query_v2",
                 "encoding": BINARY_REFERRING_ENCODING,
                 "source_dataset": source,
                 "source_protocol": protocol,

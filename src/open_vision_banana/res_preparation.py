@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .heldout import benchmark_leak
 from .referring_contract import BINARY_REFERRING_ENCODING, build_binary_referring_prompt
 
 FIELDS = frozenset(("image", "question", "cot_answer", "mask", "category"))
@@ -282,6 +283,9 @@ def build_res_pairs(
                     continue
                 if raw.get("image_id") in blocked_ids:
                     raise ValueError("Held-out COCO image id overlap")
+                leak = benchmark_leak({"source_image": raw.get("source_image")}, set())
+                if leak is not None:
+                    raise ValueError(f"Held-out benchmark source image ({leak})")
                 question = raw["question"]
                 prompt = build_binary_referring_prompt(question)
                 if not isinstance(raw["cot_answer"], str):
@@ -318,6 +322,7 @@ def build_res_pairs(
                     "split": "train",
                     "expression": question,
                     "prompt": prompt,
+                    "prompt_version": "query_v2",
                     "cot_answer": raw["cot_answer"],
                     "encoding": BINARY_REFERRING_ENCODING,
                     "width": image.width,

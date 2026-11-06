@@ -11,16 +11,19 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
 import os
 import random
 import re
+import shutil
 from pathlib import Path
 
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
 from PIL import Image, ImageFile
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
@@ -33,8 +36,11 @@ from .config import TrainingConfig
 from .distributed import (
     all_reduce_gradients_,
     barrier,
+    broadcast_float,
     broadcast_parameters_,
     cleanup,
+    clip_grad_norm,
+    ensure_process_group,
     init_distributed,
 )
 from .edit_forward import edit_latent_layout
@@ -229,6 +235,7 @@ class ManifestVisionDataset(Dataset):
         tar_index_path: Path | None = None,
         inner_prefix: str = "SenseNova-Vision-Corpus-50M",
         disk_cache_dir: Path | None = None,
+        referring_prompt_version: str = "query_v2",
     ):
         self.resolution = resolution
         self.split = split
@@ -246,12 +253,11 @@ class ManifestVisionDataset(Dataset):
         self.disk_cache_dir = Path(disk_cache_dir) if disk_cache_dir else None
         self.samples: list[dict[str, str]] = []
         path_anchor = data_root.resolve() if data_root else manifest_path
-        if "referring" in tasks:
-            roots = [Path(manifest_path).parent]
-            if data_root is not None:
-                roots.append(Path(data_root))
-            if any((root / "BUILD_INCOMPLETE").exists() for root in roots):
-                raise ValueError("RES dataset build or restore is incomplete; validate before training")
+        roots = [Path(manifest_path).parent]
+        if data_root is not None:
+            roots.append(Path(data_root))
+        if any((root / "BUILD_INCOMPLETE").exists() for root in roots):
+            raise ValueError("Dataset build or restore is incomplete; validate before training")
 
         # Optional indexed_gzip tar stream support (Solution 3)
         self._tar_files: dict[str, dict[str, int]] = {}
@@ -316,7 +322,7 @@ class ManifestVisionDataset(Dataset):
                     from ..data.res_contract import resolve_referring_prompt
 
                     try:
-                        prompt = resolve_referring_prompt(row)
+                        prompt = resolve_referring_prompt(row, prompt_version=referring_prompt_version)
                     except ValueError as exc:
                         raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 mapping = row.get("mapping") if mapped == "semantic" else None
@@ -329,6 +335,7 @@ class ManifestVisionDataset(Dataset):
                         "target_tar_key": tgt_tar_key or "",
                         "task": mapped,
                         "prompt": prompt,
+                        **{key: row[key] for key in ("experiment_source", "experiment_sample_id", "source_scene") if key in row},
                         # Builders record the exact legend; it beats re-parsing the prompt.
                         **({"mapping": {k: tuple(int(c) for c in v) for k, v in mapping.items()}}
                            if isinstance(mapping, dict) and mapping else {}),
@@ -497,6 +504,12 @@ class ManifestVisionDataset(Dataset):
             "target_rgb": tgt,
             "task": s["task"],
         }
+        if "experiment_source" in s:
+            item["experiment_audit"] = {
+                "source": s["experiment_source"], "id": s["experiment_sample_id"],
+                "scene": s.get("source_scene"), "task": s["task"],
+                "palette": target_cmap if s["task"] == "depth" else None,
+            }
         if s["task"] == "referring":
             item.update({key: s[key] for key in ("expression", "encoding", "sample_id", "source_dataset") if key in s})
         if s["task"] == "instance" and "background_color" in s:
@@ -554,6 +567,8 @@ def _collate_fn(batch: list[dict]) -> dict:
         "target_rgb": torch.stack([b["target_rgb"] for b in batch]),
         "task": [b["task"] for b in batch],
     }
+    if any("experiment_audit" in b for b in batch):
+        result["experiment_audit"] = [b.get("experiment_audit") for b in batch]
     if any(b["task"] == "referring" for b in batch):
         for key in ("expression", "encoding", "sample_id", "source_dataset"):
             if any(key in b for b in batch):
@@ -573,6 +588,11 @@ class Trainer:
 
     Replaces both train_sana_512.py and train_flux.py main() functions.
     """
+
+    @property
+    def full(self) -> bool:
+        """Full-parameter (FSDP2) training instead of a LoRA adapter."""
+        return self.config.train_mode == "full"
 
     def __init__(self, config: TrainingConfig):
         config.validate()
@@ -627,6 +647,11 @@ class Trainer:
         # errors first (missing manifest, identity replay), then the contract preflight.
         self.train_loader, self.val_loader = self._build_datasets()
         model_layout = edit_latent_layout(resolve_model_config(config.model_name))
+        if self.full and model_layout == "hunyuan":
+            raise ValueError(
+                "train_mode full shards a diffusion transformer; HunyuanImage-3.0-Instruct "
+                "is not supported"
+            )
         if model_layout == "qwen21":
             qwen_image21.check_training_config(config)
         if model_layout is not None:
@@ -652,8 +677,15 @@ class Trainer:
             enable_gradient_checkpointing=config.gradient_checkpointing,
             tune_mode=config.tune_mode,
         )
+        # Full-parameter mode shards the backbone (FSDP2); every rank loaded the same weights.
+        if self.full:
+            if self.device.type == "cuda" and self.device.index is not None:
+                torch.cuda.set_device(self.device)  # the one-rank NCCL group and FSDP mesh use it
+            ensure_process_group()
+            self.full_record = full_finetune.shard_backbone(self.backend.peft_model)
         self.trainable_params = [p for p in self.backend.peft_model.parameters() if p.requires_grad]
-        broadcast_parameters_(self.trainable_params, self.dist)
+        if not self.full:
+            broadcast_parameters_(self.trainable_params, self.dist)
         if self.dist.enabled:
             # Same seed above keeps LoRA init identical; from here on each rank needs its
             # own noise / timestep / CFG-dropout draws, or every rank samples the same ones.
@@ -782,8 +814,22 @@ class Trainer:
         ``resume`` is a checkpoint directory or its ``lora.pt``. Every rank loads it, so
         ranks stay identical. With ``resume_weights_only`` only the LoRA weights are taken
         (the EMA shadow restarts from them) and training begins at step 0.
+        Full-parameter runs resume from their sharded ``train_state`` directory (or the
+        run directory holding it): weights, optimizer, EMA, schedule and step.
         """
         path = Path(resume)
+        if self.full:
+            if not (path / "extra.pt").is_file():
+                # The run directory. A crash between the two renames of a save leaves only
+                # the previous state, train_state.old.
+                candidates = (path / "train_state", path / "train_state.old")
+                path = next((p for p in candidates if (p / "extra.pt").is_file()), candidates[0])
+            extra = full_finetune.load_train_state(
+                path, self.backend.peft_model, self.optimizer, self.lr_scheduler, self.ema
+            )
+            step = self._resume_progress(path, int(extra["step"]), extra)
+            self._adopt_saved_best()
+            return step
         if path.is_dir():
             path = path / "lora.pt"
         if not path.is_file():
@@ -826,19 +872,109 @@ class Trainer:
                 self.ema.shadow_params[name].copy_(tensor)
         if self.ema:
             self.ema.step = step
+        return self._resume_progress(path, step, ckpt)
+
+    def _resume_progress(self, path: Path, step: int, saved: dict) -> int:
+        """Reseed for ``step`` and take the saved best score if it is still comparable."""
         # RNG state is not checkpointed. Without a new seed the resumed run would replay
         # the shuffles, noise and timesteps of the run's first steps.
-        seed = self.config.seed + self.dist.rank + step
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        best = ckpt.get("best_val_loss")
-        if best is not None and ckpt.get("selection_protocol") == self._selection_protocol():
+        torch.manual_seed(self.config.seed + self.dist.rank + step)  # seeds every CUDA device too
+        best = saved.get("best_val_loss")
+        if best is not None and saved.get("selection_protocol") == self._selection_protocol():
             self.callbacks.best_val_loss = best
         elif best is not None:
             logger.warning("Reset best score: saved validation protocol differs from current run")
         logger.info("Resumed from %s at step %d (best val_loss=%s)", path, step, best)
         return step
+
+    def _adopt_saved_best(self) -> None:
+        """Take the score of this run's ``_best`` checkpoint when it beats the resumed one.
+
+        Full mode keeps a single ``_best`` and deletes it when a better score arrives. The
+        train state can predate that checkpoint (it is refreshed by plain saves only), and
+        resuming with its older score would let a worse validation replace the best weights.
+        """
+        protocol = self._selection_protocol()
+        for path in self.callbacks.output_dir.glob("checkpoint-*_best/metadata.json"):
+            meta = json.loads(path.read_text())
+            loss = meta.get("val_loss")
+            if meta.get("selection_protocol") == protocol and loss is not None:
+                self.callbacks.best_val_loss = min(self.callbacks.best_val_loss, loss)
+        # Saving a new best is collective: every rank must take the same decision.
+        self.callbacks.best_val_loss = broadcast_float(self.callbacks.best_val_loss)
+
+    def _save_full(self, step: int, suffix: str = "", val_loss: float | None = None) -> None:
+        """Full-parameter checkpoint (collective): ``transformer/``, metadata, then train state.
+
+        Plain and ``_final`` checkpoints hold the online weights and refresh the
+        resumable ``train_state``; ``_best`` holds the EMA weights (when EMA is on) and
+        replaces the previous best directory (a full backbone is 14 GB).
+        """
+        model = self.backend.peft_model
+        out = self.callbacks.output_dir
+        ckpt_dir = out / f"checkpoint-{step}{suffix}"
+        is_best = suffix == "_best"
+        source = "ema" if is_best and self.ema is not None else "online"
+        with self._ema_weights(model) if is_best else contextlib.nullcontext():
+            full_finetune.save_transformer(
+                model, ckpt_dir / "transformer", self.full_record, is_main=self.dist.is_main
+            )
+        protocol = self._selection_protocol()
+        validated = ("ema" if self.ema else "online") if val_loss is not None else None
+        if self.dist.is_main:
+            meta = {
+                "step": step,
+                "val_loss": val_loss,
+                "best_val_loss": val_loss if is_best else self.callbacks.best_val_loss,
+                "train_mode": "full",
+                "model_name": self.config.model_name,
+                "checkpoint_weight_source": "online",
+                "transformer_weight_source": source,
+                "validation_weight_source": validated,
+                "selection_protocol": protocol,
+            }
+            self.callbacks.write_metadata(ckpt_dir, meta)
+            if is_best:
+                for old in out.glob("checkpoint-*_best"):
+                    if old != ckpt_dir:
+                        shutil.rmtree(old, ignore_errors=True)
+            logger.info(
+                "  Saved full checkpoint at step %d (%s weights) → %s", step, source, ckpt_dir
+            )
+        if not is_best:
+            progress = {
+                "best_val_loss": self.callbacks.best_val_loss,
+                "selection_protocol": protocol,
+            }
+            full_finetune.save_train_state(
+                out / "train_state",
+                model,
+                self.optimizer,
+                self.lr_scheduler,
+                self.ema,
+                step,
+                progress,
+                is_main=self.dist.is_main,
+            )
+
+    def _ema_weights(self, model: torch.nn.Module):
+        """Context with the EMA weights in ``model`` (the online ones when EMA is off)."""
+        return self.ema.applied(model) if self.ema is not None else contextlib.nullcontext()
+
+    def _validate_full(self, step: int) -> None:
+        """EMA validation on every rank (the backbone is sharded), best checkpoint if improved."""
+        model = self.backend.peft_model
+        with self._ema_weights(model):
+            try:
+                val_loss = self.validate()
+            finally:
+                full_finetune.reshard(model)  # before the online weights return (EMA swaps shards)
+        val_loss = broadcast_float(val_loss)
+        self.callbacks.on_validation_loss(
+            step, val_loss, lambda: self._save_full(step, "_best", val_loss)
+        )
+        if self.dist.is_main:
+            logger.info("Validation details: %s", self.validation_metrics)
 
     def _selection_protocol(self) -> str:
         source = "ema" if self.ema is not None else "online"
@@ -890,6 +1026,7 @@ class Trainer:
                 semantic_color_remap_prob=config.semantic_color_remap_prob,
                 aspect_preserving_crop=config.aspect_preserving_crop,
                 seed=config.seed,
+                referring_prompt_version=config.referring_prompt_version,
             )
             for t in sorted(tasks_to_load)
         ]
@@ -909,6 +1046,7 @@ class Trainer:
                 depth_log_alpha=config.depth_log_alpha,
                 aspect_preserving_crop=config.aspect_preserving_crop,
                 seed=config.seed,
+                referring_prompt_version=config.referring_prompt_version,
             )
             for t in sorted(tasks_to_load)
         ]
@@ -1007,6 +1145,8 @@ class Trainer:
         }
         task_loss_acc: dict[str, list[float]] = {}
         task_sample_counts: dict[str, int] = {}
+        from .exposure import ExposureAudit
+        exposure = ExposureAudit(Path(config.output_dir), self.dist.rank, self.start_step)
         global_step = self.start_step
         micro_step = 0
         # full passes over the train loader; seeds DistributedSampler shuffles. A resumed
@@ -1031,6 +1171,7 @@ class Trainer:
                     break
                 for task in batch.get("task", []) if isinstance(batch, dict) else []:
                     task_sample_counts[task] = task_sample_counts.get(task, 0) + 1
+                exposure.observe(batch)
 
                 # ── Forward ────────────────────────────────────────────
                 loss_dict = self._train_step(batch, global_step)
@@ -1054,11 +1195,13 @@ class Trainer:
                     continue
 
                 # ── Optimizer step ─────────────────────────────────────
-                all_reduce_gradients_(self.trainable_params, self.dist)
-                grad_norm = float(
-                    torch.nn.utils.clip_grad_norm_(self.trainable_params, float("inf"))
-                )
+                if not self.full:  # FSDP already reduce-scattered the gradients in backward
+                    all_reduce_gradients_(self.trainable_params, self.dist)
+                # The pre-clip norm decides a drop; a dropped update discards the clipped
+                # gradients, so clipping first leaves both outcomes unchanged.
+                grad_norm = clip_grad_norm(self.trainable_params, config.max_grad_norm)
                 if drop_oversized_gradients(grad_norm, config.drop_grad_norm):
+                    exposure.dropped_updates += 1
                     self.optimizer.zero_grad(set_to_none=True)
                     if self.dist.is_main:
                         logger.warning(
@@ -1068,13 +1211,14 @@ class Trainer:
                             config.drop_grad_norm,
                         )
                     continue
-                torch.nn.utils.clip_grad_norm_(self.trainable_params, config.max_grad_norm)
                 self.optimizer.step()
                 self.lr_scheduler.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 if self.ema is not None:
                     self.ema.update(peft_model)
                 global_step += 1
+                if global_step % config.save_every == 0:
+                    exposure.flush(global_step)
 
                 # ── Logging ────────────────────────────────────────────
                 if self.callbacks.should_log(global_step):
@@ -1109,6 +1253,14 @@ class Trainer:
                     task_loss_acc = {}
                     task_sample_counts = {}
 
+                if self.full:
+                    # The backbone is sharded: every rank takes part in saving and validating.
+                    if self.callbacks.should_checkpoint(global_step):
+                        self._save_full(global_step)
+                    if self.val_loader is not None and self.callbacks.should_validate(global_step):
+                        self._validate_full(global_step)
+                    continue
+
                 # Ranks hold identical weights, so rank 0 alone saves and validates;
                 # the others wait for it in the next step's gradient all-reduce.
                 # ── Checkpoint ─────────────────────────────────────────
@@ -1131,12 +1283,8 @@ class Trainer:
                     and self.val_loader is not None
                     and self.callbacks.should_validate(global_step)
                 ):
-                    ema_backup = self.ema.apply_shadow(peft_model) if self.ema else None
-                    try:
+                    with self._ema_weights(peft_model):
                         val_loss = self.validate()
-                    finally:
-                        if self.ema:
-                            self.ema.restore_shadow(peft_model, ema_backup)
                     self.callbacks.on_validate(
                         global_step,
                         val_loss,
@@ -1152,7 +1300,10 @@ class Trainer:
                     logger.info("Validation details: %s", self.validation_metrics)
 
         # ── Final save ─────────────────────────────────────────────────
-        if self.dist.is_main:
+        exposure.flush(global_step, complete=True)
+        if self.full:
+            self._save_full(global_step, "_final")
+        elif self.dist.is_main:
             self.callbacks.on_checkpoint(
                 global_step,
                 peft_model,
@@ -1165,9 +1316,12 @@ class Trainer:
                 suffix="_final",
                 selection_protocol=self._selection_protocol(),
             )
+        if self.dist.is_main:
             self.callbacks.on_finish(global_step)
         barrier(self.dist)  # keep the process group alive until rank 0 has saved
         cleanup(self.dist)
+        if self.full and dist.is_initialized():  # the one-rank group of a single-process run
+            dist.destroy_process_group()
 
     def _in_context_conditioning(self) -> bool:
         """Whether the backbone takes the source image as in-context tokens (Kontext-style)."""

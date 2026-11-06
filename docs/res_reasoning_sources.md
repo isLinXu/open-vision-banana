@@ -78,14 +78,29 @@ On PowerShell, expand the Parquet glob with `Get-ChildItem` as in
 hf download snowball521/Rea2Seg-16K --repo-type dataset \
   --revision 1b2247ca67e50e76f6494065ae089be4bd6ccd19 \
   --include 'data/train-*.parquet' --local-dir data/raw/rea2seg
+curl -L -o data/raw/visual_genome/image_data.json.zip --create-dirs \
+  https://homes.cs.washington.edu/~ranjay/visualgenome/data/dataset/image_data.json.zip
 PYTHONPATH=src python scripts/prepare_rea2seg.py \
   --parquet data/raw/rea2seg/data/train-*.parquet \
   --revision 1b2247ca67e50e76f6494065ae089be4bd6ccd19 \
   --categories gqa-seg lisa-plus spatial --reject-invalid \
   --exclude data/res_binary_v1/pairs.jsonl data/res_binary_v1 \
   --exclude-image-ids data/res_binary_v1/evaluation_image_ids.json \
+  --vg-image-data data/raw/visual_genome/image_data.json.zip \
   --output-dir data/prep/rea2seg
 ```
+
+gqa-seg names its images by Visual Genome id, and about half of Visual Genome are
+COCO images, RefCOCOg UMD val/test images among them; they are re-encoded, so the
+exact-pixel check below does not match them either. `--vg-image-data` (the
+official `image_data.json[.zip]`) maps each to its COCO id so
+`--exclude-image-ids` reaches them; the CLI refuses `--exclude-image-ids` with
+gqa-seg selected but no mapping. A source image whose original name comes from
+an evaluated benchmark (the zero-shot `benchmark_leak` patterns of
+`open_vision_banana.heldout`, e.g. spatial's
+`cityscapes_frankfurt_..._leftImg8bit.png`) is rejected as held-out too, and
+`merge_main_depth_reasoning.py` checks both identities again: Rea2Seg `image_id`
+against the excluded COCO ids, `source_image` against the benchmark patterns.
 
 Download `train.json` and `validation.json` from the authors'
 [official annotation folder](https://drive.google.com/drive/folders/19MyzJN9hkvTSUr2lUFlMwmS2TSRRKmUX).

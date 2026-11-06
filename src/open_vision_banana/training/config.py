@@ -71,6 +71,7 @@ class TrainingConfig:
     depth_log_alpha: float = 0.4
     depth_colormaps: list[str] | None = None
     semantic_prompt_styles: list[str] | None = None
+    referring_prompt_version: str = "query_v2"
     semantic_color_remap_prob: float = 0.0
     aspect_preserving_crop: bool = False
 
@@ -204,6 +205,11 @@ class TrainingConfig:
                 if not isinstance(value, str) or not value.strip():
                     raise ValueError(f"{f.name} must be a non-empty string")
 
+        from ..referring_contract import REFERRING_PROMPT_VERSIONS
+
+        if self.referring_prompt_version not in REFERRING_PROMPT_VERSIONS:
+            raise ValueError("Unknown referring_prompt_version")
+
         for name in ("tasks", "lora_targets", "depth_colormaps", "semantic_prompt_styles"):
             value = getattr(self, name)
             if name in {"lora_targets", "depth_colormaps", "semantic_prompt_styles"} and value is None:
@@ -289,6 +295,16 @@ class TrainingConfig:
             raise ValueError("dtype must be float32, float16, or bfloat16")
         if self.quantize not in {None, "4bit", "8bit"}:
             raise ValueError("quantize must be null, 4bit, or 8bit")
+        if self.train_mode not in {"lora", "full"}:
+            raise ValueError("train_mode must be lora or full")
+        if self.train_mode == "full" and self.quantize is not None:
+            raise ValueError(
+                "train_mode full trains the unquantized backbone; set quantize to null"
+            )
+        if self.train_mode == "full" and self.resume and self.resume_weights_only:
+            raise ValueError(
+                "train_mode full resumes its own sharded state only (no resume_weights_only)"
+            )
         if self.scheduler not in {"cosine", "cosine_restarts", "polynomial", "constant", "one_cycle"}:
             raise ValueError(
                 "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
@@ -397,6 +413,7 @@ _YAML_SECTIONS = {
              "task_weights": "task_sampling_weights",
              "depth_curve": "depth_curve", "depth_log_alpha": "depth_log_alpha",
              "depth_colormaps": "depth_colormaps",
+             "referring_prompt_version": "referring_prompt_version",
              "semantic_prompt_styles": "semantic_prompt_styles",
              "semantic_color_remap_prob": "semantic_color_remap_prob",
              "aspect_preserving_crop": "aspect_preserving_crop"},
@@ -549,8 +566,8 @@ class _UnsupportedBackend(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         parser.error(
             f"{option_string} is not supported by the unified Trainer; LoRA training is "
-            "data-parallel only. Launch with torchrun (e.g. "
-            "scripts/launch_training_a100_80g_ddp.sh)."
+            "data-parallel, and --train-mode full shards the backbone with FSDP2 on its own. "
+            "Launch with torchrun (e.g. scripts/launch_training_a100_80g_ddp.sh)."
         )
 
 

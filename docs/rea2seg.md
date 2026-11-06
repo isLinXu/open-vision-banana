@@ -7,8 +7,9 @@ portable supplement and R0/R1/R2 settings, follow
 [res_reasoning_sources.md](res_reasoning_sources.md). The optional
 `--reject-invalid` flag records and excludes invalid/duplicate/held-out incoming
 rows; the default behavior below still fails explicitly. COCO image ids are
-also checked when recoverable from the original image filename and supplied
-with `--exclude-image-ids`. No resize repair is performed.
+also checked when recoverable from the original image filename (or, for the
+Visual Genome images of gqa-seg, from `--vg-image-data`) and supplied with
+`--exclude-image-ids`; see [res_reasoning_sources.md](res_reasoning_sources.md). No resize repair is performed.
 
 This offline adapter uses [PR #25](https://github.com/isLinXu/open-vision-banana/pull/25)'s
 generic pair manifest, canonical expression prompt, strict COCO decoder and

@@ -15,6 +15,7 @@ from open_vision_banana.rea2seg import (
     DATASET,
     build_rea2seg,
     cached_hf_shards,
+    load_vg_coco_ids,
     parquet_rows,
 )
 
@@ -39,6 +40,11 @@ def main() -> None:
     )
     parser.add_argument("--exclude-image-ids", type=Path, help="RES evaluation_image_ids.json")
     parser.add_argument(
+        "--vg-image-data",
+        type=Path,
+        help="Visual Genome image_data.json[.zip]: COCO ids of gqa-seg images, for --exclude-image-ids",
+    )
+    parser.add_argument(
         "--merge",
         nargs=2,
         type=Path,
@@ -59,11 +65,16 @@ def main() -> None:
         parser.error("--max-samples must be positive")
     if args.dataset and not args.revision:
         parser.error("--dataset requires --revision")
+    if args.exclude_image_ids and "gqa-seg" in args.categories and not args.vg_image_data:
+        parser.error(
+            "gqa-seg images are named by Visual Genome id, and some are RefCOCOg val/test COCO "
+            "images: pass --vg-image-data so --exclude-image-ids reaches them"
+        )
     paths, revision = args.parquet, args.revision
     if args.dataset:
         paths, revision = cached_hf_shards(args.dataset, args.revision)
     report = build_rea2seg(
-        parquet_rows(paths),
+        parquet_rows(paths, load_vg_coco_ids(args.vg_image_data) if args.vg_image_data else None),
         args.output_dir,
         source=args.dataset or DATASET,
         revision=revision,

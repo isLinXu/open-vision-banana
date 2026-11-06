@@ -109,7 +109,7 @@ class _FakeGenerator:
     def __init__(self, **kwargs):
         pass
 
-    def generate(self, *, prompt, image, num_inference_steps, height, width, seed):
+    def generate(self, *, prompt, image, num_inference_steps, guidance_scale, height, width, seed):
         if self.fail_from_seed is not None and seed >= self.fail_from_seed:
             raise RuntimeError("CUDA out of memory")
         return torch.rand(1, 3, height, width, generator=torch.Generator().manual_seed(seed))

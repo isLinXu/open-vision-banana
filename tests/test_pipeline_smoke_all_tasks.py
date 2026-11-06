@@ -254,7 +254,7 @@ def test_all_six_tasks_flow_from_downloaded_layouts_to_batches(tmp_path: Path):
     assert inst_sample["prompt"].startswith("Generate an instance segmentation visualization")
     assert len(SegmentationDecoder.paper_reproduction().decode_instance(inst_sample["target_rgb"].unsqueeze(0))[0]) >= 1
     ref = first("referring")
-    assert ref["prompt"].startswith("This image shows segmentation masks from the given image.")
+    assert ref["prompt"].startswith("Identify the object or region referred to by the following query in the image.")
     mask = decode_referring_mask(ref["target_rgb"].unsqueeze(0))
     assert 0 < int(mask.sum()) < mask.numel()
     gen_sample = first("generation")

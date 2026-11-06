@@ -220,6 +220,8 @@ python scripts/infer_sana_512.py \
 
 For supervised referring expression segmentation, see the [RES data and evaluation guide](docs/res_data.md): validated RefCOCO-family data, a versioned binary mask contract, a pinned Hugging Face release, and native-resolution evaluation.
 
+For category-conditioned semantic and instance supervision, see the [COCONut-B supplement](docs/coconut_segmentation.md): source-verified masks, explicit class/color prompts, held-out COCO ID filtering, portable data bundles, and sampled target visualizations.
+
 ### Paper-aligned recipe (recommended)
 
 The paper's regime is instruction-tuning a *natively image-conditioned* generator on
@@ -242,6 +244,15 @@ styles with on-the-fly colour remapping, the Fig. 3 / Fig. 4 instance and referr
 prompts, aspect-preserving crops and rsLoRA r32/α64. Every run writes
 `effective_config.json`; values the paper does not state (optimizer, lr, ratio, …) are
 marked as repository choices in the config comments.
+
+For the pinned LingBot 50k supplement, see the [full-pool depth experiment plan](docs/lingbot_full_data_experiments.md):
+paired D/P/M configurations, strict data preparation, audited launches and benchmark protocols.
+These are experiment recipes, not claims of improved model results.
+
+For real indoor depth pairs from ARKitScenes, DIODE and non-NYU SUN RGB-D, see
+the [observed-depth supplement](docs/indoor_depth_observed98.md). Preparation
+requires >=98% native observed pixels, preserves official held-out splits and
+uses the existing training format without changing training code.
 
 ### Unified Training Framework
 

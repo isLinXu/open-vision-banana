@@ -9,7 +9,9 @@ Provides production-quality training components:
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
@@ -82,6 +84,15 @@ class EMAModel:
         for name, param in model.named_parameters():
             if name in backup:
                 param.data.copy_(backup[name])
+
+    @contextlib.contextmanager
+    def applied(self, model: nn.Module) -> Iterator[None]:
+        """Run the block with the EMA weights in ``model``; the online weights return after it."""
+        backup = self.apply_shadow(model)
+        try:
+            yield
+        finally:
+            self.restore_shadow(model, backup)
 
 
 def enable_gradient_checkpointing(

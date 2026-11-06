@@ -43,7 +43,10 @@ def coco_ids(row: dict) -> set[int]:
         coco_image_id_from_path(str(row.get(key, ""))) for key in ("input", "image", "source_image")
     }
     source = str(row.get("source_dataset", "")).lower()
-    if row.get("image_id") is not None and ("refcoco" in source or "llmseg" in source):
+    # Rea2Seg image_id is a COCO id: from a COCO file name, or Visual Genome via --vg-image-data
+    if row.get("image_id") is not None and any(
+        s in source for s in ("refcoco", "llmseg", "rea2seg")
+    ):
         ids.add(int(row["image_id"]))
     return {i for i in ids if i is not None}
 

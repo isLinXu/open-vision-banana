@@ -7,19 +7,52 @@ only when used, and Hub access is cache-only.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from collections.abc import Iterable, Iterator
+import zipfile
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 
+from .heldout import coco_image_id_from_path
 from .res_preparation import build_res_pairs
 
 DATASET = "snowball521/Rea2Seg-16K"
 CATEGORIES = ("gqa-seg", "lisa-plus", "spatial", "reasonseg")
 FIELDS = frozenset(("image", "question", "cot_answer", "mask", "category"))
+# gqa-seg image names: the Visual Genome image id
+_VISUAL_GENOME_NAME = re.compile(r"(\d{1,11})\.jpg", re.IGNORECASE)
 
 
-def parquet_rows(paths: Iterable[Path]) -> Iterator[tuple[dict, dict, Path]]:
-    """Yield rows, stable shard/row provenance, and the local image-path root."""
+def load_vg_coco_ids(path: str | Path) -> dict[int, int]:
+    """Visual Genome ``image_data.json`` (or the official ``image_data.json.zip``): VG id -> COCO id.
+
+    gqa-seg names its images by Visual Genome id, and about half of Visual Genome are COCO
+    images (RefCOCOg val/test among them); only this mapping recovers their COCO ids.
+    """
+    path = Path(path)
+    if path.suffix == ".zip":
+        with zipfile.ZipFile(path) as archive:
+            members = [n for n in archive.namelist() if Path(n).name == "image_data.json"]
+            if len(members) != 1:
+                raise ValueError(f"{path.name}: expected one image_data.json, found {members}")
+            records = json.loads(archive.read(members[0]))
+    else:
+        records = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(records, list) or not all(
+        isinstance(r, dict) and "image_id" in r and "coco_id" in r for r in records
+    ):
+        raise ValueError(f"{path.name}: not a Visual Genome image_data list (image_id, coco_id)")
+    return {int(r["image_id"]): int(r["coco_id"]) for r in records if r["coco_id"] is not None}
+
+
+def parquet_rows(
+    paths: Iterable[Path], vg_coco_ids: Mapping[int, int] | None = None
+) -> Iterator[tuple[dict, dict, Path]]:
+    """Yield rows, stable shard/row provenance, and the local image-path root.
+
+    ``vg_coco_ids`` (:func:`load_vg_coco_ids`) gives gqa-seg's Visual Genome images their
+    COCO id, so ``exclude_image_ids`` also reaches them.
+    """
     try:
         import pyarrow.parquet as pq
     except ImportError as exc:
@@ -49,15 +82,19 @@ def parquet_rows(paths: Iterable[Path]) -> Iterator[tuple[dict, dict, Path]]:
                 image_name = (
                     Path(str(image.get("path") or "")).name if isinstance(image, dict) else ""
                 )
-                match = re.fullmatch(
-                    r"(?:COCO_(?:train|val)20\d{2}_)?(\d{12})\.(?:jpg|jpeg|png)",
-                    image_name,
-                    re.IGNORECASE,
-                )
                 if image_name:
                     row["source_image"] = image_name
-                if match:
-                    row["image_id"] = int(match.group(1))
+                image_id = coco_image_id_from_path(image_name)
+                visual_genome = _VISUAL_GENOME_NAME.fullmatch(image_name)
+                if (
+                    image_id is None
+                    and vg_coco_ids is not None
+                    and visual_genome
+                    and row.get("category") == "gqa-seg"
+                ):
+                    image_id = vg_coco_ids.get(int(visual_genome[1]))
+                if image_id is not None:
+                    row["image_id"] = image_id
                 yield (
                     row,
                     {

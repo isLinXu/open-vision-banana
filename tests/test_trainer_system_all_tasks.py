@@ -200,7 +200,7 @@ def test_real_trainer_runs_all_six_tasks_with_a_fake_backend(tmp_path: Path, mon
     assert any("metric depth" in p for p in prompts)
     assert any("surface normal" in p for p in prompts)
     assert any("instance segmentation" in p for p in prompts)
-    assert any(p.startswith("This image shows segmentation masks from the given image.") for p in prompts)
+    assert any(p.startswith("Identify the object or region referred to by the following query in the image.") for p in prompts)
     assert any(p == "make the sky purple" for p in prompts)
     semantic_prompts = [p for p in prompts if parse_prompt_mapping(p)]
     assert semantic_prompts and any(("wall" in p or "chair" in p) for p in semantic_prompts)
