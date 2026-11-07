@@ -161,10 +161,8 @@ def prepare_tartanair(
 
     img_dir = output / "images"
     tgt_dir = output / "targets"
-    metric_dir = output / "metric_depth"
     img_dir.mkdir(parents=True, exist_ok=True)
     tgt_dir.mkdir(parents=True, exist_ok=True)
-    metric_dir.mkdir(parents=True, exist_ok=True)
 
     mapper = DepthRGBMapper()
     written = 0
@@ -181,9 +179,8 @@ def prepare_tartanair(
         stem = f"{idx:06d}_{env_name}_{diff}_{traj}_{frame}"
         out_img = img_dir / f"{stem}.png"
         out_tgt = tgt_dir / f"{stem}.png"
-        out_metric = metric_dir / f"{stem}.npy"
 
-        if out_img.exists() and out_tgt.exists() and out_metric.exists() and not overwrite:
+        if out_img.exists() and out_tgt.exists() and not overwrite:
             written += 1
             continue
 
@@ -204,9 +201,6 @@ def prepare_tartanair(
             target_rgb = mapper.depth_to_rgb(depth).squeeze(0)
             _tensor_to_pil_rgb(target_rgb).save(out_tgt)
             color.save(out_img)
-            # Preserve actual metric evidence for fail-closed training admission;
-            # never infer validity from the encoded RGB target.
-            np.save(out_metric, depth.squeeze(0).squeeze(0).cpu().numpy().astype(np.float32))
             written += 1
 
         except Exception as exc:
@@ -238,7 +232,6 @@ def write_depth_pairs_jsonl(output: Path) -> int:
                 "task": "depth",
                 "input": image_path.relative_to(output).as_posix(),
                 "target": target_path.relative_to(output).as_posix(),
-                "metric_depth": f"metric_depth/{image_path.stem}.npy",
                 "split": "train",
                 "target_kind": "tartanair_metric_rgb",
                 "prompt": "Generate a metric depth visualization of this image.",

@@ -222,8 +222,6 @@ class ManifestVisionDataset(Dataset):
     """Load input/target pairs from a JSONL manifest for multi-task training."""
 
     def __init__(self, manifest_path, resolution, split, tasks, max_samples=None, data_root=None):
-        self.depth_quality_rejections = {"native": 0, "geometry": 0}
-        self.split = split
         self.resolution = resolution
         self.samples = []
         path_anchor = data_root.resolve() if data_root else manifest_path
@@ -238,25 +236,13 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
-                if mapped in {"depth", "depth_edge"} and split == "train":
-                    from open_vision_banana.data.depth_training_quality import (
-                        DepthGeometryRejectedError,
-                        admit_depth_training_row,
-                    )
+                if split == "train" and mapped in {"depth", "depth_edge"}:
+                    from open_vision_banana.data.clean_depth import validate_training_depth_row
 
                     try:
-                        quality = admit_depth_training_row(
-                            row, data_root or Path(manifest_path).parent, resolution
-                        )
-                    except DepthGeometryRejectedError as exc:
-                        self.depth_quality_rejections["geometry"] += 1
-                        logger.info("%s:%s: %s", manifest_path, line_no, exc)
-                        continue
+                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
                     except ValueError as exc:
-                        raise ValueError(f"{manifest_path}:{line_no}: depth quality: {exc}") from exc
-                    if quality is None:
-                        self.depth_quality_rejections["native"] += 1
-                        continue
+                        raise ValueError(f"{manifest_path}:{line_no}: {exc}") from exc
                 img_path = resolve_manifest_path(row.get("input", ""), path_anchor)
                 tgt_path = resolve_manifest_path(row.get("target", ""), path_anchor)
                 if not img_path.is_file() or not tgt_path.is_file():
@@ -268,10 +254,7 @@ class ManifestVisionDataset(Dataset):
                 })
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
-        self.depth_quality_verified = split == "train"
-        if any(self.depth_quality_rejections.values()):
-            logger.info("Depth quality exclusions for %s (%s): %s", manifest_path, split,
-                        self.depth_quality_rejections)
+        self._depth_admission_checked = split == "train"
 
     def __len__(self):
         return len(self.samples)
@@ -300,10 +283,7 @@ class ManifestVisionDataset(Dataset):
             img.load()
             img = img.convert("RGB").resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
             inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
-        resample = Image.Resampling.NEAREST if (
-            s["task"] in DISCRETE_TARGET_TASKS
-            or (self.split == "train" and s["task"] in {"depth", "depth_edge"})
-        ) else Image.Resampling.LANCZOS
+        resample = Image.Resampling.NEAREST if s["task"] in DISCRETE_TARGET_TASKS else Image.Resampling.LANCZOS
         with Image.open(s["target_path"]) as img:
             img.load()
             img = img.convert("RGB").resize((self.resolution, self.resolution), resample)

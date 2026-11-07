@@ -26,7 +26,7 @@
     "pairs.jsonl": "11fe5cf8087af9f1c936a6f85853a4f26e9f715c7b3c5c06ea3cabbdf2e9d69d",
     "report.json": "cc1a43d03307e0708eb7b7c1b489db910ef0c05a31c8932d6e7236ee5c3fecf8"
   },
-  "exclusion_ids_file": "configs/datasets/hypersim_filtered_v1_holes_gt2_exclusions.txt",
+  "exclusion_ids_file": "docs/data/hypersim_filtered_v1_holes_gt2_exclusions.txt",
   "exclusion_ids_sha256": "4824ef76b8fd083f94bd35e908edda4e2e6ef6277608395dc096c3e7451c9559",
   "minimum_rejected_invalid_fraction": 0.020105997721354168,
   "maximum_retained_invalid_fraction": 0.019903818766276043,
@@ -39,5 +39,18 @@
     "omp_threads": 2,
     "openblas_threads": 1,
     "elapsed_time_note": "Approximately six minutes; precise duration was not instrumented."
+  },
+  "read_time_safety_check": {
+    "original_manifest_rejected": true,
+    "original_first_rejected_line": 32,
+    "max_samples_did_not_bypass_check": 1,
+    "clean_manifest_admitted_rows": 12201,
+    "compatibility_samples_read": 16,
+    "compatibility_resolution": 512,
+    "transforms_unchanged": true,
+    "post_transform_coverage_claimed": false,
+    "training_run": false,
+    "gpu_used": false,
+    "elapsed_seconds": 190.238
   }
 }

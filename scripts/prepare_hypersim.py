@@ -176,7 +176,6 @@ def write_metric_depth_pairs_jsonl(output: Path) -> int:
                 "task": "metric_depth",
                 "input": image_path.relative_to(output).as_posix(),
                 "target": target_path.relative_to(output).as_posix(),
-                "metric_depth": f"metric_depth/{image_path.stem}.npy",
                 "split": "train",
                 "target_kind": "hypersim_metric_rgb",
                 "prompt": "Generate a metric depth visualization of this image.",

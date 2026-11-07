@@ -315,33 +315,7 @@ def audit_pair(root, row, source, mapper):
     return stats
 
 
-def loader_accounting(root, rows, dataset):
-    """Separate native asset validity from admission after the 512px transform."""
-    counts = dataset.depth_quality_rejections
-    require(counts["native"] == 0, "Clean build has native loader rejections")
-    require(len(dataset) + counts["geometry"] == len(rows), "Loader accounting mismatch")
-    by_path = {safe_path(root, row["input"]).resolve(): row["sample_id"] for row in rows}
-    require(len(by_path) == len(rows), "Duplicate native input paths")
-    admitted = []
-    for sample in dataset.samples:
-        path = Path(sample["image_path"]).resolve()
-        require(path in by_path, "Loader returned an unknown input path")
-        admitted.append(by_path[path])
-    require(len(admitted) == len(dataset) == len(set(admitted)), "Duplicate loader samples")
-    admitted_set = set(admitted)
-    rejected = [row["sample_id"] for row in rows if row["sample_id"] not in admitted_set]
-    require(len(rejected) == counts["geometry"], "Geometry rejection IDs mismatch")
-    return dict(
-        native_output_pairs=len(rows),
-        admitted_512_pairs=len(admitted),
-        native_rejected_pairs=counts["native"],
-        geometry_rejected_pairs=len(rejected),
-        geometry_rejected_sample_ids=rejected,
-        admitted_sample_ids=admitted,
-    )
-
-
-def audit(root, official_metadata=None, skip_loader_smoke=False):
+def audit(root, official_metadata=None):
     import torch
 
     from open_vision_banana.core.depth_mapper import DepthRGBMapper
@@ -354,10 +328,6 @@ def audit(root, official_metadata=None, skip_loader_smoke=False):
         checks={},
         source_complete=None,
         build_complete_marker_verified=False,
-        loader_smoke={
-            "status": "skipped" if skip_loader_smoke else "pending",
-            "explicit_skip": skip_loader_smoke,
-        },
         packaging="standalone native build; not res_bundle",
     )
     source = None
@@ -564,43 +534,7 @@ def audit(root, official_metadata=None, skip_loader_smoke=False):
             "Incorrect heldout report",
         )
         result["statistics"] = dict(summaries, valid_pixels=total, total_pixels=pixels)
-        if not skip_loader_smoke:
-            from open_vision_banana.training.trainer import ManifestVisionDataset
-
-            dataset = ManifestVisionDataset(
-                root / "pairs.jsonl", resolution=512, split="train", tasks={"depth"}, data_root=root
-            )
-            accounting = loader_accounting(root, rows, dataset)
-            result["loader_smoke"].update(accounting)
-            result["checks"]["native_asset_audit_passed"] = True
-            if rows and not len(dataset):
-                result["loader_smoke"]["status"] = "failed_no_trainable_samples"
-                raise ValueError("No native output samples are trainable at 512px")
-            indices = (
-                np.linspace(0, len(dataset) - 1, min(16, len(dataset)), dtype=int).tolist()
-                if len(dataset)
-                else []
-            )
-            for index in indices:
-                item = dataset[index]
-                tensors = [v for v in item.values() if isinstance(v, torch.Tensor)]
-                require(
-                    len(tensors) >= 2 and all(torch.isfinite(t).all() for t in tensors),
-                    "Loader nonfinite tensors",
-                )
-                require(
-                    all(tuple(t.shape) == (3, 512, 512) for t in tensors if t.ndim == 3),
-                    "Loader shape mismatch",
-                )
-            result["loader_smoke"] = dict(
-                status="passed",
-                samples=len(indices),
-                sample_ids=[accounting["admitted_sample_ids"][i] for i in indices],
-                **accounting,
-                resolution=512,
-                explicit_skip=False,
-                training_run=False,
-            )
+        result["checks"]["native_asset_audit_passed"] = True
         result["status"] = "passed"
         result["scope"] = "complete_source" if report["source_complete"] else "partial_source_only"
     except Exception as exc:
@@ -615,10 +549,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build_dir", type=Path, help="Native component build directory")
     parser.add_argument("--official-metadata", type=Path)
-    parser.add_argument("--skip-loader-smoke", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
-    result = audit(args.build_dir, args.official_metadata, args.skip_loader_smoke)
+    result = audit(args.build_dir, args.official_metadata)
     output = args.output or args.build_dir / "validation_report.json"
     require(
         output.resolve()

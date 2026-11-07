@@ -1,10 +1,12 @@
-"""CPU synthetic tests; run with unittest or pytest, no training imports."""
+"""CPU cleaner and read-only loader admission tests; no training runs."""
 
 import importlib.util
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
@@ -80,6 +82,16 @@ class CleanDepthTests(unittest.TestCase):
         self.assertEqual(report["counts"]["depth_rejected"], 1)
         self.assertEqual(report["counts"]["depth_rows_scanned"], 1)
         self.assertEqual((self.root / "clean/pairs.jsonl").read_text(), "")
+
+    def test_truncated_native_png_rejected_even_with_rgb_tolerance(self):
+        row = self.row()
+        row.pop("metric_depth")
+        row["valid_mask"] = "native_mask.png"
+        path = self.root / row["valid_mask"]
+        Image.new("L", (10, 10), 255).save(path)
+        path.write_bytes(path.read_bytes()[:-16])
+        with patch("PIL.ImageFile.LOAD_TRUNCATED_IMAGES", True), self.assertRaises(ValueError):
+            clean.validate_training_depth_row(row, self.root)
 
     def test_exact_threshold(self):
         for invalid, passes in ((0, True), (2, True), (3, False)):
@@ -227,6 +239,118 @@ class CleanDepthTests(unittest.TestCase):
         _, stats = clean.assess_depth_row(row, self.root)
         self.assertTrue(stats["passes"])
         self.assertIn("metric_depth", stats["validity_sources"])
+
+
+class TrainingAdmissionTests(unittest.TestCase):
+    """Actual loaders are optional only when their installed dependencies are absent."""
+
+    setUp = CleanDepthTests.setUp
+    tearDown = CleanDepthTests.tearDown
+    row = CleanDepthTests.row
+    manifest = CleanDepthTests.manifest
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import importlib
+
+            cls.loaders = [
+                importlib.import_module(name).ManifestVisionDataset
+                for name in (
+                    "open_vision_banana.training.trainer",
+                    "scripts.train_sana_512",
+                    "scripts.train_flux",
+                )
+            ]
+        except ModuleNotFoundError as exc:
+            raise unittest.SkipTest(f"Training loader dependency unavailable: {exc}") from exc
+
+    def test_dirty_after_cap_rejects_entire_manifest(self):
+        path = self.manifest([self.row("clean"), self.row("dirty", invalid=3)])
+        before = path.read_bytes()
+        for loader in self.loaders:
+            with (
+                self.subTest(loader=loader.__module__),
+                self.assertRaisesRegex(ValueError, "exceeds 2%"),
+            ):
+                loader(path, 7, "train", {"depth"}, max_samples=1)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_exact_two_percent_accepts_without_geometry_changes(self):
+        import torch
+
+        path = self.manifest([self.row(invalid=2)])
+        pixels = np.arange(300, dtype=np.uint8).reshape(10, 10, 3)
+        Image.fromarray(pixels).save(self.root / "a-target.png")
+        for loader in self.loaders:
+            kwargs = (
+                {"aspect_preserving_crop": True, "seed": 19} if loader is self.loaders[0] else {}
+            )
+            with self.subTest(loader=loader.__module__):
+                accepted = loader(path, 7, "train", {"depth"}, **kwargs)[0]
+                # Reproduce the pre-admission loader: only its read-only check is
+                # suppressed, leaving the original processing method untouched.
+                with patch("open_vision_banana.data.clean_depth.validate_training_depth_row"):
+                    baseline = loader(path, 7, "train", {"depth"}, **kwargs)[0]
+                self.assertEqual(accepted.keys(), baseline.keys())
+                for key, value in accepted.items():
+                    if isinstance(value, torch.Tensor):
+                        self.assertTrue(torch.equal(value, baseline[key]), key)
+                    else:
+                        self.assertEqual(value, baseline[key])
+
+    def test_validation_and_unrelated_tasks_unchanged(self):
+        dirty_val = self.row("val", invalid=100, split="val")
+        normal = self.row("normal", invalid=100, task="normal")
+        dirty_val.pop("metric_depth")
+        normal.pop("metric_depth")
+        path = self.manifest([dirty_val, normal])
+        for loader in self.loaders:
+            self.assertEqual(len(loader(path, 7, "val", {"depth"})), 1)
+            self.assertEqual(len(loader(path, 7, "train", {"normal"})), 1)
+
+    def test_unknown_evidence_and_unavailable_pair_never_silently_skipped(self):
+        for broken in ("missing_evidence", "missing_input", "bad_evidence"):
+            row = self.row()
+            if broken == "missing_evidence":
+                row.pop("metric_depth")
+            elif broken == "missing_input":
+                row["input"] = "missing.png"
+            else:
+                (self.root / row["metric_depth"]).write_bytes(b"bad")
+            path = self.manifest([row])
+            for loader in self.loaders:
+                with (
+                    self.subTest(loader=loader.__module__, broken=broken),
+                    self.assertRaises(ValueError),
+                ):
+                    loader(path, 7, "train", {"depth"})
+
+    def test_actual_raw_v3_and_tar_adapters_are_rejected_at_tuner_boundary(self):
+        from open_vision_banana.data.datasets import HypersimDepthDataset, V3FlatDataset
+        from open_vision_banana.data.tar_dataset import TarArchiveDataset, TarTargetDataset
+        from open_vision_banana.training.tuner import VisionTaskDataset
+
+        for cls in (
+            HypersimDepthDataset,
+            V3FlatDataset,
+            TarArchiveDataset,
+            TarTargetDataset,
+            VisionTaskDataset,
+        ):
+            # Read-only guard examines metadata; no data loading, model, GPU or
+            # training is needed to exercise these real adapter types.
+            dataset = object.__new__(cls)
+            dataset._reader = None
+            dataset.task = "depth"
+            dataset.samples = []
+            for attribute in ("datasets", "vision_datasets", "task_datasets"):
+                wrapped = SimpleNamespace(**{attribute: {"depth": dataset}})
+                with self.assertRaisesRegex(ValueError, "clean --pair-manifest"):
+                    clean.validate_training_dataset(wrapped)
+        clean.validate_training_dataset(SimpleNamespace(task="normal", samples=[]))
+        with self.assertRaisesRegex(ValueError, "legacy tar/V3"):
+            clean.require_depth_manifest(["depth"], "legacy tar/V3")
 
 
 if __name__ == "__main__":

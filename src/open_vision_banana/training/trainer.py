@@ -252,7 +252,6 @@ class ManifestVisionDataset(Dataset):
         self.inner_prefix = inner_prefix
         self.disk_cache_dir = Path(disk_cache_dir) if disk_cache_dir else None
         self.samples: list[dict[str, str]] = []
-        self.depth_quality_rejections = {"native": 0, "geometry": 0}
         path_anchor = data_root.resolve() if data_root else manifest_path
         roots = [Path(manifest_path).parent]
         if data_root is not None:
@@ -300,27 +299,13 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
-                clean_crop_offsets = None
-                if mapped in {"depth", "depth_edge"} and split == "train":
-                    from ..data.depth_training_quality import (
-                        DepthGeometryRejectedError,
-                        admit_depth_training_row,
-                    )
+                if split == "train" and mapped in {"depth", "depth_edge"}:
+                    from ..data.clean_depth import validate_training_depth_row
 
                     try:
-                        clean_crop_offsets = admit_depth_training_row(
-                            row, data_root or Path(manifest_path).parent, resolution,
-                            aspect_preserving_crop=aspect_preserving_crop,
-                        )
-                    except DepthGeometryRejectedError as exc:
-                        self.depth_quality_rejections["geometry"] += 1
-                        logger.info("%s:%s: %s", manifest_path, _line_no, exc)
-                        continue
+                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
                     except ValueError as exc:
-                        raise ValueError(f"{manifest_path}:{_line_no}: depth quality: {exc}") from exc
-                    if clean_crop_offsets is None:
-                        self.depth_quality_rejections["native"] += 1
-                        continue
+                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 raw_inp = row.get("input", "")
                 raw_tgt = row.get("target", "")
                 # Pure T2I generation rows may provide only "target" (or only "input"/"image")
@@ -352,7 +337,6 @@ class ManifestVisionDataset(Dataset):
                 self.samples.append(
                     {
                         "image_path": str(img_path),
-                        "clean_crop_offsets": clean_crop_offsets,
                         "target_path": str(tgt_path),
                         "input_tar_key": inp_tar_key or "",
                         "target_tar_key": tgt_tar_key or "",
@@ -376,10 +360,7 @@ class ManifestVisionDataset(Dataset):
 
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
-        self.depth_quality_verified = split == "train"
-        if any(self.depth_quality_rejections.values()):
-            logger.info("Depth quality exclusions for %s (%s): %s", manifest_path, split,
-                        self.depth_quality_rejections)
+        self._depth_admission_checked = split == "train"
 
     def _resolve_tar_key(self, rel_path: str) -> str | None:
         if not self._tar_files or not rel_path:
@@ -455,11 +436,10 @@ class ManifestVisionDataset(Dataset):
         inp_img: Image.Image,
         tgt_img: Image.Image,
         target_resample: Image.Resampling,
-        clean_crop_offsets: tuple[int, ...] | None = None,
     ) -> tuple[Image.Image, Image.Image]:
         """Resize (inp, tgt) to (resolution, resolution), optionally preserving aspect ratio."""
         r = self.resolution
-        if clean_crop_offsets == () or not self.aspect_preserving_crop or inp_img.size == (r, r):
+        if not self.aspect_preserving_crop or inp_img.size == (r, r):
             return (
                 inp_img.resize((r, r), Image.Resampling.LANCZOS),
                 tgt_img.resize((r, r), target_resample),
@@ -480,10 +460,7 @@ class ManifestVisionDataset(Dataset):
         tgt_scaled = tgt_img.resize((new_w, new_h), target_resample)
         if new_w == r and new_h == r:
             return inp_scaled, tgt_scaled
-        if self.split == "train" and clean_crop_offsets is not None:
-            offset = self.rng.choice(clean_crop_offsets)
-            left, top = (offset, 0) if new_h == r else (0, offset)
-        elif self.split == "train":
+        if self.split == "train":
             left = self.rng.randint(0, new_w - r)
             top = self.rng.randint(0, new_h - r)
         else:
@@ -499,13 +476,9 @@ class ManifestVisionDataset(Dataset):
             if s["task"] in {"semantic", "instance", "referring", "referring_multi"}
             else Image.Resampling.LANCZOS
         )
-        if s.get("clean_crop_offsets") is not None:
-            resample = Image.Resampling.NEAREST
         raw_inp = self._open_pil_rgb(s["image_path"], s.get("input_tar_key", ""))
         raw_tgt = self._open_pil_rgb(s["target_path"], s.get("target_tar_key", ""))
-        img, tgt_img = self._resize_and_crop_pair(
-            raw_inp, raw_tgt, resample, s.get("clean_crop_offsets")
-        )
+        img, tgt_img = self._resize_and_crop_pair(raw_inp, raw_tgt, resample)
         inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
         tgt = torch.from_numpy(np.asarray(tgt_img, np.float32) / 255.0).permute(2, 0, 1)
         prompt = s["prompt"]

@@ -70,7 +70,8 @@ def test_partial_source_pass_does_not_claim_complete(native_build):
     assert result["build_complete_marker_verified"] is True
     assert result["checks"]["asset_hashes"] == 4
     assert result["checks"]["source_rows_verified"] == 1
-    assert result["loader_smoke"]["samples"] == 1
+    assert result["checks"]["native_asset_audit_passed"] is True
+    assert "loader_smoke" not in result
 
 
 @pytest.mark.parametrize(
@@ -85,14 +86,14 @@ def test_asset_corruption_fails(native_build):
     root, metadata = native_build
     target = root / "targets" / "diode_id0000.png"
     target.write_bytes(target.read_bytes() + b"corruption")
-    result = audit.audit(root, official_metadata=metadata, skip_loader_smoke=True)
+    result = audit.audit(root, official_metadata=metadata)
     assert result["status"] == "failed"
     assert any("hash/size mismatch" in error for error in result["failures"])
 
 
 def test_missing_metadata_fails_explicitly(native_build):
     root, _ = native_build
-    result = audit.audit(root, skip_loader_smoke=True)
+    result = audit.audit(root)
     assert result["status"] == "failed"
     assert any("--official-metadata is required" in error for error in result["failures"])
 
@@ -100,7 +101,7 @@ def test_missing_metadata_fails_explicitly(native_build):
 def test_extra_asset_fails(native_build):
     root, metadata = native_build
     (root / "images" / "orphan.png").write_bytes(b"orphan")
-    result = audit.audit(root, official_metadata=metadata, skip_loader_smoke=True)
+    result = audit.audit(root, official_metadata=metadata)
     assert result["status"] == "failed"
     assert any("Unexpected/missing files" in error for error in result["failures"])
 
@@ -135,7 +136,7 @@ def test_encoding_gate_and_rejections_verified(native_build, cap, expected_pairs
         assert rejection["encoding_max_error_m"] > cap
         rejection["max_encoding_error_m"] = cap + 1
         (output / "quality_rejections.jsonl").write_text(json.dumps(rejection) + "\n")
-        bad = audit.audit(output, official_metadata=metadata, skip_loader_smoke=True)
+        bad = audit.audit(output, official_metadata=metadata)
         assert bad["status"] == "failed"
         assert any("Rejection threshold mismatch" in failure for failure in bad["failures"])
 
@@ -185,25 +186,22 @@ def test_native_resume_is_identical(native_build):
         build.main(args + ["--resume", "--min-valid-fraction", "0.99"])
 
 
-def test_loader_accounting_uses_admitted_paths_after_geometry_skip(tmp_path):
-    rows = [
-        dict(sample_id="diode_a", input="images/a.png"),
-        dict(sample_id="diode_b", input="images/b.png"),
-    ]
+def test_auditor_has_no_training_dependency_or_loader_option():
+    import ast
+    import inspect
 
-    class Dataset:
-        samples = [dict(image_path=str(tmp_path / "images/b.png"))]
-        depth_quality_rejections = {"native": 0, "geometry": 1}
-
-        def __len__(self):
-            return len(self.samples)
-
-    dataset = Dataset()
-    result = audit.loader_accounting(tmp_path, rows, dataset)
-    assert result["native_output_pairs"] == 2
-    assert result["admitted_512_pairs"] == 1
-    assert result["geometry_rejected_sample_ids"] == ["diode_a"]
-    assert result["admitted_sample_ids"] == ["diode_b"]
-    dataset.depth_quality_rejections = {"native": 1, "geometry": 0}
-    with pytest.raises(ValueError, match="native loader rejections"):
-        audit.loader_accounting(tmp_path, rows, dataset)
+    source = Path(audit.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            assert not (node.module or "").startswith("open_vision_banana.training")
+        elif isinstance(node, ast.Import):
+            assert all(
+                not alias.name.startswith("open_vision_banana.training") for alias in node.names
+            )
+    assert "ManifestVisionDataset" not in source
+    assert "loader_accounting" not in source
+    assert "--skip-loader-smoke" not in source
+    assert tuple(inspect.signature(audit.audit).parameters) == ("root", "official_metadata")
+    with pytest.raises(SystemExit):
+        audit.main(["unused-build", "--skip-loader-smoke"])

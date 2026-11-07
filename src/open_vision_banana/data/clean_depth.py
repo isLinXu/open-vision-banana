@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from collections import Counter
+from collections.abc import Mapping
 from fractions import Fraction
 from pathlib import Path
 
@@ -73,6 +74,10 @@ def _plane(path):
         if path.suffix.lower() == ".npy":
             data = np.load(path, allow_pickle=False)
         elif path.suffix.lower() == ".png":
+            # Training modules allow truncated RGB images globally. Native
+            # validity evidence must still pass PNG integrity verification.
+            with Image.open(path) as image:
+                image.verify()
             with Image.open(path) as image:
                 data = np.array(image)
         else:
@@ -80,7 +85,7 @@ def _plane(path):
         if data.ndim != 2 or not data.size or data.dtype.kind not in "bifu":
             raise ValueError("Expected nonempty numeric scalar HxW plane")
         return data
-    except (OSError, ValueError, EOFError) as exc:
+    except (OSError, ValueError, EOFError, SyntaxError) as exc:
         raise ValueError(f"Cannot read native validity source {path}: {exc}") from exc
 
 
@@ -126,6 +131,65 @@ def assess_depth_row(row, root, max_invalid_fraction=0.02):
         passes=within_invalid_fraction(invalid, int(valid.size), max_invalid_fraction),
         validity_sources=sources,
     )
+
+
+def validate_training_depth_row(row, root):
+    """Read-only admission: reject dirty/unknown training depth, never filter it.
+
+    Call before sample caps and before unavailable-pair skipping. No returned
+    mask is applied to the original loader, so accepted sample processing stays
+    exactly as it was, including resize, crops, interpolation and augmentation.
+    """
+    source_split = str(row.get("source_split", "train")).strip().lower()
+    if source_split not in TRAIN_SPLITS:
+        raise ValueError(f"Depth admission rejects held-out source_split={source_split!r}")
+    _, stats = assess_depth_row(row, root)
+    if not stats["passes"]:
+        raise ValueError(
+            f"Depth admission rejected {row.get('input')}: "
+            f"{stats['invalid_pixels']}/{stats['total_pixels']} invalid native pixels "
+            "exceeds 2%. Select an offline-cleaned manifest; no samples were filtered."
+        )
+
+
+def require_depth_manifest(tasks, route):
+    """Reject unsupported legacy depth input rather than silently bypass admission."""
+    if any(task_is_depth({"task": task}) for task in tasks):
+        raise ValueError(
+            f"Depth admission cannot verify {route}. Use a clean --pair-manifest "
+            "with native metric_depth or valid_mask evidence."
+        )
+
+
+def validate_training_dataset(dataset, _seen=None):
+    """Read-only guard for known raw/V3/tar adapters at the legacy tuner entry.
+
+    Constructors used for evaluation remain unchanged. Supported manifest
+    loaders certify admission only after inspecting their full training pool.
+    """
+    seen = set() if _seen is None else _seen
+    if id(dataset) in seen:
+        return
+    seen.add(id(dataset))
+    children = []
+    for name in ("datasets", "vision_datasets", "task_datasets"):
+        collection = getattr(dataset, name, ()) or ()
+        children.extend(collection.values() if isinstance(collection, Mapping) else collection)
+    for name in ("dataset", "generation_dataset"):
+        child = getattr(dataset, name, None)
+        if child is not None:
+            children.append(child)
+    for child in children:
+        validate_training_dataset(child, seen)
+    if children:
+        return
+    tasks = {getattr(dataset, "task", None), getattr(dataset, "TASK_TYPE", None)}
+    tasks.update(getattr(dataset, "tasks", ()) or ())
+    for row in getattr(dataset, "samples", ()):
+        if isinstance(row, dict):
+            tasks.add(row.get("task", row.get("mapped_task")))
+    if not getattr(dataset, "_depth_admission_checked", False):
+        require_depth_manifest(tasks, type(dataset).__name__)
 
 
 def file_sha256(path):
