@@ -38,10 +38,10 @@
     }
   ],
   "loader_smoke": {
-    "state": "not_passed",
-    "samples_loaded": 0,
+    "state": "recorded_separately",
+    "reference": "docs/data/hypersim_loader_validation.json",
     "requested_samples": 16,
-    "note": "Original loader initialization failed closed on the transform-ineligible sample. Full geometry audit does not substitute for the pending end-to-end loader smoke test."
+    "note": "This geometry-only audit does not substitute for a loader smoke test. The subsequent successful 16-sample end-to-end loader validation is recorded in the referenced file."
   },
   "source_datasets_modified": false,
   "threshold_relaxed": false
