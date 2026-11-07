@@ -1,6 +1,5 @@
 """CPU cleaner and read-only loader admission tests; no training runs."""
 
-import importlib.util
 import json
 import tempfile
 import unittest
@@ -11,12 +10,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-SPEC = importlib.util.spec_from_file_location(
-    "clean_depth",
-    Path(__file__).resolve().parents[1] / "src/open_vision_banana/data/clean_depth.py",
-)
-clean = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(clean)
+from open_vision_banana.data import clean_depth as clean
 
 
 class CleanDepthTests(unittest.TestCase):
