@@ -71,18 +71,22 @@ def test_orientation_matches_apples_reference():
         orient(a, "unknown")
 
 
-def test_unchanged_native_loader_accepts_the_pairs(tmp_path):
+def test_native_loader_accepts_clean_geometry_and_rejects_rounded_holes(tmp_path):
     rgb, depth, valid = frame()
     row = save_pair(
         tmp_path, "test", rgb, depth, valid, dict(split="train", source_dataset="arkitscenes")
     )["row"]
     path = tmp_path / "pairs.jsonl"
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
-    ds = ManifestVisionDataset(path, 128, "train", {"depth"}, data_root=tmp_path)
+    ds = ManifestVisionDataset(path, 100, "train", {"depth"}, data_root=tmp_path)
     item = ds[0]
-    assert item["image"].shape == item["target_rgb"].shape == (3, 128, 128)
+    assert item["image"].shape == item["target_rgb"].shape == (3, 100, 100)
     # Validity masks are provenance; the existing trainer has no masked-loss contract.
     assert "valid_mask" not in item
+    # Two invalid rows at 100px become three at 128px, exceeding 2%.
+    resized = ManifestVisionDataset(path, 128, "train", {"depth"}, data_root=tmp_path)
+    assert len(resized) == 0
+    assert resized.depth_quality_rejections == {"native": 0, "geometry": 1}
 
 
 def test_selection_validation_and_existing_bundle_restore(tmp_path):

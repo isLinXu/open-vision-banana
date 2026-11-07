@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "dataset": "hypersim-filtered-v1",
+  "source_manifest": "hypersim-filtered-v1/pairs.jsonl",
+  "source_manifest_sha256": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
+  "input_rows": 13267,
+  "native_depth_rows_scanned": 13267,
+  "rejected_rows": 1066,
+  "retained_rows": 12201,
+  "non_train_rows": 0,
+  "duplicate_rows": 0,
+  "threshold": {
+    "maximum_invalid_fraction": "0.02",
+    "invalid_pixel_rule": "not finite or depth <= 0; intersect supplied native valid_mask",
+    "accept_rule": "invalid_pixels * 50 <= total_pixels",
+    "reject_rule": "invalid_pixels * 50 > total_pixels",
+    "exactly_two_percent": "accepted",
+    "rgb_black_used": false
+  },
+  "scope": "Every row scanned at native metric-depth resolution; input and target geometry checked; no fixed-count selection.",
+  "source_manifest_unchanged": true,
+  "native_source_sha256_inventory": "Retained in the full local report.json and per-row audits; not embedded here.",
+  "outputs_sha256": {
+    "admitted_audit.jsonl": "bb68a101958f3b50c1c36e084b8c2600b1d4aefff9a74747b54d82b723cc4543",
+    "excluded.jsonl": "2865719a0d8b6a34fd8734d934f9c2612d7aa6bc50c2bfc65efa19e7c01a1a7e",
+    "pairs.jsonl": "11fe5cf8087af9f1c936a6f85853a4f26e9f715c7b3c5c06ea3cabbdf2e9d69d",
+    "report.json": "cc1a43d03307e0708eb7b7c1b489db910ef0c05a31c8932d6e7236ee5c3fecf8"
+  },
+  "exclusion_ids_file": "configs/datasets/hypersim_filtered_v1_holes_gt2_exclusions.txt",
+  "exclusion_ids_sha256": "4824ef76b8fd083f94bd35e908edda4e2e6ef6277608395dc096c3e7451c9559",
+  "minimum_rejected_invalid_fraction": 0.020105997721354168,
+  "maximum_retained_invalid_fraction": 0.019903818766276043,
+  "native_pixel_counts": [
+    786432
+  ],
+  "execution": {
+    "gpu_used": false,
+    "cpu_nice": 10,
+    "omp_threads": 2,
+    "openblas_threads": 1,
+    "elapsed_time_note": "Approximately six minutes; precise duration was not instrumented."
+  }
+}

@@ -236,7 +236,12 @@ class VisionAugmentation:
                 target_rgb = target_rgb.clone()
                 target_rgb[0] = 1.0 - target_rgb[0]
 
-        if self.crop_scale[0] < 1.0:
+        # Native-depth admission verified the loader's output geometry. This
+        # legacy augmentation receives RGB only, so cannot verify another crop.
+        # Keep depth geometry intact; flips and input-only jitter remain safe.
+        if self.crop_scale[0] < 1.0 and (task or self.task) not in {
+            "depth", "metric_depth", "depth_estimation", "depth_edge"
+        }:
             _, H, W = image.shape
             scale = torch.FloatTensor(1).uniform_(*self.crop_scale).item()
             crop_h, crop_w = int(H * scale), int(W * scale)

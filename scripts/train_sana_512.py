@@ -751,6 +751,8 @@ class ManifestVisionDataset(Dataset):
     ) -> None:
         self.task = "unknown"
         self.dir_name = "manifest"
+        self.depth_quality_rejections = {"native": 0, "geometry": 0}
+        self.split = split
         self.resolution = resolution
         self.samples: list[dict[str, str]] = []
         # When data_root is provided, resolve relative paths against it
@@ -770,6 +772,25 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
+                if task_info[0] in {"depth", "depth_edge"} and split == "train":
+                    from open_vision_banana.data.depth_training_quality import (
+                        DepthGeometryRejectedError,
+                        admit_depth_training_row,
+                    )
+
+                    try:
+                        quality = admit_depth_training_row(
+                            row, data_root or Path(manifest_path).parent, resolution
+                        )
+                    except DepthGeometryRejectedError as exc:
+                        self.depth_quality_rejections["geometry"] += 1
+                        logger.info("%s:%s: %s", manifest_path, line_no, exc)
+                        continue
+                    except ValueError as exc:
+                        raise ValueError(f"{manifest_path}:{line_no}: depth quality: {exc}") from exc
+                    if quality is None:
+                        self.depth_quality_rejections["native"] += 1
+                        continue
                 image_path = resolve_manifest_path(row.get("input") or "", path_anchor)
                 target_path = resolve_manifest_path(row.get("target") or "", path_anchor)
                 if not image_path.is_file() or not target_path.is_file():
@@ -797,6 +818,10 @@ class ManifestVisionDataset(Dataset):
 
         if max_samples is not None and max_samples > 0:
             self.samples = self.samples[:max_samples]
+        self.depth_quality_verified = split == "train"
+        if any(self.depth_quality_rejections.values()):
+            logger.info("Depth quality exclusions for %s (%s): %s", manifest_path, split,
+                        self.depth_quality_rejections)
 
         if self.samples:
             names = {sample["dir_name"] for sample in self.samples}
@@ -819,7 +844,9 @@ class ManifestVisionDataset(Dataset):
             image.load()
             target_resampling = (
                 Image.Resampling.NEAREST
-                if sample["task"] == "semantic"
+                if sample["task"] == "semantic" or (
+                    self.split == "train" and sample["task"] in {"depth", "depth_edge"}
+                )
                 else Image.Resampling.LANCZOS
             )
             image = image.convert("RGB").resize(
@@ -978,6 +1005,10 @@ def main():
         "specular_removal",
     ]
     tasks_to_load = args.tasks if args.tasks else all_tasks
+    if args.tar_target_mode or args.tar_index is not None or args.pair_manifest is None:
+        from open_vision_banana.data.depth_training_quality import require_depth_manifest
+
+        require_depth_manifest(tasks_to_load, "legacy tar/V3 loading")
 
     generation_dataset = None
     if args.tar_target_mode:

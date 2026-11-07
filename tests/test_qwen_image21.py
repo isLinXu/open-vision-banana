@@ -157,6 +157,7 @@ def test_manifest_dataset_dynamic_depth_colormaps_and_semantic_remapping(tmp_pat
     Image.new("RGB", (32, 32), (100, 100, 100)).save(img_dir / "a.png")
     # Save a valid metric cube_edge depth target at 3.0m
     depth_rgb = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 32, 32), 3.0))[0]
+    np.save(tmp_path / "native_depth.npy", np.full((32, 32), 3.0, dtype=np.float32))
     Image.fromarray((depth_rgb.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)).save(
         tgt_dir / "d.png"
     )
@@ -173,6 +174,7 @@ def test_manifest_dataset_dynamic_depth_colormaps_and_semantic_remapping(tmp_pat
                 "task": "depth",
                 "input": "images/a.png",
                 "target": "targets/d.png",
+                "metric_depth": "native_depth.npy",
                 "split": "train",
                 "prompt": "Generate a metric depth visualization of this image.",
             }

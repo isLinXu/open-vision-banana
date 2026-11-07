@@ -1,0 +1,408 @@
+{
+  "schema_version": 1,
+  "state": "loader_smoke_passed",
+  "dataset": "hypersim-filtered-v1",
+  "source_manifest_sha256": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
+  "native_scan_reference": "docs/data/clean_depth_hypersim_audit.json",
+  "geometry_scan_reference": "docs/data/hypersim_512_geometry_audit.json",
+  "loader": "open_vision_banana.training.trainer.ManifestVisionDataset",
+  "input_rows": 13267,
+  "retained_rows": 12200,
+  "depth_quality_rejections": {
+    "native": 1066,
+    "geometry": 1
+  },
+  "excluded_id_overlap_with_retained": 0,
+  "excluded_set_exact_match": true,
+  "geometry_excluded_ids": [
+    "ai_015_005_cam_00_frame.0050"
+  ],
+  "resolution": 512,
+  "split": "train",
+  "tasks": [
+    "depth"
+  ],
+  "aspect_preserving_crop": true,
+  "seed": 42,
+  "samples_loaded": 16,
+  "sampling": "16 evenly spaced retained indices via numpy.linspace; deterministic seed 42",
+  "samples": [
+    {
+      "index": 0,
+      "sample_id": "ai_011_001_cam_00_frame.0000",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 813,
+      "sample_id": "ai_016_003_cam_00_frame.0080",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 1626,
+      "sample_id": "ai_018_003_cam_00_frame.0098",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 2439,
+      "sample_id": "ai_019_009_cam_00_frame.0016",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 3253,
+      "sample_id": "ai_023_007_cam_01_frame.0058",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 2,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 7.62939453125e-06,
+      "target_black_pixels": 2,
+      "target_black_fraction": 7.62939453125e-06,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 4066,
+      "sample_id": "ai_027_010_cam_02_frame.0082",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 1,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 3.814697265625e-06,
+      "target_black_pixels": 1,
+      "target_black_fraction": 3.814697265625e-06,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 4879,
+      "sample_id": "ai_030_007_cam_00_frame.0082",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 160,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0006103515625,
+      "target_black_pixels": 160,
+      "target_black_fraction": 0.0006103515625,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 5692,
+      "sample_id": "ai_035_007_cam_00_frame.0070",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 6506,
+      "sample_id": "ai_037_005_cam_01_frame.0058",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 1124,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0042877197265625,
+      "target_black_pixels": 1124,
+      "target_black_fraction": 0.0042877197265625,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 7319,
+      "sample_id": "ai_042_004_cam_01_frame.0010",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 8132,
+      "sample_id": "ai_045_005_cam_00_frame.0014",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 8945,
+      "sample_id": "ai_047_006_cam_00_frame.0088",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 3,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 1.1444091796875e-05,
+      "target_black_pixels": 3,
+      "target_black_fraction": 1.1444091796875e-05,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 9759,
+      "sample_id": "ai_050_001_cam_01_frame.0062",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 10572,
+      "sample_id": "ai_051_003_cam_02_frame.0092",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 11385,
+      "sample_id": "ai_053_016_cam_00_frame.0018",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    },
+    {
+      "index": 12199,
+      "sample_id": "ai_055_010_cam_01_frame.0098",
+      "tensor_shapes": {
+        "image": [
+          3,
+          512,
+          512
+        ],
+        "target_rgb": [
+          3,
+          512,
+          512
+        ]
+      },
+      "all_finite": true,
+      "transformed_invalid_pixels": 0,
+      "transformed_total_pixels": 262144,
+      "transformed_invalid_fraction": 0.0,
+      "target_black_pixels": 0,
+      "target_black_fraction": 0.0,
+      "target_black_le_two_percent": true
+    }
+  ],
+  "all_sampled_native_transforms_le_two_percent": true,
+  "all_sampled_targets_black_le_two_percent": true,
+  "target_black_note": "Supplementary encoded-target observation only; admission and transformed coverage were checked against native validity, never inferred from RGB black.",
+  "source_manifest_unchanged": true,
+  "gpu_used": false,
+  "cpu_threads": 2,
+  "loader_initialization_seconds": 218.185,
+  "total_validation_seconds": 219.505,
+  "full_frame_fallback_rows": 35
+}

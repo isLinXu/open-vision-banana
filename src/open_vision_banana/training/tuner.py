@@ -731,6 +731,9 @@ class InstructionTuner:
             Summary dict with ``epochs_run``, ``global_step``, ``best_val_loss``,
             and ``stopped_early`` flag.
         """
+        from ..data.depth_training_quality import check_training_dataset
+
+        check_training_dataset(train_dataset)
         self.peft_model.train()
 
         # ``val_datasets`` was the pre-v1 keyword used by the multitask runner.

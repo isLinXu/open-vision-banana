@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "state": "geometry_audit_passed",
+  "dataset": "hypersim-filtered-v1",
+  "source_manifest": "hypersim-filtered-v1/pairs.jsonl",
+  "source_manifest_sha256": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
+  "native_scan_reference": "docs/data/clean_depth_hypersim_audit.json",
+  "native_input_rows": 13267,
+  "native_rejected_rows": 1066,
+  "native_clean_rows": 12201,
+  "resolution": 512,
+  "aspect_preserving_crop": true,
+  "maximum_invalid_fraction": "0.02",
+  "clean_square_crop_rows": 12165,
+  "verified_full_frame_fallback_rows": 35,
+  "transform_ineligible_rows": 1,
+  "transform_eligible_rows": 12200,
+  "elapsed_seconds": 204.07,
+  "gpu_used": false,
+  "method": "Read-only invocation of the existing native-depth training helper for every native-clean row; only the specific no-clean-crop-or-full-frame exception counted as transform-ineligible. Other exceptions would abort.",
+  "transform_exclusions": [
+    {
+      "sample_id": "ai_015_005_cam_00_frame.0050",
+      "reason": "no_clean_crop_or_full_frame_at_512",
+      "native_invalid_pixels": 15653,
+      "native_total_pixels": 786432,
+      "native_invalid_fraction": 0.019903818766276043,
+      "aspect_resize_size": [
+        683,
+        512
+      ],
+      "minimum_square_crop_invalid_pixels": 7018,
+      "transformed_total_pixels": 262144,
+      "minimum_square_crop_invalid_fraction": 0.02677154541015625,
+      "full_frame_resize_invalid_pixels": 5245,
+      "full_frame_resize_invalid_fraction": 0.020008087158203125,
+      "maximum_allowed_transformed_invalid_pixels": 5242
+    }
+  ],
+  "loader_smoke": {
+    "state": "not_passed",
+    "samples_loaded": 0,
+    "requested_samples": 16,
+    "note": "Original loader initialization failed closed on the transform-ineligible sample. Full geometry audit does not substitute for the pending end-to-end loader smoke test."
+  },
+  "source_datasets_modified": false,
+  "threshold_relaxed": false
+}

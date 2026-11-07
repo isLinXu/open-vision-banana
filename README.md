@@ -254,6 +254,11 @@ the [observed-depth supplement](docs/indoor_depth_observed98.md). Preparation
 requires >=98% native observed pixels, preserves official held-out splits and
 uses the existing training format without changing training code.
 
+For clean DIODE indoor training additions, see the
+[training-data guide](docs/diode_training_data.md). It preserves official
+held-out splits, native metric depth, source provenance and existing
+DIODE duplicate exclusions, with >=98% coverage and <=0.05 m codec error.
+
 ### Unified Training Framework
 
 `scripts/train.py` is one entry point for all registered models (Qwen-Image, SANA,
@@ -686,3 +691,5 @@ If you use this codebase or build upon the Vision Banana paradigm, please cite t
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 The base models (FLUX.1, SANA, etc.) follow their own respective license terms.
+
+Clean depth admission and the measured 1,066-frame Hypersim exclusion are documented in [clean depth training](docs/clean_depth_training.md).

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Clean depth training**: exclude native depth frames with more than 2% invalid pixels before sampling in unified and legacy manifest trainers; restrict depth crops to verified coverage, fail closed for unverifiable depth routes, and add immutable filtering/audit manifests. Original data and evaluation splits remain unchanged. See [clean depth training](docs/clean_depth_training.md).
+
 - **Rea2Seg held-out leak**: gqa-seg images are named by Visual Genome id, so `--exclude-image-ids` never reached them, and the exact-pixel exclusion misses their re-encoded pixels; RefCOCOg UMD val/test COCO images entered training this way (in the #88 T1 pool: 18 rows on 16 val images, 36 rows on 34 test images). The spatial category also carries a Cityscapes val image under its original `cityscapes_frankfurt_..._leftImg8bit.png` name, which no gate looked at. `prepare_rea2seg.py --vg-image-data` (Visual Genome `image_data.json[.zip]`) now gives Visual Genome images their COCO id, and the CLI refuses `--exclude-image-ids` with gqa-seg selected but no mapping. The zero-shot benchmark patterns and the COCO file-name parser moved from `scripts/build_qwen_baseline_manifest.py` (which re-exports them) to `open_vision_banana.heldout`; `benchmark_leak` also reads `source_image`, the parser accepts `coco_<12 digits>`, `build_res_pairs` rejects source images from evaluated benchmarks, and `merge_main_depth_reasoning.py` checks Rea2Seg `image_id`s against the excluded COCO ids.
 
 - **Qwen-Image-2.1 text-to-image**: `BaseGenerator.generate(image=None)` passed `guidance_scale` to `QwenImage21Pipeline`, which only declares `true_cfg_scale`, so every Qwen-Image-2.1 text-to-image call raised `TypeError` (the generation-preservation reference build and proxy evaluation among them). Text-to-image now passes the guidance arguments the pipeline declares: `guidance_scale` where it exists, otherwise `true_cfg_scale` with a blank negative prompt, as the editing path already does.
@@ -33,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Experiment configs**: Updated all archived script references to include `archive/pre_opensource/` prefix.
 
 ### Added
+
+- **DIODE indoor training additions**: native RGB, float metric depth and official validity masks, train-only metadata checks, existing-sample exclusions, 98% coverage and 5 cm maximum encoding-error defaults, and an independent source/asset validator. NYU is not included.
 
 - **Full-parameter training (`train_mode: full`)**: `training.mode: full` in YAML (`--train-mode full` on the CLI) trains every backbone weight instead of a LoRA adapter. The backbone is sharded with FSDP2 `fully_shard` (one unit per transformer block plus the root): fp32 master weights, gradients reduced in fp32 and AdamW state are split across ranks, forward and backward run in bf16. Every checkpoint holds a diffusers `transformer/` directory in bf16 that loads like a base model; the resumable state (sharded weights, optimizer, EMA, schedule, step) is a `torch.distributed.checkpoint` directory, `train_state/`, refreshed by each plain and `_final` save. `_best` keeps the EMA weights and replaces the previous best. Saving and validation run on every rank. `resume` points at the run directory or its `train_state/`; quantization and `resume_weights_only` with a resume path are rejected in this mode. The LoRA path is unchanged.
 

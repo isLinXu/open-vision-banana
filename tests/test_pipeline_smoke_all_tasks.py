@@ -208,6 +208,11 @@ def test_all_six_tasks_flow_from_downloaded_layouts_to_batches(tmp_path: Path):
         exclude_image_ids=[refer_root / "refcocog" / "refs(umd).p"],
     )
     assert audit["rejected_non_metric_depth_rows"] == 0
+    final_rows = [json.loads(line) for line in final.read_text().splitlines() if line.strip()]
+    for row in final_rows:
+        if row["task"] == "depth":
+            assert row.get("metric_depth"), "Native metric evidence must survive preparation and merge"
+            assert (final.parent / row["metric_depth"]).is_file()
     # the RES builder emits the official RefCOCOg val row (image 10); the audit must drop it
     assert audit["rejected_excluded_image_id_rows"] == 1
     counts = audit["task_split_counts"]

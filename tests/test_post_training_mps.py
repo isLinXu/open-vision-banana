@@ -34,8 +34,10 @@ PROMPT = "Generate a metric depth visualization of this image."
 def _write_depth_manifest(root: Path, n_train: int = 4, n_val: int = 2) -> Path:
     images = root / "images"
     targets = root / "targets"
+    metric_depth = root / "metric_depth"
     images.mkdir(parents=True)
     targets.mkdir()
+    metric_depth.mkdir()
     mapper = DepthRGBMapper(colormap="cube_edge")
     rows = []
     for i in range(n_train + n_val):
@@ -46,11 +48,13 @@ def _write_depth_manifest(root: Path, n_train: int = 4, n_val: int = 2) -> Path:
         tgt = Image.fromarray((depth_rgb.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8))
         rgb.save(images / f"{i:03d}.png")
         tgt.save(targets / f"{i:03d}.png")
+        np.save(metric_depth / f"{i:03d}.npy", depth[0, 0].numpy())
         rows.append(
             {
                 "task": "depth",
                 "input": f"images/{i:03d}.png",
                 "target": f"targets/{i:03d}.png",
+                "metric_depth": f"metric_depth/{i:03d}.npy",
                 "split": split,
                 "prompt": PROMPT,
             }
