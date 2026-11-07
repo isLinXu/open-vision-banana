@@ -322,7 +322,9 @@ class TrainingAdmissionTests(unittest.TestCase):
             for loader in self.loaders:
                 with (
                     self.subTest(loader=loader.__module__, broken=broken),
-                    self.assertRaises(ValueError),
+                    self.assertRaises(
+                        (ValueError, FileNotFoundError) if broken == "missing_input" else ValueError
+                    ),
                 ):
                     loader(path, 7, "train", {"depth"})
 

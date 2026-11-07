@@ -299,13 +299,6 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
-                if split == "train" and mapped in {"depth", "depth_edge"}:
-                    from ..data.clean_depth import validate_training_depth_row
-
-                    try:
-                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
-                    except ValueError as exc:
-                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 raw_inp = row.get("input", "")
                 raw_tgt = row.get("target", "")
                 # Pure T2I generation rows may provide only "target" (or only "input"/"image")
@@ -322,6 +315,13 @@ class ManifestVisionDataset(Dataset):
                     raise FileNotFoundError(
                         f"{manifest_path}:{_line_no}: missing input/target: {img_path}, {tgt_path}"
                     )
+                if split == "train" and mapped in {"depth", "depth_edge"}:
+                    from ..data.clean_depth import validate_training_depth_row
+
+                    try:
+                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
+                    except ValueError as exc:
+                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
