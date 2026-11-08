@@ -7,8 +7,8 @@
     "depth": 0.35,
     "semantic": 0.2,
     "instance": 0.2,
-    "referring": 0.15,
-    "generation": 0.1
+    "referring": 0.2,
+    "generation": 0.05
   },
   "counts_status": "component candidates, not a composed or audited full pool",
   "active_train_rows_formula": "1084937 + llmseg.train_rows",

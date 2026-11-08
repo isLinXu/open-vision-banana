@@ -61,10 +61,11 @@ def test_fusion_proposal_loads_real_configuration():
     assert config.tune_mode == "lora"
     assert config.lora_rank == 64
     assert config.steps == 100000
-    assert config.save_every == 10000
+    assert config.save_every == 5000
     assert config.eval_every == 2500
     assert "normal" not in config.tasks
-    assert config.task_sampling_weights["referring"] == 0.15
+    assert config.task_sampling_weights["referring"] == 0.20
+    assert config.task_sampling_weights["generation"] == 0.05
 
 
 @pytest.mark.parametrize("mode", ["lora", "full"])
@@ -72,3 +73,23 @@ def test_invalid_mode_is_not_silently_defaulted(mode):
     config = TrainingConfig(tune_mode=mode + "_typo")
     with pytest.raises(ValueError, match="tune_mode must be lora or full"):
         config.validate()
+
+
+def test_fusion_sampler_uses_latest_task_mix():
+    from open_vision_banana.training.sampling import TaskWeightedSampler
+
+    config = load_config(config_path=ROOT / "configs/experiments/fusion_r64_large_scale.yaml")
+    groups = {task: [index] for index, task in enumerate(config.tasks)}
+    sampler = TaskWeightedSampler(
+        groups,
+        strategy=config.task_sampling,
+        weights=config.task_sampling_weights,
+        num_samples=10000,
+    )
+    assert sampler.task_probabilities == pytest.approx(
+        {"depth": 0.35, "semantic": 0.20, "instance": 0.20, "referring": 0.20, "generation": 0.05}
+    )
+    assert "normal" not in sampler.tasks
+    draws = list(sampler)
+    assert len(draws) == 10000
+    assert set(draws) <= {i for indices in groups.values() for i in indices}

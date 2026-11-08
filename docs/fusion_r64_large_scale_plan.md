@@ -83,12 +83,12 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 
 ## 3. 配比选择与曝光预算
 
-**推荐唯一主线：depth35%、semantic20%、instance20%、referring15%、normal0%（不启用）、generation10%。** 不进行配比网格搜索或阶段性动态调整。理由：
+**推荐唯一主线：depth35%、semantic20%、instance20%、referring20%、normal0%（不启用）、generation5%。** 不进行配比网格搜索或阶段性动态调整。理由：
 
-- 继续保留10% generation replay，避免只增加vision数据而把保留能力目标丢掉。
+- 继续保留5% generation replay，避免只增加vision数据而把保留能力目标丢掉。
 - depth在旧候选池约47.8%；扩容后自然比例为407,278/(1,084,937+N)。继续固定35%，不因referring扩容自动改变已审阅的任务权重。
 - semantic/instance各20%，覆盖COCONut新增大量数据；不按instance行数额外放大其任务权重，因同图单实例/多实例行并非独立图像。
-- 按用户要求，将原normal的5%全部转给referring：referring15%加强查询/推理分割，normal不参与训练。其余任务比例不变，不声称这是验证得到的最优解。
+- 按用户最新要求，normal不参与训练；在此前基础上将generation回放从10%降到5%，另5%分配给referring，使其达到20%。depth/semantic/instance比例不变，不声称这是验证得到的最优解。
 
 | 任务 | 固定概率 | 100k×32期望draw | 候选池 | 平均draw/行 |
 |---|---:|---:|---:|---:|
@@ -96,12 +96,12 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 | normal（不启用） | 0% | 0 | 0（原8,680不纳入） | 不适用 |
 | semantic | 20% | 640,000 | 146,027 | 4.38 |
 | instance | 20% | 640,000 | 233,133 | 2.75 |
-| referring | 15% | 480,000 | 295,505 | 1.62 |
-| generation | 10% | 320,000 | 16,492 | 19.40 |
+| referring | 20% | 640,000 | 295,505 | 2.17 |
+| generation | 5% | 160,000 | 16,492 | 9.70 |
 
-总预算仍为3.2M draw；相较本PR前版，normal的160k draw全部转给referring，使其从320k增至480k（+50%）。新池referring自然比例为(282,007+N)/(1,084,937+N)，generation为16,492/(1,084,937+N)；仍采用固定15%/10%。本轮N=13,498，不用上游33,755冒充准入量；全池候选1,098,435，实际组合及计数需在训练节点绑定旧主池后核验。
+总预算仍为3.2M draw；相较上一版15% referring / 10% replay，本轮将160k draw从generation转给referring，使referring从480k增至640k（+33.3%）、generation从320k降至160k。新池referring自然比例为(282,007+N)/(1,084,937+N)，generation为16,492/(1,084,937+N)；仍采用固定20%/5%。本轮N=13,498，不用上游33,755冒充准入量；全池候选1,098,435，实际组合及计数需在训练节点绑定旧主池后核验。
 
-Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg COCO的预期占比分别为270,195/(282,007+N)、11,812/(282,007+N)、N/(282,007+N)。这意味着新增完整RES将占大部分referring draw；不偷偷给LLMSeg再加分源权重。全量接入指全部准入样本可被采样，不等于每行至少训练一次。有放回采样下，按当前13,498准入量，480k draw约1.624次/行，期望唯一覆盖约80.3%。完整RES/Rea2Seg/LLMSeg约占referring内部91.44%/4.00%/4.57%，预期draw约438,888/19,187/21,925。扩容主要提升样本多样性，固定预算下重复曝光下降。保持用户指定15%与100k预算，不为了声称全覆盖而擅自增步数。
+Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg COCO的预期占比分别为270,195/(282,007+N)、11,812/(282,007+N)、N/(282,007+N)。这意味着新增完整RES将占大部分referring draw；不偷偷给LLMSeg再加分源权重。全量接入指全部准入样本可被采样，不等于每行至少训练一次。有放回采样下，按当前13,498准入量，640k draw约2.166次/行，期望唯一覆盖约88.5%。完整RES/Rea2Seg/LLMSeg约占referring内部91.44%/4.00%/4.57%，预期draw约585,184/25,582/29,234。扩容主要提升样本多样性，固定预算下重复曝光下降。保持用户指定20%与100k预算，不为了声称全覆盖而擅自增步数。
 
 现有Trainer在显式task_sampling_weights非空时不会再自动套vision_ratio：YAML仅列出五个启用任务的权重（总和1），并使用uniform基础策略；这与task_loss_weights不同，启用vision任务loss权重仍全部1，不双重加权。vision_ratio .9仅保留语义一致性，实际抽样以显式权重为准。现有sampler拒绝零权重，因此不写normal: 0：从data.tasks、task_sampling_weights及task_loss_weights中删除normal。Trainer仅为显式tasks建立dataset/group，故normal不会进入采样，即使输入manifest保留其历史行也不训练这些行；不修改sampler或删除资产。
 
@@ -111,7 +111,7 @@ Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg 
 
 ## 4. 保存、恢复与评测
 
-- `checkpoint.save_every: 10000`：每10,000次成功optimizer更新保存一次权重，100k预算对应10k至100k共10个周期checkpoint。global_step在optimizer更新后递增，梯度累积microstep及丢弃的更新不计入；step0没有自动保存。`eval_every: 2500`保持不变，只控制内置flow-loss validation，不是图像推理指标；独立dev图像评测在已完成的10k checkpoint上排队。
+- `checkpoint.save_every: 5000`：每5,000次成功optimizer更新保存一次权重，100k预算对应5k至100k共20个周期checkpoint。global_step在optimizer更新后递增，梯度累积microstep及丢弃的更新不计入；step0没有自动保存。`eval_every: 2500`保持不变，只控制内置flow-loss validation，不是图像推理指标；独立dev图像评测在已完成的5k checkpoint上排队。
 - 主终点100k online；EMA单列，不用测试集或训练loss挑“best”。每10k阶段汇总固定dev/稳定性，最后做完整外部测试。不中途为了漂亮结果换主终点。
 - dev仅来自训练来源已隔离的val/calibration：建议depth512、semantic256、instance256、referring256、generation64 prompts；数量不足就报告真实N，不重复补足。复用已隔离的既有划分，按scene/source分层；固定索引SHA。禁止NYU test/外部final split用于选LR、混合比例或checkpoint。
 - 外部最终：NYU654（仅测试）、ETH3D454、DIODE Indoor325、Cityscapes500、RefCOCOg4896、ReasonSeg200（original query），generation固定200prompt proxy；normal不列为本轮训练/常规dev任务；instance若缺合规外部评测仅报dev，不冒称全能力验证。
@@ -121,7 +121,7 @@ Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg 
 - full-state resume必须具备adapter、optimizer、scheduler、EMA、step、配置/数据/基座hash，缺任何必要项拒绝。首次新训不设resume；后续resume_weights_only=false，不能把父r128当r64恢复。
 - 当前实现不保存完整RNG/data cursor，恢复会重新播种并从中断pass起点重新取数据，**非bit-exact续训**；记录新增启动与重复曝光。需要精确续训时先实现/test，而不是默许。
 - 实际LoRA路径为`Trainer.train` → `TrainingCallbacks.on_checkpoint`：周期目录`checkpoint-N`包含`lora.pt`（online LoRA、optimizer、scheduler、可用EMA及step）、`lora_adapter/`和`metadata.json`。权重adapter本身不含优化器状态，不能单凭它承诺完整恢复；周期adapter导出失败当前仅警告，因此必须检查实际产物后才能入评测队列。这不是另一条`CheckpointManager`路径，不套用其optimizer.pt或max_keep规则。
-- 正常结束另写`checkpoint-100000_final`，与100k周期节点并存；异常中断不承诺final。验证loss改善时现有逻辑还会额外写`checkpoint-N_best`，可能在2,500倍数出现；它不是周期保存，也不替代主终点。保留全部10个周期节点、final及审计记录，既有LoRA callback不自动裁剪周期目录；不新增删除策略，不删除已有产物。
+- 正常结束另写`checkpoint-100000_final`，与100k周期节点并存；异常中断不承诺final。验证loss改善时现有逻辑还会额外写`checkpoint-N_best`，可能在2,500倍数出现；它不是周期保存，也不替代主终点。保留全部20个周期节点、final及审计记录，既有LoRA callback不自动裁剪周期目录；不新增删除策略，不删除已有产物。
 
 ## 5. 与部署无关的训练预算
 
@@ -152,7 +152,7 @@ Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg 
 已核对GitHub状态、源码接口、数据发布文档/服务器既有17,540组合报告、固定模型发布CPU验证与真实shard字节、既有历史执行记录；本轮仅在隔离新目录准备数据和组合入口，未修改共享资产或运行任务。新增YAML已通过CPU语法、parser字段映射、rank/budget/global-batch/scheduler/EMA/resume契约检查；当前TrainingConfig动态load的命名缺陷已修复并通过真实加载回归，不伪称端到端训练/完整CI通过。模型训练、全量合并、训练环境验收、性能与最终指标均**未执行**。
 
 
-CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedSampler五个任务概率与depth35/semantic20/instance20/referring15/generation10精确一致；8rank合计8000 draw不含任何normal索引，每rank1000；原main TrainingConfig.validate的train_mode AttributeError已动态复现，并在本PR修复。无GPU分配，无模型加载。
+最新CPU验收补充：Python3.12.14实际TaskWeightedSampler回归确认五任务概率为depth35/semantic20/instance20/referring20/generation5；10,000 draw均来自这五个任务，normal不参与。此前已动态复现并修复原main TrainingConfig.validate的train_mode AttributeError。无GPU分配，无模型加载。
 
 ### 配置校验修复与剩余边界
 
@@ -200,3 +200,5 @@ clean Hypersim/DIODE17,540与过滤Rea2Seg11,812已发布为[portable-training-v
 LLMSeg最终COCO包约2,772,874,251字节，已完成本地恢复验证；server到Windows中转的实测吞吐偏低，大分片尚未齐备，不能宣称HF已成功提交或给出未经验证的fixed revision。已发布组件和统计不受此传输阻塞影响。对应复现入口见#110文档：必须显式`--full-train --source-categories coco --reject-invalid`，再执行`finalize_llmseg_crop.py --resolution 512`，不能省略类别而要求已取消的EgoObjects。若使用外链原始来源重建，仍须固定来源/选择清单与完整核验，不把上游裸COCO或原始33,755问题直接充当最终13,498训练包。
 
 本轮新增组合器与其测试文件已使用Ruff0.11.4检查和格式化，check/format-check通过；格式化后再次运行24项CPU组合/配置回归通过。
+
+最新保存/配比调整后CPU回归25/25通过（16项组合器、9项配置/实际sampler）；断言save_every=5000、eval_every=2500、referring=.20、generation=.05。候选行数不因采样比例改变。

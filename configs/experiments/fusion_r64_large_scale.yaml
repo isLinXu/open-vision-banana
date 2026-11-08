@@ -28,8 +28,8 @@ data:
     depth: 0.35
     semantic: 0.20
     instance: 0.20
-    referring: 0.15
-    generation: 0.10
+    referring: 0.20
+    generation: 0.05
   vision_ratio: 0.9
   depth_curve: metric_power
   depth_colormaps:
@@ -92,7 +92,7 @@ ema:
   warmup_steps: 500
 checkpoint:
   output_dir: output/fusion_r64_full_clean_s42
-  save_every: 10000
+  save_every: 5000
   eval_every: 2500
   log_every: 50
   resume_weights_only: false
