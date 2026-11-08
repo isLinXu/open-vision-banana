@@ -61,6 +61,8 @@ def test_fusion_proposal_loads_real_configuration():
     assert config.tune_mode == "lora"
     assert config.lora_rank == 64
     assert config.steps == 100000
+    assert config.save_every == 10000
+    assert config.eval_every == 2500
     assert "normal" not in config.tasks
     assert config.task_sampling_weights["referring"] == 0.15
 

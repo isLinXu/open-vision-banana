@@ -92,7 +92,7 @@ ema:
   warmup_steps: 500
 checkpoint:
   output_dir: output/fusion_r64_full_clean_s42
-  save_every: 2500
+  save_every: 10000
   eval_every: 2500
   log_every: 50
   resume_weights_only: false

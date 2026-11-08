@@ -111,7 +111,7 @@ Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg 
 
 ## 4. 保存、恢复与评测
 
-- step0 + 每2,500步完整状态/online adapter，共40个训练节点；每2500执行内置flow-loss validation，并进入独立dev metric队列。内置eval_every不是图像推理指标。
+- `checkpoint.save_every: 10000`：每10,000次成功optimizer更新保存一次权重，100k预算对应10k至100k共10个周期checkpoint。global_step在optimizer更新后递增，梯度累积microstep及丢弃的更新不计入；step0没有自动保存。`eval_every: 2500`保持不变，只控制内置flow-loss validation，不是图像推理指标；独立dev图像评测在已完成的10k checkpoint上排队。
 - 主终点100k online；EMA单列，不用测试集或训练loss挑“best”。每10k阶段汇总固定dev/稳定性，最后做完整外部测试。不中途为了漂亮结果换主终点。
 - dev仅来自训练来源已隔离的val/calibration：建议depth512、semantic256、instance256、referring256、generation64 prompts；数量不足就报告真实N，不重复补足。复用已隔离的既有划分，按scene/source分层；固定索引SHA。禁止NYU test/外部final split用于选LR、混合比例或checkpoint。
 - 外部最终：NYU654（仅测试）、ETH3D454、DIODE Indoor325、Cityscapes500、RefCOCOg4896、ReasonSeg200（original query），generation固定200prompt proxy；normal不列为本轮训练/常规dev任务；instance若缺合规外部评测仅报dev，不冒称全能力验证。
@@ -120,7 +120,8 @@ Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg 
 - 训练与评测的调度由真实部署环境确定；checkpoint完成后进入评测队列，缺失节点明确标记，不假定训练与当前测评服务器共用硬件。
 - full-state resume必须具备adapter、optimizer、scheduler、EMA、step、配置/数据/基座hash，缺任何必要项拒绝。首次新训不设resume；后续resume_weights_only=false，不能把父r128当r64恢复。
 - 当前实现不保存完整RNG/data cursor，恢复会重新播种并从中断pass起点重新取数据，**非bit-exact续训**；记录新增启动与重复曝光。需要精确续训时先实现/test，而不是默许。
-- 全部40个online节点与审计记录保留；完整状态至少最新两个、每10k里程碑与终点。该保留策略需后续实现，清理必须显式批准；不自动删除已有产物。
+- 实际LoRA路径为`Trainer.train` → `TrainingCallbacks.on_checkpoint`：周期目录`checkpoint-N`包含`lora.pt`（online LoRA、optimizer、scheduler、可用EMA及step）、`lora_adapter/`和`metadata.json`。权重adapter本身不含优化器状态，不能单凭它承诺完整恢复；周期adapter导出失败当前仅警告，因此必须检查实际产物后才能入评测队列。这不是另一条`CheckpointManager`路径，不套用其optimizer.pt或max_keep规则。
+- 正常结束另写`checkpoint-100000_final`，与100k周期节点并存；异常中断不承诺final。验证loss改善时现有逻辑还会额外写`checkpoint-N_best`，可能在2,500倍数出现；它不是周期保存，也不替代主终点。保留全部10个周期节点、final及审计记录，既有LoRA callback不自动裁剪周期目录；不新增删除策略，不删除已有产物。
 
 ## 5. 与部署无关的训练预算
 
