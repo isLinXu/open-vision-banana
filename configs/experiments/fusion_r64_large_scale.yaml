@@ -49,6 +49,9 @@ training:
   tune_mode: lora
   objective: sft
   steps: 100000
+  # Deployment placeholders: bind to the actual training environment.
+  # Require world_size * batch_size * gradient_accumulation == 32.
+  # These values do not assert an 8-process or evaluation-server deployment.
   batch_size: 1
   gradient_accumulation: 4
   lr: 3.0e-05

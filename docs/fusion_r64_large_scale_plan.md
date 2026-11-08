@@ -9,7 +9,7 @@
 - 唯一起点：[Melo111/Fusion-C1-KQ0r128-60-40](https://huggingface.co/Melo111/Fusion-C1-KQ0r128-60-40/tree/9d5b9b8ede04d7d9f4a4ff8a6a75a4b734ab1b4d)，固定 revision `9d5b9b8ede04d7d9f4a4ff8a6a75a4b734ab1b4d`。
 - 完整 standalone QwenImage21Pipeline，已经融合 C1/K-Q0-r128 60/40。**不再加载或合并父 adapter，不把该模型当训练状态恢复**。
 - 新建零初始增量 LoRA，r64、alpha64、rsLoRA=true；冻结 Transformer 原权重、text encoder、VAE。target modules 沿用 C1 的七个模块，见 YAML。缩放 alpha/sqrt(r)=8。
-- 一个 seed42、512 分辨率的 SFT run，**100,000 次成功 optimizer update**，global batch32=8卡×1×4；共3.2M成功更新样本 draw，是 #97 20k 主线的5倍步数。不做多rank/LR/full/768搜索。
+- 一个 seed42、512 分辨率的 SFT run，**100,000 次成功 optimizer update**，目标global batch32（按真实训练环境确定microbatch、world size与gradient accumulation）；共3.2M成功更新样本 draw，是 #97 20k 主线的5倍步数。不做多rank/LR/full/768搜索。
 - BF16、无量化、gradient checkpointing；AdamW LR3e-5、betas(.9,.999)、eps1e-8、weight decay .01；cosine，warmup2000，clip1/drop10；EMA .9999/warmup500。
 - 保留既有 flow、PNG target、resize/crop、prompt、task loss、零辅助loss；query_v2。不引入GRPO/OPD/新损失或训练时重编码。
 - 固定配比 depth .35、semantic .20、instance .20、referring .15、normal不参与训练（0）、generation .10。使用现有显式task_sampling_weights，任务内沿用现有采样，不新建分源sampler。`max_samples_per_task: null`。
@@ -28,13 +28,25 @@
 | normal（不启用） | 0 | 既有8,680行资产保留，不进入本轮训练 |
 | semantic | 146,027 | 旧39,133 + COCONut106,894 |
 | instance | 233,133 | 旧38,596 + COCONut194,537 |
-| referring | 49,048 | 既有RefCOCO族和已清理Rea2Seg/LLM-Seg，不再重复追加已包含的20,275 |
+| referring | 49,048 | 旧referring32,932 + crop-filter后Rea2Seg11,812 + LLM-Seg4,304，合计49,048；20,275是过滤前补充包数，非实际主池增量 |
 | generation | 16,492 | 既有replay |
 | **启用任务合计** | **851,978** | 856,385 − 1,066 + 5,339 − 8,680，最终值以实际任务入口为准 |
 
 这不是唯一图片数。本轮不设计或执行数据去重，不把不同任务的同图视为需要再次处理的工作项。旧depth60,852包含TartanAir38,661、原Hypersim8,924、增量Hypersim13,267。#107已处理增量Hypersim13,267→12,201（拒绝1,066）；所有训练深度的准入行为沿用该PR，不在本方案重复实现。407,278是按发布数量及已知替换得到的候选值，若实际#107接入后的数量不同，则更新配比曝光表，不绕过其检查。
 
 **NYU不接入训练，包括已下载但未纳入的NYU labeled/raw；SUN仅non-NYU部分。** 不删除现存NYU资产。SNVC不可逆/单位未知深度、ReasonSeg train、未经审计的原始大池不算“已可用最全数据”。可能存在的既有195行DIODE额外组件必须先证明来源、train身份、native质量、未包含关系，再决定是否增加；本表不偷偷计入它。已有996行在indoor292,153中，只计一次。
+
+### Referring 49,048 的计数口径
+
+该值来自固定主池审计，不是完整RefCOCO-family库的大小：
+**32,932旧referring + 11,812 Rea2Seg + 4,304 LLM-Seg = 49,048 train行**。同一主池另有2,296 val、2,322 test，均不计训练数；一行是image–expression/question–mask配对，不是唯一图像。
+
+Rea2Seg在发布补充包中为15,275，历史512裁剪可见性过滤后主池为11,812；现存filtered manifest逐行重数为gqa-seg6,789、lisa-plus4,888、spatial135。LLM-Seg发布COCO子集5,000，过滤后主池4,304。旧32,932由原33,009再删除历史77条产生；现有固定审计未列它在RefCOCO/+/g三来源的逐项拆分，不能套用独立RES大库的比例冒充。
+
+证据：[主池审计](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202/blob/918a8a0b1a77e4542e996ae291f9882a2fc0721e/data_audit/pairs.audit.json)、[旧池审计](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202/blob/918a8a0b1a77e4542e996ae291f9882a2fc0721e/data_audit/pairs.i88.audit.json)、[已发布RES完整库说明](res_data.md)。主池manifest SHA256为a7100a9ac0f43e72b647f7cd4f36d417175a44a683549ef98e083927f2e93806。本次读取现存补充manifest重数，不重新下载/制作数据。
+
+独立RES库已有270,195条train表达式，是后续扩容可优先研究的来源，但不是额外270,195条可直接叠加当前池。本次仅解释来源，未授权扩容接入、调整15%比例或改变训练预算。
+
 
 ### 固定组件与接入方式
 
@@ -92,29 +104,18 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 - 外部最终：NYU654（仅测试）、ETH3D454、DIODE Indoor325、Cityscapes500、RefCOCOg4896、ReasonSeg200（original query），generation固定200prompt proxy；normal不列为本轮训练/常规dev任务；instance若缺合规外部评测仅报dev，不冒称全能力验证。
 - 固定BF16、512、50 steps、guidance4、strength.85、batch1、seed42+原始index，各benchmark自身mask/crop/cap。raw AbsRel/RMSE/delta1为主，aligned单列；DIODE极端decoded深度不得暗裁。DIODE引入训练后属于same-source held-out，不再声称zero-shot。历史Fusion test结果已被看到，比较应披露而非宣称盲测。
 - 度量与队列记录run/step/online或EMA/protocol hash，完成checkpoint才入队，缺节点显示pending/failed不当0；rank分片合并原始累积量而非直接平均RMSE。每样本指标与失败记录保留。
-- 不额外抢占第9张GPU。8卡都用于训练时，可在完整checkpoint后协调暂停做评测，或明确排队延后；预估额外评测时间。不得与共享任务争抢或中断他人。
+- 训练与评测的调度由真实部署环境确定；checkpoint完成后进入评测队列，缺失节点明确标记，不假定训练与当前测评服务器共用硬件。
 - full-state resume必须具备adapter、optimizer、scheduler、EMA、step、配置/数据/基座hash，缺任何必要项拒绝。首次新训不设resume；后续resume_weights_only=false，不能把父r128当r64恢复。
 - 当前实现不保存完整RNG/data cursor，恢复会重新播种并从中断pass起点重新取数据，**非bit-exact续训**；记录新增启动与重复曝光。需要精确续训时先实现/test，而不是默许。
 - 全部40个online节点与审计记录保留；完整状态至少最新两个、每10k里程碑与终点。该保留策略需后续实现，清理必须显式批准；不自动删除已有产物。
 
-## 5. 资源与预算（估算，不是实测训练）
+## 5. 与部署无关的训练预算
 
-本次只读资源快照：服务器8×A100-PCIE-40GB，每卡40960MiB，当时均1MiB/0% GPU；主机约754GiB RAM、/data剩余1.7TB。未来启动前重新查GPU/进程/锁，当前空闲不代表预留授权。
+真实训练服务器不是当前测评服务器。本方案不以测评机的型号、卡数、显存、空闲状态或吞吐推断训练部署，不给出显存分析和基于测评机的工期估算。
 
-固定Fusion发布验证列出的BF16文件：Transformer约14.230GB、text encoder约17.534GB、VAE约1.351GB，总约33.116GB（30.84GiB）。这不是通常假设的20B Transformer；按实际文件估算。8卡LoRA是**每卡复制**，不能用320GB总量证明单卡能装。40GiB减权重仅约9.2GiB，尚需activation、LoRA/Adam/EMA、attention workspace、allocator峰值。是否fit必须实测，不能承诺。
+目标预算保持100,000次成功更新、global batch32、合计3.2M成功draw。实际部署满足 global batch = world_size × per-process microbatch × gradient accumulation = 32；由真实训练环境确定这些分解参数。YAML现有microbatch1/accumulation4仅为待绑定的模板值，不声明真实world_size为8，也不能在任意进程数下直接声称global batch32。正式执行前按真实world_size修订并保存effective config；如改变global batch则须重新核对draw预算，不能静默变化。
 
-审阅后先单卡forward/backward/save/reload，再8卡200-step资源smoke（不计正式预算）。保留BF16而非未经支持的量化；测峰值reserved/allocated、宿主内存、每成功update耗时、checkpoint大小/写时、恢复一致性。若OOM，先实现并验证冻结encoder offload/适当sharded LoRA支持或改硬件；**不擅自降rank、换基座、改global batch或量化**。这不是增加消融，而是可运行性验收。
-
-以8卡100k更新举例：
-| 实测update秒数假设 | 纯训练天数 | GPU-hours |
-|---:|---:|---:|
-| 5 | 5.79 | 1,111 |
-| 10 | 11.57 | 2,222 |
-| 20 | 23.15 | 4,444 |
-未计smoke、保存、dev/外部评测、故障与I/O；用200步稳定段的p50/p95替换，不将表格当性能承诺。不得误用microstep耗时当optimizer update耗时。
-
-磁盘公式：现有共享只读资产 + 新manifest/必要解包 + 基座33.1GB + 40×adapter大小 + 保留完整状态数×state大小 + predictions/logs +至少20%余量；每个量用真实文件统计。不复制整个原始库或下载86.75GB DIODE源archive。小模型权重并不等于checkpoint仅LoRA大小，optimizer与EMA单独计量。
-
+本PR仍仅供审阅，不启动训练。后续在真实训练环境完成加载、前后向、保存及恢复验收；不在当前测评机代替执行或预留资源。
 ## 6. 当前代码阻断与启动验收
 
 在main a79aa0d及#107观察到：
@@ -129,12 +130,12 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 - [ ] 接入全量组件与#107结果，记录真实counts；不新增去重/深度清理任务。
 - [ ] 通过固定snapshot_download(revision=上述SHA)，核对provenance/file-manifest与所有权重shard，禁止浮动main；环境变量 `OPEN_VISION_BANANA_MODEL_PATH`指向已验本地快照，记录运行依赖版本。
 - [ ] 预检有效配置、trainable参数、零初始adapter、基座hash；不再merge父权重。
-- [ ] 完成独立dev metric队列、完整状态恢复检查、资源smoke与必要内存支持。
-- [ ] 重新检查GPU所有权，用户后续明确批准执行后才正式启动。计划PR合并本身不等于训练授权。
+- [ ] 完成独立dev metric队列、完整状态恢复检查、真实训练环境验收。
+- [ ] 确认真实训练环境及执行授权，用户后续明确批准执行后才正式启动。计划PR合并本身不等于训练授权。
 
 ## 7. 本次验证范围
 
-只读核对GitHub状态、源码接口、数据发布文档/服务器既有17,540组合报告、固定模型发布CPU验证与真实shard字节、当前GPU/CPU/磁盘；未修改共享数据、训练代码或运行任务。新增YAML已通过CPU语法、parser字段映射、rank/budget/global-batch/scheduler/EMA/resume契约检查；当前TrainingConfig动态load的命名缺陷已修复并通过真实加载回归，不伪称端到端训练/完整CI通过。模型训练、全量合并、GPU smoke、性能与最终指标均**未执行**。
+只读核对GitHub状态、源码接口、数据发布文档/服务器既有17,540组合报告、固定模型发布CPU验证与真实shard字节、既有历史执行记录；未修改共享数据、训练代码或运行任务。新增YAML已通过CPU语法、parser字段映射、rank/budget/global-batch/scheduler/EMA/resume契约检查；当前TrainingConfig动态load的命名缺陷已修复并通过真实加载回归，不伪称端到端训练/完整CI通过。模型训练、全量合并、训练环境验收、性能与最终指标均**未执行**。
 
 
 CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedSampler五个任务概率与depth35/semantic20/instance20/referring15/generation10精确一致；8rank合计8000 draw不含任何normal索引，每rank1000；原main TrainingConfig.validate的train_mode AttributeError已动态复现，并在本PR修复。无GPU分配，无模型加载。
@@ -145,4 +146,4 @@ CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedS
 
 同一CPU/offline环境相关117项测试：原快照72失败/45通过，修复后8失败/109通过。8个新增字段回归全部通过，覆盖默认、LoRA/full YAML、真实Fusion YAML、错误mode、无Trainer的effective-config入口。更新既有full测试的过时字段/CLI拼写，保留原断言目的。
 
-剩余8个full训练/保存/恢复测试揭露已有的full_finetune未导入NameError（trainer.py仍有调用而没有导入），与本次字段校验问题不同；未扩大修改，也不声称full训练端到端通过。LoRA主方案不走full分支，但实际GPU smoke仍未执行。仓库Ruff在相同环境下原/新均1587项，按路径、规则、消息和源码行比较无新增/消失；新回归文件单独check/format通过。已有hosted CI也包含缺少diffusers/cv2及其他collection问题，不将修复单个字段说成全仓CI已绿。
+剩余8个full训练/保存/恢复测试揭露已有的full_finetune未导入NameError（trainer.py仍有调用而没有导入），与本次字段校验问题不同；未扩大修改，也不声称full训练端到端通过。LoRA主方案不走full分支，但实际训练环境验收仍未执行。仓库Ruff在相同环境下原/新均1587项，按路径、规则、消息和源码行比较无新增/消失；新回归文件单独check/format通过。已有hosted CI也包含缺少diffusers/cv2及其他collection问题，不将修复单个字段说成全仓CI已绿。
