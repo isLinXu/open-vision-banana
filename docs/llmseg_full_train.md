@@ -179,6 +179,38 @@ old supplement exclusion manifest itself contains only train rows, so it contrib
 no held-out pixel exclusions. Full mixed-pool/baseline pixel exclusion remains
 unverified; do not claim global leakage freedom from these component checks.
 
-The release replaces the old 4,304-row LLMSeg component. HF publication and its
-fixed revision are recorded separately once remote upload/download verification
-completes; local package readiness alone is not remote publication success.
+The release replaces the old 4,304-row LLMSeg component. It is now published at
+[immutable HF revision 9ead7f4](https://huggingface.co/datasets/Melo111/open-vision-banana-res/tree/9ead7f4c8ea1713fb5a2193ad2958ea02123f774/supplements/reasoning-v1/llmseg-coco-full-v1).
+The package contains 27 files, totaling 2,773,988,959 bytes including provenance
+and visual QA. All 27 remote file sizes/hashes match: 11 tar shards were checked
+against HF LFS SHA256 metadata, and the remaining files were anonymously downloaded
+and hashed. This is not a claim that every remote tar was downloaded again.
+
+## Download the pinned published release
+
+From the repository containing merged PR #110 and its normal data dependencies:
+
+```bash
+python scripts/download_res_dataset.py \
+  --repo-id Melo111/open-vision-banana-res \
+  --revision 9ead7f4c8ea1713fb5a2193ad2958ea02123f774 \
+  --subfolder supplements/reasoning-v1/llmseg-coco-full-v1 \
+  --output-dir data/llmseg_coco_full
+```
+
+The downloader checks bundle hashes and restores native images, masks and
+`training.jsonl`. Use that manifest with `data/llmseg_coco_full` as its data root.
+Replace the old 4,304-row LLMSeg component; do not append both versions.
+
+**Server network verification remains blocked.** The anonymous server attempt
+could not connect to `huggingface.co:443` (connection timeout; the HF client also
+reported network unreachable). Zero remote files were downloaded there, so no
+remote-restored server loader result is claimed. The earlier successful local
+bundle restore and all-13,498-row loader run are separate prepublication checks.
+No training was launched and no network/security setting was changed.
+
+See [machine-readable verification](llmseg_coco_release_verification.json) for
+per-file hashes, exact verification scopes and the remaining server-network check.
+Run the command on a node with working HTTPS access to Hugging Face before starting
+training. The upstream annotation-license and mixed-pool leakage limitations above
+still apply.

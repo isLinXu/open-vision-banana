@@ -1,0 +1,197 @@
+{
+  "repo_id": "Melo111/open-vision-banana-res",
+  "revision": "9ead7f4c8ea1713fb5a2193ad2958ea02123f774",
+  "subfolder": "supplements/reasoning-v1/llmseg-coco-full-v1",
+  "url": "https://huggingface.co/datasets/Melo111/open-vision-banana-res/tree/9ead7f4c8ea1713fb5a2193ad2958ea02123f774/supplements/reasoning-v1/llmseg-coco-full-v1",
+  "scope": "LLMSeg COCO training questions only; no EgoObjects",
+  "train_rows": 13498,
+  "manifest_sha256": "1d07e0902c032d56c9b92626447732ac63851da53fbf291e147227d38ab946a8",
+  "bundle_format": "ovb_res_bundle_v1",
+  "bundle_bytes": 2773988959,
+  "remote_publication": {
+    "status": "passed",
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "392c3acd367321228c035a3dc4cc5696a0f504f88afb7fca69c27e2738743c4b",
+        "bytes": 2419,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00000.tar",
+        "sha256": "3ea952da42118478f92834f3951a3c3580c2a04dea2d580feed1dddd2e64bc51",
+        "bytes": 268625920,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00001.tar",
+        "sha256": "09f3dd29d31cd8b03775fba05edf65edc3a478ef5b92a481f6ebc927e4bbc034",
+        "bytes": 268492800,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00002.tar",
+        "sha256": "b0731eb271818e601bee6deaf0ebbbfb935e86157c3d2ad2462732b264115cd7",
+        "bytes": 268697600,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00003.tar",
+        "sha256": "5dd5ee716fc89f624014072fcd016f674f9c3db69be95337cb35daa0ed7f93b7",
+        "bytes": 268359680,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00004.tar",
+        "sha256": "10ce21ea8abacb9f90982306b4212895658d174ec84dc46771633f71a4c395c2",
+        "bytes": 268523520,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00005.tar",
+        "sha256": "f0e4fa037a05a29a0fc7ed13d2c2048d5c42ce60357190f4a687aec66712d515",
+        "bytes": 268769280,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00006.tar",
+        "sha256": "76cd204548e54352f6afb3aa465d62ec674a175b74f00d747b118e2f402ec645",
+        "bytes": 268503040,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00007.tar",
+        "sha256": "debb0064c04ceef7336fb487b2e3a9632f75b91cab824c6dda536a45bea1d223",
+        "bytes": 268748800,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00008.tar",
+        "sha256": "8d6e8c046626ebcafaf7a3037c0188f87eaee5a1842d80317b20bbdb0d14e5f6",
+        "bytes": 268257280,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00009.tar",
+        "sha256": "06c4e6f7fff559d61c6086ba221b80aba1014ff8440b5ffbb9c96989ef9a7f90",
+        "bytes": 270929920,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets/part-00010.tar",
+        "sha256": "2783060282c597e354c399cce217ef4704fec0f14f9d7e305d5a0ebeeb9a47a1",
+        "bytes": 27258880,
+        "verification": "remote_lfs_sha256_and_size"
+      },
+      {
+        "path": "assets.jsonl",
+        "sha256": "88d465557e99516571d14f4c08c506b7756ccae05c11b9818272f146e5f93a6c",
+        "bytes": 3275994,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "build_report.json",
+        "sha256": "108b737455a34844b892765c10ab3e6d7d8f1cf9bf856814c5f8aebd3a2f719e",
+        "bytes": 1297,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "bundle.json",
+        "sha256": "1a2079c6a11befa49a6058b09d5076fc910c67fd037dc42bbee200da1a82b432",
+        "bytes": 4929,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "coco-reasonseg-heldout-check.json",
+        "sha256": "f18f3de00b02b7550cb2ac2fa7f99482bee676be2fd9b3e48408266a489f9734",
+        "bytes": 311,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "coco-visual-review-samples.json",
+        "sha256": "d1a9dfe499e9c0b8ef8eb0f7c1354fa4effeff654c63db5273df747701e1952c",
+        "bytes": 2007,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "coco-visual-review.json",
+        "sha256": "5a7de7e6b692721d5a19faed899c6e29c48381265ad515d7864358e67f7c5f35",
+        "bytes": 548,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "coco-visual-review.png",
+        "sha256": "82ac85dccbe1a74dad995130ab879889aeac591f2b4e284f11b18b38d884bf0b",
+        "bytes": 1111108,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "crop_filter_ledger.jsonl",
+        "sha256": "9ad9d9f05592c34387bb2ae7182b24ea6afdd38c267adb439bceed6a25d7730c",
+        "bytes": 5477358,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "crop_filter_report.json",
+        "sha256": "44dcf96539fce2fd3ba0e35f5045edbca0dee3ade285456d9a0a6d0f8e9f4b76",
+        "bytes": 186258,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "pairs.jsonl",
+        "sha256": "1d07e0902c032d56c9b92626447732ac63851da53fbf291e147227d38ab946a8",
+        "bytes": 20946478,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "rejected.jsonl",
+        "sha256": "2b1d2d929b547419af64788da190afaa39dc41e8fd911de7c016eac7c0b499e0",
+        "bytes": 4958267,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "report.json",
+        "sha256": "e71d0d624dfa6620cbf4c60954a27717279e38f46463a023831f7fe96e64ba95",
+        "bytes": 2498,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "source_attribution.json",
+        "sha256": "9a1ff1f31493c37695a344dd60d296c40ed66a65319f40feadd8884778e08387",
+        "bytes": 1906008,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "training.jsonl",
+        "sha256": "1d07e0902c032d56c9b92626447732ac63851da53fbf291e147227d38ab946a8",
+        "bytes": 20946478,
+        "verification": "anonymous_download_sha256_and_size"
+      },
+      {
+        "path": "validation_report.json",
+        "sha256": "995021c284395b66cb28d63af91c747f4cc6cb5443efbe9f21103dcaca59ba32",
+        "bytes": 281,
+        "verification": "anonymous_download_sha256_and_size"
+      }
+    ],
+    "limits": "11 tar shards checked via remote LFS SHA256 and size, not full remote shard downloads; remaining files anonymously downloaded and hashed."
+  },
+  "prepublication_validation": {
+    "native_assets_checked": 17640,
+    "all_retained_loader_rows_checked": 13498,
+    "local_bundle_restore_manifest_equal": true,
+    "local_restored_loader_smoke_passed": true
+  },
+  "anonymous_server_verification": {
+    "status": "blocked_connection_timeout",
+    "downloaded_files": 0,
+    "restored_assets": 0,
+    "loader_samples": 0,
+    "errors": [
+      "huggingface.co:443 connection timeout (curl exit 28)",
+      "HF client ConnectError: [Errno 101] Network is unreachable"
+    ],
+    "limits": "No complete remote download, restore or loader validation on the server has succeeded. No network/security settings changed."
+  },
+  "training_launched": false
+}

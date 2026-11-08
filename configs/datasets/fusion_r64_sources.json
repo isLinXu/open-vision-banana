@@ -62,9 +62,9 @@
       }
     },
     "llmseg": {
-      "status": "locally_validated_bundle_restore_passed_hf_upload_pending_slow_transfer",
+      "status": "published_remote_hash_verified_anonymous_server_restore_blocked",
       "repo_id": "Melo111/open-vision-banana-res",
-      "revision": null,
+      "revision": "9ead7f4c8ea1713fb5a2193ad2958ea02123f774",
       "subfolder": "supplements/reasoning-v1/llmseg-coco-full-v1",
       "format": "ovb_res_bundle_v1",
       "manifest_sha256": "1d07e0902c032d56c9b92626447732ac63851da53fbf291e147227d38ab946a8",
@@ -82,13 +82,18 @@
         "crop512_image_closure_excluded": 7215,
         "final_admitted": 13498
       },
-      "bundle_bytes": 2772874251,
+      "bundle_bytes": 2773988959,
       "validation": {
         "loader_rows_passed": 13498,
         "local_bundle_restore_passed": true,
-        "published_fixed_revision_verified": false
+        "published_fixed_revision_verified": true,
+        "remote_files_hash_size_verified": 27,
+        "anonymous_full_restore_verified": false,
+        "anonymous_full_restore_status": "blocked_network_unreachable_and_connection_timeout_before_file_download"
       },
-      "reproduction_doc": "https://github.com/isLinXu/open-vision-banana/blob/5e377cc890c45d1b05021a1637d50ad0de3acf18/docs/llmseg_full_train.md"
+      "reproduction_doc": "docs/llmseg_full_train.md",
+      "release_url": "https://huggingface.co/datasets/Melo111/open-vision-banana-res/tree/9ead7f4c8ea1713fb5a2193ad2958ea02123f774/supplements/reasoning-v1/llmseg-coco-full-v1",
+      "validation_report": "docs/llmseg_coco_release_verification.json"
     },
     "rea2seg": {
       "status": "portable_metadata_published_and_anonymous_readback_verified",
