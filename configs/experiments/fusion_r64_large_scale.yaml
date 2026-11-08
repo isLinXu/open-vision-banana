@@ -42,8 +42,10 @@ data:
   semantic_color_remap_prob: 0.5
   aspect_preserving_crop: true
   num_workers: 4
-  dir: data/fusion_r64_full_clean
-  pair_manifest: data/fusion_r64_full_clean/pairs.jsonl
+  dir: data/fusion_r64_full_referring
+  # Strict composition output: full RES + all admitted LLMSeg (COCO and EgoObjects).
+  # Replace legacy referring subsets; see configs/datasets/fusion_r64_pool_spec.example.json.
+  pair_manifest: data/fusion_r64_full_referring/training.jsonl
   max_samples_per_task: null
 training:
   tune_mode: lora

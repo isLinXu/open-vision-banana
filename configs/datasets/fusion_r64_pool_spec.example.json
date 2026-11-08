@@ -1,0 +1,59 @@
+{
+  "expected_removed_referring": 49048,
+  "components": {
+    "baseline": {
+      "manifest": "../../data/qwen_main_depth_reasoning/pairs.jsonl",
+      "root": "../../data/qwen_main_depth_reasoning",
+      "sha256": "a7100a9ac0f43e72b647f7cd4f36d417175a44a683549ef98e083927f2e93806",
+      "expected_train": 212801
+    },
+    "old_hypersim": {
+      "manifest": "../../data/hypersim-filtered-v1/pairs.jsonl",
+      "root": "../../data/hypersim-filtered-v1",
+      "sha256": null,
+      "expected_train": 13267
+    },
+    "full_res": {
+      "manifest": "../../data/res_binary_v1/training.jsonl",
+      "root": "../../data/res_binary_v1",
+      "sha256": "786f30bb64bed54fd57b35fe5a719967fe738c9592c8b6a08003cf2215a6cf15",
+      "expected_train": 270195
+    },
+    "llmseg": {
+      "manifest": "../../data/llmseg_full/training.jsonl",
+      "root": "../../data/llmseg_full",
+      "sha256": null,
+      "expected_train": null
+    },
+    "rea2seg": {
+      "manifest": "../../data/rea2seg_filtered/pairs.jsonl",
+      "root": "../../data/rea2seg_filtered",
+      "sha256": null,
+      "expected_train": 11812
+    },
+    "clean_depth": {
+      "manifest": "../../data/clean_hypersim_diode/pairs.jsonl",
+      "root": "../../data/clean_hypersim_diode",
+      "sha256": null,
+      "expected_train": 17540
+    },
+    "lingbot": {
+      "manifest": "../../data/lingbot-depth-v1/pairs.jsonl",
+      "root": "../../data/lingbot-depth-v1",
+      "sha256": null,
+      "expected_train": 50000
+    },
+    "coconut": {
+      "manifest": "../../data/coconut-b-v1/pairs.jsonl",
+      "root": "../../data/coconut-b-v1",
+      "sha256": null,
+      "expected_train": 301431
+    },
+    "indoor": {
+      "manifest": "../../data/indoor-observed98-v1/pairs.jsonl",
+      "root": "../../data/indoor-observed98-v1",
+      "sha256": null,
+      "expected_train": 292153
+    }
+  }
+}

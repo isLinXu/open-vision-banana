@@ -2,7 +2,7 @@
 
 关联 [Issue #108](https://github.com/isLinXu/open-vision-banana/issues/108)。
 
-状态：**仅方案与配置，不启动训练，不合并 PR。** 参考 [Issue #97](https://github.com/isLinXu/open-vision-banana/issues/97)，但本轮只有一条主线，不复制其初始化、rank、LR、分辨率消融矩阵。所有超参数是拟议的工程选择，不是已验证最优值。
+状态：**方案与数据接入实现；不启动训练，不合并 PR。完整主池尚未构建完成，缺失项见第2节。** 参考 [Issue #97](https://github.com/isLinXu/open-vision-banana/issues/97)，但本轮只有一条主线，不复制其初始化、rank、LR、分辨率消融矩阵。所有超参数是拟议的工程选择，不是已验证最优值。
 
 ## 1. 模型与主配方
 
@@ -28,9 +28,9 @@
 | normal（不启用） | 0 | 既有8,680行资产保留，不进入本轮训练 |
 | semantic | 146,027 | 旧39,133 + COCONut106,894 |
 | instance | 233,133 | 旧38,596 + COCONut194,537 |
-| referring | 49,048 | 旧referring32,932 + crop-filter后Rea2Seg11,812 + LLM-Seg4,304，合计49,048；20,275是过滤前补充包数，非实际主池增量 |
+| referring | 282,007 + N | 完整RES 270,195 + 既有Rea2Seg 11,812 + 全量LLMSeg实际准入N；替换旧32,932与4,304，不重复拼入 |
 | generation | 16,492 | 既有replay |
-| **启用任务合计** | **851,978** | 856,385 − 1,066 + 5,339 − 8,680，最终值以实际任务入口为准 |
+| **启用任务合计** | **1,084,937 + N** | 原候选851,978 − 32,932 − 4,304 + 270,195 + N；不是已构建数量 |
 
 这不是唯一图片数。本轮不设计或执行数据去重，不把不同任务的同图视为需要再次处理的工作项。旧depth60,852包含TartanAir38,661、原Hypersim8,924、增量Hypersim13,267。#107已处理增量Hypersim13,267→12,201（拒绝1,066）；所有训练深度的准入行为沿用该PR，不在本方案重复实现。407,278是按发布数量及已知替换得到的候选值，若实际#107接入后的数量不同，则更新配比曝光表，不绕过其检查。
 
@@ -43,9 +43,18 @@
 
 Rea2Seg在发布补充包中为15,275，历史512裁剪可见性过滤后主池为11,812；现存filtered manifest逐行重数为gqa-seg6,789、lisa-plus4,888、spatial135。LLM-Seg发布COCO子集5,000，过滤后主池4,304。旧32,932由原33,009再删除历史77条产生；现有固定审计未列它在RefCOCO/+/g三来源的逐项拆分，不能套用独立RES大库的比例冒充。
 
-证据：[主池审计](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202/blob/918a8a0b1a77e4542e996ae291f9882a2fc0721e/data_audit/pairs.audit.json)、[旧池审计](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202/blob/918a8a0b1a77e4542e996ae291f9882a2fc0721e/data_audit/pairs.i88.audit.json)、[已发布RES完整库说明](res_data.md)。主池manifest SHA256为a7100a9ac0f43e72b647f7cd4f36d417175a44a683549ef98e083927f2e93806。本次读取现存补充manifest重数，不重新下载/制作数据。
+证据：[主池审计](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202/blob/918a8a0b1a77e4542e996ae291f9882a2fc0721e/data_audit/pairs.audit.json)、[旧池审计](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202/blob/918a8a0b1a77e4542e996ae291f9882a2fc0721e/data_audit/pairs.i88.audit.json)、[已发布RES完整库说明](res_data.md)。主池manifest SHA256为a7100a9ac0f43e72b647f7cd4f36d417175a44a683549ef98e083927f2e93806。历史49,048由现存补充manifest重数佐证；本次授权扩容使用下面的替换式入口。
 
-独立RES库已有270,195条train表达式，是后续扩容可优先研究的来源，但不是额外270,195条可直接叠加当前池。本次仅解释来源，未授权扩容接入、调整15%比例或改变训练预算。
+### 已授权完整Referring接入
+
+用户已确认完整LLMSeg包含其EgoObjects图片。目标为完整RefCOCO/RefCOCO+/RefCOCOg发布train + LLMSeg全训练问题（COCO和EgoObjects），保留现有Rea2Seg；任务比例和3.2M draw预算不变。
+
+- 完整RES固定发布：`Melo111/open-vision-banana-res@dce183e8441c55c8fcf58afd87f90c776024c828`。使用`training.jsonl`的270,195 train行，分别为102,698 / 95,501 / 71,996；24,554安全val另存，不能计作训练。原官方321,327 train表达式已按既有发布协议排除held-out图像和确切重复，不重新做去重工作项。该文件SHA256为`786f30bb64bed54fd57b35fe5a719967fe738c9592c8b6a08003cf2215a6cf15`。
+- LLMSeg依赖[PR #110](https://github.com/isLinXu/open-vision-banana/pull/110)的full-train入口：原始train 44,780问 = COCO 33,755 + EgoObjects 11,025，不再每图只取一问或封顶5,000。`N`必须来自该入口最终实际manifest，不可直接写44,780。既有面积规则初步通过31,270问也不是最终N，尚需实际图片、held-out及既有质量约束完成核验。官方val 3,905问不能进入train。
+- 替换而非叠加：移除旧主池referring训练49,048行，再插入完整RES、最终LLMSeg和原11,812 Rea2Seg。旧32,932的逐来源身份目前未恢复，不声称逐条证明其是完整RES的子集；本方案明确用完整来源替代旧组件，而不是依据猜测做去重。旧验证/测试保留分区。
+- 图像、表达式、掩码分别遵守原数据条款。LLMSeg标注和EgoObjects许可/访问步骤仍待核实；本PR不表示取得再分发许可，不上传新数据或改变上游条款。数据下载/本地接入不等于发布授权。
+
+**当前实物状态**：本机完整RES旧目录仅剩metadata并带`LOCAL_PAYLOAD_REMOVED.md`，不能当完整恢复。新目录已校验固定发布metadata，首个payload下载遇到TLS握手失败，尚无有效完整恢复。其他深度/COCONut/LingBot组件在测评机存在，但真实训练服务器仍需自行绑定数据位置。当前Windows及测评机未找到原主池`data/qwen_main_depth_reasoning/pairs.jsonl`与资产；固定模型发布仅有`data_audit`统计，没有可恢复的主池manifest/资产。因此完整主池实体构建被原主池输入缺失阻塞，不能从统计虚构数据。LLMSeg输出尚待#110完成。
 
 
 ### 固定组件与接入方式
@@ -58,6 +67,8 @@ Rea2Seg在发布补充包中为15,275，历史512裁剪可见性过滤后主池�
 | indoor observed98 | depth repo payload `5a864bd118b5bca23e814917b62c0cb9f1f56da6` / indoor-observed98-v1 | 292,153 train、8,602 val；卡片版本b650…不替代payload版本；见[指南](indoor_depth_observed98.md) |
 | clean Hypersim | #107固定头与排除清单 | 12,201 train，替换旧13,267，不能追加导致重复 |
 | 新DIODE | depth repo `9ed5e65718db68a6cdd000754de681336ab18179` / diode-indoor-train-additions-v1 | 5,339 train；standalone diode_native_tar_v1，不是res_bundle |
+| 完整RES | res repo `dce183e8441c55c8fcf58afd87f90c776024c828` | 270,195 train；替换旧32,932，安全val另存 |
+| 全量LLMSeg | PR #110固定构建输入及产物SHA | COCO+EgoObjects全部训练问题，最终准入N待核验；替换旧4,304 |
 
 depth repo是 `Melo111/open-vision-banana-depth`，segmentation repo是 `Melo111/open-vision-banana-segmentation`。旧池需从现有provenance补齐准确repo/subfolder及每个来源身份，不凭revision猜repo。正式lock未完成前不启动。
 
@@ -67,15 +78,15 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 
 1. 复用现有组件与manifest，记录固定revision和实际行数。LingBot、COCONut、indoor使用现有 `scripts/download_res_dataset.py`；新DIODE按[#107指南](https://github.com/isLinXu/open-vision-banana/blob/adb4a73a166a3212681641b943a77372115131a4/docs/clean_depth_data.md#published-diode-component)的pinned下载/校验/解包流程，不把diode_native_tar_v1当res_bundle。
 2. 用#107输出的12,201行clean Hypersim替换旧13,267行，接入新DIODE5,339；不会再次执行自建深度准入/筛选方案，不改变数据处理、target或loss。
-3. 配置入口为 `data/fusion_r64_full_clean/pairs.jsonl`。按各组件原split接入；原validation独立保留，不拿17,540 train-only最小组合替代完整五个启用任务池。NYU不加入。
-4. 在正式运行effective config中记录各来源manifest身份和实际task/source行数。使用#107已有reader检查，不禁用guard。此PR只提交接入说明，不构造/改写大数据资产或假造完成标记。
+3. 使用严格组合入口 `python scripts/compose_fusion_training_pool.py --spec <已绑定的组件JSON> --output-dir data/fusion_r64_full_referring`。模板见 `configs/datasets/fusion_r64_pool_spec.example.json`；必须绑定真实root/manifest、SHA及LLMSeg最终N。`training.jsonl`只含train与baseline原val；原test及新增component held-out另存，不自动扩大dev或重新划分split。NYU不接入。
+4. 组合器只在新目录重定位资产路径、记录来源SHA/替换账本/实际counts，拒绝缺资产、错数量、未知split或不完整替换，不改写共享资产。`COMPOSED_NOT_AUDITED`仅表示完成组合，不是训练ready；仍需#107 reader、RES/LLMSeg现有准入与真实训练服务器预检。原主池缺失时不会写成功标记。
 
 ## 3. 配比选择与曝光预算
 
 **推荐唯一主线：depth35%、semantic20%、instance20%、referring15%、normal0%（不启用）、generation10%。** 不进行配比网格搜索或阶段性动态调整。理由：
 
 - 继续保留10% generation replay，避免只增加vision数据而把保留能力目标丢掉。
-- depth约占启用候选数据47.8%，其中大量是相邻ARKit帧；给35%比原18%更充分，又不让相关视频帧按池规模完全主导训练。
+- depth在旧候选池约47.8%；扩容后自然比例为407,278/(1,084,937+N)。继续固定35%，不因referring扩容自动改变已审阅的任务权重。
 - semantic/instance各20%，覆盖COCONut新增大量数据；不按instance行数额外放大其任务权重，因同图单实例/多实例行并非独立图像。
 - 按用户要求，将原normal的5%全部转给referring：referring15%加强查询/推理分割，normal不参与训练。其余任务比例不变，不声称这是验证得到的最优解。
 
@@ -85,10 +96,10 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 | normal（不启用） | 0% | 0 | 0（原8,680不纳入） | 不适用 |
 | semantic | 20% | 640,000 | 146,027 | 4.38 |
 | instance | 20% | 640,000 | 233,133 | 2.75 |
-| referring | 15% | 480,000 | 49,048 | 9.79 |
+| referring | 15% | 480,000 | 282,007 + N | 480,000 / (282,007 + N) |
 | generation | 10% | 320,000 | 16,492 | 19.40 |
 
-总预算仍为3.2M draw；相较本PR前版，normal的160k draw全部转给referring，使其从320k增至480k（+50%）。按851,978启用池纯比例抽样时referring约5.75%、generation约1.93%，不符合本轮强化指代与保留replay的目的，因此继续使用固定权重。
+总预算仍为3.2M draw；相较本PR前版，normal的160k draw全部转给referring，使其从320k增至480k（+50%）。新池referring自然比例为(282,007+N)/(1,084,937+N)，generation为16,492/(1,084,937+N)；仍采用固定15%/10%。若所有44,780上游问题均通过，理论上界为326,787 referring、1,129,717总行、1.47 draw/行，但这不是实际准入结果。
 
 现有Trainer在显式task_sampling_weights非空时不会再自动套vision_ratio：YAML仅列出五个启用任务的权重（总和1），并使用uniform基础策略；这与task_loss_weights不同，启用vision任务loss权重仍全部1，不双重加权。vision_ratio .9仅保留语义一致性，实际抽样以显式权重为准。现有sampler拒绝零权重，因此不写normal: 0：从data.tasks、task_sampling_weights及task_loss_weights中删除normal。Trainer仅为显式tasks建立dataset/group，故normal不会进入采样，即使输入manifest保留其历史行也不训练这些行；不修改sampler或删除资产。
 
@@ -135,7 +146,7 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 
 ## 7. 本次验证范围
 
-只读核对GitHub状态、源码接口、数据发布文档/服务器既有17,540组合报告、固定模型发布CPU验证与真实shard字节、既有历史执行记录；未修改共享数据、训练代码或运行任务。新增YAML已通过CPU语法、parser字段映射、rank/budget/global-batch/scheduler/EMA/resume契约检查；当前TrainingConfig动态load的命名缺陷已修复并通过真实加载回归，不伪称端到端训练/完整CI通过。模型训练、全量合并、训练环境验收、性能与最终指标均**未执行**。
+已核对GitHub状态、源码接口、数据发布文档/服务器既有17,540组合报告、固定模型发布CPU验证与真实shard字节、既有历史执行记录；本轮仅在隔离新目录准备数据和组合入口，未修改共享资产或运行任务。新增YAML已通过CPU语法、parser字段映射、rank/budget/global-batch/scheduler/EMA/resume契约检查；当前TrainingConfig动态load的命名缺陷已修复并通过真实加载回归，不伪称端到端训练/完整CI通过。模型训练、全量合并、训练环境验收、性能与最终指标均**未执行**。
 
 
 CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedSampler五个任务概率与depth35/semantic20/instance20/referring15/generation10精确一致；8rank合计8000 draw不含任何normal索引，每rank1000；原main TrainingConfig.validate的train_mode AttributeError已动态复现，并在本PR修复。无GPU分配，无模型加载。
@@ -147,3 +158,10 @@ CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedS
 同一CPU/offline环境相关117项测试：原快照72失败/45通过，修复后8失败/109通过。8个新增字段回归全部通过，覆盖默认、LoRA/full YAML、真实Fusion YAML、错误mode、无Trainer的effective-config入口。更新既有full测试的过时字段/CLI拼写，保留原断言目的。
 
 剩余8个full训练/保存/恢复测试揭露已有的full_finetune未导入NameError（trainer.py仍有调用而没有导入），与本次字段校验问题不同；未扩大修改，也不声称full训练端到端通过。LoRA主方案不走full分支，但实际训练环境验收仍未执行。仓库Ruff在相同环境下原/新均1587项，按路径、规则、消息和源码行比较无新增/消失；新回归文件单独check/format通过。已有hosted CI也包含缺少diffusers/cv2及其他collection问题，不将修复单个字段说成全仓CI已绿。
+
+### 本轮完整Referring接入验证
+
+- 新增严格组合CLI与10项合成数据CPU测试；本机Python 3.9执行10/10通过，Black格式化与`git diff --check`通过。仅以小型fixture验证契约，不冒充百万行实体池验证。
+- 最新YAML语法、五任务显式权重、normal排除及r64断言通过；本轮只改变数据入口与注释，训练超参数不变。此前真实TrainingConfig/LoRA/full字段回归结论仍见上文；本轮没有重跑完整训练栈或全仓Ruff，不能沿用历史基线称当前全仓零新增问题。
+- LLMSeg新增问题由#110按现有512裁剪可见性规则重新检查，不把旧4,304的排除列表当全量问题也已检查。完整RES沿用固定发布协议；没有把LLMSeg新发现的坏图自动跨来源扩散删除RES/Rea2Seg，所以270,195仍是组件数量而非全池联合验收承诺。真正训练前需完成既有reader/裁剪与split隔离验收，如实际准入数量变动须更新N和其他组件实数，不偷偷改变任务比例。
+- 模板中的null SHA/N刻意让组合器失败，避免把未完成组件默认为可用。原主池及资产、完整RES恢复、LLMSeg两来源最终产物仍是实体组合前置条件。
