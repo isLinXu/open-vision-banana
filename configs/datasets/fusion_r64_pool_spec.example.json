@@ -20,8 +20,8 @@
       "expected_train": 270195
     },
     "llmseg": {
-      "manifest": "../../data/llmseg_full/training.jsonl",
-      "root": "../../data/llmseg_full",
+      "manifest": "../../data/llmseg_coco_full/training.jsonl",
+      "root": "../../data/llmseg_coco_full",
       "sha256": null,
       "expected_train": null
     },

@@ -47,12 +47,12 @@ Rea2Seg在发布补充包中为15,275，历史512裁剪可见性过滤后主池�
 
 ### 已授权完整Referring接入
 
-用户已确认完整LLMSeg包含其EgoObjects图片。目标为完整RefCOCO/RefCOCO+/RefCOCOg发布train + LLMSeg全训练问题（COCO和EgoObjects），保留现有Rea2Seg；任务比例和3.2M draw预算不变。
+用户最新取消EgoObjects。目标为完整RefCOCO/RefCOCO+/RefCOCOg发布train + LLMSeg全部COCO训练问题，保留现有Rea2Seg；不下载/接入EgoObjects，任务比例和3.2M draw预算不变。
 
 - 完整RES固定发布：`Melo111/open-vision-banana-res@dce183e8441c55c8fcf58afd87f90c776024c828`。使用`training.jsonl`的270,195 train行，分别为102,698 / 95,501 / 71,996；24,554安全val另存，不能计作训练。原官方321,327 train表达式已按既有发布协议排除held-out图像和确切重复，不重新做去重工作项。该文件SHA256为`786f30bb64bed54fd57b35fe5a719967fe738c9592c8b6a08003cf2215a6cf15`。
-- LLMSeg依赖[PR #110](https://github.com/isLinXu/open-vision-banana/pull/110)的full-train入口：原始train 44,780问 = COCO 33,755 + EgoObjects 11,025，不再每图只取一问或封顶5,000。`N`必须来自该入口最终实际manifest，不可直接写44,780。既有面积规则初步通过31,270问也不是最终N，尚需实际图片、held-out及既有质量约束完成核验。官方val 3,905问不能进入train。
+- LLMSeg依赖[PR #110](https://github.com/isLinXu/open-vision-banana/pull/110)的full-train入口：上游总train 44,780问中，本轮只处理COCO 33,755问，EgoObjects 11,025问排除。COCO来源显式选择，不再每图只取一问或封顶5,000。`N`必须来自COCO全问题入口最终实际manifest，不可直接写33,755；实际图片、held-out及既有质量/512裁剪约束必须核验。官方val不能进入train。
 - 替换而非叠加：移除旧主池referring训练49,048行，再插入完整RES、最终LLMSeg和原11,812 Rea2Seg。旧32,932的逐来源身份目前未恢复，不声称逐条证明其是完整RES的子集；本方案明确用完整来源替代旧组件，而不是依据猜测做去重。旧验证/测试保留分区。
-- 图像、表达式、掩码分别遵守原数据条款。LLMSeg标注和EgoObjects许可/访问步骤仍待核实；本PR不表示取得再分发许可，不上传新数据或改变上游条款。数据下载/本地接入不等于发布授权。
+- 图像、表达式、掩码分别遵守原数据条款。LLMSeg标注许可仍待核实，EgoObjects不在本轮范围；本PR不表示取得再分发许可，不上传新数据或改变上游条款。数据下载/本地接入不等于发布授权。
 
 **当前实物状态**：本机完整RES旧目录仅剩metadata并带`LOCAL_PAYLOAD_REMOVED.md`，不能当完整恢复。新目录已校验固定发布metadata，首个payload下载遇到TLS握手失败，尚无有效完整恢复。其他深度/COCONut/LingBot组件在测评机存在，但真实训练服务器仍需自行绑定数据位置。当前Windows及测评机未找到原主池`data/qwen_main_depth_reasoning/pairs.jsonl`与资产；固定模型发布仅有`data_audit`统计，没有可恢复的主池manifest/资产。因此完整主池实体构建被原主池输入缺失阻塞，不能从统计虚构数据。LLMSeg输出尚待#110完成。
 
@@ -68,7 +68,7 @@ Rea2Seg在发布补充包中为15,275，历史512裁剪可见性过滤后主池�
 | clean Hypersim | #107固定头与排除清单 | 12,201 train，替换旧13,267，不能追加导致重复 |
 | 新DIODE | depth repo `9ed5e65718db68a6cdd000754de681336ab18179` / diode-indoor-train-additions-v1 | 5,339 train；standalone diode_native_tar_v1，不是res_bundle |
 | 完整RES | res repo `dce183e8441c55c8fcf58afd87f90c776024c828` | 270,195 train；替换旧32,932，安全val另存 |
-| 全量LLMSeg | PR #110固定构建输入及产物SHA | COCO+EgoObjects全部训练问题，最终准入N待核验；替换旧4,304 |
+| 全量LLMSeg | PR #110固定构建输入及产物SHA | COCO全部训练问题（EgoObjects排除），最终准入N待核验；替换旧4,304 |
 
 depth repo是 `Melo111/open-vision-banana-depth`，segmentation repo是 `Melo111/open-vision-banana-segmentation`。旧池需从现有provenance补齐准确repo/subfolder及每个来源身份，不凭revision猜repo。正式lock未完成前不启动。
 
@@ -99,7 +99,9 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 | referring | 15% | 480,000 | 282,007 + N | 480,000 / (282,007 + N) |
 | generation | 10% | 320,000 | 16,492 | 19.40 |
 
-总预算仍为3.2M draw；相较本PR前版，normal的160k draw全部转给referring，使其从320k增至480k（+50%）。新池referring自然比例为(282,007+N)/(1,084,937+N)，generation为16,492/(1,084,937+N)；仍采用固定15%/10%。若所有44,780上游问题均通过，理论上界为326,787 referring、1,129,717总行、1.47 draw/行，但这不是实际准入结果。
+总预算仍为3.2M draw；相较本PR前版，normal的160k draw全部转给referring，使其从320k增至480k（+50%）。新池referring自然比例为(282,007+N)/(1,084,937+N)，generation为16,492/(1,084,937+N)；仍采用固定15%/10%。若所有33,755个COCO上游问题均通过，理论上界为315,762 referring、1,118,692总行、1.52 draw/行，但这不是实际准入结果。
+
+Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg COCO的预期占比分别为270,195/(282,007+N)、11,812/(282,007+N)、N/(282,007+N)。这意味着新增完整RES将占大部分referring draw；不偷偷给LLMSeg再加分源权重。全量接入指全部准入样本可被采样，不等于每行至少训练一次。有放回采样下，若采用33,755理论上界，480k draw仅约1.52次/行，期望唯一覆盖约78.1%；实际值按N重算。保持用户指定15%与100k预算，不为了声称全覆盖而擅自增步数。
 
 现有Trainer在显式task_sampling_weights非空时不会再自动套vision_ratio：YAML仅列出五个启用任务的权重（总和1），并使用uniform基础策略；这与task_loss_weights不同，启用vision任务loss权重仍全部1，不双重加权。vision_ratio .9仅保留语义一致性，实际抽样以显式权重为准。现有sampler拒绝零权重，因此不写normal: 0：从data.tasks、task_sampling_weights及task_loss_weights中删除normal。Trainer仅为显式tasks建立dataset/group，故normal不会进入采样，即使输入manifest保留其历史行也不训练这些行；不修改sampler或删除资产。
 
@@ -164,4 +166,4 @@ CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedS
 - 新增严格组合CLI与10项合成数据CPU测试；本机Python 3.9执行10/10通过，Black格式化与`git diff --check`通过。仅以小型fixture验证契约，不冒充百万行实体池验证。
 - 最新YAML语法、五任务显式权重、normal排除及r64断言通过；本轮只改变数据入口与注释，训练超参数不变。此前真实TrainingConfig/LoRA/full字段回归结论仍见上文；本轮没有重跑完整训练栈或全仓Ruff，不能沿用历史基线称当前全仓零新增问题。
 - LLMSeg新增问题由#110按现有512裁剪可见性规则重新检查，不把旧4,304的排除列表当全量问题也已检查。完整RES沿用固定发布协议；没有把LLMSeg新发现的坏图自动跨来源扩散删除RES/Rea2Seg，所以270,195仍是组件数量而非全池联合验收承诺。真正训练前需完成既有reader/裁剪与split隔离验收，如实际准入数量变动须更新N和其他组件实数，不偷偷改变任务比例。
-- 模板中的null SHA/N刻意让组合器失败，避免把未完成组件默认为可用。原主池及资产、完整RES恢复、LLMSeg两来源最终产物仍是实体组合前置条件。
+- 模板中的null SHA/N刻意让组合器失败，避免把未完成组件默认为可用。原主池及资产、完整RES恢复、LLMSeg COCO最终产物仍是实体组合前置条件。

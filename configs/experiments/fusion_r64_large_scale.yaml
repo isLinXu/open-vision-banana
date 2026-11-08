@@ -43,7 +43,7 @@ data:
   aspect_preserving_crop: true
   num_workers: 4
   dir: data/fusion_r64_full_referring
-  # Strict composition output: full RES + all admitted LLMSeg (COCO and EgoObjects).
+  # Strict composition output: full RES + all admitted LLMSeg COCO questions (no EgoObjects).
   # Replace legacy referring subsets; see configs/datasets/fusion_r64_pool_spec.example.json.
   pair_manifest: data/fusion_r64_full_referring/training.jsonl
   max_samples_per_task: null
