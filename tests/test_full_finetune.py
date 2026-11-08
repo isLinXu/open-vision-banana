@@ -23,31 +23,31 @@ from open_vision_banana.training.trainer import Trainer
 from open_vision_banana.training.utils import EMAModel
 
 
-def test_train_mode_defaults_to_lora_and_parses_from_yaml_and_cli(tmp_path):
-    assert TrainingConfig().train_mode == "lora"
+def test_tune_mode_defaults_to_lora_and_parses_from_yaml_and_cli(tmp_path):
+    assert TrainingConfig().tune_mode == "lora"
     path = tmp_path / "config.yaml"
-    path.write_text(yaml.safe_dump({"training": {"mode": "full"}}))
-    assert load_config(config_path=path).train_mode == "full"
-    args = build_arg_parser().parse_args(["--config", str(path), "--train-mode", "lora"])
-    assert load_config(args).train_mode == "lora"
+    path.write_text(yaml.safe_dump({"training": {"tune_mode": "full"}}))
+    assert load_config(config_path=path).tune_mode == "full"
+    args = build_arg_parser().parse_args(["--config", str(path), "--tune-mode", "lora"])
+    assert load_config(args).tune_mode == "lora"
 
 
 @pytest.mark.parametrize(
     "fields, message",
     [
-        ({"train_mode": "partial"}, "train_mode must be lora or full"),
-        ({"train_mode": "full", "quantize": "4bit"}, "unquantized backbone"),
-        ({"train_mode": "full", "resume": "x", "resume_weights_only": True}, "own sharded state"),
+        ({"tune_mode": "partial"}, "tune_mode must be lora or full"),
+        ({"tune_mode": "full", "quantize": "4bit"}, "unquantized backbone"),
+        ({"tune_mode": "full", "resume": "x", "resume_weights_only": True}, "own sharded state"),
     ],
 )
-def test_train_mode_rejections(fields, message):
+def test_tune_mode_rejections(fields, message):
     with pytest.raises(ValueError, match=message):
         TrainingConfig(**fields).validate()
 
 
 def test_full_mode_ignores_an_inert_weights_only_flag():
     # The #88 configs set resume_weights_only without a resume path.
-    TrainingConfig(train_mode="full", resume_weights_only=True).validate()
+    TrainingConfig(tune_mode="full", resume_weights_only=True).validate()
 
 
 def test_plain_tensor_helpers_without_a_group():
@@ -253,7 +253,7 @@ def _full_trainer(tmp_path, seed=0, ema=True, **config):
     """A Trainer in full mode around TinyBackbone, without loading a pipeline."""
     model, record = _sharded(seed)
     trainer = object.__new__(Trainer)
-    trainer.config = TrainingConfig(train_mode="full", **config)
+    trainer.config = TrainingConfig(tune_mode="full", **config)
     trainer.backend = SimpleNamespace(peft_model=model)
     trainer.full_record = record
     trainer.optimizer, trainer.lr_scheduler, trainer.ema = _parts(model)
@@ -400,7 +400,7 @@ def test_full_mode_rejects_hunyuan_before_loading(tmp_path, monkeypatch):
     monkeypatch.setattr(trainer_module, "edit_latent_layout", lambda config: "hunyuan")
     monkeypatch.setattr(Trainer, "_build_datasets", lambda self: (None, None))
     monkeypatch.setattr(trainer_module, "ModelBackend", None)  # must not be reached
-    config = TrainingConfig(train_mode="full", output_dir=str(tmp_path), skip_preflight=True)
+    config = TrainingConfig(tune_mode="full", output_dir=str(tmp_path), skip_preflight=True)
     with pytest.raises(ValueError, match="HunyuanImage-3.0-Instruct is not supported"):
         Trainer(config)
 

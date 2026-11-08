@@ -118,14 +118,14 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 ## 6. 当前代码阻断与启动验收
 
 在main a79aa0d及#107观察到：
-1. TrainingConfig定义 `tune_mode` / YAML `training.tune_mode`，validate与Trainer.full访问 `train_mode`，产生AttributeError。需一致修复并回归。YAML `training.mode`、自造model_revision字段都不支持。
+1. 已在本PR最小修复：TrainingConfig定义 `tune_mode` / YAML `training.tune_mode`，原validate与Trainer.full误访问 `train_mode`。现在校验和该属性统一读取已有 `tune_mode`，不新增字段或改变训练参数。默认、LoRA/full YAML及真实Fusion配置可加载；`--print-effective-config`验证不构造Trainer/模型。YAML `training.mode`、自造model_revision字段仍不支持。
 2. Qwen2.1 backend明确拒绝4bit/8bit量化；LoRA仅data parallel，`--fsdp`/`--deepspeed`不支持，FSDP2是full参数专用。不要复制不存在的分片LoRA命令。
 3. 旧run_lingbot_experiment.py要求父adapter/旧新配对，不适配当前fresh Fusion。需新的显式预检/启动入口。
 4. #107未合并，完整五个启用任务入口接入与metric队列尚需完成。#107所报CI含既有失败，不是全绿。
 
 实施顺序：
 - [ ] 用户审阅主配方/预算。
-- [ ] 固定#107合并后代码或经审阅的等价依赖；修复mode命名，覆盖config load、fresh r64、resume、DDP测试。
+- [ ] 固定#107合并后代码或经审阅的等价依赖；本PR已修复mode命名并测试配置加载/分支判定，实际fresh r64、resume与DDP smoke仍待执行。
 - [ ] 接入全量组件与#107结果，记录真实counts；不新增去重/深度清理任务。
 - [ ] 通过固定snapshot_download(revision=上述SHA)，核对provenance/file-manifest与所有权重shard，禁止浮动main；环境变量 `OPEN_VISION_BANANA_MODEL_PATH`指向已验本地快照，记录运行依赖版本。
 - [ ] 预检有效配置、trainable参数、零初始adapter、基座hash；不再merge父权重。
@@ -134,7 +134,15 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 
 ## 7. 本次验证范围
 
-只读核对GitHub状态、源码接口、数据发布文档/服务器既有17,540组合报告、固定模型发布CPU验证与真实shard字节、当前GPU/CPU/磁盘；未修改共享数据、训练代码或运行任务。新增YAML已通过CPU语法、parser字段映射、rank/budget/global-batch/scheduler/EMA/resume契约检查；当前TrainingConfig动态load的既有命名缺陷应作为blocked记录，不伪称端到端训练/完整CI通过。模型训练、全量合并、GPU smoke、性能与最终指标均**未执行**。
+只读核对GitHub状态、源码接口、数据发布文档/服务器既有17,540组合报告、固定模型发布CPU验证与真实shard字节、当前GPU/CPU/磁盘；未修改共享数据、训练代码或运行任务。新增YAML已通过CPU语法、parser字段映射、rank/budget/global-batch/scheduler/EMA/resume契约检查；当前TrainingConfig动态load的命名缺陷已修复并通过真实加载回归，不伪称端到端训练/完整CI通过。模型训练、全量合并、GPU smoke、性能与最终指标均**未执行**。
 
 
-CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedSampler五个任务概率与depth35/semantic20/instance20/referring15/generation10精确一致；8rank合计8000 draw不含任何normal索引，每rank1000；当前main TrainingConfig.validate的train_mode AttributeError已动态复现。无GPU分配，无模型加载。
+CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedSampler五个任务概率与depth35/semantic20/instance20/referring15/generation10精确一致；8rank合计8000 draw不含任何normal索引，每rank1000；原main TrainingConfig.validate的train_mode AttributeError已动态复现，并在本PR修复。无GPU分配，无模型加载。
+
+### 配置校验修复与剩余边界
+
+调用链为 scripts/train.py -> load_config -> TrainingConfig.validate；原错误发生在Trainer创建之前，不是静默使用错误训练模式。除校验3处误引用外，仅更正Trainer.full的一处同名读取，避免通过校验后再次遇到同一AttributeError。去除重复mode校验，保留full模式禁止量化/weights-only恢复的规则，checkpoint metadata的train_mode键不改。
+
+同一CPU/offline环境相关117项测试：原快照72失败/45通过，修复后8失败/109通过。8个新增字段回归全部通过，覆盖默认、LoRA/full YAML、真实Fusion YAML、错误mode、无Trainer的effective-config入口。更新既有full测试的过时字段/CLI拼写，保留原断言目的。
+
+剩余8个full训练/保存/恢复测试揭露已有的full_finetune未导入NameError（trainer.py仍有调用而没有导入），与本次字段校验问题不同；未扩大修改，也不声称full训练端到端通过。LoRA主方案不走full分支，但实际GPU smoke仍未执行。仓库Ruff在相同环境下原/新均1587项，按路径、规则、消息和源码行比较无新增/消失；新回归文件单独check/format通过。已有hosted CI也包含缺少diffusers/cv2及其他collection问题，不将修复单个字段说成全仓CI已绿。
