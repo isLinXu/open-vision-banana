@@ -295,22 +295,20 @@ class TrainingConfig:
             raise ValueError("dtype must be float32, float16, or bfloat16")
         if self.quantize not in {None, "4bit", "8bit"}:
             raise ValueError("quantize must be null, 4bit, or 8bit")
-        if self.train_mode not in {"lora", "full"}:
-            raise ValueError("train_mode must be lora or full")
-        if self.train_mode == "full" and self.quantize is not None:
+        if self.tune_mode not in {"lora", "full"}:
+            raise ValueError("tune_mode must be lora or full")
+        if self.tune_mode == "full" and self.quantize is not None:
             raise ValueError(
-                "train_mode full trains the unquantized backbone; set quantize to null"
+                "tune_mode full trains the unquantized backbone; set quantize to null"
             )
-        if self.train_mode == "full" and self.resume and self.resume_weights_only:
+        if self.tune_mode == "full" and self.resume and self.resume_weights_only:
             raise ValueError(
-                "train_mode full resumes its own sharded state only (no resume_weights_only)"
+                "tune_mode full resumes its own sharded state only (no resume_weights_only)"
             )
         if self.scheduler not in {"cosine", "cosine_restarts", "polynomial", "constant", "one_cycle"}:
             raise ValueError(
                 "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
             )
-        if self.tune_mode not in {"lora", "full"}:
-            raise ValueError("tune_mode must be lora or full")
         if self.objective not in {"sft", "opd", "grpo"}:
             raise ValueError("objective must be sft, opd, or grpo")
         if self.opd_train_timesteps > self.opd_rollout_steps:

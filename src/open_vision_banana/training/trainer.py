@@ -600,7 +600,7 @@ class Trainer:
     @property
     def full(self) -> bool:
         """Full-parameter (FSDP2) training instead of a LoRA adapter."""
-        return self.config.train_mode == "full"
+        return self.config.tune_mode == "full"
 
     def __init__(self, config: TrainingConfig):
         config.validate()
