@@ -2,7 +2,7 @@
 
 关联 [Issue #108](https://github.com/isLinXu/open-vision-banana/issues/108)。
 
-状态：**方案与数据接入实现；不启动训练，不合并 PR。完整主池尚未构建完成，缺失项见第2节。** 参考 [Issue #97](https://github.com/isLinXu/open-vision-banana/issues/97)，但本轮只有一条主线，不复制其初始化、rank、LR、分辨率消融矩阵。所有超参数是拟议的工程选择，不是已验证最优值。
+状态：**方案与数据接入实现；不启动训练，不合并 PR。完整主池尚未构建完成，训练节点绑定与验收见第2节。** 参考 [Issue #97](https://github.com/isLinXu/open-vision-banana/issues/97)，但本轮只有一条主线，不复制其初始化、rank、LR、分辨率消融矩阵。所有超参数是拟议的工程选择，不是已验证最优值。
 
 ## 1. 模型与主配方
 
@@ -166,7 +166,7 @@ CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedS
 - 新增严格组合CLI与16项合成数据CPU测试；本机Python 3.9执行16/16通过，Black格式化与`git diff --check`通过。仅以小型fixture验证契约，不冒充百万行实体池验证。
 - 最新YAML语法、五任务显式权重、normal排除及r64断言通过；本轮只改变数据入口与注释，训练超参数不变。随后独立使用现有Python3.12.14环境运行16项组合测试与8项mode/YAML回归，24/24通过，包括最新版真实TrainingConfig加载。没有运行模型训练或全仓测试，不能沿用历史基线称当前全仓零新增问题。
 - LLMSeg新增问题由#110按现有512裁剪可见性规则重新检查，不把旧4,304的排除列表当全量问题也已检查。完整RES沿用固定发布协议；没有把LLMSeg新发现的坏图自动跨来源扩散删除RES/Rea2Seg，所以270,195仍是组件数量而非全池联合验收承诺。真正训练前需完成既有reader/裁剪与split隔离验收，如实际准入数量变动须更新N和其他组件实数，不偷偷改变任务比例。
-- 模板只绑定已经核对的manifest指纹与数量，真实路径仍须恢复并绑定；缺少文件直接失败，registry中的null revision表示尚未固定发布，不代表可下载。原主池及资产、训练节点组件恢复、LLMSeg固定HF发布仍是实体组合前置条件；本地独立RES重建已完成。
+- 模板只绑定已经核对的manifest指纹与数量，真实路径仍须在训练节点绑定；缺少文件直接失败，registry中的null revision表示尚未固定发布，不代表可下载。训练节点既有主池路径绑定及核验、新组件恢复、LLMSeg固定HF发布仍是实体组合前置条件；本地独立RES重建已完成。
 
 
 ### 统一HF下载入口与训练节点绑定
@@ -179,12 +179,12 @@ CPU验收补充：在现有Python3.10环境中，更新后的实际TaskWeightedS
 
 clean Hypersim/DIODE17,540与过滤Rea2Seg11,812已发布为[portable-training-views-v1@606424bb](https://huggingface.co/datasets/Melo111/open-vision-banana-depth/tree/606424bb3f6918c3434f59ebdeec996ff7c58b24/portable-training-views-v1)，14个元数据文件匿名逐SHA读回通过。此为`ovb_portable_training_views_v1`相对清单，不是res_bundle，不重复上传原资产。按其README恢复同一ROOT下hypersim/diode/rea2seg依赖，运行verify_portable_views.py；模板现已使用对应共同root。74,474选中资产共70,652,081,936字节均核对固定上游SHA/size通过，depth全部17,540 native准入通过；真实512 reader仅depth16与Rea16行抽测，不称全量augmentation验收。LLMSeg固定发布仍待绑定，registry保持相应pending状态。
 
-训练节点完成恢复后，将组合模板各root/manifest改为该节点真实路径，绑定每项SHA及最终LLMSeg数量，运行组合器得到`training.jsonl`和counts/report。模板相对路径按JSON所在目录解析。原始旧基池缺失仍是独立前置条件；这些新增组件全部发布也不会凭空恢复旧base/replay数据。只有实际组合及现有准入/loader验收后才能把总尺寸称为训练可用全量，而非组件算术候选。
+训练节点完成恢复后，将组合模板各root/manifest改为该节点真实路径，绑定每项SHA及最终LLMSeg数量，运行组合器得到`training.jsonl`和counts/report。模板相对路径按JSON所在目录解析。旧base/replay直接沿用该训练节点既有主池，不要求重新发布到HF；绑定与核验是启动前步骤，不将当前测评机路径未知解释为无法训练。只有实际组合及现有准入/loader验收后才能把总尺寸称为训练可用全量，而非组件算术候选。
 
 本轮16项组合测试额外覆盖实际ARKit `source_split=Training`大小写与既有generation target-only格式。最新YAML的真实TrainingConfig加载尝试在本机Python3.9因项目类型注解需要Python>=3.10而失败（`get_type_hints`的类型`| None`），并非`tune_mode`缺陷复发；未为旧解释器修改训练代码。随后用现有Python3.12.14环境完成最新版实际YAML加载及24项组合/mode回归，因此3.9限制已不再阻塞本轮配置验证。
 
 
-当前956,629行来自新增/替换组件；缺失旧主池中仍需保留141,806行（depth47,585、semantic39,133、instance38,596、generation16,492）。两者合计1,098,435仅是组件算术，不把缺失旧数据算作已下载。baseline原val继续保留而referring train重置，因此在找回原主池后必须核对新train与原held-out图像身份边界；当前缺失该输入，不能声称全池跨源隔离验收完成或训练ready。
+当前956,629行来自新增/替换组件；旧基池保留141,806行直接沿用真实训练节点旧主池（depth47,585、semantic39,133、instance38,596、generation16,492）。两者合计1,098,435为方案组件总量，不能以统计代替实体清单验收。部署时提供原manifest与资产root，保留已绑定的SHA和212,801原train行核对；组合器移除旧referring49,048、normal8,680及旧Hypersim增量13,267，仅保留上述141,806行，禁止将整个旧主池直接叠加。启动前检查保留行和原held-out资产存在性、清单SHA、split与分任务实数，核对新增train与baseline原held-out图像身份边界。原val保留、test独立保存；完成节点组合与loader核验后才记录实际可训练总数。这里待完成的是训练节点绑定和启动前核验，不是宣称旧数据不存在或无法训练。
 
 
 ### 三个PR的独立复核
@@ -193,7 +193,7 @@ clean Hypersim/DIODE17,540与过滤Rea2Seg11,812已发布为[portable-training-v
 - #109：当前16项组合器 + 8项tune_mode/真实YAML回归，Python3.12.14 CPU 24/24通过；严格源替换、normal禁用、Training大小写、target-only replay、保留数据缺资产失败及已替换旧资产无需再存在均覆盖。
 - #110（`5e377cc890c45d1b05021a1637d50ad0de3acf18`）：全量COCO适配及crop-finalize focused 20/20通过。专用CI run42472146818为155 passed / 4 failed，失败是该独立分支仍有既有train_mode字段错误；#109含对应最小修复，但尚未合并做跨PR整体验收。
 - 广域CI没有全部通过。#107曾有4项collection错误（manifest unpack、train_mode、diffusers、cv2）；#109 `bb423d2`的Python3.10 job在Set up Python阶段HTTP504失败，不能把所有失败一概说成缺依赖；其他lint/performance失败也未忽略。局部CPU通过不代表全仓CI或训练ready。
-- 找回旧baseline之后仍需新referring train与baseline原held-out边界核验；真实训练节点恢复、配置/数据绑定及模型训练smoke需要后续明确执行授权，本轮不启动训练、不合并。
+- 沿用训练节点旧baseline时仍需新referring train与baseline原held-out边界核验；真实训练节点恢复、配置/数据绑定及模型训练smoke需要后续明确执行授权，本轮不启动训练、不合并。
 
 
 LLMSeg最终COCO包约2,772,874,251字节，已完成本地恢复验证；server到Windows中转的实测吞吐偏低，大分片尚未齐备，不能宣称HF已成功提交或给出未经验证的fixed revision。已发布组件和统计不受此传输阻塞影响。对应复现入口见#110文档：必须显式`--full-train --source-categories coco --reject-invalid`，再执行`finalize_llmseg_crop.py --resolution 512`，不能省略类别而要求已取消的EgoObjects。若使用外链原始来源重建，仍须固定来源/选择清单与完整核验，不把上游裸COCO或原始33,755问题直接充当最终13,498训练包。

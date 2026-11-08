@@ -15,12 +15,19 @@
   "referring_train_rows_formula": "282007 + llmseg.train_rows",
   "components": {
     "baseline": {
-      "status": "blocked_missing_original_manifest_and_assets",
+      "status": "reuse_existing_training_node_pool_pending_path_binding_and_preflight",
       "repo_id": null,
       "revision": null,
       "manifest_sha256": "a7100a9ac0f43e72b647f7cd4f36d417175a44a683549ef98e083927f2e93806",
       "train_rows": 212801,
-      "note": "Model publication data_audit contains statistics, not a downloadable baseline dataset."
+      "note": "Reuse the existing main pool on the actual training node. Bind its manifest and asset root in the composition spec; verify SHA, splits, retained assets and held-out boundaries before launch. Unknown paths on the evaluation machine do not imply missing training-node data. Model data_audit is statistics only.",
+      "retained_train_rows": 141806,
+      "retained_train_by_task": {
+        "depth": 47585,
+        "semantic": 39133,
+        "instance": 38596,
+        "generation": 16492
+      }
     },
     "old_hypersim": {
       "status": "identity_only",
