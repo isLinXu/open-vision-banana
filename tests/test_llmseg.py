@@ -242,3 +242,190 @@ def test_merge_keeps_existing_official_validation_and_all_three_sources(tmp_path
     assert len(train_ds) == 4 and len(val_ds) == 1
     assert val_ds[0]["expression"] == original["expression"]
     assert _collate_fn([train_ds[0], val_ds[0]])["target_rgb"].shape == (2, 3, 16, 16)
+
+
+def test_full_train_all_questions_and_both_sources(tmp_path):
+    train, val, images, _ = fixture(tmp_path, count=3)
+    ego = tmp_path / "ego"
+    ego.mkdir()
+    Image.new("RGB", (8, 6), (7, 80, 160)).save(ego / "ego.jpg")
+    out = tmp_path / "full"
+    report = build_llmseg(
+        train,
+        val,
+        images,
+        out,
+        full_train=True,
+        max_samples=None,
+        ego_image_root=ego,
+        verify_release=False,
+    )
+    rows = records(out)
+    assert len(rows) == 9  # COCO 2 images x 3 questions + EgoObjects 1 x 3.
+    assert report["selection"]["eligible_images_before_asset_checks"] == 3
+    assert report["selection"]["eligible_questions_before_asset_checks"] == 9
+    assert {r["source_protocol"] for r in rows} == {"official_train_all_questions_v1"}
+    assert {r["split"] for r in rows} == {"train"}
+    assert len([r for r in rows if r["category"] == "ego_objects"]) == 3
+    assert all("image_id" not in r for r in rows if r["category"] == "ego_objects")
+    assert all("SECRET ANSWER" not in r["prompt"] for r in rows)
+    from open_vision_banana.res_bundle import package_dataset, restore_bundle
+    from open_vision_banana.res_preparation import validate_prepared_pairs
+
+    assert validate_prepared_pairs(out)["counts"] == {"train": 9}
+    bundle, restored = tmp_path / "bundle", tmp_path / "restored"
+    package_dataset(out, bundle, shard_bytes=1000)
+    restore_bundle(bundle, restored)
+    assert (out / "training.jsonl").read_bytes() == (restored / "training.jsonl").read_bytes()
+
+
+def test_full_train_excludes_ego_validation_and_rejects_missing_assets(tmp_path):
+    train, val, images, data = fixture(tmp_path, count=3)
+    val.write_text(json.dumps({"ego.jpg": data["ego.jpg"]}))
+    out = tmp_path / "full"
+    build_llmseg(
+        train,
+        val,
+        images,
+        out,
+        full_train=True,
+        max_samples=None,
+        ego_image_root=tmp_path / "missing",
+        verify_release=False,
+    )
+    assert len(records(out)) == 9
+    assert {r["category"] for r in records(out)} == {"coco"}
+    val.write_text(json.dumps({"000000000001.jpg": data["000000000001.jpg"]}))
+    with pytest.raises(FileNotFoundError, match="Missing EgoObjects"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "missing-out",
+            full_train=True,
+            max_samples=None,
+            ego_image_root=tmp_path / "missing",
+            verify_release=False,
+            reject_invalid=True,
+        )
+
+
+def test_full_train_requires_explicit_assets_and_no_cap(tmp_path):
+    train, val, images, _ = fixture(tmp_path)
+    with pytest.raises(ValueError, match="max_samples=None"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "out",
+            full_train=True,
+            ego_image_root=images,
+            verify_release=False,
+        )
+    with pytest.raises(ValueError, match="ego_image_root"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "out",
+            full_train=True,
+            max_samples=None,
+            verify_release=False,
+        )
+
+
+@pytest.mark.parametrize("name", ["../ego.jpg", "/ego.jpg", "C:ego.jpg", "a\\ego.jpg"])
+def test_full_train_rejects_unsafe_ego_names(tmp_path, name):
+    train, val, images, data = fixture(tmp_path)
+    data[name] = data.pop("ego.jpg")
+    train.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="Invalid EgoObjects image name"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "out",
+            full_train=True,
+            max_samples=None,
+            ego_image_root=images,
+            verify_release=False,
+        )
+
+
+def test_explicit_coco_stage_does_not_claim_both_sources(tmp_path):
+    train, val, images, _ = fixture(tmp_path, count=3)
+    out = tmp_path / "coco-stage"
+    report = build_llmseg(
+        train,
+        val,
+        images,
+        out,
+        full_train=True,
+        max_samples=None,
+        source_categories=("coco",),
+        verify_release=False,
+    )
+    assert len(records(out)) == 6
+    assert report["selection"]["source_categories"] == ["coco"]
+    assert not report["selection"]["all_source_categories_selected"]
+    assert {r["category"] for r in records(out)} == {"coco"}
+
+
+def test_crop_finalizer_rejects_whole_image_and_preserves_source(tmp_path):
+    from scripts.finalize_llmseg_crop import finalize
+
+    train, val, images, data = fixture(tmp_path, count=3)
+    # Only q0 on image 2 can become empty; all three questions on that image go.
+    pixels = np.zeros((6, 8), dtype=np.uint8)
+    pixels[1:4, 0] = 1
+    coco = pytest.importorskip("pycocotools.mask")
+    rle = coco.encode(np.asfortranarray(pixels))
+    rle["counts"] = rle["counts"].decode()
+    data["000000000002.jpg"]["qa_pairs"][0]["rle_seg"] = rle
+    train.write_text(json.dumps(data))
+    prepared = tmp_path / "prepared"
+    build_llmseg(
+        train,
+        val,
+        images,
+        prepared,
+        full_train=True,
+        max_samples=None,
+        source_categories=("coco",),
+        verify_release=False,
+    )
+    original = (prepared / "training.jsonl").read_bytes()
+    out = tmp_path / "final"
+    report = finalize(prepared, out, workers=1)
+    assert report["crop_filter"]["input_rows"] == 6
+    assert report["crop_filter"]["directly_unsafe_rows"] == 1
+    assert report["crop_filter"]["retained_rows"] == 3
+    assert report["validation"]["counts"] == {"train": 3}
+    assert {row["image_id"] for row in records(out)} == {3}
+    assert (prepared / "training.jsonl").read_bytes() == original
+    assert not (out / "BUILD_INCOMPLETE").exists()
+    with pytest.raises(ValueError, match="fresh output"):
+        finalize(prepared, out)
+
+
+def test_crop_finalizer_rejects_tampered_target_before_removal(tmp_path):
+    from scripts.finalize_llmseg_crop import finalize
+
+    train, val, images, _ = fixture(tmp_path, count=3)
+    prepared = tmp_path / "prepared"
+    build_llmseg(
+        train,
+        val,
+        images,
+        prepared,
+        full_train=True,
+        max_samples=None,
+        source_categories=("coco",),
+        verify_release=False,
+    )
+    row = records(prepared)[0]
+    Image.new("RGB", (row["width"], row["height"])).save(prepared / row["target"])
+    out = tmp_path / "final"
+    with pytest.raises(ValueError, match="Source target pixels changed"):
+        finalize(prepared, out, workers=1)
+    assert not out.exists()
