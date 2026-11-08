@@ -40,10 +40,18 @@ def test_sqrt_probabilities_and_invalid_weights():
 
 def make_manifest(tmp_path, counts):
     Image.new("RGB", (8, 8)).save(tmp_path / "image.png")
+    Image.new("L", (8, 8), 255).save(tmp_path / "valid_mask.png")
     path = tmp_path / "pairs.jsonl"
     rows = [
-        {"input": "image.png", "target": "image.png", "task": t, "split": "train"}
-        for t, n in counts.items() for _ in range(n)
+        {
+            "input": "image.png",
+            "target": "image.png",
+            "task": t,
+            "split": "train",
+            **({"valid_mask": "valid_mask.png"} if t == "depth" else {}),
+        }
+        for t, n in counts.items()
+        for _ in range(n)
     ]
     path.write_text("\n".join(map(json.dumps, rows)))
     return path

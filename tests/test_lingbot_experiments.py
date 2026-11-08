@@ -39,6 +39,10 @@ def data(tmp_path, monkeypatch):
         rows.append(
             dict(input=image.name, target=image.name, task=task, split=split, prompt=prep.PROMPT)
         )
+        if task == "depth":
+            native = base / f"base-{i}-depth.npy"
+            np.save(native, np.ones((8, 8), dtype=np.float32))
+            rows[-1]["metric_depth"] = native.name
     jsonl(base / "pairs.jsonl", rows)
     Image.new("RGB", (8, 8), (240, 50, 60)).save(ling / "input.png")
     Image.new("RGB", (8, 8), (0, 150, 0)).save(ling / "target.png")

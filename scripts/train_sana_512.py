@@ -770,6 +770,13 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
+                if split == "train" and task_info[0] in {"depth", "depth_edge"}:
+                    from open_vision_banana.data.clean_depth import validate_training_depth_row
+
+                    try:
+                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
+                    except ValueError as exc:
+                        raise ValueError(f"{manifest_path}:{line_no}: {exc}") from exc
                 image_path = resolve_manifest_path(row.get("input") or "", path_anchor)
                 target_path = resolve_manifest_path(row.get("target") or "", path_anchor)
                 if not image_path.is_file() or not target_path.is_file():
@@ -797,6 +804,7 @@ class ManifestVisionDataset(Dataset):
 
         if max_samples is not None and max_samples > 0:
             self.samples = self.samples[:max_samples]
+        self._depth_admission_checked = split == "train"
 
         if self.samples:
             names = {sample["dir_name"] for sample in self.samples}
@@ -978,6 +986,10 @@ def main():
         "specular_removal",
     ]
     tasks_to_load = args.tasks if args.tasks else all_tasks
+    if args.tar_target_mode or args.tar_index is not None or args.pair_manifest is None:
+        from open_vision_banana.data.clean_depth import require_depth_manifest
+
+        require_depth_manifest(tasks_to_load, "legacy tar/V3 input")
 
     generation_dataset = None
     if args.tar_target_mode:

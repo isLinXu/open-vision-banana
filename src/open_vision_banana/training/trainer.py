@@ -315,6 +315,13 @@ class ManifestVisionDataset(Dataset):
                     raise FileNotFoundError(
                         f"{manifest_path}:{_line_no}: missing input/target: {img_path}, {tgt_path}"
                     )
+                if split == "train" and mapped in {"depth", "depth_edge"}:
+                    from ..data.clean_depth import validate_training_depth_row
+
+                    try:
+                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
+                    except ValueError as exc:
+                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
@@ -353,6 +360,7 @@ class ManifestVisionDataset(Dataset):
 
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
+        self._depth_admission_checked = split == "train"
 
     def _resolve_tar_key(self, rel_path: str) -> str | None:
         if not self._tar_files or not rel_path:

@@ -236,6 +236,13 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
+                if split == "train" and mapped in {"depth", "depth_edge"}:
+                    from open_vision_banana.data.clean_depth import validate_training_depth_row
+
+                    try:
+                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
+                    except ValueError as exc:
+                        raise ValueError(f"{manifest_path}:{line_no}: {exc}") from exc
                 img_path = resolve_manifest_path(row.get("input", ""), path_anchor)
                 tgt_path = resolve_manifest_path(row.get("target", ""), path_anchor)
                 if not img_path.is_file() or not tgt_path.is_file():
@@ -247,6 +254,7 @@ class ManifestVisionDataset(Dataset):
                 })
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
+        self._depth_admission_checked = split == "train"
 
     def __len__(self):
         return len(self.samples)

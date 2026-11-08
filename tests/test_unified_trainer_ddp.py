@@ -106,12 +106,14 @@ def test_fsdp_and_deepspeed_flags_fail_clearly(flag: str, capsys) -> None:
 @pytest.mark.parametrize("dist_ctx", [DistContext(), DistContext(rank=1, world_size=2)])
 def test_train_loader_is_sharded_only_under_ddp(tmp_path, dist_ctx: DistContext) -> None:
     rows = []
+    Image.new("L", (8, 8), 255).save(tmp_path / "valid_mask.png")
     for i in range(4):
         for kind in ("in", "out"):
             Image.new("RGB", (8, 8), (i * 40, 0, 0)).save(tmp_path / f"{kind}{i}.png")
         rows.append(
             f'{{"task": "depth", "input": "{tmp_path}/in{i}.png", '
-            f'"target": "{tmp_path}/out{i}.png", "split": "train"}}'
+            f'"target": "{tmp_path}/out{i}.png", "split": "train", '
+            '"valid_mask": "valid_mask.png"}'
         )
     manifest = tmp_path / "pairs.jsonl"
     manifest.write_text("\n".join(rows) + "\n")
