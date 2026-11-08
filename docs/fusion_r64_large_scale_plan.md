@@ -54,7 +54,7 @@ Rea2Seg在发布补充包中为15,275，历史512裁剪可见性过滤后主池�
 - 替换而非叠加：移除旧主池referring训练49,048行，再插入完整RES、最终LLMSeg和原11,812 Rea2Seg。旧32,932的逐来源身份目前未恢复，不声称逐条证明其是完整RES的子集；本方案明确用完整来源替代旧组件，而不是依据猜测做去重。旧验证/测试保留分区。
 - 图像、表达式、掩码分别遵守原数据条款。LLMSeg上游未明确声明统一数据许可，EgoObjects不在本轮范围；用户已授权将最近新增组件发布至HF；仍需记录上游数据条款，不能从代码许可证推断数据再分发许可，不改变上游条款。已有固定HF组件优先复用，不重复上传同一数据。
 
-**当前实物状态**：本机完整RES旧目录仅剩metadata并带`LOCAL_PAYLOAD_REMOVED.md`，不能当完整恢复。固定发布metadata已校验，原bundle首payload下载遇TLS握手失败。另已从本机原始图/annotation完成独立原生重建：30,956图SHA全部匹配原发布，70,327 masks geometry/尺寸/非空/二值与PNG回读native像素全部通过，共101,283资产。training.jsonl仍为270,195 train/24,554 val，SHA不变；新PNG字节hash与旧发布不同，使用独立assets清单，不冒充原bundle恢复。见[重建审计](data/fusion_res_native_rebuild_audit.json)。其他深度/COCONut/LingBot组件在测评机存在，但真实训练服务器仍需自行绑定数据位置。当前Windows及测评机未找到原主池`data/qwen_main_depth_reasoning/pairs.jsonl`与资产；固定模型发布仅有`data_audit`统计，没有可恢复的主池manifest/资产。因此完整主池实体构建被原主池输入缺失阻塞，不能从统计虚构数据。LLMSeg COCO13,498已全行loader通过，固定HF发布与恢复材料随#110更新。
+**当前实物状态**：本机完整RES旧目录仅剩metadata并带`LOCAL_PAYLOAD_REMOVED.md`，不能当完整恢复。固定发布metadata已校验，原bundle首payload下载遇TLS握手失败。另已从本机原始图/annotation完成独立原生重建：30,956图SHA全部匹配原发布，70,327 masks geometry/尺寸/非空/二值与PNG回读native像素全部通过，共101,283资产。training.jsonl仍为270,195 train/24,554 val，SHA不变；新PNG字节hash与旧发布不同，使用独立assets清单，不冒充原bundle恢复。见[重建审计](data/fusion_res_native_rebuild_audit.json)。其他深度/COCONut/LingBot组件在测评机存在，但真实训练服务器仍需自行绑定数据位置。旧基池直接沿用真实训练节点既有主池，不要求在当前测评机恢复或重传HF。部署时提供原manifest与资产root并在模板绑定；当前测评机路径未知不表示训练节点缺数据或无法训练。模型HF的data_audit仅为统计，不能代替实际清单、资产和held-out核验。LLMSeg COCO13,498已全行loader通过，固定HF发布与恢复材料随#110更新。
 
 
 ### 固定组件与接入方式
@@ -79,7 +79,7 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 1. 复用现有组件与manifest，记录固定revision和实际行数。LingBot、COCONut、indoor使用现有 `scripts/download_res_dataset.py`；新DIODE按[#107指南](https://github.com/isLinXu/open-vision-banana/blob/adb4a73a166a3212681641b943a77372115131a4/docs/clean_depth_data.md#published-diode-component)的pinned下载/校验/解包流程，不把diode_native_tar_v1当res_bundle。
 2. 用#107输出的12,201行clean Hypersim替换旧13,267行，接入新DIODE5,339；不会再次执行自建深度准入/筛选方案，不改变数据处理、target或loss。
 3. 使用严格组合入口 `python scripts/compose_fusion_training_pool.py --spec <已绑定的组件JSON> --output-dir data/fusion_r64_full_referring`。模板见 `configs/datasets/fusion_r64_pool_spec.example.json`；必须绑定真实root/manifest、SHA及LLMSeg最终N。`training.jsonl`只含train与baseline原val；原test及新增component held-out另存，不自动扩大dev或重新划分split。NYU不接入。
-4. 组合器只在新目录重定位资产路径、记录来源SHA/替换账本/实际counts，拒绝缺资产、错数量、未知split或不完整替换，不改写共享资产。`COMPOSED_NOT_AUDITED`仅表示完成组合，不是训练ready；仍需#107 reader、RES/LLMSeg现有准入与真实训练服务器预检。原主池缺失时不会写成功标记。
+4. 组合器只在新目录重定位资产路径、记录来源SHA/替换账本/实际counts，拒绝缺资产、错数量、未知split或不完整替换，不改写共享资产。`COMPOSED_NOT_AUDITED`仅表示完成组合，不是训练ready；仍需#107 reader、RES/LLMSeg现有准入与真实训练服务器预检。训练节点绑定的原主池未通过核验时不会写成功标记。
 
 ## 3. 配比选择与曝光预算
 
@@ -99,7 +99,7 @@ DIODE新组件官方train accounting：8,574=既有996+195排除 +428覆盖率�
 | referring | 15% | 480,000 | 295,505 | 1.62 |
 | generation | 10% | 320,000 | 16,492 | 19.40 |
 
-总预算仍为3.2M draw；相较本PR前版，normal的160k draw全部转给referring，使其从320k增至480k（+50%）。新池referring自然比例为(282,007+N)/(1,084,937+N)，generation为16,492/(1,084,937+N)；仍采用固定15%/10%。本轮N=13,498，不用上游33,755冒充准入量；全池候选1,098,435，实际组合仍被原主池缺失阻塞。
+总预算仍为3.2M draw；相较本PR前版，normal的160k draw全部转给referring，使其从320k增至480k（+50%）。新池referring自然比例为(282,007+N)/(1,084,937+N)，generation为16,492/(1,084,937+N)；仍采用固定15%/10%。本轮N=13,498，不用上游33,755冒充准入量；全池候选1,098,435，实际组合及计数需在训练节点绑定旧主池后核验。
 
 Referring内部沿用任务内按行均匀采样：完整RES、Rea2Seg、LLMSeg COCO的预期占比分别为270,195/(282,007+N)、11,812/(282,007+N)、N/(282,007+N)。这意味着新增完整RES将占大部分referring draw；不偷偷给LLMSeg再加分源权重。全量接入指全部准入样本可被采样，不等于每行至少训练一次。有放回采样下，按当前13,498准入量，480k draw约1.624次/行，期望唯一覆盖约80.3%。完整RES/Rea2Seg/LLMSeg约占referring内部91.44%/4.00%/4.57%，预期draw约438,888/19,187/21,925。扩容主要提升样本多样性，固定预算下重复曝光下降。保持用户指定15%与100k预算，不为了声称全覆盖而擅自增步数。
 
