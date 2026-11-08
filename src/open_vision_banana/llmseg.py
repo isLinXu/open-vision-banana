@@ -56,6 +56,7 @@ def build_llmseg(
     max_samples: int | None = 5000,
     full_train: bool = False,
     ego_image_root: str | Path | None = None,
+    source_categories: tuple[str, ...] | None = None,
     seed: int = 42,
     exclude_image_ids=(),
     exclude=(),
@@ -78,7 +79,16 @@ def build_llmseg(
     )
     if full_train and max_samples is not None:
         raise ValueError("full_train requires max_samples=None (no cap)")
-    if full_train and ego_image_root is None:
+    selected_categories = set(
+        source_categories
+        if source_categories is not None
+        else (("coco", "ego_objects") if full_train else ("coco",))
+    )
+    if not selected_categories or selected_categories - {"coco", "ego_objects"}:
+        raise ValueError("Invalid source_categories")
+    if not full_train and selected_categories != {"coco"}:
+        raise ValueError("Legacy mode accepts only coco")
+    if "ego_objects" in selected_categories and ego_image_root is None:
         raise ValueError("full_train requires ego_image_root")
     ego_root = Path(ego_image_root) if ego_image_root is not None else None
     train, train_hash = _annotations(annotations)
@@ -100,7 +110,7 @@ def build_llmseg(
         counts[f"upstream_{item['from_dataset']}_images"] += 1
         counts[f"upstream_{item['from_dataset']}_questions"] += len(item["qa_pairs"])
         category = item["from_dataset"]
-        if category != "coco" and not full_train:
+        if category not in selected_categories:
             continue
         if category == "ego_objects" and (not re.fullmatch(r"[A-Za-z0-9_-]+\.jpg", filename)):
             raise ValueError(f"Invalid EgoObjects image name: {filename!r}")
@@ -173,7 +183,7 @@ def build_llmseg(
             else "official_train_coco_one_question_v1"
         ),
         available_categories=("coco", "ego_objects"),
-        categories=("coco", "ego_objects") if full_train else ("coco",),
+        categories=tuple(sorted(selected_categories)),
         revision=UPSTREAM_REVISION,
         max_samples=max_samples,
         exclude=exclude,
@@ -186,11 +196,13 @@ def build_llmseg(
     report["selection"] = {
         "seed": seed,
         "policy": (
-            "All official train questions, COCO and EgoObjects; no cap"
+            "All questions from selected official train sources; no cap"
             if full_train
             else "COCO train only; SHA256-ranked images/questions; one question per image"
         ),
         "full_train": full_train,
+        "source_categories": sorted(selected_categories),
+        "all_source_categories_selected": selected_categories == {"coco", "ego_objects"},
         "official_validation_ego_objects_images": len(blocked_ego),
         "eligible_questions_before_asset_checks": len(candidates),
         "min_mask_fraction": 0.005,

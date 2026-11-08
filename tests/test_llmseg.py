@@ -350,3 +350,22 @@ def test_full_train_rejects_unsafe_ego_names(tmp_path, name):
             ego_image_root=images,
             verify_release=False,
         )
+
+
+def test_explicit_coco_stage_does_not_claim_both_sources(tmp_path):
+    train, val, images, _ = fixture(tmp_path, count=3)
+    out = tmp_path / "coco-stage"
+    report = build_llmseg(
+        train,
+        val,
+        images,
+        out,
+        full_train=True,
+        max_samples=None,
+        source_categories=("coco",),
+        verify_release=False,
+    )
+    assert len(records(out)) == 6
+    assert report["selection"]["source_categories"] == ["coco"]
+    assert not report["selection"]["all_source_categories_selected"]
+    assert {r["category"] for r in records(out)} == {"coco"}

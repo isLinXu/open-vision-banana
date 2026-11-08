@@ -114,3 +114,26 @@ source attribution, terms, hashes, preparation report, rejection ledger and visu
 review. Do not overwrite `llmseg-coco5k`, other datasets, benchmark manifests, or
 attempt to mutate revision `e479f7013cc72ff355d60fdcbeb18b78e395bee5`.
 
+
+## Staged local preparation
+
+`--full-train` still defaults to both sources. When one source is not yet available,
+`--full-train --source-categories coco` permits a clearly marked COCO-only stage
+without an EgoObjects root. Source annotation hashes still cover the original
+complete official files. The preparation report records `source_categories` and
+`all_source_categories_selected: false`; a stage must not be presented as the
+completed full LLMSeg release. Use separate output directories for each build.
+
+The 2026-11-08 server preflight found 8,973 of 8,980 COCO images in an existing
+shared cache. Seven missing images were downloaded from the official COCO image
+server into the isolated preparation directory, giving complete 8,980-image
+availability. The shared cache is unchanged. This does not establish the final
+accepted row count or completion of the EgoObjects component.
+
+The live EgoObjects download page was subsequently inspected in a browser. Its
+dataset-specific agreement includes restrictions on incorporating the data into
+another program/dataset/product, as well as a 100-image redistribution limit.
+Downloading/accessing the archive is described as agreement acceptance. The
+repository's MIT license does not resolve these separate dataset terms. A working
+official archive link was located, but no EgoObjects archive download has been
+performed as part of this preparation.

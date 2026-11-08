@@ -28,6 +28,12 @@ def main() -> None:
         help="All questions from both official train sources, no cap",
     )
     parser.add_argument("--ego-image-root", type=Path)
+    parser.add_argument(
+        "--source-categories",
+        nargs="+",
+        choices=["coco", "ego_objects"],
+        help="Optional staged source selection; full-train defaults to both",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--exclude-image-ids", type=Path, required=True, help="RES evaluation_image_ids.json"
@@ -44,7 +50,11 @@ def main() -> None:
     args = parser.parse_args()
     if args.full_train and args.max_samples is not None:
         parser.error("--full-train cannot be combined with --max-samples")
-    if args.full_train and args.ego_image_root is None:
+    if (
+        args.full_train
+        and (args.source_categories is None or "ego_objects" in args.source_categories)
+        and args.ego_image_root is None
+    ):
         parser.error("--full-train requires --ego-image-root")
     blocked = json.loads(args.exclude_image_ids.read_text(encoding="utf-8"))
     report = build_llmseg(
@@ -57,6 +67,7 @@ def main() -> None:
         else (args.max_samples if args.max_samples is not None else 5000),
         full_train=args.full_train,
         ego_image_root=args.ego_image_root,
+        source_categories=tuple(args.source_categories) if args.source_categories else None,
         seed=args.seed,
         exclude_image_ids=blocked,
         exclude=args.exclude,
