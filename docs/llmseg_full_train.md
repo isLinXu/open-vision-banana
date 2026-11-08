@@ -1,4 +1,8 @@
-# LLM-Seg full-training supplement (preparation support, not a published release)
+# LLM-Seg COCO full-training supplement
+
+Current release scope is **COCO training questions only**, with no per-image question cap.
+EgoObjects has not been downloaded or included. The all-source upstream counts below
+are provenance, not a claim that the excluded source is part of this release.
 
 ## Verified scope
 
@@ -61,12 +65,15 @@ PYTHONPATH=src python scripts/prepare_llmseg.py \
   --annotations data/raw/llmseg/train.json \
   --validation-annotations data/raw/llmseg/validation.json \
   --image-root data/raw/coco2017/train2017 \
-  --ego-image-root data/raw/egoobjects/images \
-  --full-train --reject-invalid \
+  --full-train --source-categories coco --reject-invalid \
   --exclude-image-ids data/res_binary_v1/evaluation_image_ids.json \
   --exclude data/res_binary_v1/pairs.jsonl data/res_binary_v1 \
   --output-dir data/prep/llmseg-full-train
-python scripts/validate_prepared_res.py data/prep/llmseg-full-train
+python scripts/finalize_llmseg_crop.py \
+  --data-dir data/prep/llmseg-full-train \
+  --output-dir data/prep/llmseg-coco-full-v1 --resolution 512 --workers 4
+python scripts/package_res_dataset.py \
+  --data-dir data/prep/llmseg-coco-full-v1 --output-dir output/llmseg-coco-full-v1
 ```
 
 Missing source images fail the build, including with `--reject-invalid`; installed
@@ -79,7 +86,7 @@ image coverage, image/mask alignment, question quality, or redistribution permis
 
 PR #79 released 5,000 COCO image/question pairs. The later 512-pixel crop visibility
 filter retained 4,304 in the current reasoning supplement. Those 4,304 are an older
-subset, not an additional source. A future full supplement should **replace the old
+subset, not an additional source. This supplement must **replace the old
 LLMSeg component**, not be appended alongside it. This is source-version selection,
 not a new cross-dataset deduplication requirement. Preserve non-LLMSeg rows and all
 existing held-out rows. Apply the selected training geometry visibility policy to
@@ -96,8 +103,8 @@ As checked on 2026-11-08, the LLMSeg repository has no LICENSE file and GitHub
 returns `license: null`; its README links public annotations but does not give
 explicit redistribution terms for those annotations. Public download availability
 and PR #79's earlier upload are not substitutes for permission to republish a new
-full release. Confirm the annotation redistribution terms with the rights holder
-or an authoritative license before uploading derived masks/questions.
+full release. The annotation license remains unstated; this supplement preserves that uncertainty
+and does not grant or invent rights in the original questions or masks.
 
 The [EgoObjects repository](https://github.com/facebookresearch/EgoObjects) README
 states MIT and links the [official image download page](https://ai.meta.com/datasets/egoobjects-downloads)
@@ -108,7 +115,7 @@ COCO source image terms also remain applicable. No full EgoObjects asset build,
 full output release, or full real-data loader validation is claimed here.
 
 Once these gates pass, use a **new** subfolder such as
-`supplements/reasoning-v1/llmseg-full-train-v1` in
+`supplements/reasoning-v1/llmseg-coco-full-v1` in
 `Melo111/open-vision-banana-res`, publish a new immutable revision, and include
 source attribution, terms, hashes, preparation report, rejection ledger and visual
 review. Do not overwrite `llmseg-coco5k`, other datasets, benchmark manifests, or
@@ -137,3 +144,41 @@ Downloading/accessing the archive is described as agreement acceptance. The
 repository's MIT license does not resolve these separate dataset terms. A working
 official archive link was located, but no EgoObjects archive download has been
 performed as part of this preparation.
+
+
+
+## Completed COCO build (2026-11-08)
+
+The final user-selected scope excludes EgoObjects. All 8,980 COCO source images
+were available. Of 33,755 source questions, known held-out identities exclude
+2,116 questions on 521 images. Of 31,639 inspected questions, 10,925 fail the
+existing area rule and one has an empty mask. Native preparation yields 20,713
+rows. Every native asset was validated before cropping.
+
+The existing 512-pixel crop-visibility rule finds 2,967 directly unsafe rows.
+Whole-image closure **within this LLMSeg component only** removes 7,215 rows
+on 2,214 decoded images, retaining **13,498 training pairs**. It is not propagated
+to other source components. No train/validation/test split is relabeled.
+
+Final `training.jsonl` SHA256:
+`1d07e0902c032d56c9b92626447732ac63851da53fbf291e147227d38ab946a8`.
+All 13,498 retained rows passed the actual training loader, with finite 512x512
+RGB targets and nonempty sampled crops; collator checks passed. All final native
+assets and a local `ovb_res_bundle_v1` restore were validated, with restored
+manifest equality and loader smoke checks. No training was launched.
+
+The public package preserves official per-image COCO source/license attribution,
+source hashes, rejection/crop ledgers, and eight deterministic visual samples.
+The visual samples align masks to objects, but generated questions can remain
+ambiguous (for example COCO image 244476); this is not semantic certification of
+all questions. Native annotations were not relabeled.
+
+Accepted rows have zero exact decoded-RGB overlap with the 200 available official
+ReasonSeg validation images. Known COCO evaluation IDs were excluded. The supplied
+old supplement exclusion manifest itself contains only train rows, so it contributes
+no held-out pixel exclusions. Full mixed-pool/baseline pixel exclusion remains
+unverified; do not claim global leakage freedom from these component checks.
+
+The release replaces the old 4,304-row LLMSeg component. HF publication and its
+fixed revision are recorded separately once remote upload/download verification
+completes; local package readiness alone is not remote publication success.

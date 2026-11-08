@@ -369,3 +369,63 @@ def test_explicit_coco_stage_does_not_claim_both_sources(tmp_path):
     assert report["selection"]["source_categories"] == ["coco"]
     assert not report["selection"]["all_source_categories_selected"]
     assert {r["category"] for r in records(out)} == {"coco"}
+
+
+def test_crop_finalizer_rejects_whole_image_and_preserves_source(tmp_path):
+    from scripts.finalize_llmseg_crop import finalize
+
+    train, val, images, data = fixture(tmp_path, count=3)
+    # Only q0 on image 2 can become empty; all three questions on that image go.
+    pixels = np.zeros((6, 8), dtype=np.uint8)
+    pixels[1:4, 0] = 1
+    coco = pytest.importorskip("pycocotools.mask")
+    rle = coco.encode(np.asfortranarray(pixels))
+    rle["counts"] = rle["counts"].decode()
+    data["000000000002.jpg"]["qa_pairs"][0]["rle_seg"] = rle
+    train.write_text(json.dumps(data))
+    prepared = tmp_path / "prepared"
+    build_llmseg(
+        train,
+        val,
+        images,
+        prepared,
+        full_train=True,
+        max_samples=None,
+        source_categories=("coco",),
+        verify_release=False,
+    )
+    original = (prepared / "training.jsonl").read_bytes()
+    out = tmp_path / "final"
+    report = finalize(prepared, out, workers=1)
+    assert report["crop_filter"]["input_rows"] == 6
+    assert report["crop_filter"]["directly_unsafe_rows"] == 1
+    assert report["crop_filter"]["retained_rows"] == 3
+    assert report["validation"]["counts"] == {"train": 3}
+    assert {row["image_id"] for row in records(out)} == {3}
+    assert (prepared / "training.jsonl").read_bytes() == original
+    assert not (out / "BUILD_INCOMPLETE").exists()
+    with pytest.raises(ValueError, match="fresh output"):
+        finalize(prepared, out)
+
+
+def test_crop_finalizer_rejects_tampered_target_before_removal(tmp_path):
+    from scripts.finalize_llmseg_crop import finalize
+
+    train, val, images, _ = fixture(tmp_path, count=3)
+    prepared = tmp_path / "prepared"
+    build_llmseg(
+        train,
+        val,
+        images,
+        prepared,
+        full_train=True,
+        max_samples=None,
+        source_categories=("coco",),
+        verify_release=False,
+    )
+    row = records(prepared)[0]
+    Image.new("RGB", (row["width"], row["height"])).save(prepared / row["target"])
+    out = tmp_path / "final"
+    with pytest.raises(ValueError, match="Source target pixels changed"):
+        finalize(prepared, out, workers=1)
+    assert not out.exists()
