@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument(
         "--full-train",
         action="store_true",
-        help="All questions from both official train sources, no cap",
+        help="All questions from selected official train sources (both by default), no cap",
     )
     parser.add_argument("--ego-image-root", type=Path)
     parser.add_argument(
@@ -48,6 +48,12 @@ def main() -> None:
         help="Audit and omit invalid/duplicate/held-out incoming rows",
     )
     args = parser.parse_args()
+    if (
+        not args.full_train
+        and args.source_categories is not None
+        and set(args.source_categories) != {"coco"}
+    ):
+        parser.error("--source-categories ego_objects requires --full-train")
     if args.full_train and args.max_samples is not None:
         parser.error("--full-train cannot be combined with --max-samples")
     if (

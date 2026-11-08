@@ -66,7 +66,8 @@ def build_llmseg(
 ) -> dict:
     """Select the legacy COCO subset or all official COCO/EgoObjects train questions.
 
-    full_train requires max_samples=None and ego_image_root. The same native
+    full_train requires max_samples=None; selecting EgoObjects also requires
+    ego_image_root. Both sources are selected by default. The same native
     mask quality checks apply; full means uncapped source coverage, not that
     every upstream question is accepted. Validation stays excluded.
 
