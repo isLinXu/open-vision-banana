@@ -55,7 +55,7 @@
       }
     },
     "llmseg": {
-      "status": "13498_rows_loader_validated_publication_pending",
+      "status": "locally_validated_bundle_restore_passed_hf_upload_pending_slow_transfer",
       "repo_id": "Melo111/open-vision-banana-res",
       "revision": null,
       "subfolder": "supplements/reasoning-v1/llmseg-coco-full-v1",
@@ -74,7 +74,14 @@
         "native_admitted": 20713,
         "crop512_image_closure_excluded": 7215,
         "final_admitted": 13498
-      }
+      },
+      "bundle_bytes": 2772874251,
+      "validation": {
+        "loader_rows_passed": 13498,
+        "local_bundle_restore_passed": true,
+        "published_fixed_revision_verified": false
+      },
+      "reproduction_doc": "https://github.com/isLinXu/open-vision-banana/blob/5e377cc890c45d1b05021a1637d50ad0de3acf18/docs/llmseg_full_train.md"
     },
     "rea2seg": {
       "status": "portable_metadata_published_and_anonymous_readback_verified",

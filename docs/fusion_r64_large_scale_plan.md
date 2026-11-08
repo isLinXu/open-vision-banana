@@ -50,9 +50,9 @@ Rea2Seg在发布补充包中为15,275，历史512裁剪可见性过滤后主池�
 用户最新取消EgoObjects。目标为完整RefCOCO/RefCOCO+/RefCOCOg发布train + LLMSeg全部COCO训练问题，保留现有Rea2Seg；不下载/接入EgoObjects，任务比例和3.2M draw预算不变。
 
 - 完整RES固定发布：`Melo111/open-vision-banana-res@dce183e8441c55c8fcf58afd87f90c776024c828`。使用`training.jsonl`的270,195 train行，分别为102,698 / 95,501 / 71,996；24,554安全val另存，不能计作训练。原官方321,327 train表达式已按既有发布协议排除held-out图像和确切重复，不重新做去重工作项。该文件SHA256为`786f30bb64bed54fd57b35fe5a719967fe738c9592c8b6a08003cf2215a6cf15`。
-- LLMSeg依赖[PR #110](https://github.com/isLinXu/open-vision-banana/pull/110)的full-train入口：上游总train 44,780问中，本轮只处理COCO 33,755问，EgoObjects 11,025问排除。COCO来源显式选择，不再每图只取一问或封顶5,000。实际处理33,755问：held-out排除2,116问，剩余31,639候选；面积拒绝10,925、空mask拒绝1，native通过20,713；现行512整图裁剪闭包再排除7,215，最终13,498（N=13,498），逐行loader13,498/13,498已通过。发布包恢复验收仍在进行。官方val不能进入train。
+- LLMSeg依赖[PR #110](https://github.com/isLinXu/open-vision-banana/pull/110)的full-train入口：上游总train 44,780问中，本轮只处理COCO 33,755问，EgoObjects 11,025问排除。COCO来源显式选择，不再每图只取一问或封顶5,000。实际处理33,755问：held-out排除2,116问，剩余31,639候选；面积拒绝10,925、空mask拒绝1，native通过20,713；现行512整图裁剪闭包再排除7,215，最终13,498（N=13,498），逐行loader13,498/13,498已通过。本地bundle恢复与loader smoke已通过；HF大包发布尚未完成。官方val不能进入train。
 - 替换而非叠加：移除旧主池referring训练49,048行，再插入完整RES、最终LLMSeg和原11,812 Rea2Seg。旧32,932的逐来源身份目前未恢复，不声称逐条证明其是完整RES的子集；本方案明确用完整来源替代旧组件，而不是依据猜测做去重。旧验证/测试保留分区。
-- 图像、表达式、掩码分别遵守原数据条款。LLMSeg标注许可仍待核实，EgoObjects不在本轮范围；用户已授权将最近新增组件发布至HF；仍需记录上游数据条款，不能从代码许可证推断数据再分发许可，不改变上游条款。已有固定HF组件优先复用，不重复上传同一数据。
+- 图像、表达式、掩码分别遵守原数据条款。LLMSeg上游未明确声明统一数据许可，EgoObjects不在本轮范围；用户已授权将最近新增组件发布至HF；仍需记录上游数据条款，不能从代码许可证推断数据再分发许可，不改变上游条款。已有固定HF组件优先复用，不重复上传同一数据。
 
 **当前实物状态**：本机完整RES旧目录仅剩metadata并带`LOCAL_PAYLOAD_REMOVED.md`，不能当完整恢复。固定发布metadata已校验，原bundle首payload下载遇TLS握手失败。另已从本机原始图/annotation完成独立原生重建：30,956图SHA全部匹配原发布，70,327 masks geometry/尺寸/非空/二值与PNG回读native像素全部通过，共101,283资产。training.jsonl仍为270,195 train/24,554 val，SHA不变；新PNG字节hash与旧发布不同，使用独立assets清单，不冒充原bundle恢复。见[重建审计](data/fusion_res_native_rebuild_audit.json)。其他深度/COCONut/LingBot组件在测评机存在，但真实训练服务器仍需自行绑定数据位置。当前Windows及测评机未找到原主池`data/qwen_main_depth_reasoning/pairs.jsonl`与资产；固定模型发布仅有`data_audit`统计，没有可恢复的主池manifest/资产。因此完整主池实体构建被原主池输入缺失阻塞，不能从统计虚构数据。LLMSeg COCO13,498已全行loader通过，固定HF发布与恢复材料随#110更新。
 
@@ -194,3 +194,8 @@ clean Hypersim/DIODE17,540与过滤Rea2Seg11,812已发布为[portable-training-v
 - #110（`5e377cc890c45d1b05021a1637d50ad0de3acf18`）：全量COCO适配及crop-finalize focused 20/20通过。专用CI run42472146818为155 passed / 4 failed，失败是该独立分支仍有既有train_mode字段错误；#109含对应最小修复，但尚未合并做跨PR整体验收。
 - 广域CI没有全部通过。#107曾有4项collection错误（manifest unpack、train_mode、diffusers、cv2）；#109 `bb423d2`的Python3.10 job在Set up Python阶段HTTP504失败，不能把所有失败一概说成缺依赖；其他lint/performance失败也未忽略。局部CPU通过不代表全仓CI或训练ready。
 - 找回旧baseline之后仍需新referring train与baseline原held-out边界核验；真实训练节点恢复、配置/数据绑定及模型训练smoke需要后续明确执行授权，本轮不启动训练、不合并。
+
+
+LLMSeg最终COCO包约2,772,874,251字节，已完成本地恢复验证；server到Windows中转的实测吞吐偏低，大分片尚未齐备，不能宣称HF已成功提交或给出未经验证的fixed revision。已发布组件和统计不受此传输阻塞影响。对应复现入口见#110文档：必须显式`--full-train --source-categories coco --reject-invalid`，再执行`finalize_llmseg_crop.py --resolution 512`，不能省略类别而要求已取消的EgoObjects。若使用外链原始来源重建，仍须固定来源/选择清单与完整核验，不把上游裸COCO或原始33,755问题直接充当最终13,498训练包。
+
+本轮新增组合器与其测试文件已使用Ruff0.11.4检查和格式化，check/format-check通过；格式化后再次运行24项CPU组合/配置回归通过。

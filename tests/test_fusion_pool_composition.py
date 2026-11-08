@@ -1,4 +1,5 @@
 """Synthetic composition contracts; no images, models, network or GPU required."""
+
 import importlib.util
 import json
 from pathlib import Path
