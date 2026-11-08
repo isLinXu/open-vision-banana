@@ -1,0 +1,26 @@
+{
+  "status": "passed",
+  "identity": "independent_native_res_rebuild_v1",
+  "not_original_bundle_restoration": true,
+  "source_revision": "dce183e8441c55c8fcf58afd87f90c776024c828",
+  "counts": {
+    "image": 30956,
+    "mask": 70327
+  },
+  "assets_verified": 101283,
+  "png_encoding_hash_differences": 70327,
+  "all_image_release_hashes_matched": true,
+  "all_masks_decode_equal_native_coco_pixels": true,
+  "all_mask_geometry_hashes_matched": true,
+  "all_assets_dimensions_checked": true,
+  "all_masks_binary_nonempty": true,
+  "training_rows": {
+    "train": 270195,
+    "val": 24554
+  },
+  "training_manifest_sha256": "786f30bb64bed54fd57b35fe5a719967fe738c9592c8b6a08003cf2215a6cf15",
+  "generated_assets_sha256": "ed50938754ae3829cc940d553c298035338fdb2712fc7f3180081222f13aba74",
+  "original_assets_sha256": "76a861be29f10cd306db2233a97d12ea052a94586fa85ebc12b40e1c9162399c",
+  "seconds": 1313.2,
+  "training_started": false
+}

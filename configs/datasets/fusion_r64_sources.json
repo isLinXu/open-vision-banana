@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "training_ready": false,
+  "checked_on": "2026-11-08",
+  "scope": "Full RefCOCO family + all admitted LLMSeg COCO questions; no EgoObjects or NYU training. No new deduplication. No training launch.",
+  "task_sampling_weights": {
+    "depth": 0.35,
+    "semantic": 0.2,
+    "instance": 0.2,
+    "referring": 0.15,
+    "generation": 0.1
+  },
+  "counts_status": "component candidates, not a composed or audited full pool",
+  "active_train_rows_formula": "1084937 + llmseg.train_rows",
+  "referring_train_rows_formula": "282007 + llmseg.train_rows",
+  "components": {
+    "baseline": {
+      "status": "blocked_missing_original_manifest_and_assets",
+      "repo_id": null,
+      "revision": null,
+      "manifest_sha256": "a7100a9ac0f43e72b647f7cd4f36d417175a44a683549ef98e083927f2e93806",
+      "train_rows": 212801,
+      "note": "Model publication data_audit contains statistics, not a downloadable baseline dataset."
+    },
+    "old_hypersim": {
+      "status": "identity_only",
+      "repo_id": "Melo111/open-vision-banana-depth",
+      "revision": "9f56e9c8d6a05f4e9a512cdc9de5231bbda0628b",
+      "subfolder": "hypersim-filtered-v1",
+      "manifest_sha256": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
+      "train_rows": 13267,
+      "note": "Replacement identity set only; do not retain these rows alongside clean replacement."
+    },
+    "full_res": {
+      "status": "published_metadata_verified_independent_local_rebuild_verified",
+      "repo_id": "Melo111/open-vision-banana-res",
+      "revision": "dce183e8441c55c8fcf58afd87f90c776024c828",
+      "subfolder": "",
+      "format": "ovb_res_bundle_v1",
+      "manifest": "training.jsonl",
+      "manifest_sha256": "786f30bb64bed54fd57b35fe5a719967fe738c9592c8b6a08003cf2215a6cf15",
+      "train_rows": 270195,
+      "heldout_rows": 24554,
+      "note": "Official safe training view; heldout rows are not training. Local independently rebuilt assets, if used, need a different asset inventory identity.",
+      "canonical_payload_restored_this_session": false,
+      "independent_local_rebuild": {
+        "identity": "independent_native_res_rebuild_v1",
+        "assets_sha256": "ed50938754ae3829cc940d553c298035338fdb2712fc7f3180081222f13aba74",
+        "original_release_assets_sha256": "76a861be29f10cd306db2233a97d12ea052a94586fa85ebc12b40e1c9162399c",
+        "images": 30956,
+        "masks": 70327,
+        "assets_verified": 101283,
+        "audit": "docs/data/fusion_res_native_rebuild_audit.json",
+        "not_original_bundle_restoration": true
+      }
+    },
+    "llmseg": {
+      "status": "13498_rows_loader_validated_publication_pending",
+      "repo_id": "Melo111/open-vision-banana-res",
+      "revision": null,
+      "subfolder": "supplements/reasoning-v1/llmseg-coco-full-v1",
+      "format": "ovb_res_bundle_v1",
+      "manifest_sha256": "1d07e0902c032d56c9b92626447732ac63851da53fbf291e147227d38ab946a8",
+      "train_rows": 13498,
+      "upstream_train_questions": 33755,
+      "excluded_source": "EgoObjects",
+      "note": "Use final crop512-admitted count and immutable revision, not 33755 raw questions or the old 4304 subset.",
+      "manifest": "training.jsonl",
+      "accounting": {
+        "raw_coco_questions": 33755,
+        "heldout_questions": 2116,
+        "area_rejections": 10925,
+        "empty_mask_rejections": 1,
+        "native_admitted": 20713,
+        "crop512_image_closure_excluded": 7215,
+        "final_admitted": 13498
+      }
+    },
+    "rea2seg": {
+      "status": "portable_metadata_published_and_anonymous_readback_verified",
+      "repo_id": "Melo111/open-vision-banana-depth",
+      "revision": "606424bb3f6918c3434f59ebdeec996ff7c58b24",
+      "manifest_sha256": "f36e07c46f2dbea00960f26f00b3f94b292d7cde72bde365e4a843f4c4105d3b",
+      "train_rows": 11812,
+      "note": "Portable selection; restores immutable upstream assets via metadata.json. Run verify_portable_views.py after restoration. Does not certify the combined full training pool.",
+      "manifest": "rea2seg-filtered.jsonl",
+      "selected_asset_references": 16515,
+      "selected_asset_bytes": 3731233136,
+      "subfolder": "portable-training-views-v1",
+      "format": "ovb_portable_training_views_v1",
+      "asset_root": "ROOT with hypersim/, diode/, rea2seg/ restored per pinned README",
+      "validation": {
+        "loader_rows_sampled": 16
+      },
+      "asset_dependencies": [
+        {
+          "mount": "rea2seg",
+          "repo_id": "Melo111/open-vision-banana-res",
+          "revision": "e479f7013cc72ff355d60fdcbeb18b78e395bee5",
+          "subfolder": "supplements/reasoning-v1/rea2seg",
+          "format": "ovb_res_bundle_v1"
+        }
+      ]
+    },
+    "clean_depth": {
+      "status": "portable_metadata_published_and_anonymous_readback_verified",
+      "repo_id": "Melo111/open-vision-banana-depth",
+      "revision": "606424bb3f6918c3434f59ebdeec996ff7c58b24",
+      "manifest_sha256": "6512c9a34710ce4a42db5257b996007b2d83763581e9792f9263a41d3909895a",
+      "train_rows": 17540,
+      "note": "Portable selection; restores immutable upstream assets via metadata.json. Run verify_portable_views.py after restoration. Does not certify the combined full training pool.",
+      "manifest": "clean-depth.jsonl",
+      "selected_asset_references": 57959,
+      "selected_asset_bytes": 66920848800,
+      "subfolder": "portable-training-views-v1",
+      "format": "ovb_portable_training_views_v1",
+      "asset_root": "ROOT with hypersim/, diode/, rea2seg/ restored per pinned README",
+      "validation": {
+        "native_depth_rows_passed": 17540,
+        "loader_rows_sampled": 16
+      },
+      "asset_dependencies": [
+        {
+          "mount": "hypersim",
+          "repo_id": "Melo111/open-vision-banana-depth",
+          "revision": "9f56e9c8d6a05f4e9a512cdc9de5231bbda0628b",
+          "subfolder": "hypersim-filtered-v1",
+          "format": "ovb_res_bundle_v1"
+        },
+        {
+          "mount": "diode",
+          "repo_id": "Melo111/open-vision-banana-depth",
+          "revision": "9ed5e65718db68a6cdd000754de681336ab18179",
+          "subfolder": "diode-indoor-train-additions-v1",
+          "format": "diode_native_tar_v1"
+        }
+      ]
+    },
+    "lingbot": {
+      "status": "published_metadata_and_local_manifest_verified",
+      "repo_id": "Melo111/open-vision-banana-depth",
+      "revision": "78946c7b0aff52b87fe2ad15143e93625a43b139",
+      "subfolder": "lingbot-depth-v1",
+      "format": "ovb_res_bundle_v1",
+      "manifest": "pairs.jsonl",
+      "manifest_sha256": "2a277c9dc0c7523ad434d59407e40b7693b85de4d53558538acf4596f4548b8f",
+      "train_rows": 50000
+    },
+    "coconut": {
+      "status": "published_metadata_and_local_manifest_verified",
+      "repo_id": "Melo111/open-vision-banana-segmentation",
+      "revision": "b28483c48a57bb8338912da02d2e00c03d6da3d7",
+      "subfolder": "coconut-b-v1",
+      "format": "ovb_res_bundle_v1",
+      "manifest": "pairs.jsonl",
+      "manifest_sha256": "50113aa1d64cfee558419f90150a861286f91794248670603c682f6e9792750f",
+      "train_rows": 301431,
+      "train_by_task": {
+        "semantic": 106894,
+        "instance": 194537
+      },
+      "heldout_rows": 6167
+    },
+    "indoor": {
+      "status": "published_metadata_and_local_manifest_verified",
+      "repo_id": "Melo111/open-vision-banana-depth",
+      "revision": "5a864bd118b5bca23e814917b62c0cb9f1f56da6",
+      "subfolder": "indoor-observed98-v1",
+      "format": "ovb_res_bundle_v1",
+      "manifest": "pairs.jsonl",
+      "manifest_sha256": "aac7a7897f98a945ff58ea0251c8344a93cc0feb0c526c61727c147f7e23bba8",
+      "train_rows": 292153,
+      "heldout_rows": 8602
+    }
+  },
+  "active_train_rows_candidate": 1098435,
+  "referring_train_rows_candidate": 295505,
+  "missing_baseline_retained_train_rows": 141806,
+  "new_or_replacement_components_train_rows": 956629,
+  "blocking_requirements": [
+    "Recover the exact original baseline manifest and retained 141806 training rows plus existing held-out assets.",
+    "Validate new referring training rows against original baseline held-out image identities before declaring the combined pool ready.",
+    "Restore and verify all fixed components on the actual training node; bind world_size * microbatch * accumulation to 32.",
+    "Review PR107/109/110 and perform integration checks after approved combination; no training launch is authorized by this source inventory."
+  ],
+  "focused_cpu_validation": {
+    "pr107_tests_passed": 60,
+    "pr109_composer_and_real_yaml_tests_passed": 24,
+    "pr110_llmseg_tests_passed": 20,
+    "python_version": "3.12.14",
+    "full_repository_ci_passed": false
+  }
+}

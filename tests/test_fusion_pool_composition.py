@@ -136,3 +136,64 @@ def test_required_counts_and_roles(pool):
     path.write_text(json.dumps(config))
     with pytest.raises(ValueError, match="role"):
         composer.compose(path, root / "out")
+
+
+def test_official_training_case_is_preserved(pool, tmp_path):
+    spec_path, spec_data, _ = pool
+    path = Path(spec_data["components"]["indoor"]["manifest"])
+    if not path.is_absolute():
+        path = spec_path.parent / path
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    for row in rows:
+        row["source_split"] = "Training"
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    spec_data["components"]["indoor"]["sha256"] = composer.digest(path)
+    spec_path.write_text(json.dumps(spec_data))
+    output = tmp_path / "official-case"
+    composer.compose(spec_path, output)
+    output_rows = [json.loads(line) for line in (output / "pairs.jsonl").read_text().splitlines()]
+    assert any(row.get("source_split") == "Training" for row in output_rows)
+
+
+def test_target_only_generation_is_not_rewritten(pool):
+    path, _, root = pool
+
+    def remove_generation_input(rows):
+        for row in rows:
+            if row["task"] == "generation":
+                row.pop("input")
+
+    rewrite(pool, "baseline", remove_generation_input)
+    composer.compose(path, root / "target-only")
+    rows = [json.loads(x) for x in (root / "target-only/pairs.jsonl").read_text().splitlines()]
+    generation = next(row for row in rows if row["task"] == "generation")
+    assert "input" not in generation
+    assert Path(generation["target"]).is_file()
+
+
+def test_removed_baseline_assets_need_not_exist(pool):
+    def stale(rows):
+        for row in rows:
+            if row["sample_id"] in {"old", "old_ref", "normal"}:
+                row["input"] = "unavailable-old-input"
+                row["target"] = "unavailable-old-target"
+                row["valid_mask"] = "unavailable-old-mask"
+
+    rewrite(pool, "baseline", stale)
+    path, _, root = pool
+    result = composer.compose(path, root / "out")
+    assert result["train_rows"] == 9
+
+
+@pytest.mark.parametrize("sample_id", ["original_hypersim", "heldout_normal", "test"])
+def test_retained_baseline_assets_still_required(pool, sample_id):
+    def stale(rows):
+        for row in rows:
+            if row["sample_id"] == sample_id:
+                row["target"] = "missing-retained-target"
+
+    rewrite(pool, "baseline", stale)
+    path, _, root = pool
+    with pytest.raises(FileNotFoundError):
+        composer.compose(path, root / "out")
+    assert not (root / "out").exists()

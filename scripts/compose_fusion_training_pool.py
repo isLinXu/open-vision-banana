@@ -68,6 +68,22 @@ def local(value, root):
     return (p if p.is_absolute() else root / p).resolve()
 
 
+def validate_assets(row, root, context):
+    required = ("target",) if row["task"] == "generation" else ("input", "target")
+    for key in required:
+        if not isinstance(row.get(key), str) or not row[key]:
+            raise ValueError(f"{context}: missing {key}")
+    for key in PATH_KEYS:
+        if key not in row or row[key] is None:
+            continue
+        if not isinstance(row[key], str) or not row[key]:
+            raise ValueError(f"{context}: invalid path {key}")
+        asset = local(row[key], root)
+        if not asset.is_file():
+            raise FileNotFoundError(asset)
+        row[key] = str(asset)
+
+
 def load_component(role, entry, spec_root):
     if set(entry) != {"manifest", "root", "sha256", "expected_train"}:
         raise ValueError(f"{role}: unknown or missing component fields")
@@ -92,6 +108,8 @@ def load_component(role, entry, spec_root):
             if row.get("split") not in {"train", "val", "test"}:
                 raise ValueError(f"{role}:{number}: unknown split")
             source_split = row.get("source_split")
+            if isinstance(source_split, str):
+                source_split = source_split.lower()
             if row["split"] == "train" and source_split not in (
                 None,
                 "train",
@@ -104,19 +122,8 @@ def load_component(role, entry, spec_root):
                 if row["split"] != "train":
                     raise ValueError("old_hypersim identity set must be train only")
                 identity(row)
-            else:
-                for key in ("input", "target"):
-                    if not isinstance(row.get(key), str) or not row[key]:
-                        raise ValueError(f"{role}:{number}: missing {key}")
-                for key in PATH_KEYS:
-                    if key not in row or row[key] is None:
-                        continue
-                    if not isinstance(row[key], str) or not row[key]:
-                        raise ValueError(f"{role}:{number}: invalid path {key}")
-                    asset = local(row[key], root)
-                    if not asset.is_file():
-                        raise FileNotFoundError(asset)
-                    row[key] = str(asset)
+            elif role != "baseline":
+                validate_assets(row, root, f"{role}:{number}")
             rows.append(row)
     count = sum(r["split"] == "train" for r in rows)
     expected = entry["expected_train"]
@@ -180,6 +187,10 @@ def compose(spec_path, output):
         raise ValueError("Baseline does not contain exact old Hypersim identity set")
     if removed_referring != spec["expected_removed_referring"]:
         raise ValueError("Baseline referring replacement count mismatch")
+    # Removed baseline rows need identity/provenance, not obsolete assets.
+    baseline_root = local(entries["baseline"]["root"], spec_path.parent)
+    for row in train + heldout:
+        validate_assets(row, baseline_root, "retained baseline")
     component_heldout = []
     for role in ROLES[2:]:
         for row in loaded[role][0]:
