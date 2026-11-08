@@ -1,0 +1,23 @@
+{
+  "status": "annotation_only_audit_not_a_prepared_release",
+  "checked_date": "2026-11-08",
+  "source_revision": "65147a98cc49c2dac9b7a3633d9d3d336f1ac023",
+  "train_sha256": "d925dabf2465f066c43f5d14b1360cf97de281744af15c1d063fe7cc61508754",
+  "validation_sha256": "e25345607d94aea5f30b09ebdd6d9acf024f9a10ea3953d6300245a2cad27689",
+  "train": {
+    "coco": {"images": 8980, "questions": 33755, "decoded_masks": 33755, "area_eligible": 22144, "area_rejected": 11611, "images_with_area_eligible_question": 8287},
+    "ego_objects": {"images": 2356, "questions": 11025, "decoded_masks": 11025, "area_eligible": 9126, "area_rejected": 1899, "images_with_area_eligible_question": 2338}
+  },
+  "validation": {
+    "coco": {"images": 792, "questions": 2941},
+    "ego_objects": {"images": 208, "questions": 964}
+  },
+  "train_validation_filename_overlap": 0,
+  "mask_decode_errors": 0,
+  "min_foreground_fraction": 0.005,
+  "max_foreground_fraction": 0.95,
+  "area_eligible_total_before_exclusions": 31270,
+  "not_verified": ["complete source image availability", "all native image-mask dimension matches", "full held-out identity and pixel exclusions", "512 crop eligibility", "all generated question semantics", "full real-data loader and bundle round-trip", "LLMSeg annotation redistribution terms", "applicable EgoObjects image download terms"],
+  "published_full_dataset_revision": null,
+  "training_launched": false
+}

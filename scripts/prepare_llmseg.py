@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the pinned LLM-Seg40K COCO subset for the existing pair-manifest loader."""
+"""Prepare the pinned LLM-Seg40K subset or full train questions for the pair loader."""
 
 from __future__ import annotations
 
@@ -21,7 +21,13 @@ def main() -> None:
         "--image-root", type=Path, required=True, help="COCO train2017 or train2014 images"
     )
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--max-samples", type=int, default=5000)
+    parser.add_argument("--max-samples", type=int, default=None)
+    parser.add_argument(
+        "--full-train",
+        action="store_true",
+        help="All questions from both official train sources, no cap",
+    )
+    parser.add_argument("--ego-image-root", type=Path)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--exclude-image-ids", type=Path, required=True, help="RES evaluation_image_ids.json"
@@ -36,13 +42,21 @@ def main() -> None:
         help="Audit and omit invalid/duplicate/held-out incoming rows",
     )
     args = parser.parse_args()
+    if args.full_train and args.max_samples is not None:
+        parser.error("--full-train cannot be combined with --max-samples")
+    if args.full_train and args.ego_image_root is None:
+        parser.error("--full-train requires --ego-image-root")
     blocked = json.loads(args.exclude_image_ids.read_text(encoding="utf-8"))
     report = build_llmseg(
         args.annotations,
         args.validation_annotations,
         args.image_root,
         args.output_dir,
-        max_samples=args.max_samples,
+        max_samples=None
+        if args.full_train
+        else (args.max_samples if args.max_samples is not None else 5000),
+        full_train=args.full_train,
+        ego_image_root=args.ego_image_root,
         seed=args.seed,
         exclude_image_ids=blocked,
         exclude=args.exclude,

@@ -242,3 +242,111 @@ def test_merge_keeps_existing_official_validation_and_all_three_sources(tmp_path
     assert len(train_ds) == 4 and len(val_ds) == 1
     assert val_ds[0]["expression"] == original["expression"]
     assert _collate_fn([train_ds[0], val_ds[0]])["target_rgb"].shape == (2, 3, 16, 16)
+
+
+def test_full_train_all_questions_and_both_sources(tmp_path):
+    train, val, images, _ = fixture(tmp_path, count=3)
+    ego = tmp_path / "ego"
+    ego.mkdir()
+    Image.new("RGB", (8, 6), (7, 80, 160)).save(ego / "ego.jpg")
+    out = tmp_path / "full"
+    report = build_llmseg(
+        train,
+        val,
+        images,
+        out,
+        full_train=True,
+        max_samples=None,
+        ego_image_root=ego,
+        verify_release=False,
+    )
+    rows = records(out)
+    assert len(rows) == 9  # COCO 2 images x 3 questions + EgoObjects 1 x 3.
+    assert report["selection"]["eligible_images_before_asset_checks"] == 3
+    assert report["selection"]["eligible_questions_before_asset_checks"] == 9
+    assert {r["source_protocol"] for r in rows} == {"official_train_all_questions_v1"}
+    assert {r["split"] for r in rows} == {"train"}
+    assert len([r for r in rows if r["category"] == "ego_objects"]) == 3
+    assert all("image_id" not in r for r in rows if r["category"] == "ego_objects")
+    assert all("SECRET ANSWER" not in r["prompt"] for r in rows)
+    from open_vision_banana.res_bundle import package_dataset, restore_bundle
+    from open_vision_banana.res_preparation import validate_prepared_pairs
+
+    assert validate_prepared_pairs(out)["counts"] == {"train": 9}
+    bundle, restored = tmp_path / "bundle", tmp_path / "restored"
+    package_dataset(out, bundle, shard_bytes=1000)
+    restore_bundle(bundle, restored)
+    assert (out / "training.jsonl").read_bytes() == (restored / "training.jsonl").read_bytes()
+
+
+def test_full_train_excludes_ego_validation_and_rejects_missing_assets(tmp_path):
+    train, val, images, data = fixture(tmp_path, count=3)
+    val.write_text(json.dumps({"ego.jpg": data["ego.jpg"]}))
+    out = tmp_path / "full"
+    build_llmseg(
+        train,
+        val,
+        images,
+        out,
+        full_train=True,
+        max_samples=None,
+        ego_image_root=tmp_path / "missing",
+        verify_release=False,
+    )
+    assert len(records(out)) == 9
+    assert {r["category"] for r in records(out)} == {"coco"}
+    val.write_text(json.dumps({"000000000001.jpg": data["000000000001.jpg"]}))
+    with pytest.raises(FileNotFoundError, match="Missing EgoObjects"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "missing-out",
+            full_train=True,
+            max_samples=None,
+            ego_image_root=tmp_path / "missing",
+            verify_release=False,
+            reject_invalid=True,
+        )
+
+
+def test_full_train_requires_explicit_assets_and_no_cap(tmp_path):
+    train, val, images, _ = fixture(tmp_path)
+    with pytest.raises(ValueError, match="max_samples=None"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "out",
+            full_train=True,
+            ego_image_root=images,
+            verify_release=False,
+        )
+    with pytest.raises(ValueError, match="ego_image_root"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "out",
+            full_train=True,
+            max_samples=None,
+            verify_release=False,
+        )
+
+
+@pytest.mark.parametrize("name", ["../ego.jpg", "/ego.jpg", "C:ego.jpg", "a\\ego.jpg"])
+def test_full_train_rejects_unsafe_ego_names(tmp_path, name):
+    train, val, images, data = fixture(tmp_path)
+    data[name] = data.pop("ego.jpg")
+    train.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="Invalid EgoObjects image name"):
+        build_llmseg(
+            train,
+            val,
+            images,
+            tmp_path / "out",
+            full_train=True,
+            max_samples=None,
+            ego_image_root=images,
+            verify_release=False,
+        )

@@ -1,4 +1,4 @@
-"""Official LLM-Seg40K COCO train subset -> the existing binary RES contract.
+"""Official LLM-Seg40K training questions -> the existing binary RES contract.
 
 Only offline preparation lives here. SAM proposals and answer strings are not
 training targets; the published qa_pairs[].rle_seg is the native mask target.
@@ -53,7 +53,9 @@ def build_llmseg(
     image_root: str | Path,
     output_dir: str | Path,
     *,
-    max_samples: int = 5000,
+    max_samples: int | None = 5000,
+    full_train: bool = False,
+    ego_image_root: str | Path | None = None,
     seed: int = 42,
     exclude_image_ids=(),
     exclude=(),
@@ -61,7 +63,11 @@ def build_llmseg(
     reject_invalid: bool = False,
     verify_release: bool = True,
 ) -> dict:
-    """Select <=5k COCO training images, one deterministic question per image.
+    """Select the legacy COCO subset or all official COCO/EgoObjects train questions.
+
+    full_train requires max_samples=None and ego_image_root. The same native
+    mask quality checks apply; full means uncapped source coverage, not that
+    every upstream question is accepted. Validation stays excluded.
 
     Official validation images and caller-supplied COCO evaluation identities
     are removed before selection. No holdout is synthesized or relabeled.
@@ -70,6 +76,11 @@ def build_llmseg(
     annotations, validation_annotations, image_root = map(
         Path, (annotations, validation_annotations, image_root)
     )
+    if full_train and max_samples is not None:
+        raise ValueError("full_train requires max_samples=None (no cap)")
+    if full_train and ego_image_root is None:
+        raise ValueError("full_train requires ego_image_root")
+    ego_root = Path(ego_image_root) if ego_image_root is not None else None
     train, train_hash = _annotations(annotations)
     val, val_hash = _annotations(validation_annotations)
     if verify_release and (train_hash != TRAIN_SHA256 or val_hash != VALIDATION_SHA256):
@@ -78,6 +89,7 @@ def build_llmseg(
         )
     blocked = set(exclude_image_ids)
     blocked.update(int(Path(k).stem) for k, v in val.items() if v["from_dataset"] == "coco")
+    blocked_ego = {name for name, item in val.items() if item["from_dataset"] == "ego_objects"}
     counts: Counter[str] = Counter()
 
     def rank(value: str) -> str:
@@ -87,9 +99,15 @@ def build_llmseg(
     for filename, item in train.items():
         counts[f"upstream_{item['from_dataset']}_images"] += 1
         counts[f"upstream_{item['from_dataset']}_questions"] += len(item["qa_pairs"])
-        if item["from_dataset"] != "coco":
+        category = item["from_dataset"]
+        if category != "coco" and not full_train:
             continue
-        if int(Path(filename).stem) in blocked:
+        if category == "ego_objects" and (not re.fullmatch(r"[A-Za-z0-9_-]+\.jpg", filename)):
+            raise ValueError(f"Invalid EgoObjects image name: {filename!r}")
+        if category == "ego_objects" and filename in blocked_ego:
+            counts["excluded_ego_objects_images"] += 1
+            continue
+        if category == "coco" and int(Path(filename).stem) in blocked:
             counts["excluded_coco_images"] += 1
             continue
         questions = item["qa_pairs"]
@@ -101,22 +119,37 @@ def build_llmseg(
                 raise ValueError(f"Invalid qa_pairs entry in {filename}")
         if len({str(q["question_id"]) for q in questions}) != len(questions):
             raise ValueError(f"Duplicate question_id in {filename}")
-        qa = min(questions, key=lambda q: rank(f"{filename}:{q['question_id']}"))
-        candidates.append((filename, qa))
+        selected = sorted(questions, key=lambda q: rank(f"{filename}:{q['question_id']}"))
+        for qa in selected if full_train else selected[:1]:
+            candidates.append((filename, qa))
     candidates.sort(key=lambda item: rank(item[0]))
 
     def rows():
         for filename, qa in candidates:
+            category = train[filename]["from_dataset"]
+            if category == "coco":
+                path = _image_path(image_root, filename)
+                identity = {"image_id": int(Path(filename).stem)}
+                asset_root = image_root
+            else:
+                assert ego_root is not None
+                path = ego_root / filename
+                if not path.is_file():
+                    raise FileNotFoundError(f"Missing EgoObjects image {filename} under {ego_root}")
+                if not path.resolve().is_relative_to(ego_root.resolve()):
+                    raise ValueError(f"EgoObjects image escapes root: {filename}")
+                identity = {}  # EgoObjects names are not COCO numeric identities.
+                asset_root = ego_root
             yield (
                 {
-                    "image": {"path": str(_image_path(image_root, filename).resolve())},
+                    "image": {"path": str(path.resolve())},
                     "question": qa["question"],
                     "cot_answer": "",
                     "answer": qa["answer"],  # metadata only; never fed into the prompt
                     "mask": {"rle": qa["rle_seg"]},
-                    "category": "coco",
+                    "category": category,
                     "source_image": filename,
-                    "image_id": int(Path(filename).stem),
+                    **identity,
                     "question_id": qa["question_id"],
                     "id": f"{filename}:{qa['question_id']}",
                 },
@@ -125,7 +158,7 @@ def build_llmseg(
                     "source_shard_sha256": train_hash,
                     "source_row": f"{filename}/qa_pairs/{qa['question_id']}",
                 },
-                image_root,
+                asset_root,
             )
 
     report = build_res_pairs(
@@ -134,9 +167,13 @@ def build_llmseg(
         source=DATASET,
         namespace="llmseg",
         source_label="LLM-Seg40K",
-        source_protocol="official_train_coco_one_question_v1",
-        available_categories=("coco",),
-        categories=("coco",),
+        source_protocol=(
+            "official_train_all_questions_v1"
+            if full_train
+            else "official_train_coco_one_question_v1"
+        ),
+        available_categories=("coco", "ego_objects"),
+        categories=("coco", "ego_objects") if full_train else ("coco",),
         revision=UPSTREAM_REVISION,
         max_samples=max_samples,
         exclude=exclude,
@@ -148,13 +185,20 @@ def build_llmseg(
     )
     report["selection"] = {
         "seed": seed,
-        "policy": "COCO train only; SHA256-ranked images/questions; one question per image",
+        "policy": (
+            "All official train questions, COCO and EgoObjects; no cap"
+            if full_train
+            else "COCO train only; SHA256-ranked images/questions; one question per image"
+        ),
+        "full_train": full_train,
+        "official_validation_ego_objects_images": len(blocked_ego),
+        "eligible_questions_before_asset_checks": len(candidates),
         "min_mask_fraction": 0.005,
         "max_mask_fraction": 0.95,
         "train_annotations_sha256": train_hash,
         "validation_annotations_sha256": val_hash,
         "official_release_verified": verify_release,
-        "eligible_images_before_asset_checks": len(candidates),
+        "eligible_images_before_asset_checks": len({name for name, _ in candidates}),
         **counts,
     }
     Path(output_dir, "report.json").write_text(
