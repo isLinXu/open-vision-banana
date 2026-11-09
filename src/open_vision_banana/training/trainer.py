@@ -375,7 +375,11 @@ class ManifestVisionDataset(Dataset):
             self.samples = self.samples[:max_samples]
         self._depth_admission_checked = split == "train"
         if depth_admitted:
-            logger.info("%s: depth admission taken from %s", manifest_path, admission_record_path(manifest_path))
+            logger.info(
+                "%s: depth admission taken from %s",
+                manifest_path,
+                admission_record_path(manifest_path),
+            )
         if self.legacy_depth_exempt:
             logger.info(
                 "%s: %d legacy baseline depth rows admitted without native depth",

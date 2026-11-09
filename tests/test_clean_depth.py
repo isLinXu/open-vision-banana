@@ -235,6 +235,84 @@ class CleanDepthTests(unittest.TestCase):
         self.assertIn("metric_depth", stats["validity_sources"])
 
 
+class AdmissionRecordTests(unittest.TestCase):
+    setUp = CleanDepthTests.setUp
+    tearDown = CleanDepthTests.tearDown
+    row = CleanDepthTests.row
+    manifest = CleanDepthTests.manifest
+
+    def exempt_row(self, name="legacy"):
+        row = self.row(name)
+        row.pop("metric_depth")
+        row["depth_admission"] = clean.LEGACY_DEPTH_EXEMPT
+        return row
+
+    def test_is_legacy_depth_exempt(self):
+        self.assertTrue(
+            clean.is_legacy_depth_exempt({"depth_admission": clean.LEGACY_DEPTH_EXEMPT})
+        )
+        self.assertFalse(clean.is_legacy_depth_exempt({"depth_admission": "other"}))
+        self.assertFalse(clean.is_legacy_depth_exempt({}))
+
+    def test_record_binds_bytes_root_and_version(self):
+        rows = [
+            self.row("a"),
+            self.exempt_row(),
+            self.row("v", invalid=100, split="val"),
+            self.row("n", invalid=100, task="normal"),
+        ]
+        path = self.manifest(rows)
+        path.write_text(path.read_text() + "\n")
+        record = clean.write_admission_record(path, self.root, workers=2, chunk_size=1)
+        self.assertEqual((record["checked_rows"], record["legacy_exempt_rows"]), (1, 1))
+        self.assertEqual(record["manifest_sha256"], clean.file_sha256(path))
+        record_path = clean.admission_record_path(path)
+        self.assertEqual(record_path.name, "pairs.jsonl.depth-admission.json")
+        self.assertTrue(clean.has_admission_record(path, self.root))
+        self.assertFalse(clean.has_admission_record(path, self.root / "elsewhere"))
+
+        saved = json.loads(record_path.read_text())
+        record_path.write_text(json.dumps({**saved, "version": "older"}))
+        self.assertFalse(clean.has_admission_record(path, self.root))
+        for broken in ("not json", "[]"):
+            record_path.write_text(broken)
+            self.assertFalse(clean.has_admission_record(path, self.root))
+
+        clean.write_admission_record(path, self.root, workers=1)
+        with path.open("a") as stream:
+            stream.write(json.dumps(self.row("b")) + "\n")
+        self.assertFalse(clean.has_admission_record(path, self.root))
+        record_path.unlink()
+        self.assertFalse(clean.has_admission_record(path, self.root))
+
+    def test_rejected_row_writes_no_record(self):
+        path = self.manifest([self.row("a"), self.row("dirty", invalid=3)])
+        with self.assertRaisesRegex(ValueError, "1 depth rows rejected"):
+            clean.write_admission_record(path, self.root, workers=1)
+        self.assertFalse(clean.admission_record_path(path).exists())
+
+    def test_manifest_changed_during_admission_writes_no_record(self):
+        path = self.manifest([self.row("a")])
+        with (
+            patch.object(clean, "file_sha256", side_effect=["before", "after"]),
+            self.assertRaisesRegex(ValueError, "changed during admission"),
+        ):
+            clean.write_admission_record(path, self.root, workers=1)
+        self.assertFalse(clean.admission_record_path(path).exists())
+
+    def test_cli_defaults_root_to_manifest_directory(self):
+        import contextlib
+        import importlib
+        import io
+
+        path = self.manifest([self.row("a"), self.exempt_row()])
+        cli = importlib.import_module("scripts.admit_depth_manifest")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            cli.main(["--manifest", str(path), "--workers", "1"])
+        self.assertEqual(json.loads(out.getvalue())["legacy_exempt_rows"], 1)
+        self.assertTrue(clean.has_admission_record(path, self.root))
+
+
 class TrainingAdmissionTests(unittest.TestCase):
     """Actual loaders are optional only when their installed dependencies are absent."""
 
@@ -321,6 +399,34 @@ class TrainingAdmissionTests(unittest.TestCase):
                     ),
                 ):
                     loader(path, 7, "train", {"depth"})
+
+    def test_trainer_loader_exemption_and_admission_record(self):
+        loader = self.loaders[0]  # open_vision_banana.training.trainer
+        logger = "open_vision_banana.training.trainer"
+        exempt = self.row("legacy")
+        exempt.pop("metric_depth")
+        exempt["depth_admission"] = clean.LEGACY_DEPTH_EXEMPT
+        path = self.manifest([self.row("a"), exempt])
+        with self.assertLogs(logger, "INFO") as logs:
+            dataset = loader(path, 7, "train", {"depth"})
+        self.assertEqual((len(dataset), dataset.legacy_depth_exempt), (2, 1))
+        self.assertTrue(any("1 legacy baseline depth rows" in line for line in logs.output))
+
+        clean.write_admission_record(path, self.root, workers=1)
+        decode = "open_vision_banana.data.clean_depth.validate_training_depth_row"
+        with (
+            patch(decode, side_effect=AssertionError("decoded despite record")),
+            self.assertLogs(logger, "INFO") as logs,
+        ):
+            self.assertEqual(len(loader(path, 7, "train", {"depth"})), 2)
+        self.assertTrue(any("depth admission taken from" in line for line in logs.output))
+
+        # A record for other bytes is ignored: the loader decodes row by row again.
+        with path.open("a") as stream:
+            stream.write(json.dumps(self.row("b")) + "\n")
+        with patch(decode) as validate:
+            self.assertEqual(len(loader(path, 7, "train", {"depth"})), 3)
+        self.assertEqual(validate.call_count, 2)
 
     def test_actual_raw_v3_and_tar_adapters_are_rejected_at_tuner_boundary(self):
         from open_vision_banana.data.datasets import HypersimDepthDataset, V3FlatDataset

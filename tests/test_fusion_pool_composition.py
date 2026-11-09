@@ -198,3 +198,88 @@ def test_retained_baseline_assets_still_required(pool, sample_id):
     with pytest.raises(FileNotFoundError):
         composer.compose(path, root / "out")
     assert not (root / "out").exists()
+
+
+def read_rows(path):
+    return [json.loads(x) for x in path.read_text().splitlines()]
+
+
+def test_legacy_depth_exemption_marks_only_unbacked_baseline_depth(pool):
+    path, config, root = pool
+    config["exempt_legacy_baseline_depth"] = 1
+    path.write_text(json.dumps(config))
+    report = composer.compose(path, root / "out")
+    rows = read_rows(root / "out/training.jsonl")
+    marked = [r for r in rows if "depth_admission" in r]
+    # Component depth rows (clean_depth, lingbot, indoor) are never marked, only retained baseline ones.
+    assert [r["sample_id"] for r in marked] == ["original_hypersim"]
+    assert marked[0]["depth_admission"] == composer.LEGACY_DEPTH_EXEMPT
+    assert report["legacy_depth_exempt"] == 1
+    assert json.loads((root / "out/COMPOSED.json").read_text())["legacy_depth_exempt"] == 1
+
+
+def test_legacy_depth_exemption_count_must_match(pool):
+    path, config, root = pool
+    config["exempt_legacy_baseline_depth"] = 2
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="exemption count mismatch"):
+        composer.compose(path, root / "out")
+    assert not (root / "out").exists()
+
+
+@pytest.mark.parametrize("value", [-1, "1", 1.0, True])
+def test_legacy_depth_exemption_requires_non_negative_int(pool, value):
+    path, config, root = pool
+    config["exempt_legacy_baseline_depth"] = value
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="non-negative integer"):
+        composer.compose(path, root / "out")
+
+
+def test_without_exemption_nothing_is_marked(pool):
+    path, _, root = pool
+    report = composer.compose(path, root / "out")
+    assert all("depth_admission" not in r for r in read_rows(root / "out/training.jsonl"))
+    assert "legacy_depth_exempt" not in report
+
+
+def test_unknown_spec_field_still_rejected(pool):
+    path, config, root = pool
+    config["exempt_everything"] = 1
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="spec fields"):
+        composer.compose(path, root / "out")
+
+
+def test_native_depth_evidence_is_not_exempted(pool):
+    path, config, root = pool
+    config["exempt_legacy_baseline_depth"] = 0
+
+    def backed(rows):
+        for row in rows:
+            if row["sample_id"] == "original_hypersim":
+                row["metric_depth"] = "asset.bin"
+
+    rewrite(pool, "baseline", backed)
+    report = composer.compose(path, root / "out")
+    assert report["legacy_depth_exempt"] == 0
+    assert all("depth_admission" not in r for r in read_rows(root / "out/training.jsonl"))
+
+
+def test_lacks_native_depth(tmp_path):
+    (tmp_path / "targets").mkdir()
+    (tmp_path / "metric_depth").mkdir()
+    sidecar_row = {"target": "targets/x.png"}
+    assert composer.lacks_native_depth(sidecar_row, tmp_path)
+    (tmp_path / "metric_depth/x.npy").write_bytes(b"native")
+    assert not composer.lacks_native_depth(sidecar_row, tmp_path)
+    assert not composer.lacks_native_depth({"valid_mask": "m.png"}, tmp_path)
+    assert not composer.lacks_native_depth({"metric_depth": "d.npy"}, tmp_path)
+    assert composer.lacks_native_depth({"target": "other/x.png"}, tmp_path)
+    assert composer.lacks_native_depth({}, tmp_path)
+
+
+def test_marker_matches_loader_constant():
+    from open_vision_banana.data.clean_depth import LEGACY_DEPTH_EXEMPT
+
+    assert composer.LEGACY_DEPTH_EXEMPT == LEGACY_DEPTH_EXEMPT

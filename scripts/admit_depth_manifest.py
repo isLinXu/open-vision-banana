@@ -20,7 +20,9 @@ from open_vision_banana.data.clean_depth import write_admission_record
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--data-root", type=Path, help="Defaults to the manifest directory, as in training")
+    parser.add_argument(
+        "--data-root", type=Path, help="Defaults to the manifest directory, as in training"
+    )
     parser.add_argument("--workers", type=int, default=8)
     args = parser.parse_args(argv)
     root = args.data_root or args.manifest.parent

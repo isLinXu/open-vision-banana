@@ -69,6 +69,21 @@ def local(value, root):
     return (p if p.is_absolute() else root / p).resolve()
 
 
+# Must equal open_vision_banana.data.clean_depth.LEGACY_DEPTH_EXEMPT (this script stays dependency-free).
+LEGACY_DEPTH_EXEMPT = "legacy_baseline_exempt"
+
+
+def lacks_native_depth(row, root):
+    """A depth row with no metric_depth/valid_mask and no targets/X.png -> metric_depth/X.npy sidecar."""
+    if row.get("metric_depth") or row.get("valid_mask"):
+        return False
+    if row.get("target"):
+        target = local(row["target"], root)
+        if target.parent.name == "targets":
+            return not (target.parent.parent / "metric_depth" / (target.stem + ".npy")).is_file()
+    return True
+
+
 def validate_assets(row, root, context):
     required = ("target",) if row["task"] == "generation" else ("input", "target")
     for key in required:
@@ -144,8 +159,14 @@ def compose(spec_path, output):
     if output.exists():
         raise FileExistsError("Use a new output directory")
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    if set(spec) != {"components", "expected_removed_referring"}:
+    required = {"components", "expected_removed_referring"}
+    if not required <= set(spec) or set(spec) - required - {"exempt_legacy_baseline_depth"}:
         raise ValueError("Unknown or missing spec fields")
+    # Optional, explicit: retained baseline depth rows without native depth evidence are
+    # marked for loader admission as-is; the marked count must equal this value.
+    expected_exempt = spec.get("exempt_legacy_baseline_depth")
+    if expected_exempt is not None and (type(expected_exempt) is not int or expected_exempt < 0):
+        raise ValueError("exempt_legacy_baseline_depth must be a non-negative integer")
     entries = spec["components"]
     if set(entries) != set(ROLES):
         raise ValueError("Supply every fixed component role, and no unknown roles")
@@ -154,8 +175,9 @@ def compose(spec_path, output):
     if len(set(old)) != len(old):
         raise ValueError("Duplicate old Hypersim replacement identity")
     old = set(old)
+    baseline_root = local(entries["baseline"]["root"], spec_path.parent)
     matched, ledger, train, heldout = set(), [], [], []
-    removed_referring = 0
+    removed_referring = exempted = 0
     for index, row in enumerate(loaded["baseline"][0]):
         if row["split"] != "train":
             heldout.append(row)
@@ -183,13 +205,23 @@ def compose(spec_path, output):
                 }
             )
         else:
+            if (
+                expected_exempt is not None
+                and row["task"] == "depth"
+                and lacks_native_depth(row, baseline_root)
+            ):
+                row = {**row, "depth_admission": LEGACY_DEPTH_EXEMPT}
+                exempted += 1
             train.append(row)
     if matched != old:
         raise ValueError("Baseline does not contain exact old Hypersim identity set")
     if removed_referring != spec["expected_removed_referring"]:
         raise ValueError("Baseline referring replacement count mismatch")
+    if expected_exempt is not None and exempted != expected_exempt:
+        raise ValueError(
+            f"Legacy baseline depth exemption count mismatch ({exempted} != {expected_exempt})"
+        )
     # Removed baseline rows need identity/provenance, not obsolete assets.
-    baseline_root = local(entries["baseline"]["root"], spec_path.parent)
     for row in train + heldout:
         validate_assets(row, baseline_root, "retained baseline")
     component_heldout = []
@@ -230,6 +262,8 @@ def compose(spec_path, output):
             "training loader validation",
         ],
     }
+    if expected_exempt is not None:
+        report["legacy_depth_exempt"] = exempted
     (output / "COMPOSED.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     marker.unlink()
     return report
