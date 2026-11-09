@@ -121,6 +121,9 @@ def load_component(role, entry, spec_root):
                 raise ValueError(f"{role}:{number}: expected object")
             if row.get("task") not in ROLE_TASKS.get(role, TASKS):
                 raise ValueError(f"{role}:{number}: unknown or disallowed task")
+            if "depth_admission" in row:
+                # Only this composition may grant the exemption, under the spec's count.
+                raise ValueError(f"{role}:{number}: input rows must not carry depth_admission")
             if row.get("split") not in {"train", "val", "test"}:
                 raise ValueError(f"{role}:{number}: unknown split")
             source_split = row.get("source_split")

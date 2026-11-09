@@ -101,6 +101,8 @@ def test_replacements_paths_and_heldout(pool):
         ("llmseg", "source_split", "val"),
         ("coconut", "task", "unknown"),
         ("old_hypersim", "sample_id", "absent"),
+        ("lingbot", "depth_admission", "legacy_baseline_exempt"),
+        ("baseline", "depth_admission", "legacy_baseline_exempt"),
     ],
 )
 def test_invalid_source_fails_without_publication(pool, role, key, value):

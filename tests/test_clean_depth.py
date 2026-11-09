@@ -257,7 +257,7 @@ class AdmissionRecordTests(unittest.TestCase):
         self.assertFalse(clean.is_legacy_depth_exempt({"depth_admission": "other"}))
         self.assertFalse(clean.is_legacy_depth_exempt({}))
 
-    def test_exemption_skips_native_depth_but_not_the_heldout_guard(self):
+    def test_exemption_skips_native_depth_but_not_the_other_guards(self):
         clean.validate_training_depth_row(self.exempt_row(), self.root)
         with self.assertRaisesRegex(ValueError, "requires metric_depth"):
             clean.validate_training_depth_row(
@@ -267,6 +267,28 @@ class AdmissionRecordTests(unittest.TestCase):
             clean.validate_training_depth_row(
                 {**self.exempt_row(), "source_split": "val"}, self.root
             )
+        row = self.exempt_row("broken")
+        (self.root / row["target"]).write_bytes(b"not a png")
+        with self.assertRaisesRegex(ValueError, "Cannot read target image"):
+            clean.validate_training_depth_row(row, self.root)
+
+    def test_record_still_spot_checks_rows(self):
+        rows = [self.row(f"r{i}") for i in range(3)]
+        path = self.manifest(rows)
+        clean.write_admission_record(path, self.root, workers=1)
+        admission = clean.DepthAdmission(path, self.root)
+        with (
+            patch.object(clean.DepthAdmission, "SPOT_CHECK_EVERY", 2),
+            patch.object(clean, "validate_training_depth_row") as validate,
+        ):
+            for line_no, row in enumerate(rows, 1):
+                admission.check(row, line_no)
+        checked = [call.args[0]["sample_id"] for call in validate.call_args_list]
+        self.assertEqual(checked, ["r0", "r2"])
+        # An asset removed after the record was written fails the load.
+        (self.root / "r0.npy").unlink()
+        with self.assertRaisesRegex(ValueError, ":1: Cannot read native validity source"):
+            clean.DepthAdmission(path, self.root).check(rows[0], 1)
 
     def test_record_binds_bytes_root_and_version(self):
         rows = [
@@ -436,11 +458,9 @@ class TrainingAdmissionTests(unittest.TestCase):
 
         clean.write_admission_record(path, self.root, workers=1)
         for loader in self.loaders:
-            with (
-                self.subTest(loader=loader.__module__),
-                patch(decode, side_effect=AssertionError("decoded despite record")),
-            ):
+            with self.subTest(loader=loader.__module__), patch(decode) as validate:
                 self.assertEqual(self.load_logged(loader, path, "depth admission taken from"), 2)
+            self.assertEqual(validate.call_count, 1)  # only the spot-checked first row
 
         # A record for other bytes is ignored: every row is checked again.
         with path.open("a") as stream:

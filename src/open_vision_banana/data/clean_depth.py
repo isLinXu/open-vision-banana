@@ -91,6 +91,20 @@ def _plane(path):
         raise ValueError(f"Cannot read native validity source {path}: {exc}") from exc
 
 
+def _image_sizes(row, root):
+    """Fully decode the row's input/target images; yield (key, size) or fail if unreadable."""
+    for key in ("input", "target"):
+        if row.get(key):
+            path = _resolve(row[key], root)
+            try:
+                with Image.open(path) as image:
+                    image.load()
+                    size = image.size
+            except OSError as exc:
+                raise ValueError(f"Cannot read {key} image {path}: {exc}") from exc
+            yield key, size
+
+
 def assess_depth_row(row, root, max_invalid_fraction=0.02):
     """Return (native bool mask, stats); fail on absent or unreadable sources.
 
@@ -115,16 +129,9 @@ def assess_depth_row(row, root, max_invalid_fraction=0.02):
         if valid is not None and current.shape != valid.shape:
             raise ValueError("Native metric_depth and valid_mask shapes differ")
         valid = current if valid is None else valid & current
-    for key in ("input", "target"):
-        if row.get(key):
-            path = _resolve(row[key], root)
-            try:
-                with Image.open(path) as image:
-                    image.load()
-                    if image.size != (valid.shape[1], valid.shape[0]):
-                        raise ValueError(f"{key} image and native depth geometry differ: {path}")
-            except OSError as exc:
-                raise ValueError(f"Cannot read {key} image {path}: {exc}") from exc
+    for key, size in _image_sizes(row, root):
+        if size != (valid.shape[1], valid.shape[0]):
+            raise ValueError(f"{key} image and native depth geometry differ: {row[key]}")
     invalid = int(valid.size - np.count_nonzero(valid))
     return valid, dict(
         invalid_pixels=invalid,
@@ -151,12 +158,13 @@ def validate_training_depth_row(row, root):
     mask is applied to the original loader, so accepted sample processing stays
     exactly as it was, including resize, crops, interpolation and augmentation.
     Rows marked with the explicit legacy exemption skip only the native-depth
-    assessment; the held-out split guard still applies to them.
+    assessment: the held-out split guard and image readability still apply.
     """
     source_split = str(row.get("source_split", "train")).strip().lower()
     if source_split not in TRAIN_SPLITS:
         raise ValueError(f"Depth admission rejects held-out source_split={source_split!r}")
     if is_legacy_depth_exempt(row):
+        list(_image_sizes(row, root))  # decode both images; no native geometry to compare
         return
     _, stats = assess_depth_row(row, root)
     if not stats["passes"]:
@@ -243,21 +251,28 @@ class DepthAdmission:
     """Training depth admission for one manifest, shared by the manifest loaders.
 
     A matching admission record replaces the per-row decode; the record lookup (a full
-    manifest hash) happens only once a train depth row actually needs admission.
+    manifest hash) happens only once a train depth row actually needs admission. The
+    record binds the manifest bytes, not the asset files, so every SPOT_CHECK_EVERY-th
+    depth row (starting with the first) is still fully re-admitted: assets changed or
+    removed after the record was written fail the load instead of training silently.
     """
+
+    SPOT_CHECK_EVERY = 1000
 
     def __init__(self, manifest_path, root):
         self.manifest_path = manifest_path
         self.root = root
         self.legacy_exempt = 0
         self._recorded = None
+        self._seen = 0
 
     def check(self, row, line_no):
         if is_legacy_depth_exempt(row):
             self.legacy_exempt += 1
         if self._recorded is None:
             self._recorded = has_admission_record(self.manifest_path, self.root)
-        if self._recorded:
+        self._seen += 1
+        if self._recorded and (self._seen - 1) % self.SPOT_CHECK_EVERY:
             return
         try:
             validate_training_depth_row(row, self.root)
