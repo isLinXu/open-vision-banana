@@ -12,6 +12,7 @@ from collections import Counter
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor
 from fractions import Fraction
+from functools import lru_cache, partial
 from pathlib import Path
 
 import numpy as np
@@ -134,25 +135,6 @@ def assess_depth_row(row, root, max_invalid_fraction=0.02):
     )
 
 
-def validate_training_depth_row(row, root):
-    """Read-only admission: reject dirty/unknown training depth, never filter it.
-
-    Call before sample caps and before unavailable-pair skipping. No returned
-    mask is applied to the original loader, so accepted sample processing stays
-    exactly as it was, including resize, crops, interpolation and augmentation.
-    """
-    source_split = str(row.get("source_split", "train")).strip().lower()
-    if source_split not in TRAIN_SPLITS:
-        raise ValueError(f"Depth admission rejects held-out source_split={source_split!r}")
-    _, stats = assess_depth_row(row, root)
-    if not stats["passes"]:
-        raise ValueError(
-            f"Depth admission rejected {row.get('input')}: "
-            f"{stats['invalid_pixels']}/{stats['total_pixels']} invalid native pixels "
-            "exceeds 2%. Select an offline-cleaned manifest; no samples were filtered."
-        )
-
-
 LEGACY_DEPTH_EXEMPT = "legacy_baseline_exempt"
 ADMISSION_RECORD_SUFFIX = ".depth-admission.json"
 
@@ -162,20 +144,41 @@ def is_legacy_depth_exempt(row):
     return row.get("depth_admission") == LEGACY_DEPTH_EXEMPT
 
 
+def validate_training_depth_row(row, root):
+    """Read-only admission: reject dirty/unknown training depth, never filter it.
+
+    Call before sample caps and before unavailable-pair skipping. No returned
+    mask is applied to the original loader, so accepted sample processing stays
+    exactly as it was, including resize, crops, interpolation and augmentation.
+    Rows marked with the explicit legacy exemption skip only the native-depth
+    assessment; the held-out split guard still applies to them.
+    """
+    source_split = str(row.get("source_split", "train")).strip().lower()
+    if source_split not in TRAIN_SPLITS:
+        raise ValueError(f"Depth admission rejects held-out source_split={source_split!r}")
+    if is_legacy_depth_exempt(row):
+        return
+    _, stats = assess_depth_row(row, root)
+    if not stats["passes"]:
+        raise ValueError(
+            f"Depth admission rejected {row.get('input')}: "
+            f"{stats['invalid_pixels']}/{stats['total_pixels']} invalid native pixels "
+            "exceeds 2%. Select an offline-cleaned manifest; no samples were filtered."
+        )
+
+
 def admission_record_path(manifest_path):
     path = Path(manifest_path)
     return path.with_name(path.name + ADMISSION_RECORD_SUFFIX)
 
 
-def _admission_errors(job):
-    rows, root = job
-    errors = []
-    for line_no, row in rows:
-        try:
-            validate_training_depth_row(row, root)
-        except ValueError as exc:
-            errors.append(f"line {line_no}: {exc}")
-    return errors
+def _row_error(item, root):
+    line_no, row = item
+    try:
+        validate_training_depth_row(row, root)
+    except ValueError as exc:
+        return f"line {line_no}: {exc}"
+    return None
 
 
 def write_admission_record(manifest_path, root, workers=8, chunk_size=500):
@@ -187,50 +190,90 @@ def write_admission_record(manifest_path, root, workers=8, chunk_size=500):
     """
     manifest_path, root = Path(manifest_path).resolve(), Path(root).resolve()
     digest = file_sha256(manifest_path)
-    rows, exempt = [], 0
+    rows = []
     with manifest_path.open(encoding="utf-8") as stream:
         for line_no, line in enumerate(stream, 1):
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row.get("split") != "train" or not task_is_depth(row):
-                continue
-            if is_legacy_depth_exempt(row):
-                exempt += 1
-            else:
-                rows.append((line_no, row))
-    jobs = [(rows[i : i + chunk_size], root) for i in range(0, len(rows), chunk_size)]
+            if line.strip():
+                row = json.loads(line)
+                if row.get("split") == "train" and task_is_depth(row):
+                    rows.append((line_no, row))
     with ProcessPoolExecutor(max(1, workers)) as pool:
-        errors = [error for batch in pool.map(_admission_errors, jobs) for error in batch]
+        check = partial(_row_error, root=root)
+        errors = [e for e in pool.map(check, rows, chunksize=chunk_size) if e]
     if errors:
         raise ValueError(f"{len(errors)} depth rows rejected, no record written: {errors[:5]}")
     if file_sha256(manifest_path) != digest:
         raise ValueError("Manifest changed during admission, no record written")
+    exempt = sum(is_legacy_depth_exempt(row) for _, row in rows)
     record = {
         "version": VERSION,
         "manifest": manifest_path.name,
         "manifest_sha256": digest,
         "root": str(root),
-        "checked_rows": len(rows),
+        "checked_rows": len(rows) - exempt,
         "legacy_exempt_rows": exempt,
     }
     admission_record_path(manifest_path).write_text(_json(record), encoding="utf-8")
     return record
 
 
+@lru_cache(maxsize=8)
+def _manifest_sha256(path, size, mtime_ns):
+    # One hash per process and manifest state: a trainer builds one dataset per task.
+    return file_sha256(path)
+
+
 def has_admission_record(manifest_path, root):
     """True when a record binds exactly these manifest bytes, this root and this version."""
-    path = admission_record_path(manifest_path)
     try:
-        record = json.loads(path.read_text(encoding="utf-8"))
+        record = json.loads(admission_record_path(manifest_path).read_text(encoding="utf-8"))
+        stat = Path(manifest_path).stat()
     except (OSError, ValueError):
         return False
     return (
         isinstance(record, dict)
         and record.get("version") == VERSION
         and record.get("root") == str(Path(root).resolve())
-        and record.get("manifest_sha256") == file_sha256(manifest_path)
+        and record.get("manifest_sha256")
+        == _manifest_sha256(str(Path(manifest_path).resolve()), stat.st_size, stat.st_mtime_ns)
     )
+
+
+class DepthAdmission:
+    """Training depth admission for one manifest, shared by the manifest loaders.
+
+    A matching admission record replaces the per-row decode; the record lookup (a full
+    manifest hash) happens only once a train depth row actually needs admission.
+    """
+
+    def __init__(self, manifest_path, root):
+        self.manifest_path = manifest_path
+        self.root = root
+        self.legacy_exempt = 0
+        self._recorded = None
+
+    def check(self, row, line_no):
+        if is_legacy_depth_exempt(row):
+            self.legacy_exempt += 1
+        if self._recorded is None:
+            self._recorded = has_admission_record(self.manifest_path, self.root)
+        if self._recorded:
+            return
+        try:
+            validate_training_depth_row(row, self.root)
+        except ValueError as exc:
+            raise ValueError(f"{self.manifest_path}:{line_no}: {exc}") from exc
+
+    def log_summary(self, logger):
+        if self._recorded:
+            record = admission_record_path(self.manifest_path)
+            logger.info("%s: depth admission taken from %s", self.manifest_path, record)
+        if self.legacy_exempt:
+            logger.info(
+                "%s: %d legacy baseline depth rows admitted without native depth",
+                self.manifest_path,
+                self.legacy_exempt,
+            )
 
 
 def require_depth_manifest(tasks, route):

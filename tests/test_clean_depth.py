@@ -235,6 +235,12 @@ class CleanDepthTests(unittest.TestCase):
         self.assertIn("metric_depth", stats["validity_sources"])
 
 
+def exempt(row):
+    """A depth row without native evidence, explicitly marked by a pool composition."""
+    row.pop("metric_depth")
+    return {**row, "depth_admission": clean.LEGACY_DEPTH_EXEMPT}
+
+
 class AdmissionRecordTests(unittest.TestCase):
     setUp = CleanDepthTests.setUp
     tearDown = CleanDepthTests.tearDown
@@ -242,10 +248,7 @@ class AdmissionRecordTests(unittest.TestCase):
     manifest = CleanDepthTests.manifest
 
     def exempt_row(self, name="legacy"):
-        row = self.row(name)
-        row.pop("metric_depth")
-        row["depth_admission"] = clean.LEGACY_DEPTH_EXEMPT
-        return row
+        return exempt(self.row(name))
 
     def test_is_legacy_depth_exempt(self):
         self.assertTrue(
@@ -253,6 +256,17 @@ class AdmissionRecordTests(unittest.TestCase):
         )
         self.assertFalse(clean.is_legacy_depth_exempt({"depth_admission": "other"}))
         self.assertFalse(clean.is_legacy_depth_exempt({}))
+
+    def test_exemption_skips_native_depth_but_not_the_heldout_guard(self):
+        clean.validate_training_depth_row(self.exempt_row(), self.root)
+        with self.assertRaisesRegex(ValueError, "requires metric_depth"):
+            clean.validate_training_depth_row(
+                {**self.exempt_row(), "depth_admission": "x"}, self.root
+            )
+        with self.assertRaisesRegex(ValueError, "held-out source_split"):
+            clean.validate_training_depth_row(
+                {**self.exempt_row(), "source_split": "val"}, self.root
+            )
 
     def test_record_binds_bytes_root_and_version(self):
         rows = [
@@ -291,13 +305,11 @@ class AdmissionRecordTests(unittest.TestCase):
             clean.write_admission_record(path, self.root, workers=1)
         self.assertFalse(clean.admission_record_path(path).exists())
 
-    def test_admission_worker_reports_failing_lines(self):
-        # Runs in pool workers during write_admission_record; called directly here.
-        ok, dirty = self.row("a"), self.row("dirty", invalid=3)
-        self.assertEqual(clean._admission_errors(([(1, ok)], self.root)), [])
-        errors = clean._admission_errors(([(1, ok), (2, dirty)], self.root))
-        self.assertEqual(len(errors), 1)
-        self.assertTrue(errors[0].startswith("line 2: "))
+    def test_admission_worker_reports_the_failing_line(self):
+        # Runs inside pool workers during write_admission_record; called directly here.
+        self.assertIsNone(clean._row_error((1, self.row("a")), self.root))
+        error = clean._row_error((2, self.row("dirty", invalid=3)), self.root)
+        self.assertTrue(error.startswith("line 2: "))
 
     def test_manifest_changed_during_admission_writes_no_record(self):
         path = self.manifest([self.row("a")])
@@ -408,33 +420,35 @@ class TrainingAdmissionTests(unittest.TestCase):
                 ):
                     loader(path, 7, "train", {"depth"})
 
-    def test_trainer_loader_exemption_and_admission_record(self):
-        loader = self.loaders[0]  # open_vision_banana.training.trainer
-        logger = "open_vision_banana.training.trainer"
-        exempt = self.row("legacy")
-        exempt.pop("metric_depth")
-        exempt["depth_admission"] = clean.LEGACY_DEPTH_EXEMPT
-        path = self.manifest([self.row("a"), exempt])
-        with self.assertLogs(logger, "INFO") as logs:
-            dataset = loader(path, 7, "train", {"depth"})
-        self.assertEqual((len(dataset), dataset.legacy_depth_exempt), (2, 1))
-        self.assertTrue(any("1 legacy baseline depth rows" in line for line in logs.output))
+    def load_logged(self, loader, path, message):
+        with self.assertLogs(loader.__module__, "INFO") as logs:
+            count = len(loader(path, 7, "train", {"depth"}))
+        self.assertTrue(any(message in line for line in logs.output), logs.output)
+        return count
+
+    def test_loaders_honor_exemption_and_admission_record(self):
+        path = self.manifest([self.row("a"), exempt(self.row("legacy"))])
+        decode = "open_vision_banana.data.clean_depth.validate_training_depth_row"
+        for loader in self.loaders:
+            with self.subTest(loader=loader.__module__):
+                count = self.load_logged(loader, path, "1 legacy baseline depth rows")
+                self.assertEqual(count, 2)
 
         clean.write_admission_record(path, self.root, workers=1)
-        decode = "open_vision_banana.data.clean_depth.validate_training_depth_row"
-        with (
-            patch(decode, side_effect=AssertionError("decoded despite record")),
-            self.assertLogs(logger, "INFO") as logs,
-        ):
-            self.assertEqual(len(loader(path, 7, "train", {"depth"})), 2)
-        self.assertTrue(any("depth admission taken from" in line for line in logs.output))
+        for loader in self.loaders:
+            with (
+                self.subTest(loader=loader.__module__),
+                patch(decode, side_effect=AssertionError("decoded despite record")),
+            ):
+                self.assertEqual(self.load_logged(loader, path, "depth admission taken from"), 2)
 
-        # A record for other bytes is ignored: the loader decodes row by row again.
+        # A record for other bytes is ignored: every row is checked again.
         with path.open("a") as stream:
             stream.write(json.dumps(self.row("b")) + "\n")
-        with patch(decode) as validate:
-            self.assertEqual(len(loader(path, 7, "train", {"depth"})), 3)
-        self.assertEqual(validate.call_count, 2)
+        for loader in self.loaders:
+            with self.subTest(loader=loader.__module__), patch(decode) as validate:
+                self.assertEqual(len(loader(path, 7, "train", {"depth"})), 3)
+            self.assertEqual(validate.call_count, 3)
 
     def test_actual_raw_v3_and_tar_adapters_are_rejected_at_tuner_boundary(self):
         from open_vision_banana.data.datasets import HypersimDepthDataset, V3FlatDataset

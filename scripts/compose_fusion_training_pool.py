@@ -159,8 +159,7 @@ def compose(spec_path, output):
     if output.exists():
         raise FileExistsError("Use a new output directory")
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    required = {"components", "expected_removed_referring"}
-    if not required <= set(spec) or set(spec) - required - {"exempt_legacy_baseline_depth"}:
+    if set(spec) - {"exempt_legacy_baseline_depth"} != {"components", "expected_removed_referring"}:
         raise ValueError("Unknown or missing spec fields")
     # Optional, explicit: retained baseline depth rows without native depth evidence are
     # marked for loader admission as-is; the marked count must equal this value.
