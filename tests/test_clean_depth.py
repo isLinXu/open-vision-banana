@@ -291,6 +291,14 @@ class AdmissionRecordTests(unittest.TestCase):
             clean.write_admission_record(path, self.root, workers=1)
         self.assertFalse(clean.admission_record_path(path).exists())
 
+    def test_admission_worker_reports_failing_lines(self):
+        # Runs in pool workers during write_admission_record; called directly here.
+        ok, dirty = self.row("a"), self.row("dirty", invalid=3)
+        self.assertEqual(clean._admission_errors(([(1, ok)], self.root)), [])
+        errors = clean._admission_errors(([(1, ok), (2, dirty)], self.root))
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(errors[0].startswith("line 2: "))
+
     def test_manifest_changed_during_admission_writes_no_record(self):
         path = self.manifest([self.row("a")])
         with (
