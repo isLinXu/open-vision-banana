@@ -10,6 +10,7 @@ import json
 import os
 from collections import Counter
 from collections.abc import Mapping
+from concurrent.futures import ProcessPoolExecutor
 from fractions import Fraction
 from pathlib import Path
 
@@ -150,6 +151,86 @@ def validate_training_depth_row(row, root):
             f"{stats['invalid_pixels']}/{stats['total_pixels']} invalid native pixels "
             "exceeds 2%. Select an offline-cleaned manifest; no samples were filtered."
         )
+
+
+LEGACY_DEPTH_EXEMPT = "legacy_baseline_exempt"
+ADMISSION_RECORD_SUFFIX = ".depth-admission.json"
+
+
+def is_legacy_depth_exempt(row):
+    """True only for rows a pool composition explicitly admitted without native evidence."""
+    return row.get("depth_admission") == LEGACY_DEPTH_EXEMPT
+
+
+def admission_record_path(manifest_path):
+    path = Path(manifest_path)
+    return path.with_name(path.name + ADMISSION_RECORD_SUFFIX)
+
+
+def _admission_errors(job):
+    rows, root = job
+    errors = []
+    for line_no, row in rows:
+        try:
+            validate_training_depth_row(row, root)
+        except ValueError as exc:
+            errors.append(f"line {line_no}: {exc}")
+    return errors
+
+
+def write_admission_record(manifest_path, root, workers=8, chunk_size=500):
+    """Admit every train depth row once, in parallel, bound to the exact manifest bytes.
+
+    Every rank of every training job otherwise decodes the whole depth pool again in
+    its loader. A loader that finds a matching record skips that per-row decode; any
+    other manifest is still checked row by row. Nothing is written if a row fails.
+    """
+    manifest_path, root = Path(manifest_path).resolve(), Path(root).resolve()
+    digest = file_sha256(manifest_path)
+    rows, exempt = [], 0
+    with manifest_path.open(encoding="utf-8") as stream:
+        for line_no, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("split") != "train" or not task_is_depth(row):
+                continue
+            if is_legacy_depth_exempt(row):
+                exempt += 1
+            else:
+                rows.append((line_no, row))
+    jobs = [(rows[i : i + chunk_size], root) for i in range(0, len(rows), chunk_size)]
+    with ProcessPoolExecutor(max(1, workers)) as pool:
+        errors = [error for batch in pool.map(_admission_errors, jobs) for error in batch]
+    if errors:
+        raise ValueError(f"{len(errors)} depth rows rejected, no record written: {errors[:5]}")
+    if file_sha256(manifest_path) != digest:
+        raise ValueError("Manifest changed during admission, no record written")
+    record = {
+        "version": VERSION,
+        "manifest": manifest_path.name,
+        "manifest_sha256": digest,
+        "root": str(root),
+        "checked_rows": len(rows),
+        "legacy_exempt_rows": exempt,
+    }
+    admission_record_path(manifest_path).write_text(_json(record), encoding="utf-8")
+    return record
+
+
+def has_admission_record(manifest_path, root):
+    """True when a record binds exactly these manifest bytes, this root and this version."""
+    path = admission_record_path(manifest_path)
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(record, dict)
+        and record.get("version") == VERSION
+        and record.get("root") == str(Path(root).resolve())
+        and record.get("manifest_sha256") == file_sha256(manifest_path)
+    )
 
 
 def require_depth_manifest(tasks, route):

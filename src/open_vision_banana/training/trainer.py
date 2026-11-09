@@ -288,6 +288,18 @@ class ManifestVisionDataset(Dataset):
 
         from open_vision_banana.data.manifest import resolve_manifest_path
 
+        from ..data.clean_depth import (
+            admission_record_path,
+            has_admission_record,
+            is_legacy_depth_exempt,
+            validate_training_depth_row,
+        )
+
+        admission_root = data_root or Path(manifest_path).parent
+        # A matching record (clean_depth.write_admission_record) already admitted every
+        # train depth row of these exact manifest bytes; otherwise decode row by row.
+        depth_admitted = split == "train" and has_admission_record(manifest_path, admission_root)
+        self.legacy_depth_exempt = 0
         with Path(manifest_path).open(encoding="utf-8") as f:
             for _line_no, line in enumerate(f, 1):
                 if not line.strip():
@@ -316,12 +328,13 @@ class ManifestVisionDataset(Dataset):
                         f"{manifest_path}:{_line_no}: missing input/target: {img_path}, {tgt_path}"
                     )
                 if split == "train" and mapped in {"depth", "depth_edge"}:
-                    from ..data.clean_depth import validate_training_depth_row
-
-                    try:
-                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
-                    except ValueError as exc:
-                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
+                    if is_legacy_depth_exempt(row):
+                        self.legacy_depth_exempt += 1
+                    elif not depth_admitted:
+                        try:
+                            validate_training_depth_row(row, admission_root)
+                        except ValueError as exc:
+                            raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
@@ -361,6 +374,14 @@ class ManifestVisionDataset(Dataset):
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
         self._depth_admission_checked = split == "train"
+        if depth_admitted:
+            logger.info("%s: depth admission taken from %s", manifest_path, admission_record_path(manifest_path))
+        if self.legacy_depth_exempt:
+            logger.info(
+                "%s: %d legacy baseline depth rows admitted without native depth",
+                manifest_path,
+                self.legacy_depth_exempt,
+            )
 
     def _resolve_tar_key(self, rel_path: str) -> str | None:
         if not self._tar_files or not rel_path:
