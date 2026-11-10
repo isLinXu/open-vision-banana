@@ -236,6 +236,7 @@ class ManifestVisionDataset(Dataset):
         inner_prefix: str = "SenseNova-Vision-Corpus-50M",
         disk_cache_dir: Path | None = None,
         referring_prompt_version: str = "query_v2",
+        load_metric_supervision: bool = False,
     ):
         self.resolution = resolution
         self.split = split
@@ -288,7 +289,7 @@ class ManifestVisionDataset(Dataset):
 
         from open_vision_banana.data.manifest import resolve_manifest_path
 
-        from ..data.clean_depth import DepthAdmission
+        from ..data.clean_depth import DepthAdmission, is_legacy_depth_exempt
 
         depth_admission = DepthAdmission(manifest_path, data_root or Path(manifest_path).parent)
         with Path(manifest_path).open(encoding="utf-8") as f:
@@ -332,6 +333,20 @@ class ManifestVisionDataset(Dataset):
                         raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 mapping = row.get("mapping") if mapped == "semantic" else None
                 background = row.get("background_color") if mapped == "instance" else None
+                metric_supervision = {}
+                if (
+                    load_metric_supervision
+                    and split == "train"
+                    and mapped == "depth"
+                    and not is_legacy_depth_exempt(row)
+                    and row.get("metric_depth")
+                    and row.get("valid_mask")
+                ):
+                    metric_supervision = {
+                        "metric_depth_path": str(resolve_manifest_path(row["metric_depth"], path_anchor)),
+                        "metric_mask_path": str(resolve_manifest_path(row["valid_mask"], path_anchor)),
+                        "metric_depth_scale": str(row.get("metric_depth_scale", 1.0)),
+                    }
                 self.samples.append(
                     {
                         "image_path": str(img_path),
@@ -340,6 +355,7 @@ class ManifestVisionDataset(Dataset):
                         "target_tar_key": tgt_tar_key or "",
                         "task": mapped,
                         "prompt": prompt,
+                        **metric_supervision,
                         **{key: row[key] for key in ("experiment_source", "experiment_sample_id", "source_scene") if key in row},
                         # Builders record the exact legend; it beats re-parsing the prompt.
                         **({"mapping": {k: tuple(int(c) for c in v) for k, v in mapping.items()}}
@@ -435,13 +451,15 @@ class ManifestVisionDataset(Dataset):
         inp_img: Image.Image,
         tgt_img: Image.Image,
         target_resample: Image.Resampling,
-    ) -> tuple[Image.Image, Image.Image]:
+        *native_planes: Image.Image,
+    ) -> tuple[Image.Image, ...]:
         """Resize (inp, tgt) to (resolution, resolution), optionally preserving aspect ratio."""
         r = self.resolution
         if not self.aspect_preserving_crop or inp_img.size == (r, r):
             return (
                 inp_img.resize((r, r), Image.Resampling.LANCZOS),
                 tgt_img.resize((r, r), target_resample),
+                *(plane.resize((r, r), Image.Resampling.NEAREST) for plane in native_planes),
             )
         w, h = inp_img.size
         if tgt_img.size != (w, h):
@@ -451,14 +469,18 @@ class ManifestVisionDataset(Dataset):
             return (
                 inp_img.resize((r, r), Image.Resampling.LANCZOS),
                 tgt_img.resize((r, r), target_resample),
+                *(plane.resize((r, r), Image.Resampling.NEAREST) for plane in native_planes),
             )
         scale = r / float(short)
         new_w = max(r, int(round(w * scale)))
         new_h = max(r, int(round(h * scale)))
         inp_scaled = inp_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         tgt_scaled = tgt_img.resize((new_w, new_h), target_resample)
+        scaled_planes = tuple(
+            plane.resize((new_w, new_h), Image.Resampling.NEAREST) for plane in native_planes
+        )
         if new_w == r and new_h == r:
-            return inp_scaled, tgt_scaled
+            return inp_scaled, tgt_scaled, *scaled_planes
         if self.split == "train":
             left = self.rng.randint(0, new_w - r)
             top = self.rng.randint(0, new_h - r)
@@ -466,7 +488,7 @@ class ManifestVisionDataset(Dataset):
             left = (new_w - r) // 2
             top = (new_h - r) // 2
         box = (left, top, left + r, top + r)
-        return inp_scaled.crop(box), tgt_scaled.crop(box)
+        return inp_scaled.crop(box), tgt_scaled.crop(box), *(plane.crop(box) for plane in scaled_planes)
 
     def _load(self, idx: int) -> dict:
         s = self.samples[idx]
@@ -477,7 +499,17 @@ class ManifestVisionDataset(Dataset):
         )
         raw_inp = self._open_pil_rgb(s["image_path"], s.get("input_tar_key", ""))
         raw_tgt = self._open_pil_rgb(s["target_path"], s.get("target_tar_key", ""))
-        img, tgt_img = self._resize_and_crop_pair(raw_inp, raw_tgt, resample)
+        native_planes: tuple[Image.Image, ...] = ()
+        if "metric_depth_path" in s:
+            from .metric_scale_loss import load_native_metric_pair
+
+            native_planes = load_native_metric_pair(
+                s["metric_depth_path"], s["metric_mask_path"], float(s["metric_depth_scale"]),
+                raw_inp.size,
+            )
+            if raw_tgt.size != raw_inp.size:
+                raise ValueError("RGB target and native metric depth geometry must match")
+        img, tgt_img, *metric_planes = self._resize_and_crop_pair(raw_inp, raw_tgt, resample, *native_planes)
         inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
         tgt = torch.from_numpy(np.asarray(tgt_img, np.float32) / 255.0).permute(2, 0, 1)
         prompt = s["prompt"]
@@ -511,6 +543,12 @@ class ManifestVisionDataset(Dataset):
             "target_rgb": tgt,
             "task": s["task"],
         }
+        if metric_planes:
+            depth, valid = (np.array(plane) for plane in metric_planes)
+            if valid.any():
+                item["metric_depth_supervision"] = (
+                    torch.from_numpy(depth).unsqueeze(0), torch.from_numpy(valid).unsqueeze(0)
+                )
         if "experiment_source" in s:
             item["experiment_audit"] = {
                 "source": s["experiment_source"], "id": s["experiment_sample_id"],
@@ -574,6 +612,8 @@ def _collate_fn(batch: list[dict]) -> dict:
         "target_rgb": torch.stack([b["target_rgb"] for b in batch]),
         "task": [b["task"] for b in batch],
     }
+    if any("metric_depth_supervision" in b for b in batch):
+        result["metric_depth_supervision"] = [b.get("metric_depth_supervision") for b in batch]
     if any("experiment_audit" in b for b in batch):
         result["experiment_audit"] = [b.get("experiment_audit") for b in batch]
     if any(b["task"] == "referring" for b in batch):
@@ -1031,6 +1071,7 @@ class Trainer:
                 depth_colormaps=config.depth_colormaps,
                 semantic_prompt_styles=config.semantic_prompt_styles,
                 semantic_color_remap_prob=config.semantic_color_remap_prob,
+                load_metric_supervision=config.depth_scale_loss_weight > 0,
                 aspect_preserving_crop=config.aspect_preserving_crop,
                 seed=config.seed,
                 referring_prompt_version=config.referring_prompt_version,
@@ -1041,6 +1082,17 @@ class Trainer:
                        if len(ds) == 0]
         if empty_tasks:
             raise ValueError(f"Requested training tasks have no samples: {empty_tasks}")
+
+        if config.depth_scale_loss_weight > 0:
+            eligible = sum(
+                "metric_depth_path" in sample
+                for dataset in train_datasets
+                for sample in dataset.samples
+            )
+            if not eligible:
+                raise ValueError("Depth scale loss requires training rows with metric_depth and valid_mask")
+            if self.dist.is_main:
+                logger.info("Depth scale loss: %d training rows with native metric supervision", eligible)
 
         val_datasets = [
             ManifestVisionDataset(
@@ -1188,6 +1240,13 @@ class Trainer:
                 train_metrics["flow_loss"] += loss_dict["flow_loss"]
                 train_metrics["depth_edge_aux_loss"] += loss_dict["depth_aux"]
                 train_metrics["normal_angular_aux_loss"] += loss_dict["normal_aux"]
+                if "depth_scale_loss" in loss_dict:
+                    train_metrics["depth_scale_loss"] = (
+                        train_metrics.get("depth_scale_loss", 0.0) + loss_dict["depth_scale_loss"]
+                    )
+                    train_metrics["depth_scale_samples"] = (
+                        train_metrics.get("depth_scale_samples", 0) + loss_dict["depth_scale_samples"]
+                    )
                 train_metrics["steps"] += 1
 
                 for t, vals in loss_dict.get("task_loss_acc", {}).items():
@@ -1239,6 +1298,9 @@ class Trainer:
                             "normal_angular_aux_loss",
                         )
                     }
+                    if "depth_scale_loss" in train_metrics:
+                        metrics["depth_scale_loss"] = train_metrics["depth_scale_loss"] / n
+                        metrics["depth_scale_samples"] = train_metrics["depth_scale_samples"]
                     lr = self.lr_scheduler.get_last_lr()[0]
                     if self.dist.is_main:
                         metrics.update({f"sample_count/{t}": n for t, n in task_sample_counts.items()})
@@ -1483,6 +1545,12 @@ class Trainer:
         )
 
         total = self.losses.total_loss(flow_loss, depth_aux_loss, normal_aux_loss)
+        scale_metrics = {}
+        if config.depth_scale_loss_weight > 0:
+            scale_loss, count = self._metric_scale_loss(batch, predicted, noisy_latents, timesteps)
+            scale_loss = scale_loss * (count / batch_size)
+            total = total + config.depth_scale_loss_weight * scale_loss
+            scale_metrics = {"depth_scale_loss": scale_loss.item(), "depth_scale_samples": count}
 
         if not torch.isfinite(total).all():
             raise FloatingPointError(f"Non-finite loss at step {global_step}")
@@ -1494,7 +1562,34 @@ class Trainer:
             "depth_aux": depth_aux_loss.item(),
             "normal_aux": normal_aux_loss.item(),
             "task_loss_acc": task_loss_acc,
+            **scale_metrics,
         }
+
+    def _metric_scale_loss(self, batch, predicted, noisy_latents, timesteps):
+        from .flow_matching import FlowScheduler
+        from .metric_scale_loss import metric_scale_loss
+
+        eligible = [
+            (i, pair) for i, pair in enumerate(batch.get("metric_depth_supervision", ()))
+            if pair is not None and batch["task"][i] == "depth"
+        ]
+        if not eligible:
+            return predicted.new_zeros(()), 0
+        indices = [i for i, _ in eligible]
+        sigma, velocity = FlowScheduler.to_sana_frame(
+            self.backend.family, timesteps[indices], predicted[indices]
+        )
+        sigma = sigma.float().reshape(-1, *([1] * (predicted.ndim - 1)))
+        endpoint = (noisy_latents[indices].float() - sigma * velocity.float()).to(self.dtype)
+        if self.config.gradient_checkpointing:
+            from torch.utils.checkpoint import checkpoint
+
+            decoded = checkpoint(self.backend.decode_latents, endpoint, use_reentrant=False)
+        else:
+            decoded = self.backend.decode_latents(endpoint)
+        depths = torch.stack([pair[0] for _, pair in eligible]).to(self.device)
+        masks = torch.stack([pair[1] for _, pair in eligible]).to(self.device)
+        return metric_scale_loss(decoded, depths, masks), len(eligible)
 
     def _condition_batch(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor, dict, list[str], int]:
         """Encode source/target latents and text for a post-training step."""

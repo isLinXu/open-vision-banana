@@ -95,6 +95,7 @@ class TrainingConfig:
 
     # ── Loss ───────────────────────────────────────────────────────────
     task_loss_weights: dict[str, float] = field(default_factory=dict)  # empty = 1.0 for every task
+    depth_scale_loss_weight: float = 0.0
     depth_edge_aux_weight: float = 0.0
     depth_edge_aux_gradient_weight: float = 0.25
     depth_edge_aux_edge_weight: float = 2.0
@@ -270,7 +271,7 @@ class TrainingConfig:
             raise ValueError("depth_curve must be metric_power or log_relative")
         if self.depth_log_alpha <= 0:
             raise ValueError("depth_log_alpha must be positive")
-        for name in ("flow_sigma", "depth_edge_aux_weight", "depth_edge_aux_gradient_weight",
+        for name in ("flow_sigma", "depth_scale_loss_weight", "depth_edge_aux_weight", "depth_edge_aux_gradient_weight",
                      "depth_edge_aux_edge_weight", "depth_edge_aux_edge_threshold",
                      "normal_angular_loss_weight"):
             if getattr(self, name) < 0:
@@ -309,6 +310,15 @@ class TrainingConfig:
             raise ValueError(
                 "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
             )
+        if not math.isfinite(self.depth_scale_loss_weight):
+            raise ValueError("depth_scale_loss_weight must be finite")
+        if self.depth_scale_loss_weight > 0:
+            if self.objective != "sft":
+                raise ValueError("depth_scale_loss_weight requires objective=sft")
+            if self.depth_curve != "metric_power" or any(
+                colormap != "cube_edge" for colormap in (self.depth_colormaps or ())
+            ):
+                raise ValueError("depth_scale_loss_weight requires metric_power and cube_edge")
         if self.objective not in {"sft", "opd", "grpo"}:
             raise ValueError("objective must be sft, opd, or grpo")
         if self.opd_train_timesteps > self.opd_rollout_steps:
@@ -439,7 +449,7 @@ _YAML_SECTIONS = {
     "flow": {"img2img_flow": "img2img_flow", "sigma": "flow_sigma",
              "logit_normal_timesteps": "logit_normal", "shift": "flow_shift", "min_snr": "min_snr",
              "min_snr_gamma": "min_snr_gamma", "cfg_dropout_rate": "cfg_dropout_rate"},
-    "loss": {name: name for name in ("task_loss_weights", "depth_edge_aux_weight",
+    "loss": {name: name for name in ("task_loss_weights", "depth_scale_loss_weight", "depth_edge_aux_weight",
              "depth_edge_aux_gradient_weight", "depth_edge_aux_edge_weight", "depth_edge_aux_edge_threshold",
              "depth_edge_aux_sigma_floor", "normal_angular_loss_weight")},
     "checkpoint": {name: name for name in ("output_dir", "save_every", "eval_every", "log_every",

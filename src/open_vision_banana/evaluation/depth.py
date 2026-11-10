@@ -83,12 +83,17 @@ def median_scale_align(
     pred: torch.Tensor,
     gt: torch.Tensor,
     valid_mask: torch.Tensor | None = None,
+    *,
+    scale_ratios: list[float | None] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Scale each image so ``median(pred)`` matches ``median(gt)``.
 
     Returns ``(aligned, stable)`` where ``stable`` is a per-image bool mask.
     Images with a near-zero prediction median, or a scale outside
     ``[1/50, 50]``, are left unchanged and marked unstable.
+
+    If given, append one median(pred)/median(gt) per image to scale_ratios.
+    An image without a finite positive pixel pair appends None.
 
     This is a diagnostic for relative-to-metric transfer. Paper-protocol
     metric depth must still be reported on the unaligned prediction.
@@ -115,11 +120,17 @@ def median_scale_align(
     for index in range(pred.shape[0]):
         valid = mask[index]
         if not bool(valid.any()):
+            if scale_ratios is not None:
+                scale_ratios.append(None)
             continue
         pred_median = pred[index][valid].median()
+        if scale_ratios is not None:
+            gt_median = gt[index][valid].median()
+            scale_ratios.append(float(pred_median) / float(gt_median))
         if float(pred_median) < ALIGNED_MIN_PRED_MEDIAN:
             continue
-        gt_median = gt[index][valid].median()
+        if scale_ratios is None:
+            gt_median = gt[index][valid].median()
         scale = float(gt_median / pred_median)
         if scale <= 0.0 or scale > ALIGNED_MAX_SCALE or scale < 1.0 / ALIGNED_MAX_SCALE:
             continue
