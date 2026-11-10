@@ -288,6 +288,9 @@ class ManifestVisionDataset(Dataset):
 
         from open_vision_banana.data.manifest import resolve_manifest_path
 
+        from ..data.clean_depth import DepthAdmission
+
+        depth_admission = DepthAdmission(manifest_path, data_root or Path(manifest_path).parent)
         with Path(manifest_path).open(encoding="utf-8") as f:
             for _line_no, line in enumerate(f, 1):
                 if not line.strip():
@@ -316,12 +319,7 @@ class ManifestVisionDataset(Dataset):
                         f"{manifest_path}:{_line_no}: missing input/target: {img_path}, {tgt_path}"
                     )
                 if split == "train" and mapped in {"depth", "depth_edge"}:
-                    from ..data.clean_depth import validate_training_depth_row
-
-                    try:
-                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
-                    except ValueError as exc:
-                        raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
+                    depth_admission.check(row, _line_no)
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
@@ -361,6 +359,7 @@ class ManifestVisionDataset(Dataset):
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
         self._depth_admission_checked = split == "train"
+        depth_admission.log_summary(logger)
 
     def _resolve_tar_key(self, rel_path: str) -> str | None:
         if not self._tar_files or not rel_path:

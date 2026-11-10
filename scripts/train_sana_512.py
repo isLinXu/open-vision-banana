@@ -758,6 +758,9 @@ class ManifestVisionDataset(Dataset):
         # for the SN-VC-50M manifest where paths are relative to the
         # extracted data root, not the manifest location.
         path_anchor = data_root.resolve() if data_root is not None else manifest_path
+        from open_vision_banana.data.clean_depth import DepthAdmission
+
+        depth_admission = DepthAdmission(manifest_path, data_root or Path(manifest_path).parent)
 
         with manifest_path.open(encoding="utf-8") as handle:
             for line_no, line in enumerate(handle, 1):
@@ -771,12 +774,7 @@ class ManifestVisionDataset(Dataset):
                 if row.get("split") != split:
                     continue
                 if split == "train" and task_info[0] in {"depth", "depth_edge"}:
-                    from open_vision_banana.data.clean_depth import validate_training_depth_row
-
-                    try:
-                        validate_training_depth_row(row, data_root or Path(manifest_path).parent)
-                    except ValueError as exc:
-                        raise ValueError(f"{manifest_path}:{line_no}: {exc}") from exc
+                    depth_admission.check(row, line_no)
                 image_path = resolve_manifest_path(row.get("input") or "", path_anchor)
                 target_path = resolve_manifest_path(row.get("target") or "", path_anchor)
                 if not image_path.is_file() or not target_path.is_file():
@@ -805,6 +803,7 @@ class ManifestVisionDataset(Dataset):
         if max_samples is not None and max_samples > 0:
             self.samples = self.samples[:max_samples]
         self._depth_admission_checked = split == "train"
+        depth_admission.log_summary(logger)
 
         if self.samples:
             names = {sample["dir_name"] for sample in self.samples}

@@ -10,7 +10,9 @@ import json
 import os
 from collections import Counter
 from collections.abc import Mapping
+from concurrent.futures import ProcessPoolExecutor
 from fractions import Fraction
+from functools import lru_cache, partial
 from pathlib import Path
 
 import numpy as np
@@ -89,6 +91,20 @@ def _plane(path):
         raise ValueError(f"Cannot read native validity source {path}: {exc}") from exc
 
 
+def _image_sizes(row, root):
+    """Fully decode the row's input/target images; yield (key, size) or fail if unreadable."""
+    for key in ("input", "target"):
+        if row.get(key):
+            path = _resolve(row[key], root)
+            try:
+                with Image.open(path) as image:
+                    image.load()
+                    size = image.size
+            except OSError as exc:
+                raise ValueError(f"Cannot read {key} image {path}: {exc}") from exc
+            yield key, size
+
+
 def assess_depth_row(row, root, max_invalid_fraction=0.02):
     """Return (native bool mask, stats); fail on absent or unreadable sources.
 
@@ -113,16 +129,9 @@ def assess_depth_row(row, root, max_invalid_fraction=0.02):
         if valid is not None and current.shape != valid.shape:
             raise ValueError("Native metric_depth and valid_mask shapes differ")
         valid = current if valid is None else valid & current
-    for key in ("input", "target"):
-        if row.get(key):
-            path = _resolve(row[key], root)
-            try:
-                with Image.open(path) as image:
-                    image.load()
-                    if image.size != (valid.shape[1], valid.shape[0]):
-                        raise ValueError(f"{key} image and native depth geometry differ: {path}")
-            except OSError as exc:
-                raise ValueError(f"Cannot read {key} image {path}: {exc}") from exc
+    for key, size in _image_sizes(row, root):
+        if size != (valid.shape[1], valid.shape[0]):
+            raise ValueError(f"{key} image and native depth geometry differ: {row[key]}")
     invalid = int(valid.size - np.count_nonzero(valid))
     return valid, dict(
         invalid_pixels=invalid,
@@ -133,16 +142,30 @@ def assess_depth_row(row, root, max_invalid_fraction=0.02):
     )
 
 
+LEGACY_DEPTH_EXEMPT = "legacy_baseline_exempt"
+ADMISSION_RECORD_SUFFIX = ".depth-admission.json"
+
+
+def is_legacy_depth_exempt(row):
+    """True only for rows a pool composition explicitly admitted without native evidence."""
+    return row.get("depth_admission") == LEGACY_DEPTH_EXEMPT
+
+
 def validate_training_depth_row(row, root):
     """Read-only admission: reject dirty/unknown training depth, never filter it.
 
     Call before sample caps and before unavailable-pair skipping. No returned
     mask is applied to the original loader, so accepted sample processing stays
     exactly as it was, including resize, crops, interpolation and augmentation.
+    Rows marked with the explicit legacy exemption skip only the native-depth
+    assessment: the held-out split guard and image readability still apply.
     """
     source_split = str(row.get("source_split", "train")).strip().lower()
     if source_split not in TRAIN_SPLITS:
         raise ValueError(f"Depth admission rejects held-out source_split={source_split!r}")
+    if is_legacy_depth_exempt(row):
+        list(_image_sizes(row, root))  # decode both images; no native geometry to compare
+        return
     _, stats = assess_depth_row(row, root)
     if not stats["passes"]:
         raise ValueError(
@@ -150,6 +173,122 @@ def validate_training_depth_row(row, root):
             f"{stats['invalid_pixels']}/{stats['total_pixels']} invalid native pixels "
             "exceeds 2%. Select an offline-cleaned manifest; no samples were filtered."
         )
+
+
+def admission_record_path(manifest_path):
+    path = Path(manifest_path)
+    return path.with_name(path.name + ADMISSION_RECORD_SUFFIX)
+
+
+def _row_error(item, root):
+    line_no, row = item
+    try:
+        validate_training_depth_row(row, root)
+    except ValueError as exc:
+        return f"line {line_no}: {exc}"
+    return None
+
+
+def write_admission_record(manifest_path, root, workers=8, chunk_size=500):
+    """Admit every train depth row once, in parallel, bound to the exact manifest bytes.
+
+    Every rank of every training job otherwise decodes the whole depth pool again in
+    its loader. A loader that finds a matching record skips that per-row decode; any
+    other manifest is still checked row by row. Nothing is written if a row fails.
+    """
+    manifest_path, root = Path(manifest_path).resolve(), Path(root).resolve()
+    digest = file_sha256(manifest_path)
+    rows = []
+    with manifest_path.open(encoding="utf-8") as stream:
+        for line_no, line in enumerate(stream, 1):
+            if line.strip():
+                row = json.loads(line)
+                if row.get("split") == "train" and task_is_depth(row):
+                    rows.append((line_no, row))
+    with ProcessPoolExecutor(max(1, workers)) as pool:
+        check = partial(_row_error, root=root)
+        errors = [e for e in pool.map(check, rows, chunksize=chunk_size) if e]
+    if errors:
+        raise ValueError(f"{len(errors)} depth rows rejected, no record written: {errors[:5]}")
+    if file_sha256(manifest_path) != digest:
+        raise ValueError("Manifest changed during admission, no record written")
+    exempt = sum(is_legacy_depth_exempt(row) for _, row in rows)
+    record = {
+        "version": VERSION,
+        "manifest": manifest_path.name,
+        "manifest_sha256": digest,
+        "root": str(root),
+        "checked_rows": len(rows) - exempt,
+        "legacy_exempt_rows": exempt,
+    }
+    admission_record_path(manifest_path).write_text(_json(record), encoding="utf-8")
+    return record
+
+
+@lru_cache(maxsize=8)
+def _manifest_sha256(path, size, mtime_ns):
+    # One hash per process and manifest state: a trainer builds one dataset per task.
+    return file_sha256(path)
+
+
+def has_admission_record(manifest_path, root):
+    """True when a record binds exactly these manifest bytes, this root and this version."""
+    try:
+        record = json.loads(admission_record_path(manifest_path).read_text(encoding="utf-8"))
+        stat = Path(manifest_path).stat()
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(record, dict)
+        and record.get("version") == VERSION
+        and record.get("root") == str(Path(root).resolve())
+        and record.get("manifest_sha256")
+        == _manifest_sha256(str(Path(manifest_path).resolve()), stat.st_size, stat.st_mtime_ns)
+    )
+
+
+class DepthAdmission:
+    """Training depth admission for one manifest, shared by the manifest loaders.
+
+    A matching admission record replaces the per-row decode; the record lookup (a full
+    manifest hash) happens only once a train depth row actually needs admission. The
+    record binds the manifest bytes, not the asset files, so every SPOT_CHECK_EVERY-th
+    depth row (starting with the first) is still fully re-admitted: assets changed or
+    removed after the record was written fail the load instead of training silently.
+    """
+
+    SPOT_CHECK_EVERY = 1000
+
+    def __init__(self, manifest_path, root):
+        self.manifest_path = manifest_path
+        self.root = root
+        self.legacy_exempt = 0
+        self._recorded = None
+        self._seen = 0
+
+    def check(self, row, line_no):
+        if is_legacy_depth_exempt(row):
+            self.legacy_exempt += 1
+        if self._recorded is None:
+            self._recorded = has_admission_record(self.manifest_path, self.root)
+        self._seen += 1
+        if self._recorded and (self._seen - 1) % self.SPOT_CHECK_EVERY:
+            return
+        try:
+            validate_training_depth_row(row, self.root)
+        except ValueError as exc:
+            raise ValueError(f"{self.manifest_path}:{line_no}: {exc}") from exc
+
+    def log_summary(self, logger):
+        if self._recorded:
+            record = admission_record_path(self.manifest_path)
+            logger.info("%s: depth admission taken from %s", self.manifest_path, record)
+        if self.legacy_exempt:
+            logger.info(
+                "%s: %d legacy baseline depth rows admitted without native depth",
+                self.manifest_path,
+                self.legacy_exempt,
+            )
 
 
 def require_depth_manifest(tasks, route):
