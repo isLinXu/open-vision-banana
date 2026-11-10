@@ -624,7 +624,7 @@ class Trainer:
         logger.info(
             "Model: %s | Device: %s | dtype: %s", config.model_name, self.device, config.dtype
         )
-        if config.tune_mode == "full":
+        if config.train_mode == "full":
             logger.info("Tune mode: full-parameter backbone")
         else:
             logger.info(
@@ -675,7 +675,7 @@ class Trainer:
             use_rslora=config.rslora,
             lora_targets=config.lora_targets,
             enable_gradient_checkpointing=config.gradient_checkpointing,
-            tune_mode=config.tune_mode,
+            tune_mode=config.train_mode,
         )
         # Full-parameter mode shards the backbone (FSDP2); every rank loaded the same weights.
         if self.full:
@@ -750,7 +750,7 @@ class Trainer:
             )
         self.callbacks.task_prompt_stats = task_prompt_stats(self.train_loader.dataset)
         self.callbacks.extra_meta = {
-            "tune_mode": config.tune_mode,
+            "tune_mode": config.train_mode,
             "objective": config.objective,
         }
         self._teacher_bank = (

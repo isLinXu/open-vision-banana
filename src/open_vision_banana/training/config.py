@@ -37,7 +37,7 @@ class TrainingConfig:
     lora_alpha: int = 64
     rslora: bool = True
     lora_targets: list[str] | None = None
-    tune_mode: str = "lora"  # "lora" | "full"
+    train_mode: str = "lora"  # "lora" | "full"
     objective: str = "sft"  # "sft" | "opd" | "grpo"
 
     # ── Data ───────────────────────────────────────────────────────────
@@ -309,8 +309,8 @@ class TrainingConfig:
             raise ValueError(
                 "scheduler must be cosine, cosine_restarts, polynomial, constant, or one_cycle"
             )
-        if self.tune_mode not in {"lora", "full"}:
-            raise ValueError("tune_mode must be lora or full")
+        if self.train_mode not in {"lora", "full"}:
+            raise ValueError("train_mode must be lora or full")
         if self.objective not in {"sft", "opd", "grpo"}:
             raise ValueError("objective must be sft, opd, or grpo")
         if self.opd_train_timesteps > self.opd_rollout_steps:
@@ -421,7 +421,8 @@ _YAML_SECTIONS = {
                  "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
                  "seed": "seed",
                  "gradient_checkpointing": "gradient_checkpointing", "skip_preflight": "skip_preflight",
-                 "tune_mode": "tune_mode", "objective": "objective"},
+                 "mode": "train_mode", "tune_mode": "train_mode",
+                 "train_mode": "train_mode", "objective": "objective"},
     "post_training": {
         "teachers": "opd_teachers",
         "rollout_steps": "opd_rollout_steps",
