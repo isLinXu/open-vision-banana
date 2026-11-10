@@ -721,6 +721,7 @@ class Trainer:
             save_every=config.save_every,
             eval_every=config.eval_every,
         )
+        self.validation_metrics: dict = {}
 
         # ── EMA ────────────────────────────────────────────────────────
         self.ema = EMAModel(
@@ -1296,8 +1297,8 @@ class Trainer:
                         lora_rank=config.lora_rank,
                         lora_alpha=config.lora_alpha,
                         selection_protocol=self._selection_protocol(),
+                        validation_metrics=self.validation_metrics,
                     )
-                    logger.info("Validation details: %s", self.validation_metrics)
 
         # ── Final save ─────────────────────────────────────────────────
         exposure.flush(global_step, complete=True)
