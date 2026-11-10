@@ -272,6 +272,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--depth-scale-ratios",
+        action="store_true",
+        help="Record per-image median(pred)/median(GT) for depth, in dataset order.",
+    )
+    parser.add_argument(
         "--relative-luminance",
         action="store_true",
         help="Also score a closer=brighter luminance map after median scale (relative_delta_1.25_aligned).",
@@ -755,6 +760,9 @@ def main() -> int:
             from open_vision_banana.data.datasets import CityscapesSegDataset
             class_color_map = CityscapesSegDataset.CITYSCAPES_COLORS
         eval_task = "generation_preservation" if benchmark == "generation" else benchmark
+        scale_ratios: list[float | None] | None = (
+            [] if args.depth_scale_ratios and benchmark == "depth" else None
+        )
         metrics = evaluate_compatible(
             evaluator,
             loader,
@@ -773,7 +781,12 @@ def main() -> int:
             invert_depth=args.invert_depth,
             report_relative_luminance=args.relative_luminance,
             depth_oracle_colormaps=oracle_colormaps,
+            **({"depth_scale_ratios": scale_ratios} if scale_ratios is not None else {}),
         )
+        if scale_ratios is not None:
+            if len(scale_ratios) != len(selected):
+                raise RuntimeError("Depth scale ratio count does not match the evaluated dataset")
+            record["depth_scale_ratios"] = scale_ratios
         if benchmark == "generation":
             metrics = dict(metrics)
             metrics["formal_genai_bench"] = False
