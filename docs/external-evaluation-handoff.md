@@ -100,6 +100,6 @@ ReasonSeg 这里展开344条原始 query；LISA 和 Vision Banana 的具体 quer
 
 验收实际样本数、零 skipped/failed、指标有限、GT 原生尺寸、实际输出画布、权重谱系、SHA、prompt、query/annotation 模式；分片区间无遗漏/重复且 metadata 一致。报告保留原始精度、单位与有效像素，不因为 query 或合理有效域不同自动否定比较，但必须展示这些差异。
 
-本次最终 CPU 回归138项通过，包含恢复、suite 计划、实际 pipeline 审计钩子、ignore mask、深度解码和分片合并测试，详见数据包 `audit/validation.json`。无 GPU 重测，所以不承诺 corrected 模式会提高分数。公开结果快照中尚未完成的 checkpoint 项目仍是进行中，不能当作零分或已完成。
+本次最终 CPU 回归139项通过，包含恢复、suite 计划、实际 pipeline 审计钩子、ignore mask、深度解码和分片合并测试，详见数据包 `audit/validation.json`。无 GPU 重测，所以不承诺 corrected 模式会提高分数。公开结果快照中尚未完成的 checkpoint 项目仍是进行中，不能当作零分或已完成。
 
 原始数据来源与许可： [NYUv2](https://cs.nyu.edu/~fergus/datasets/nyu_depth_v2.html)、[ETH3D CC BY-NC-SA4](https://www.eth3d.net/)、[DIODE MIT](https://diode-dataset.org/)、[Cityscapes 禁止转发条款](https://www.cityscapes-dataset.com/license/)、[ReasonSeg/LISA](https://github.com/JIA-Lab-research/LISA#dataset)、[RefCOCOg REFER](https://github.com/lichengunc/refer)、[COCO 使用条款](https://cocodataset.org/#termsofuse)。代码许可和数据许可分别适用；数据包没有覆盖上游权利声明。

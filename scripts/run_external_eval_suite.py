@@ -56,7 +56,15 @@ def validate(path, dataset, count, *, fingerprint=None, config=None):
     data = json.loads(path.read_text())
     record = data["benchmarks"][f"{SPECS[dataset][0]}/{dataset}"]
     metrics = record["decoded_metrics"]
-    if record["samples"] != count or metrics.get("skipped_samples", 0) or not finite_metrics(metrics):
+    checked_metrics = metrics
+    if dataset == "cityscapes":
+        # A one-image smoke legitimately lacks some classes. The core writer
+        # serializes undefined class IoUs as null; headline mIoU must be finite.
+        classes = metrics.get("per_class_iou", [])
+        if len(classes) != 19 or not all(v is None or isinstance(v, (float, int)) and math.isfinite(v) for v in classes):
+            raise ValueError(f"Invalid Cityscapes class diagnostics: {path}")
+        checked_metrics = {k: v for k, v in metrics.items() if k != "per_class_iou"}
+    if record["samples"] != count or metrics.get("skipped_samples", 0) or not finite_metrics(checked_metrics):
         raise ValueError(f"Incomplete or invalid metrics: {path}")
     if dataset in {"reasonseg", "refcocog"} and metrics["samples"] != count:
         raise ValueError(f"Missing referring predictions: {path}")

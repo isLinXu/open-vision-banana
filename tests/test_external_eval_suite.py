@@ -63,3 +63,21 @@ def test_invalid_semantic_predictions_cannot_reduce_denominator():
     assert accumulator.compute()["mIoU"] == pytest.approx(.25)
     with pytest.raises(ValueError, match="Predicted class"):
         accumulator.update(torch.tensor([[0, 255, 0]]), gt)
+
+
+def test_semantic_smoke_allows_absent_classes_but_not_invalid_headline(tmp_path):
+    import torch
+    from open_vision_banana.evaluation.benchmark import SemanticAccumulator
+    from open_vision_banana.evaluation.results_io import write_results
+
+    accumulator = SemanticAccumulator(19)
+    accumulator.update(torch.zeros(2, 2), torch.zeros(2, 2))
+    path = tmp_path / "smoke.json"
+    record = dict(samples=1, decoded_metrics=accumulator.compute())
+    result = dict(benchmarks={"semantic/cityscapes": record})
+    write_results(path, result)
+    suite.validate(path, "cityscapes", 1)
+    record["decoded_metrics"]["mIoU"] = float("nan")
+    write_results(path, result)
+    with pytest.raises(ValueError, match="invalid metrics"):
+        suite.validate(path, "cityscapes", 1)
