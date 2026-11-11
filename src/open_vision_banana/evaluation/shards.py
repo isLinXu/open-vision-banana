@@ -107,13 +107,20 @@ def merged_metrics(shard_states: list[dict[str, Any]]) -> dict[str, Any]:
     if len({state is None for state in relative_states}) > 1:
         raise ValueError("shards disagree on the relative-luminance reading")
     relative = None if relative_states[0] is None else merge_accumulator_states(relative_states)
-    return depth_report(
+    report = depth_report(
         main,
         relative,
         skipped_samples=sum(states["skipped_samples"] for states in shard_states),
         depth_curve=_same(shard_states, "depth_curve"),
         depth_units=_same(shard_states, "depth_units"),
     )
+    ensemble_states = [states.get("seed_ensemble") for states in shard_states]
+    if len({state is None for state in ensemble_states}) > 1:
+        raise ValueError("shards disagree on the depth seed ensemble reading")
+    if ensemble_states[0] is not None:
+        _same(shard_states, "seed_ensemble_members")
+        report["seed_ensemble"] = dict(merge_accumulator_states(ensemble_states).compute())
+    return report
 
 
 __all__ = [
