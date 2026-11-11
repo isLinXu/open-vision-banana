@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """SegmentationDecoder Ablation & Sensitivity Experiment
 
-验证论文附录 A 的 5 阶段实例分割解码算法，包含：
-1. 5 阶段消融分析：量化每个阶段对实例检出率、精度、召回率的贡献
-2. 自适应 vs 固定颜色容差对比：在不同噪声水平下的鲁棒性
-3. 参数敏感度扫描：τ、θ_size、θ_erosion 的最优区间与推荐值
+Checks the 5-stage instance segmentation decoder from the paper's Appendix A:
+1. 5-stage ablation: how much each stage contributes to instance detection rate, precision and recall
+2. Adaptive vs fixed color tolerance: robustness at different noise levels
+3. Parameter sensitivity sweep: best ranges and recommended values for τ, θ_size, θ_erosion
 
-输出：
+Outputs:
 - experiments/segmentation_ablation_results.json
 - experiments/segmentation_ablation_report.md
 """
@@ -434,30 +434,30 @@ def main():
     # ── Generate Markdown Report ─────────────────────────────
     md_path = output_dir / "segmentation_ablation_report.md"
     with open(md_path, "w") as f:
-        f.write("# SegmentationDecoder 消融实验与参数敏感度分析报告\n\n")
-        f.write("> **实验目的**: 验证论文附录 A 的 5 阶段实例分割解码算法，量化各阶段贡献，\n")
-        f.write("> 评估自适应颜色容差（P2 改进）的有效性，并确定最优参数区间。\n\n")
-        f.write(f"- **合成样本数**: {num_samples} 张 ({H}×{W})\n")
-        f.write("- **每张实例数**: 4 个（随机颜色矩形 + 内部纹理 + 边界伪影）\n")
-        f.write("- **默认噪声**: σ = 8.0 / 255\n")
-        f.write("- **匹配阈值**: IoU ≥ 0.5\n\n")
+        f.write("# SegmentationDecoder ablation and parameter sensitivity report\n\n")
+        f.write("> **Goal**: check the 5-stage instance segmentation decoder from the paper's Appendix A, quantify each stage's contribution,\n")
+        f.write("> evaluate the adaptive color tolerance (P2 improvement) and find the best parameter ranges.\n\n")
+        f.write(f"- **Synthetic samples**: {num_samples} images ({H}×{W})\n")
+        f.write("- **Instances per image**: 4 (random colored rectangles + inner texture + boundary artifacts)\n")
+        f.write("- **Default noise**: σ = 8.0 / 255\n")
+        f.write("- **Match threshold**: IoU ≥ 0.5\n\n")
 
         # Section 1: Ablation
-        f.write("## 1. 5 阶段消融分析\n\n")
-        f.write("| 配置 | Precision↑ | Recall↑ | F1↑ | mIoU↑ | 预测数 | 用时 ms |\n")
+        f.write("## 1. 5-stage ablation\n\n")
+        f.write("| Config | Precision↑ | Recall↑ | F1↑ | mIoU↑ | Predictions | Time ms |\n")
         f.write("|------|------------|---------|-----|-------|--------|---------|\n")
         for name, r in ablation_results.items():
             f.write(f"| {name} | {r.precision:.3f} | {r.recall:.3f} | {r.f1:.3f} | {r.mean_matched_iou:.3f} | {r.num_pred} | {r.runtime_ms:.1f} |\n")
 
-        f.write("\n### 1.1 结论\n\n")
+        f.write("\n### 1.1 Findings\n\n")
         full_f1 = ablation_results["Full (5 stages)"].f1
         basic_f1 = ablation_results["Basic (S1+S2 only)"].f1
         delta = full_f1 - basic_f1
-        f.write(f"1. **完整 5 阶段相比仅 S1+S2 提升 F1 = {delta:.3f}**。")
+        f.write(f"1. **The full 5 stages improve F1 by {delta:.3f} over S1+S2 alone**. ")
         if delta > 0.1:
-            f.write("Stage 3–5 对实例质量至关重要。\n")
+            f.write("Stages 3-5 are essential for instance quality.\n")
         else:
-            f.write("提升有限，说明合成数据噪声较弱。\n")
+            f.write("The gain is limited, so the synthetic noise is weak.\n")
 
         # Identify biggest impact stage
         stage_impacts = {}
@@ -465,13 +465,13 @@ def main():
             drop = full_f1 - ablation_results[stage_name].f1
             stage_impacts[stage_name] = drop
         biggest_drop = max(stage_impacts, key=stage_impacts.get)
-        f.write(f"2. **影响最大的阶段**: {biggest_drop} 导致 F1 下降 {stage_impacts[biggest_drop]:.3f}。\n")
-        f.write(f"3. **运行时**: 完整流程平均 {ablation_results['Full (5 stages)'].runtime_ms:.1f} ms/图像，")
-        f.write(f"纯 S1+S2 约 {ablation_results['Basic (S1+S2 only)'].runtime_ms:.1f} ms/图像。\n\n")
+        f.write(f"2. **Most influential stage**: {biggest_drop} drops F1 by {stage_impacts[biggest_drop]:.3f}.\n")
+        f.write(f"3. **Runtime**: the full pipeline averages {ablation_results['Full (5 stages)'].runtime_ms:.1f} ms/image, ")
+        f.write(f"S1+S2 alone about {ablation_results['Basic (S1+S2 only)'].runtime_ms:.1f} ms/image.\n\n")
 
         # Section 2: Adaptive vs Fixed
-        f.write("## 2. 自适应 vs 固定颜色容差（Adaptive τ）\n\n")
-        f.write("| 噪声 σ | Fixed P | Fixed R | Fixed F1 | Adaptive P | Adaptive R | Adaptive F1 | ΔF1 |\n")
+        f.write("## 2. Adaptive vs fixed color tolerance (adaptive τ)\n\n")
+        f.write("| Noise σ | Fixed P | Fixed R | Fixed F1 | Adaptive P | Adaptive R | Adaptive F1 | ΔF1 |\n")
         f.write("|--------|---------|---------|----------|------------|------------|-------------|-----|\n")
         for noise in noise_levels:
             fixed = adaptive_results[f"fixed_σ{noise}"]
@@ -480,43 +480,43 @@ def main():
             f.write(f"| {noise:.0f} | {fixed.precision:.3f} | {fixed.recall:.3f} | {fixed.f1:.3f} | ")
             f.write(f"{adap.precision:.3f} | {adap.recall:.3f} | {adap.f1:.3f} | {df1:+.3f} |\n")
 
-        f.write("\n### 2.1 结论\n\n")
+        f.write("\n### 2.1 Findings\n\n")
         avg_deltas = []
         for noise in noise_levels:
             df1 = adaptive_results[f"adaptive_σ{noise}"].f1 - adaptive_results[f"fixed_σ{noise}"].f1
             avg_deltas.append(df1)
         avg_delta = sum(avg_deltas) / len(avg_deltas)
         if avg_delta > 0.02:
-            f.write(f"1. **自适应 τ 在平均噪声下稳定优于固定 τ**，平均 F1 提升 {avg_delta:.3f}。\n")
+            f.write(f"1. **Adaptive τ beats fixed τ on average across noise levels**, with a mean F1 gain of {avg_delta:.3f}.\n")
         else:
-            f.write(f"1. 自适应 τ 与固定 τ 差异不显著（平均 ΔF1 = {avg_delta:.3f}），在合成数据上固定 τ=14 已足够。\n")
-        f.write("2. 随着噪声增大，自适应 τ 的边缘保持能力使其在高噪声场景下优势扩大。\n\n")
+            f.write(f"1. Adaptive and fixed τ differ little (mean ΔF1 = {avg_delta:.3f}); on synthetic data a fixed τ=14 is enough.\n")
+        f.write("2. As noise grows, adaptive τ keeps edges better, so its advantage widens in high-noise scenes.\n\n")
 
         # Section 3: Parameter Sensitivity
-        f.write("## 3. 参数敏感度扫描\n\n")
+        f.write("## 3. Parameter sensitivity sweep\n\n")
         for param_name, scans in param_results.items():
             f.write(f"### {param_name}\n\n")
-            f.write("| 参数值 | Precision | Recall | F1 | mIoU |\n")
+            f.write("| Value | Precision | Recall | F1 | mIoU |\n")
             f.write("|--------|-----------|--------|-----|------|\n")
             for v, r in scans:
                 f.write(f"| {v} | {r.precision:.3f} | {r.recall:.3f} | {r.f1:.3f} | {r.mean_matched_iou:.3f} |\n")
 
             # Find best
             best = max(scans, key=lambda x: x[1].f1)
-            f.write(f"\n**最优值**: {best[0]} (F1 = {best[1].f1:.3f})\n\n")
+            f.write(f"\n**Best value**: {best[0]} (F1 = {best[1].f1:.3f})\n\n")
 
         # Overall recommendations
-        f.write("## 4. 综合结论与工程建议\n\n")
-        f.write("| 维度 | 推荐配置 | 依据 |\n")
+        f.write("## 4. Overall findings and engineering recommendations\n\n")
+        f.write("| Aspect | Recommended | Rationale |\n")
         f.write("|------|----------|------|\n")
-        f.write("| **颜色容差 τ** | 14.0（默认） | 在 τ 扫描中，默认值处于 F1  plateau 区，兼顾精度与召回 |\n")
-        f.write("| **面积阈值 θ_size** | 2e-4（默认） | 过小引入噪声，过大漏检小实例，默认值最优 |\n")
-        f.write("| **腐蚀阈值 θ_erosion** | 0.1（默认） | 在 0.08–0.15 区间 F1 稳定，默认 0.1 位于 sweet spot |\n")
-        f.write("| **自适应 τ** | 开启（高噪声场景） | 噪声 σ ≥ 12 时稳定带来 0.03+ F1 提升，计算开销可忽略 |\n")
-        f.write("| **5 阶段完整性** | 全部保留 | 任意阶段跳过均导致 F1 下降，Stage 3 和 4 尤其关键 |\n")
+        f.write("| **Color tolerance τ** | 14.0 (default) | in the τ sweep the default sits on the F1 plateau, balancing precision and recall |\n")
+        f.write("| **Area threshold θ_size** | 2e-4 (default) | too small admits noise, too large misses small instances; the default is best |\n")
+        f.write("| **Erosion threshold θ_erosion** | 0.1 (default) | F1 is stable over 0.08-0.15, and the default 0.1 is in the sweet spot |\n")
+        f.write("| **Adaptive τ** | on (high-noise scenes) | at noise σ ≥ 12 it adds 0.03+ F1 consistently, at negligible cost |\n")
+        f.write("| **All 5 stages** | keep all | skipping any stage lowers F1; stages 3 and 4 matter most |\n")
         f.write("\n")
         f.write("---\n")
-        f.write(f"*报告由 `segmentation_ablation_experiment.py` 自动生成，样本量 n={num_samples}*\n")
+        f.write(f"*Report generated by `segmentation_ablation_experiment.py`, sample size n={num_samples}*\n")
 
     print(f"Markdown report saved to: {md_path}")
     print()

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Multi-Task Spatial Consistency Experiment for Open-Vision-Banana
 
-验证 RGB 参数化方法在多任务场景下的几何一致性：
-1. Depth-Normal 几何一致性 (H1)
-2. Segmentation-Depth 边界对齐 (H2)
-3. RGB 编码空间独立性 (H3)
-4. 噪声跨任务隔离性 (H4)
+Checks the geometric consistency of the RGB parameterization across tasks:
+1. Depth-normal geometric consistency (H1)
+2. Segmentation-depth boundary alignment (H2)
+3. Independence of the RGB encoding spaces (H3)
+4. Cross-task noise isolation (H4)
 
-输出：
+Outputs:
 - experiments/multi_task_consistency_results.json
 - experiments/multi_task_consistency_report.md
 - experiments/mtc_*.png (4 charts)
 
-纯 CPU 运行，无需 GPU 或 FLUX 权重。
+Runs on CPU only, needs no GPU or FLUX weights.
 """
 
 from __future__ import annotations

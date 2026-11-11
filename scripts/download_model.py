@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-"""下载 Vision Banana 支持的 base diffusion 模型权重到本地 HuggingFace Cache。
+"""Download the base diffusion model weights Vision Banana supports into the local HuggingFace cache.
 
-该脚本基于 model_registry 中注册的模型配置，统一处理 23 种 model family 的
-pretrained weight 下载，支持断点续传 (resume)、dry-run、内存预算筛选等功能。
+Based on the model configs registered in model_registry, this script handles the pretrained weight
+download for all 23 model families, with resume, dry-run and memory-budget filtering.
 
 Usage:
-    # 列出所有可用模型及其内存需求
+    # list every available model and its memory requirement
     python scripts/download_model.py --list
 
-    # 下载指定模型（如 FLUX.1-dev）
+    # download one model (e.g. FLUX.1-dev)
     python scripts/download_model.py --model flux-dev
 
-    # 下载并指定本地 cache 目录
+    # download into a given local cache directory
     python scripts/download_model.py --model ssd-1b --cache-dir /mnt/hf-cache
 
-    # 按内存预算自动筛选可下载的模型
+    # filter downloadable models by memory budget
     python scripts/download_model.py --list --max-memory 8
 
-    # Dry-run：查看将要下载的内容而不实际下载
+    # dry run: show what would be downloaded without downloading
     python scripts/download_model.py --model flux-schnell --dry-run
 
-    # 强制重新下载（忽略已有 cache）
+    # force a fresh download (ignore the existing cache)
     python scripts/download_model.py --model sd15 --force
 """
 
@@ -33,14 +33,14 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# 日志配置 —— 统一格式，避免重复 handler
+# Logging setup: one format, no duplicate handlers
 # ---------------------------------------------------------------------------
 _logger_name = "download_model"
 logger = logging.getLogger(_logger_name)
 
 
 def _setup_logging(level: int = logging.INFO) -> None:
-    """配置 root logger，避免与已存在的 handler 冲突。"""
+    """Configure the root logger without clashing with existing handlers."""
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         fmt = logging.Formatter(
@@ -53,14 +53,14 @@ def _setup_logging(level: int = logging.INFO) -> None:
 
 
 # ---------------------------------------------------------------------------
-# HF Mirror 与 Token 自动注入
+# Automatic HF mirror and token setup
 # ---------------------------------------------------------------------------
 def _ensure_hf_env() -> None:
-    """自动设置 HF 镜像与 Token（如果存在本地配置文件）。"""
-    # 优先使用 hf-mirror 加速国内下载
+    """Set the HF mirror and token automatically (when a local config file exists)."""
+    # prefer hf-mirror to speed up downloads from mainland China
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
-    # 如果用户已经登录了 huggingface-cli，则复用其 token
+    # reuse the token if the user is already logged in with huggingface-cli
     token_path = Path.home() / ".cache" / "huggingface" / "token"
     if token_path.exists() and "HF_TOKEN" not in os.environ:
         try:
@@ -69,21 +69,21 @@ def _ensure_hf_env() -> None:
                 os.environ.setdefault("HF_TOKEN", token)
                 os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", token)
         except OSError:
-            pass  # 无权限读取时静默忽略
+            pass  # silently ignore when the file is not readable
 
 
 # ---------------------------------------------------------------------------
-# 核心下载逻辑
+# Core download logic
 # ---------------------------------------------------------------------------
 def _get_registry() -> dict[str, dict]:
-    """从 model_registry 提取模型元数据，避免直接 import torch。"""
-    # 使用延迟 import，避免在 --list / --dry-run 时加载 torch
+    """Extract model metadata from model_registry without importing torch directly."""
+    # deferred import, so --list / --dry-run do not load torch
     try:
         from open_vision_banana.model_registry import REGISTRY, ModelConfig
     except ImportError as exc:
         logger.error(
-            "无法导入 open_vision_banana.model_registry: %s\n"
-            "请确保在项目根目录运行，或已安装 editable 模式: pip install -e .",
+            "Cannot import open_vision_banana.model_registry: %s\n"
+            "Run from the project root or install in editable mode: pip install -e .",
             exc,
         )
         sys.exit(1)
@@ -111,36 +111,36 @@ def _download_with_resume(
     force: bool = False,
     local_files_only: bool = False,
 ) -> Path:
-    """使用 huggingface_hub.snapshot_download 执行带断点续传的下载。
+    """Download with resume support via huggingface_hub.snapshot_download.
 
     Args:
-        repo_id: HuggingFace Hub 上的模型 repo ID，如 "black-forest-labs/FLUX.1-dev"。
-        cache_dir: 本地 cache 目录，默认使用 HF 默认路径 (~/.cache/huggingface/hub)。
-        resume: 是否启用断点续传（默认 True）。
-        force: 为 True 时忽略本地 cache，强制重新下载。
-        local_files_only: 仅使用本地 cache，不发起网络请求。
+        repo_id: Model repo ID on the HuggingFace Hub, e.g. "black-forest-labs/FLUX.1-dev".
+        cache_dir: Local cache directory; defaults to the HF default path (~/.cache/huggingface/hub).
+        resume: Whether to resume interrupted downloads (default True).
+        force: When True, ignore the local cache and download again.
+        local_files_only: Use only the local cache, without network requests.
 
     Returns:
-        下载完成的本地 snapshot 路径（Path）。
+        Local path of the downloaded snapshot (Path).
 
     Raises:
-        RuntimeError: 当 snapshot_download 返回 None 或出现网络错误时抛出。
+        RuntimeError: When snapshot_download returns None or a network error occurs.
     """
     try:
         from huggingface_hub import snapshot_download
         from huggingface_hub.utils import LocalEntryNotFoundError, RepositoryNotFoundError
     except ImportError as exc:
         logger.error(
-            "缺少 huggingface_hub 依赖: %s\n"
-            "请安装 inference 依赖组: pip install -e '.[inference]'",
+            "Missing the huggingface_hub dependency: %s\n"
+            "Install the inference extras: pip install -e '.[inference]'",
             exc,
         )
         raise
 
-    logger.info("开始下载: %s", repo_id)
+    logger.info("Starting download: %s", repo_id)
     if cache_dir:
-        logger.info("Cache 目录: %s", cache_dir)
-    logger.info("断点续传: %s", "启用" if resume else "禁用")
+        logger.info("Cache directory: %s", cache_dir)
+    logger.info("Resume: %s", "enabled" if resume else "disabled")
 
     try:
         local_path = snapshot_download(
@@ -151,54 +151,54 @@ def _download_with_resume(
             force_download=force,
         )
     except RepositoryNotFoundError as exc:
-        logger.error("模型 repo 不存在或无权访问: %s", repo_id)
+        logger.error("Model repo does not exist or access is denied: %s", repo_id)
         logger.error(
-            "提示: 若该模型需要 HuggingFace 登录，请先运行:\n"
+            "Hint: if this model needs a HuggingFace login, first run:\n"
             "  huggingface-cli login"
         )
         raise RuntimeError(f"RepositoryNotFoundError: {exc}") from exc
     except LocalEntryNotFoundError as exc:
-        logger.error("本地 cache 中未找到该模型且 local_files_only=True: %s", repo_id)
+        logger.error("Model not found in the local cache and local_files_only=True: %s", repo_id)
         raise RuntimeError(f"LocalEntryNotFoundError: {exc}") from exc
     except Exception as exc:
-        logger.error("下载过程中发生未知错误: %s", exc)
+        logger.error("Unknown error during download: %s", exc)
         raise RuntimeError(f"Download failed: {exc}") from exc
 
     if local_path is None:
-        raise RuntimeError("snapshot_download 返回 None，下载失败。")
+        raise RuntimeError("snapshot_download returned None, the download failed.")
 
     return Path(local_path)
 
 
 def _calculate_dir_size(path: Path) -> float:
-    """递归计算目录总大小（GB）。"""
+    """Total size of a directory, recursively (GB)."""
     total = 0
     try:
         for f in path.rglob("*"):
             if f.is_file():
                 total += f.stat().st_size
     except OSError as exc:
-        logger.warning("计算目录大小时出错: %s", exc)
+        logger.warning("Error while computing the directory size: %s", exc)
     return total / 1e9
 
 
 def _print_model_list(entries: dict[str, dict], max_memory: float | None = None) -> None:
-    """打印模型列表，可选按内存预算过滤。"""
+    """Print the model list, optionally filtered by memory budget."""
     if max_memory is not None:
         filtered = {
             k: v for k, v in entries.items()
             if v["memory_budget_gb"] <= max_memory
         }
         if not filtered:
-            print(f"⚠️  没有模型满足内存预算 ≤ {max_memory} GB")
+            print(f"⚠️  No model fits the memory budget ≤ {max_memory} GB")
             return
         entries_to_show = filtered
-        title_suffix = f"（≤ {max_memory} GB）"
+        title_suffix = f"(≤ {max_memory} GB)"
     else:
         entries_to_show = entries
         title_suffix = ""
 
-    print(f"\n可用模型列表 {title_suffix}:")
+    print(f"\nAvailable models {title_suffix}:")
     print("-" * 95)
     print(
         f"  {'Name':<18} {'Family':<12} {'Backbone':<11} "
@@ -214,24 +214,24 @@ def _print_model_list(entries: dict[str, dict], max_memory: float | None = None)
         )
 
     print("-" * 95)
-    print(f"共 {len(entries_to_show)} 个模型")
-    print("\n下载示例:")
+    print(f"{len(entries_to_show)} models in total")
+    print("\nDownload examples:")
     print("  python scripts/download_model.py --model flux-dev")
     print("  python scripts/download_model.py --model ssd-1b --cache-dir /mnt/cache")
 
 
 def _print_model_detail(name: str, info: dict) -> None:
-    """打印单个模型的详细信息。"""
+    """Print the details of one model."""
     print(f"\n{'='*60}")
-    print(f"模型名称:    {name}")
+    print(f"Model name:  {name}")
     print(f"Model ID:    {info['model_id']}")
     print(f"Family:      {info['family']}")
     print(f"Backbone:    {info['backbone_type']}")
-    print(f"VRAM 预算:   {info['memory_budget_gb']:.1f} GB")
-    print(f"默认分辨率:  {info['default_resolution']} px")
+    print(f"VRAM budget: {info['memory_budget_gb']:.1f} GB")
+    print(f"Default res: {info['default_resolution']} px")
     print(f"Pipeline:    {info['pipeline_class']}")
     if info["description"]:
-        print(f"描述:        {info['description']}")
+        print(f"Description: {info['description']}")
     print(f"{'='*60}\n")
 
 
@@ -239,25 +239,25 @@ def _print_model_detail(name: str, info: dict) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
-    """构建并返回解析后的命令行参数。"""
+    """Build and return the parsed command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="下载 Vision Banana 所需的 base diffusion 模型权重",
+        description="Download the base diffusion model weights Vision Banana needs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  # 列出所有模型
+Examples:
+  # list every model
   %(prog)s --list
 
-  # 下载 FLUX.1-schnell（Apache-2.0，适合快速实验）
+  # download FLUX.1-schnell (Apache-2.0, good for quick experiments)
   %(prog)s --model flux-schnell
 
-  # 下载 SSD-1B（显存友好，质量/效率最佳平衡点）
+  # download SSD-1B (memory friendly, best quality/efficiency balance)
   %(prog)s --model ssd-1b --cache-dir /mnt/hf-cache
 
-  # 按 8GB 显存预算筛选可用模型
+  # filter usable models by an 8GB VRAM budget
   %(prog)s --list --max-memory 8
 
-  # 仅验证本地 cache 是否完整，不发起网络请求
+  # only check that the local cache is complete, without network requests
   %(prog)s --model sd15 --local-files-only
         """,
     )
@@ -265,51 +265,51 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--list",
         action="store_true",
-        help="列出所有在 model_registry 中注册的模型",
+        help="List every model registered in model_registry",
     )
     parser.add_argument(
         "--model",
         type=str,
         default=None,
-        help="要下载的模型名称（如 flux-dev, ssd-1b, sd15 等）",
+        help="Name of the model to download (e.g. flux-dev, ssd-1b, sd15)",
     )
     parser.add_argument(
         "--cache-dir",
         type=str,
         default=None,
-        help="HuggingFace Hub 本地 cache 目录（默认: ~/.cache/huggingface/hub）",
+        help="Local HuggingFace Hub cache directory (default: ~/.cache/huggingface/hub)",
     )
     parser.add_argument(
         "--max-memory",
         type=float,
         default=None,
-        help="与 --list 配合使用时，仅显示显存需求不超过该值的模型（单位: GB）",
+        help="With --list, show only models whose VRAM requirement is at most this value (GB)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="仅打印将要下载的信息，不执行实际下载",
+        help="Only print what would be downloaded, without downloading",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="强制重新下载，忽略已有的本地 cache",
+        help="Force a fresh download, ignoring the existing local cache",
     )
     parser.add_argument(
         "--local-files-only",
         action="store_true",
-        help="仅使用本地 cache，不发起网络请求（用于验证 cache 完整性）",
+        help="Use only the local cache without network requests (to check cache integrity)",
     )
     parser.add_argument(
         "--no-resume",
         action="store_true",
-        help="禁用断点续传（默认启用）",
+        help="Disable resume (enabled by default)",
     )
     parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="输出 DEBUG 级别日志",
+        help="Log at DEBUG level",
     )
     return parser.parse_args()
 
@@ -318,52 +318,52 @@ def parse_args() -> argparse.Namespace:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
-    """脚本主入口。"""
+    """Script entry point."""
     args = parse_args()
     _setup_logging(level=logging.DEBUG if args.verbose else logging.INFO)
     _ensure_hf_env()
 
-    # 提前解析 model_registry，获取模型列表
+    # resolve model_registry early to get the model list
     try:
         entries = _get_registry()
     except SystemExit:
         return 1
 
-    # ── List 模式 ──────────────────────────────────────────────────────────
+    # ── List mode ─────────────────────────────────────────────────────────
     if args.list:
         _print_model_list(entries, max_memory=args.max_memory)
         return 0
 
-    # ── 参数校验 ───────────────────────────────────────────────────────────
+    # ── Argument checks ───────────────────────────────────────────────────
     if not args.model:
-        logger.error("必须指定 --model <name> 或使用 --list 查看可用模型")
+        logger.error("Specify --model <name>, or use --list to see the available models")
         return 1
 
     model_name = args.model.strip().lower()
     if model_name not in entries:
-        logger.error("未知模型: %r", model_name)
-        logger.error("可用模型: %s", ", ".join(sorted(entries.keys())))
+        logger.error("Unknown model: %r", model_name)
+        logger.error("Available models: %s", ", ".join(sorted(entries.keys())))
         return 1
 
     info = entries[model_name]
     _print_model_detail(model_name, info)
 
-    # ── Dry-run 模式 ───────────────────────────────────────────────────────
+    # ── Dry-run mode ──────────────────────────────────────────────────────
     if args.dry_run:
-        print("[DRY RUN] 将要下载的模型信息:")
+        print("[DRY RUN] Model that would be downloaded:")
         print(f"  Model name: {model_name}")
         print(f"  Repo ID:    {info['model_id']}")
-        print(f"  Cache dir:  {args.cache_dir or '（默认）'}")
+        print(f"  Cache dir:  {args.cache_dir or '(default)'}")
         print(f"  Resume:     {not args.no_resume}")
         print(f"  Force:      {args.force}")
-        print("  未执行实际下载。")
+        print("  Nothing was downloaded.")
         return 0
 
-    # ── 实际下载 ───────────────────────────────────────────────────────────
+    # ── Download ──────────────────────────────────────────────────────────
     if args.local_files_only:
-        logger.info("local-files-only 模式：仅验证本地 cache")
+        logger.info("local-files-only mode: only checking the local cache")
 
-    logger.info("开始下载模型: %s (%s)", model_name, info["model_id"])
+    logger.info("Starting model download: %s (%s)", model_name, info["model_id"])
 
     try:
         local_path = _download_with_resume(
@@ -374,20 +374,20 @@ def main() -> int:
             local_files_only=args.local_files_only,
         )
     except RuntimeError as exc:
-        logger.error("下载失败: %s", exc)
+        logger.error("Download failed: %s", exc)
         return 1
     except KeyboardInterrupt:
-        logger.warning("用户中断下载。已下载的部分保存在 cache 中，下次运行时自动续传。")
-        return 130  # 标准 Unix 中断退出码
+        logger.warning("Download interrupted by the user. The partial download stays in the cache and resumes on the next run.")
+        return 130  # standard Unix interrupt exit code
 
-    # ── 下载后统计 ─────────────────────────────────────────────────────────
+    # ── Post-download summary ─────────────────────────────────────────────
     total_gb = _calculate_dir_size(local_path)
-    logger.info("✅ 下载完成")
-    logger.info("  本地路径: %s", local_path)
-    logger.info("  总大小:   %.2f GB", total_gb)
-    logger.info("  模型:     %s (%s)", model_name, info["model_id"])
+    logger.info("✅ Download complete")
+    logger.info("  Local path: %s", local_path)
+    logger.info("  Total size: %.2f GB", total_gb)
+    logger.info("  Model:      %s (%s)", model_name, info["model_id"])
 
-    # 输出纯路径（方便 shell 脚本捕获）
+    # print the bare path (easy for shell scripts to capture)
     print(str(local_path.resolve()))
     return 0
 

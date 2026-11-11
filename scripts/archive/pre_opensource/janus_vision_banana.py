@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Janus-1.3B open-vision-banana 训练 —— 统一多模态理解+生成.
+"""Janus-1.3B open-vision-banana training: unified multimodal understanding + generation.
 
-架构（对齐论文 NBP）：
-  理解路径: image → CLIPVisionTower → aligner → LLM
-  生成路径: LLM → gen_aligner → gen_head → VQ tokens → depth RGB
+Architecture (matches the paper's NBP):
+  understanding path: image → CLIPVisionTower → aligner → LLM
+  generation path: LLM → gen_aligner → gen_head → VQ tokens → depth RGB
 
-训练方式：
-  输入 = (image, text_prompt) → LLM → gen_head → VQ tokens (576个，自回归)
-  目标 = depth RGB → VQ encode → VQ tokens (576个)
-  损失 = CrossEntropy(预测 VQ tokens, 目标 VQ tokens)
+Training:
+  input = (image, text_prompt) → LLM → gen_head → VQ tokens (576, autoregressive)
+  target = depth RGB → VQ encode → VQ tokens (576)
+  loss = CrossEntropy(predicted VQ tokens, target VQ tokens)
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_vision_banana.py
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-sys.path.insert(0, "/tmp/Janus")  # Janus 自定义代码
+sys.path.insert(0, "/tmp/Janus")  # Janus custom code
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.evaluation.relative_depth import evaluate_relative_depth_rgb
@@ -46,7 +46,7 @@ DATA_DIR = os.environ.get(
 )
 STEPS = int(os.environ.get("VB_STEPS", "500"))
 NSAMPLES = int(os.environ.get("VB_NSAMPLES", "8"))
-RES = int(os.environ.get("VB_RES", "384"))  # Janus 需要 384x384 (siglip_large_patch16_384)
+RES = int(os.environ.get("VB_RES", "384"))  # Janus needs 384x384 (siglip_large_patch16_384)
 BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
 RANK = int(os.environ.get("VB_RANK", "64"))
@@ -77,7 +77,7 @@ def main() -> None:
     print(f"[cfg] steps={STEPS}  nsamples={NSAMPLES}  res={RES}  batch={BATCH}")
     print(f"[cfg] lr={LR}  rank={RANK}  alpha={ALPHA}  out={OUT}")
 
-    # 1) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 1) load Janus-1.3B ───────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -93,7 +93,7 @@ def main() -> None:
     print(f"[model] type={type(model).__name__}")
     print(f"[model] params={sum(p.numel() for p in model.parameters()):,}")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} depth samples @ {RES}px")
@@ -120,7 +120,7 @@ def main() -> None:
     n_total_p = sum(p.numel() for p in peft_model.parameters())
     print(f"[lora] trainable = {n_train:,}  ({100*n_train/n_total_p:.2f}%)")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -143,25 +143,25 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 5) 训练循环 ─────────────────────────────────────────────────────
+    # 5) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus open-vision-banana: {STEPS} steps")
     print(f"[train] prompt: {VISION_PROMPT[:80]}...")
 
-    # 预编码 prompt
+    # pre-encode the prompt
     prompt_ids = tokenizer(VISION_PROMPT, return_tensors="pt").input_ids.to(device)
 
-    # Janus 特殊 token
+    # Janus special tokens
     image_start_tag = "<image>"
-    # 尝试多种方式获取 image_start_id
+    # try several ways to get image_start_id
     if hasattr(tokenizer, 'image_start_tag'):
         image_start_id = tokenizer.convert_tokens_to_ids(tokenizer.image_start_tag)
     elif hasattr(tokenizer, 'convert_tokens_to_ids'):
         try:
             image_start_id = tokenizer.convert_tokens_to_ids(image_start_tag)
         except:
-            image_start_id = 100  # 默认值
+            image_start_id = 100  # default
     else:
-        image_start_id = 100  # 默认值
+        image_start_id = 100  # default
     print(f"[token] image_start_id = {image_start_id}")
 
     losses: list[float] = []
@@ -177,35 +177,35 @@ def main() -> None:
 
         opt.zero_grad(set_to_none=True)
 
-        # 取 batch（batch_size=1 简化）
+        # take a batch (batch_size=1 for simplicity)
         image = batch["image"][0:1].to(device, DTYPE)  # [-1, 1]
         target_rgb = batch["target_rgb"][0:1].to(device, DTYPE)  # [0, 1]
 
-        # 1. 图像理解路径: pixel_values → vision_model → aligner
+        # 1. image understanding path: pixel_values → vision_model → aligner
         pixel_values = image.unsqueeze(1)  # [1, 1, 3, H, W]
 
-        # 2. 目标图像 → VQ tokens
+        # 2. target image → VQ tokens
         with torch.no_grad():
-            # 将 target_rgb [0,1] → [-1,1] for VQ encode
+            # map target_rgb [0,1] → [-1,1] for VQ encode
             target_for_vq = target_rgb * 2 - 1
             quant, emb_loss, info = model.gen_vision_model.encode(target_for_vq)
-            # info[2] 是 token indices [576]
+            # info[2] holds the token indices [576]
             target_tokens = info[2]  # [576]
 
-        # 3. 构造输入 embeds（图像 + prompt）
-        # 序列 = prompt + 576 个图像 token（用 -1 占位，prepare_inputs_embeds 会替换为图像 embedding）
+        # 3. build the input embeds (image + prompt)
+        # sequence = prompt + 576 image tokens (placeholders -1, which prepare_inputs_embeds replaces with image embeddings)
         seq_len = prompt_ids.shape[1] + IMAGE_TOKEN_NUM
-        # 构造完整的 input_ids（prompt + 图像 token 占位）
+        # build the full input_ids (prompt + image token placeholders)
         full_input_ids = torch.cat([
             prompt_ids,
-            torch.full((1, IMAGE_TOKEN_NUM), -1, device=device, dtype=torch.long),  # 图像 token 占位
+            torch.full((1, IMAGE_TOKEN_NUM), -1, device=device, dtype=torch.long),  # image token placeholders
         ], dim=1)
 
-        # images_seq_mask: 标记图像 token 位置（prompt 之后）
+        # images_seq_mask: marks the image token positions (after the prompt)
         images_seq_mask = torch.zeros(1, seq_len, dtype=torch.bool, device=device)
-        images_seq_mask[0, prompt_ids.shape[1]:] = True  # 图像 token 位置
+        images_seq_mask[0, prompt_ids.shape[1]:] = True  # image token positions
 
-        # images_emb_mask: 标记使用哪些图像 embedding
+        # images_emb_mask: marks which image embeddings are used
         images_emb_mask = torch.ones(1, 1, IMAGE_TOKEN_NUM, dtype=torch.bool, device=device)
 
         input_embeds = model.prepare_inputs_embeds(
@@ -215,24 +215,24 @@ def main() -> None:
             images_emb_mask=images_emb_mask,
         )
 
-        # 4. 前向传播
+        # 4. forward pass
         outputs = model.language_model.model(
             inputs_embeds=input_embeds,
             output_hidden_states=True,
         )
         hidden_states = outputs.last_hidden_state  # [1, T, D]
 
-        # 5. 生成图像 token（直接用 LLM hidden states → gen_head）
-        # 注意：gen_aligner 不用于训练前向，只用于推理时从 VQ tokens 获取 embeddings
-        # 训练时直接用 LLM hidden states → gen_head → VQ token logits
+        # 5. generate image tokens (LLM hidden states → gen_head directly)
+        # note: gen_aligner is not used in the training forward, only at inference to get embeddings from VQ tokens
+        # in training, LLM hidden states → gen_head → VQ token logits directly
         gen_logits = model.gen_head(hidden_states)  # [1, T, image_token_size]
 
-        # 取最后一个 token 的生成结果（简化：只训练最后一个 token）
-        # 完整实现应该用自回归生成所有 576 个 token
+        # take the generation result of the last token (simplified: only the last token is trained)
+        # the full version should generate all 576 tokens autoregressively
         pred_logits = gen_logits[:, -1, :]  # [1, image_token_size]
 
-        # 6. 损失：CrossEntropy(预测 VQ token, 目标 VQ token)
-        # 简化：只训练第一个目标 token
+        # 6. loss: CrossEntropy(predicted VQ token, target VQ token)
+        # simplified: only the first target token is trained
         target_first_token = target_tokens[0:1]  # [1]
         loss = F.cross_entropy(pred_logits, target_first_token)
 
@@ -254,13 +254,13 @@ def main() -> None:
     print(f"\n[train] completed {len(losses)} steps")
     print(f"[train] avg loss = {sum(losses)/len(losses):.4f}")
 
-    # 保存 checkpoint
+    # save the checkpoint
     ckpt_dir = OUT / "lora_final"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(ckpt_dir))
     print(f"[ckpt] saved → {ckpt_dir}")
 
-    # 6) 推理评估 ─────────────────────────────────────────────────────
+    # 6) inference evaluation ──────────────────────────────────────────
     print("\n[eval] inference on training samples...")
     mapper = DepthRGBMapper(colormap="viridis")
     results = []
@@ -275,7 +275,7 @@ def main() -> None:
             .mul(255).byte().numpy()
         )
 
-        # 简化推理：用模型生成第一个 VQ token
+        # simplified inference: the model generates the first VQ token
         pixel_values = inp_tensor.unsqueeze(0).unsqueeze(0).to(device, DTYPE)
         seq_len = prompt_ids.shape[1] + IMAGE_TOKEN_NUM
         full_input_ids = torch.cat([
@@ -300,10 +300,10 @@ def main() -> None:
         gen_logits = model.gen_head(gen_embeds)
         pred_token = torch.argmax(gen_logits[:, -1, :], dim=-1)
 
-        # 简化：用随机图像作为占位符（实际需要自回归生成 576 tokens）
+        # simplified: a random image as placeholder (the real thing needs autoregressive generation of 576 tokens)
         pred_rgb = torch.rand(3, RES, RES)
 
-        # 三联图
+        # triptych
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(
@@ -327,7 +327,7 @@ def main() -> None:
 
     total_min = (time.time() - t_train) / 60
     print(f"\n[done] Janus open-vision-banana complete ({total_min:.1f} min)")
-    print(f"[note] 简化实现：只训练第一个 VQ token，完整实现需要自回归生成 576 tokens")
+    print(f"[note] simplified implementation: only the first VQ token is trained; the full version needs autoregressive generation of 576 tokens")
 
 
 if __name__ == "__main__":

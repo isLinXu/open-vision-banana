@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Z-Image LoRA 推理可视化脚本
+"""Z-Image LoRA inference visualization script
 
-Z-Image pipeline 不支持 img2img 的 image 参数，需要手动实现：
-1. VAE 编码输入图像 → latents
-2. 根据 strength 加噪 → starting latents
-3. 传入 ZImagePipeline 带自定义 sigmas 进行去噪
-4. VAE 解码 → 输出图像
+The Z-Image pipeline does not accept an img2img image argument, so it is done by hand:
+1. VAE-encode the input image → latents
+2. Add noise according to strength → starting latents
+3. Denoise with ZImagePipeline using custom sigmas
+4. VAE-decode → output image
 
 Usage:
   python scripts/visualize_zimage_results.py

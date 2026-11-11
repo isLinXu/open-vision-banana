@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-SN-VC-50M 原始数据集下载脚本
+SN-VC-50M source dataset download script
 
-下载 SN-VC-50M JSONL 标注引用的原始图片数据集。
-只下载必需的子集，不全量下载。
+Downloads the source image datasets referenced by the SN-VC-50M JSONL annotations.
+Only the required subsets are downloaded, not everything.
 
-优先级：
-1. Cityscapes (leftImg8bit + gtFine) — 分割任务
-2. FSC147 — 计数/检测任务
-3. LOVEDA — 遥感分割
-4. 路径修正：RefCOCOg (COCO 2014 已有，需 symlink)
-5. Hypersim 子集 (已有 8 scenes，下载缺失 scenes)
+Priority:
+1. Cityscapes (leftImg8bit + gtFine): segmentation tasks
+2. FSC147: counting/detection tasks
+3. LOVEDA: remote-sensing segmentation
+4. Path fixes: RefCOCOg (COCO 2014 already present, needs a symlink)
+5. Hypersim subset (8 scenes present, download the missing scenes)
 """
 
 import os

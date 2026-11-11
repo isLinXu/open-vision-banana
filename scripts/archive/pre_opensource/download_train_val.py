@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一键下载并自动划分 train/val 的数据集准备脚本。
+"""Dataset preparation script that downloads and splits train/val in one go.
 
 Downloads benchmark datasets from public sources, extracts them, and
 automatically splits into ``train/`` and ``val/`` subsets in the standard
@@ -8,26 +8,26 @@ automatically splits into ``train/`` and ``val/`` subsets in the standard
 Features:
     - argparse CLI with sub-commands
     - Structured logging (level + file handlers)
-    - Resume support via JSON state file (断点续传)
+    - Resume support via JSON state file
     - Automatic train/val split with reproducible seed
     - Post-download validation via ``validate_vision_dataset``
     - Dry-run mode for safe preview
 
 Usage:
-    # 列出所有支持的数据集
+    # list every supported dataset
     python scripts/download_train_val.py list
 
-    # 下载单个数据集并划分 90/10 train/val
+    # download one dataset and split it 90/10 train/val
     python scripts/download_train_val.py download --dataset nyu --output data/nyu
 
-    # 下载全部支持的数据集
+    # download every supported dataset
     python scripts/download_train_val.py download --dataset all --output data/
 
-    # 指定验证集比例 + 随机种子 + 断点续传
+    # validation ratio + random seed + resume
     python scripts/download_train_val.py download --dataset diode \
         --output data/diode --val-ratio 0.15 --seed 2024 --resume
 
-    # Dry-run（只打印计划，不执行）
+    # dry run (print the plan only, run nothing)
     python scripts/download_train_val.py download --dataset all --output data/ --dry-run
 """
 
@@ -53,7 +53,7 @@ import torch
 from PIL import Image
 
 # ---------------------------------------------------------------------------
-# 尝试导入项目内部模块；若不可用则 gracefully degrade
+# try importing the project modules; degrade gracefully if they are unavailable
 # ---------------------------------------------------------------------------
 try:
     from open_vision_banana.data.validation import validate_vision_dataset
@@ -83,7 +83,7 @@ logger = logging.getLogger("download_train_val")
 # ---------------------------------------------------------------------------
 @dataclass
 class DatasetConfig:
-    """单个数据集的配置描述。"""
+    """Config of one dataset."""
     name: str
     task: str
     urls: list[dict[str, Any]]  # [{"url": ..., "filename": ..., "optional": bool}]
@@ -110,7 +110,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
         license="Academic",
         prepare_fn=None,
         huggingface="patriziapol/stratified-depth-dataset-nyu-depth-v2",
-        notes="官方源需要手动下载；脚本优先尝试 HuggingFace mirror。",
+        notes="The official source needs a manual download; the script tries the HuggingFace mirror first.",
     ),
     "diode": DatasetConfig(
         name="DIODE",
@@ -141,7 +141,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
         description="Autonomous driving sparse LiDAR depth, 23K train / 1K test",
         license="CC BY-NC-SA 3.0",
         prepare_fn=None,
-        notes="官方源需注册；脚本提供直接下载链接，但可能因 license 变动失效。",
+        notes="The official source needs registration; the script gives a direct link, which may break if the license changes.",
     ),
     "ade20k": DatasetConfig(
         name="ADE20K",
@@ -187,7 +187,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
         description="Synthetic 3D optical flow, 25K stereo frames, good for pretraining",
         license="Academic",
         prepare_fn=None,
-        notes="体积约 42GB，建议使用 subset。",
+        notes="About 42GB; a subset is recommended.",
     ),
     "hypersim": DatasetConfig(
         name="Hypersim (subset)",
@@ -197,7 +197,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
         description="Paper-equivalent synthetic data, first 8 scenes ~33GB",
         license="MIT",
         prepare_fn=None,
-        notes="需从 GitHub 手动克隆：https://github.com/apple/ml-hypersim",
+        notes="Clone manually from GitHub: https://github.com/apple/ml-hypersim",
     ),
     "vkitti2": DatasetConfig(
         name="Virtual KITTI 2",
@@ -207,7 +207,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
         description="Synthetic KITTI with weather/time, 50K frames, perfect GT",
         license="Academic",
         prepare_fn=None,
-        notes="需从官网手动下载：https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/",
+        notes="Download manually from the official site: https://europe.naverlabs.com/research/computer-vision/proxy-virtual-worlds-vkitti-2/",
     ),
     "blendedmvs": DatasetConfig(
         name="BlendedMVS",
@@ -227,7 +227,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
         description="Real indoor scans with surface normals",
         license="ScanNet Terms",
         prepare_fn=None,
-        notes="需注册下载：http://www.scan-net.org/",
+        notes="Registration required: http://www.scan-net.org/",
     ),
     "cityscapes": DatasetConfig(
         name="Cityscapes Semantic",
@@ -237,7 +237,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
         description="Urban street scenes, 5K fine annotations",
         license="Cityscapes Terms",
         prepare_fn=None,
-        notes="需注册下载：https://www.cityscapes-dataset.com/",
+        notes="Registration required: https://www.cityscapes-dataset.com/",
     ),
     "refcocog": DatasetConfig(
         name="RefCOCOg",
@@ -257,7 +257,7 @@ DATASET_REGISTRY: dict[str, DatasetConfig] = {
 # ---------------------------------------------------------------------------
 @dataclass
 class DownloadState:
-    """断点续传状态。"""
+    """Resume state."""
     completed_downloads: list[str] = field(default_factory=list)
     completed_splits: list[str] = field(default_factory=list)
     completed_validations: list[str] = field(default_factory=list)
@@ -310,7 +310,7 @@ def download_file(
 ) -> bool:
     """Download a single file via wget/curl/urllib with optional resume.
 
-    优先使用 wget -c 实现断点续传；fallback 到 curl；最后使用 urllib。
+    Prefers wget -c for resumable downloads; falls back to curl, then urllib.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -408,7 +408,7 @@ def _save_depth_rgb_pair(
     out_tgt: Path,
     resolution: int | None,
 ) -> None:
-    """将 depth tensor 编码为 RGB 并保存 image/target 对。"""
+    """Encode a depth tensor as RGB and save the image/target pair."""
     if resolution is not None:
         img = img.resize((resolution, resolution), Image.LANCZOS)
         depth = torch.nn.functional.interpolate(
@@ -421,7 +421,7 @@ def _save_depth_rgb_pair(
         arr = (target_rgb.clamp(0.0, 1.0) * 255.0).byte().permute(1, 2, 0).cpu().numpy()
         Image.fromarray(arr, mode="RGB").save(out_tgt)
     else:
-        # fallback: 直接保存 depth 为 16-bit PNG
+        # fallback: save the depth directly as a 16-bit PNG
         depth_np = depth.squeeze().cpu().numpy()
         depth_16 = (depth_np * 1000.0).clip(0, 65535).astype(np.uint16)
         Image.fromarray(depth_16, mode="I;16").save(out_tgt)
@@ -430,9 +430,9 @@ def _save_depth_rgb_pair(
 
 
 def prepare_diode(raw_dir: Path, output_dir: Path, args: argparse.Namespace) -> int:
-    """DIODE: 从解压后的 train_val 目录提取 image/depth 对。"""
-    # DIODE 解压后结构: train/indoor, train/outdoor, val/indoor, val/outdoor
-    # 每个目录下有 *_rgb.png 和 *_depth.npy
+    """DIODE: extract image/depth pairs from the extracted train_val directory."""
+    # DIODE layout after extraction: train/indoor, train/outdoor, val/indoor, val/outdoor
+    # each directory holds *_rgb.png and *_depth.npy
     img_dir = output_dir / "images"
     tgt_dir = output_dir / "targets"
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -474,19 +474,19 @@ def prepare_diode(raw_dir: Path, output_dir: Path, args: argparse.Namespace) -> 
 
 
 def prepare_kitti(raw_dir: Path, output_dir: Path, args: argparse.Namespace) -> int:
-    """KITTI: 从 data_depth_annotated 提取 RGB/depth 对。"""
+    """KITTI: extract RGB/depth pairs from data_depth_annotated."""
     img_dir = output_dir / "images"
     tgt_dir = output_dir / "targets"
     img_dir.mkdir(parents=True, exist_ok=True)
     tgt_dir.mkdir(parents=True, exist_ok=True)
 
-    # 寻找深度图和对应 RGB
+    # find the depth maps and the matching RGB
     depth_files = sorted(raw_dir.rglob("*groundtruth_depth*.png"))
     count = 0
     for depth_path in depth_files:
-        # KITTI 原始 RGB 在另外的位置；这里仅处理已下载的 annotated 包
-        # 该包通常只包含 depth，RGB 需从 raw data 获取
-        # 为简化，若找不到 RGB 则跳过
+        # the raw KITTI RGB lives elsewhere; only the downloaded annotated package is handled here
+        # that package usually contains only depth, and the RGB must come from the raw data
+        # for simplicity, skip when no RGB is found
         rgb_path = depth_path.parent / depth_path.name.replace("groundtruth_depth", "image")
         if not rgb_path.exists():
             continue
@@ -509,13 +509,13 @@ def prepare_kitti(raw_dir: Path, output_dir: Path, args: argparse.Namespace) -> 
 
 
 def prepare_ade20k(raw_dir: Path, output_dir: Path, args: argparse.Namespace) -> int:
-    """ADE20K: 提取 training/validation image + annotation 对。"""
+    """ADE20K: extract training/validation image + annotation pairs."""
     img_dir = output_dir / "images"
     tgt_dir = output_dir / "targets"
     img_dir.mkdir(parents=True, exist_ok=True)
     tgt_dir.mkdir(parents=True, exist_ok=True)
 
-    # 常见解压后路径
+    # common paths after extraction
     base = raw_dir / "ADEChallengeData2016"
     if not base.exists():
         base = raw_dir
@@ -559,13 +559,13 @@ def prepare_ade20k(raw_dir: Path, output_dir: Path, args: argparse.Namespace) ->
 
 
 def prepare_sintel(raw_dir: Path, output_dir: Path, args: argparse.Namespace) -> int:
-    """Sintel: 提取 flow frame 对。"""
+    """Sintel: extract flow frame pairs."""
     img_dir = output_dir / "images"
     tgt_dir = output_dir / "targets"
     img_dir.mkdir(parents=True, exist_ok=True)
     tgt_dir.mkdir(parents=True, exist_ok=True)
 
-    # MPI-Sintel-complete 结构: training/clean, training/final, training/flow
+    # MPI-Sintel-complete layout: training/clean, training/final, training/flow
     base = raw_dir / "MPI-Sintel-complete" / "training"
     if not base.exists():
         base = raw_dir / "training"
@@ -578,8 +578,8 @@ def prepare_sintel(raw_dir: Path, output_dir: Path, args: argparse.Namespace) ->
         logger.warning("Sintel expected structure not found under %s", raw_dir)
         return 0
 
-    # 对于 flow 任务，target 是 flow 场；这里简化为 RGB 帧对保存
-    # 实际训练需进一步解析 .flo 文件，此处仅做文件映射
+    # for the flow task the target is the flow field; simplified here to saving RGB frame pairs
+    # real training needs the .flo files parsed further; this only maps the files
     count = 0
     for scene_dir in sorted(clean_dir.iterdir()):
         if not scene_dir.is_dir():
@@ -600,13 +600,13 @@ def prepare_sintel(raw_dir: Path, output_dir: Path, args: argparse.Namespace) ->
 
 
 def prepare_flyingthings3d(raw_dir: Path, output_dir: Path, args: argparse.Namespace) -> int:
-    """FlyingThings3D subset: 提取 image + flow/disparity 对。"""
+    """FlyingThings3D subset: extract image + flow/disparity pairs."""
     img_dir = output_dir / "images"
     tgt_dir = output_dir / "targets"
     img_dir.mkdir(parents=True, exist_ok=True)
     tgt_dir.mkdir(parents=True, exist_ok=True)
 
-    # subset 结构: train/image_clean/left/*.png
+    # subset layout: train/image_clean/left/*.png
     base = raw_dir / "FlyingThings3D_subset"
     if not base.exists():
         base = raw_dir
@@ -630,7 +630,7 @@ def prepare_flyingthings3d(raw_dir: Path, output_dir: Path, args: argparse.Names
 
 
 def prepare_nyu_from_hf(output_dir: Path, args: argparse.Namespace) -> int:
-    """通过 HuggingFace ``datasets`` 库下载 NYU Depth v2。"""
+    """Download NYU Depth v2 through the HuggingFace ``datasets`` library."""
     try:
         from datasets import load_dataset
     except ImportError as exc:
@@ -672,7 +672,7 @@ def prepare_nyu_from_hf(output_dir: Path, args: argparse.Namespace) -> int:
     return count
 
 
-# 绑定 prepare_fn
+# bind prepare_fn
 DATASET_REGISTRY["diode"].prepare_fn = prepare_diode
 DATASET_REGISTRY["kitti"].prepare_fn = prepare_kitti
 DATASET_REGISTRY["ade20k"].prepare_fn = prepare_ade20k
@@ -690,7 +690,7 @@ def split_train_val(
     seed: int,
     overwrite: bool,
 ) -> tuple[int, int]:
-    """将 unified_dir/images + targets 随机划分为 train / val。
+    """Randomly split unified_dir/images + targets into train / val.
 
     Returns:
         (train_count, val_count)
@@ -707,13 +707,13 @@ def split_train_val(
         logger.warning("No images found in %s", img_dir)
         return 0, 0
 
-    # 构建 image-target 对
+    # build the image-target pairs
     pairs: list[tuple[Path, Path]] = []
     for img_path in image_files:
-        # 优先精确匹配同名 target
+        # prefer an exact match on the target name
         tgt_path = tgt_dir / (img_path.stem + ".png")
         if not tgt_path.exists():
-            # fallback: 尝试相同 stem 的其他扩展名
+            # fallback: try other extensions with the same stem
             candidates = list(tgt_dir.glob(img_path.stem + ".*"))
             if candidates:
                 tgt_path = candidates[0]
@@ -733,14 +733,14 @@ def split_train_val(
         n_train = n_total
         n_val = 0
 
-    # 可复现随机划分
+    # reproducible random split
     rng = np.random.default_rng(seed)
     indices = np.arange(n_total)
     rng.shuffle(indices)
     train_idx = set(indices[:n_train])
     set(indices[n_train:])
 
-    # 创建输出目录
+    # create the output directories
     train_img_dir = output_dir / "train" / "images"
     train_tgt_dir = output_dir / "train" / "targets"
     val_img_dir = output_dir / "val" / "images"
@@ -765,7 +765,7 @@ def split_train_val(
         if dst_img.exists() and dst_tgt.exists() and not overwrite:
             continue
 
-        # 使用 symlink 或 copy（优先 copy 保证独立性）
+        # symlink or copy (copy preferred, for independence)
         shutil.copy2(img_path, dst_img)
         shutil.copy2(tgt_path, dst_tgt)
 
@@ -785,11 +785,11 @@ def download_and_prepare(
     state: DownloadState,
     state_path: Path,
 ) -> bool:
-    """下载、解压、准备、划分单个数据集。"""
+    """Download, extract, prepare and split one dataset."""
     config = DATASET_REGISTRY[dataset_key]
     dataset_output = Path(args.output) / dataset_key
     raw_dir = Path(args.download_dir) / dataset_key
-    unified_dir = dataset_output / "unified"  # 准备后的统一 images+targets
+    unified_dir = dataset_output / "unified"  # the prepared unified images+targets
 
     logger.info("=" * 60)
     logger.info("Dataset: %s", config.name)
@@ -807,7 +807,7 @@ def download_and_prepare(
             for u in config.urls:
                 logger.info("  → %s", u.get("url", "N/A"))
         else:
-            # 处理需手动下载的数据集
+            # handle datasets that need a manual download
             if not config.urls and config.huggingface:
                 logger.info("Using HuggingFace source: %s", config.huggingface)
                 if dataset_key == "nyu":
@@ -851,7 +851,7 @@ def download_and_prepare(
                         state.save(state_path)
                         return False
 
-                # 解压
+                # extract
                 for url_info in config.urls:
                     archive = raw_dir / url_info["filename"]
                     if archive.exists():
@@ -876,10 +876,10 @@ def download_and_prepare(
                 state.save(state_path)
                 return False
     elif dataset_key == "nyu":
-        # NYU 已经在 download 阶段通过 HF 写入 unified_dir
+        # NYU was already written to unified_dir through HF in the download stage
         pass
     else:
-        # 无 prepare_fn：假设 raw_dir 已经是 images/ + targets/
+        # no prepare_fn: assume raw_dir is already images/ + targets/
         if (raw_dir / "images").exists() and (raw_dir / "targets").exists():
             unified_dir = raw_dir
         else:
@@ -959,10 +959,10 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # list
-    subparsers.add_parser("list", help="列出所有支持的数据集")
+    subparsers.add_parser("list", help="List every supported dataset")
 
     # download
-    dl_parser = subparsers.add_parser("download", help="下载并划分数据集")
+    dl_parser = subparsers.add_parser("download", help="Download and split datasets")
     dl_parser.add_argument(
         "--dataset", type=str, required=True,
         help="Dataset key or 'all' (see `list` sub-command)",
@@ -1025,7 +1025,7 @@ Examples:
 
 
 def setup_logging(level: str, log_file: str | None) -> None:
-    """配置 structured logging。"""
+    """Configure structured logging."""
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
     if log_file:
         handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
@@ -1039,8 +1039,8 @@ def setup_logging(level: str, log_file: str | None) -> None:
 
 
 def cmd_list() -> int:
-    """执行 list 子命令。"""
-    print("\n支持的数据集列表 (Dataset Registry):")
+    """Run the list subcommand."""
+    print("\nSupported datasets (Dataset Registry):")
     print("=" * 70)
     for key, cfg in sorted(DATASET_REGISTRY.items()):
         status = "🟢" if cfg.urls or cfg.huggingface else "🔴"
@@ -1054,13 +1054,13 @@ def cmd_list() -> int:
     print()
     auto = [k for k, c in DATASET_REGISTRY.items() if c.urls or c.huggingface]
     manual = [k for k, c in DATASET_REGISTRY.items() if not c.urls and not c.huggingface]
-    print(f"自动下载: {', '.join(auto) or 'None'}")
-    print(f"需手动:   {', '.join(manual) or 'None'}")
+    print(f"Automatic: {', '.join(auto) or 'None'}")
+    print(f"Manual:    {', '.join(manual) or 'None'}")
     return 0
 
 
 def cmd_download(args: argparse.Namespace) -> int:
-    """执行 download 子命令。"""
+    """Run the download subcommand."""
     setup_logging(args.log_level, args.log_file)
 
     output_root = Path(args.output)
@@ -1095,7 +1095,7 @@ def cmd_download(args: argparse.Namespace) -> int:
     logger.info("-" * 60)
     logger.info("Total: %d / %d datasets succeeded", total_ok, len(datasets))
 
-    # 清理 unified 临时目录（可选）
+    # clean up the temporary unified directory (optional)
     # if not args.dry_run:
     #     for ds_key in datasets:
     #         unified = output_root / ds_key / "unified"

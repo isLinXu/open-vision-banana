@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Checkpoint 监控 + 多任务推理可视化。
+"""Checkpoint monitoring + multi-task inference visualization.
 
-每当训练保存一个新 checkpoint，自动加载该 checkpoint 并对验证集/测试集
-执行多任务推理，生成 (原图 | 预测 | GT) 三列对比可视化。
+Whenever training saves a new checkpoint, load it automatically, run multi-task inference on the
+validation/test sets and write (image | prediction | GT) three-column comparison figures.
 
-监控目录: output/ssd1b_snvc_lora/checkpoint-*
-数据源:   /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train
-任务:     depth, normal, segmentation, structure(edge), generation
+Watched directory: output/ssd1b_snvc_lora/checkpoint-*
+Data source:       /Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train
+Tasks:             depth, normal, segmentation, structure(edge), generation
 
 Usage:
-  python scripts/monitor_and_visualize.py                  # 持续监控
-  python scripts/monitor_and_visualize.py --once           # 只处理最新 checkpoint
+  python scripts/monitor_and_visualize.py                  # keep monitoring
+  python scripts/monitor_and_visualize.py --once           # process only the latest checkpoint
   python scripts/monitor_and_visualize.py --checkpoint output/ssd1b_snvc_lora/checkpoint-200
 """
 
@@ -37,41 +37,41 @@ logging.basicConfig(
 )
 logger = logging.getLogger("monitor_viz")
 
-# ─── 配置 ─────────────────────────────────────────────────────────────────
+# ─── Config ──────────────────────────────────────────────────────────────
 MODEL_NAME = "segmind/SSD-1B"
 CKPT_DIR = PROJECT_ROOT / "output" / "ssd1b_v5_vision_only"
 DATA_DIR = Path("/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train")
 OUTPUT_BASE = PROJECT_ROOT / "output" / "ssd1b_v5_viz"
 
-# SSD-1B 是蒸馏模型，使用低步数 + 低 CFG (仅 generation 任务使用)
+# SSD-1B is a distilled model: few steps + low CFG (generation task only)
 INFERENCE_STEPS = 4
 GUIDANCE_SCALE = 1.0
 STRENGTH = 0.85
 RESOLUTION = 512
 SEED = 42
 
-# 多步 img2img 推理配置（视觉任务）
-# 从训练数据覆盖率不足的分析可知，单步推理容易在极端噪声水平出现退化。
-# 多步迭代从高噪声逐步去噪到低噪声，更接近标准 Euler 离散采样，
-# 可显著提升视觉任务的预测质量。
+# multi-step img2img inference config (vision tasks)
+# from the analysis of thin training-data coverage, single-step inference tends to degrade at extreme noise levels.
+# multi-step iteration denoises gradually from high to low noise, closer to standard Euler discrete sampling,
+# and clearly improves the prediction quality of the vision tasks.
 MULTI_STEP_INFERENCE = True
-MULTI_STEP_COUNT = 25  # 25 步去噪：覆盖全噪声范围，中间噪声层权重大
-MULTI_STEP_SCHEDULE = "euler"  # euler 离散调度
+MULTI_STEP_COUNT = 25  # 25 denoising steps: covers the full noise range, weighted toward the middle noise levels
+MULTI_STEP_SCHEDULE = "euler"  # Euler discrete schedule
 
-# 单步 epsilon 预测推理参数 (视觉任务使用)
-# 训练目标: model(noised_z_input, t) → epsilon
-# 推理: x0 = noisy - sigma * eps_pred (标准 Euler epsilon→x0 提取)
-X0_PREDICTION_TIMESTEP = 551  # 对应 sigma≈1.92, 中等噪声水平
-X0_REFINE_TIMESTEP = 200  # 精修步: 对 x0 加少量噪声后再预测一次, 锐化细节
+# single-step epsilon-prediction inference parameters (vision tasks)
+# training objective: model(noised_z_input, t) → epsilon
+# inference: x0 = noisy - sigma * eps_pred (standard Euler epsilon→x0 extraction)
+X0_PREDICTION_TIMESTEP = 551  # sigma≈1.92, a medium noise level
+X0_REFINE_TIMESTEP = 200  # refine step: add a little noise to x0 and predict again to sharpen details
 USE_REFINEMENT = False  # P0 fix: disabled — t=200 refinement was not trained
 # and introduces distribution shift. Enable only after sufficient training.
 
-# 每个任务取最后 N 张作为验证/测试（训练用了前 300 张）
+# take the last N images of each task as validation/test (training used the first 300)
 VAL_SAMPLES_PER_TASK = 2
 TEST_SAMPLES_PER_TASK = 2
 
-# 任务配置: (子目录名, 任务标签, prompt)
-# v5 训练覆盖全部 10 个视觉任务（各 300 样本，跳过 generation）
+# task config: (subdirectory, task label, prompt)
+# v5 training covers all 10 vision tasks (300 samples each, generation skipped)
 TASKS = {
     "depth": {
         "subdir": "depth",
@@ -125,10 +125,10 @@ TASKS = {
     },
 }
 
-POLL_INTERVAL = 30  # 秒
+POLL_INTERVAL = 30  # seconds
 
 
-# ─── 工具函数 ─────────────────────────────────────────────────────────────
+# ─── Utilities ───────────────────────────────────────────────────────────
 def load_image(path: Path, resolution: int = 256) -> Image.Image:
     return Image.open(path).convert("RGB").resize(
         (resolution, resolution), Image.LANCZOS
@@ -147,14 +147,14 @@ def tensor_to_pil(t: torch.Tensor) -> Image.Image:
 
 
 def _render_text_image(text: str, resolution: int = 256) -> Image.Image:
-    """将文本 prompt 渲染为一张图（用于 Generation 任务的 Input 列展示）。"""
+    """Render a text prompt as an image (shown in the Input column of the generation task)."""
     img = Image.new("RGB", (resolution, resolution), (245, 245, 245))
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 12)
     except (IOError, OSError):
         font = ImageFont.load_default()
-    # 自动换行
+    # automatic line wrapping
     import textwrap
     wrapped = textwrap.fill(text, width=38)
     draw.text((10, 10), wrapped, fill=(30, 30, 30), font=font)
@@ -166,17 +166,17 @@ def single_step_x0_predict(generator, input_pil: Image.Image, prompt: str,
                            timestep: int = X0_PREDICTION_TIMESTEP,
                            seed: int = SEED,
                            refine: bool = USE_REFINEMENT) -> Image.Image:
-    """Epsilon-prediction推理 — 与训练目标和SSD-1B预训练完全对齐。
+    """Epsilon-prediction inference, fully aligned with the training objective and the SSD-1B pretraining.
 
-    训练目标: model(noised_z_input, t) → epsilon
-    推理: x0 = noisy - sigma * epsilon_pred (标准 Euler epsilon→x0 提取)
+    training objective: model(noised_z_input, t) → epsilon
+    inference: x0 = noisy - sigma * epsilon_pred (standard Euler epsilon→x0 extraction)
 
-    对于img2img跨图预测:
-      noisy = z_cond + noise * sigma (加噪到条件latent)
-      x0 = noisy - sigma * model_output (从噪声中提取目标latent)
+    for img2img cross-image prediction:
+      noisy = z_cond + noise * sigma (noise added to the condition latent)
+      x0 = noisy - sigma * model_output (extract the target latent from the noise)
 
-    可选精修 (refine=True): 对提取的x0再加少量噪声(t≈200),
-    再预测一次epsilon并提取x0, 可锐化细节。
+    optional refine (refine=True): add a little noise (t≈200) to the extracted x0,
+    predict epsilon once more and extract x0 again, which sharpens details.
     """
     return multi_step_x0_predict(
         generator, input_pil, prompt,
@@ -189,25 +189,25 @@ def multi_step_x0_predict(generator, input_pil: Image.Image, prompt: str,
                           seed: int = SEED,
                           timestep_override: int | None = None,
                           strength: float = STRENGTH) -> Image.Image:
-    """多步 epsilon→x0 迭代推理 — 从高噪声逐步去噪到低噪声。
+    """Multi-step epsilon→x0 iterative inference, denoising gradually from high to low noise.
 
-    与训练 epsilon 预测目标完全对齐的推理策略：
-    1. 编码输入图到 latent (z_cond)
-    2. 生成 num_steps 个从高→低的 timestep 序列（覆盖 strength 比例的噪声范围）
-    3. 在每一步：
-       a. 对 z_cond 加噪到 t 得到 noisy
-       b. 模型预测 epsilon
-       c. x0 = noisy - sigma * eps_pred (epsilon→x0 提取)
-       d. 用提取的 x0 作为下一步的 condition latent（迭代精化）
-    4. 最终 VAE 解码 x0
+    An inference strategy fully aligned with the epsilon-prediction training objective:
+    1. encode the input image into a latent (z_cond)
+    2. build num_steps timesteps from high to low (covering the strength fraction of the noise range)
+    3. at each step:
+       a. noise z_cond to t to get noisy
+       b. the model predicts epsilon
+       c. x0 = noisy - sigma * eps_pred (epsilon→x0 extraction)
+       d. the extracted x0 becomes the next step's condition latent (iterative refinement)
+    4. VAE-decode the final x0
 
-    对于 num_steps=1 且 timestep_override 指定时，退化为单步推理（向后兼容）。
+    With num_steps=1 and timestep_override set, this reduces to single-step inference (backward compatible).
     """
     pipe = generator._get_i2i_pipe()
     device = pipe.unet.device
     dtype = next(pipe.unet.parameters()).dtype
 
-    # 1. 编码输入图到 latent space
+    # 1. encode the input image into latent space
     input_arr = np.array(input_pil, dtype=np.float32) / 255.0
     input_tensor = torch.from_numpy(input_arr).permute(2, 0, 1).unsqueeze(0)
     input_tensor = (input_tensor * 2.0 - 1.0).to(device=device, dtype=dtype)
@@ -216,7 +216,7 @@ def multi_step_x0_predict(generator, input_pil: Image.Image, prompt: str,
         z_cond = pipe.vae.encode(input_tensor).latent_dist.mode()
         z_cond = z_cond * pipe.vae.config.scaling_factor
 
-    # 2. 编码 prompt (复用)
+    # 2. encode the prompt (reused)
     text_out = generator.encode_prompts([prompt])
     prompt_embeds = text_out["prompt_embeds"].to(device=device, dtype=dtype)
     pooled = text_out.get("pooled_prompt_embeds")
@@ -230,33 +230,33 @@ def multi_step_x0_predict(generator, input_pil: Image.Image, prompt: str,
     added_cond_kwargs = {"text_embeds": pooled, "time_ids": add_time_ids}
 
     scheduler = pipe.scheduler
-    # 始终初始化 scheduler sigmas（用于 index_for_timestep 查找）
+    # always initialize the scheduler sigmas (used by the index_for_timestep lookup)
     scheduler.set_timesteps(max(num_steps, 20), device=device)
 
     generator_rng = torch.Generator(device="cpu").manual_seed(seed)
 
-    # 构建 timestep 序列
+    # build the timestep sequence
     cfg = getattr(scheduler, "config", scheduler)
     n_train = int(getattr(cfg, "num_train_timesteps", 1000))
 
     if num_steps == 1 and timestep_override is not None:
-        # 单步模式：使用指定的固定 timestep（向后兼容）
+        # single-step mode: use the given fixed timestep (backward compatible)
         timesteps_seq = [timestep_override]
     else:
-        # 多步模式：从高噪声到低噪声，覆盖 [strength * n_train, 低噪声]
+        # multi-step mode: from high to low noise, covering [strength * n_train, low noise]
         max_t = int(n_train * strength)
-        # 对数间隔：在高噪声区域采样更密集
+        # log spacing: denser sampling in the high-noise region
         timesteps_seq = list(np.linspace(max_t, 50, num_steps).astype(int))[::-1]
-        # 从高噪声开始去噪
+        # start denoising from high noise
         timesteps_seq = sorted(timesteps_seq, reverse=True)
 
-    # 迭代去噪
-    z_current = z_cond  # 初始 condition latent
+    # iterative denoising
+    z_current = z_cond  # initial condition latent
 
     for step_idx, t_val in enumerate(timesteps_seq):
         t = torch.tensor([t_val], device=device, dtype=torch.long)
 
-        # 对当前 condition latent 加噪到 timestep t_val
+        # noise the current condition latent to timestep t_val
         noise = torch.randn(z_current.shape, generator=generator_rng, device="cpu")
         noise = noise.to(device=device, dtype=dtype)
         noisy = scheduler.add_noise(z_current, noise, t)
@@ -276,13 +276,13 @@ def multi_step_x0_predict(generator, input_pil: Image.Image, prompt: str,
                 added_cond_kwargs=added_cond_kwargs,
             ).sample
 
-        # epsilon → x0 提取
+        # epsilon → x0 extraction
         x0_pred = noisy - sigma_val * eps_pred
 
-        # 下一步用提取的 x0 作为新的 condition（迭代精化）
+        # the extracted x0 becomes the new condition for the next step (iterative refinement)
         z_current = x0_pred
 
-    # VAE 解码最终 x0
+    # VAE-decode the final x0
     with torch.no_grad():
         decoded = pipe.vae.decode(z_current / pipe.vae.config.scaling_factor).sample
         decoded = (decoded / 2 + 0.5).clamp(0, 1)
@@ -298,7 +298,7 @@ def make_triptych(
     sample_name: str,
     output_dir: Path,
 ) -> Path:
-    """创建 Input | Prediction | GT 三列对比图。"""
+    """Build an Input | Prediction | GT three-column comparison figure."""
     w, h = input_img.size
     label_h = 30
     canvas_w = w * 3 + 20
@@ -326,7 +326,7 @@ def make_triptych(
 
 
 def make_grid(all_results: list[dict], output_dir: Path, title: str) -> Path | None:
-    """生成所有任务结果的汇总网格图。"""
+    """Build the summary grid of every task's results."""
     if not all_results:
         return None
 
@@ -368,14 +368,14 @@ def make_grid(all_results: list[dict], output_dir: Path, title: str) -> Path | N
 
 
 def get_val_test_samples(task_subdir: str, task_key: str):
-    """获取验证集和测试集样本（使用训练未用到的尾部数据）。
+    """Get validation and test samples (from the tail data training did not use).
 
-    训练使用了前 300 张 (max_per_task=300)，所以:
-    - 验证集: 第 300~304 张 (index 300-304)
-    - 测试集: 第 305~309 张 (index 305-309)
-    对于 generation 任务 (训练用了 3000 张):
-    - 验证集: 第 3000~3004 张
-    - 测试集: 第 3005~3009 张
+    Training used the first 300 images (max_per_task=300), so:
+    - validation set: images 300~304 (index 300-304)
+    - test set: images 305~309 (index 305-309)
+    For the generation task (training used 3000 images):
+    - validation set: images 3000~3004
+    - test set: images 3005~3009
     """
     task_dir = DATA_DIR / task_subdir
     img_dir = task_dir / "images"
@@ -390,11 +390,11 @@ def get_val_test_samples(task_subdir: str, task_key: str):
     if not all_images:
         return [], []
 
-    # v5 训练: 所有视觉任务各 300 张
+    # v5 training: 300 images for each vision task
     train_count = 300
     remaining = all_images[train_count:]
 
-    # 如果剩余不够，从全部数据末尾取
+    # if not enough remain, take from the end of all data
     if len(remaining) < VAL_SAMPLES_PER_TASK + TEST_SAMPLES_PER_TASK:
         remaining = all_images[-(VAL_SAMPLES_PER_TASK + TEST_SAMPLES_PER_TASK):]
 
@@ -404,10 +404,10 @@ def get_val_test_samples(task_subdir: str, task_key: str):
     def build_samples(img_list):
         samples = []
         for img_path in img_list:
-            # 寻找对应 target
+            # find the matching target
             tgt_path = tgt_dir / img_path.name
             if not tgt_path.exists():
-                # 尝试匹配 stem
+                # try matching the stem
                 candidates = list(tgt_dir.glob(img_path.stem + "*"))
                 tgt_path = candidates[0] if candidates else None
             samples.append({"image": img_path, "target": tgt_path})
@@ -417,7 +417,7 @@ def get_val_test_samples(task_subdir: str, task_key: str):
 
 
 def get_generation_prompt(task_dir: Path, img_name: str) -> str:
-    """从 prompts.jsonl 获取 generation 任务的 prompt。"""
+    """Get the generation task prompts from prompts.jsonl."""
     prompts_file = task_dir / "prompts.jsonl"
     if prompts_file.exists():
         with open(prompts_file) as f:
@@ -428,9 +428,9 @@ def get_generation_prompt(task_dir: Path, img_name: str) -> str:
     return "a photograph"
 
 
-# ─── 推理核心 ─────────────────────────────────────────────────────────────
+# ─── Inference core ──────────────────────────────────────────────────────
 def run_inference_on_checkpoint(ckpt_path: Path):
-    """对指定 checkpoint 执行全部任务推理并生成可视化。"""
+    """Run inference for every task on the given checkpoint and build the visualizations."""
     from open_vision_banana.inference.generator import BaseGenerator
 
     ckpt_name = ckpt_path.name
@@ -440,12 +440,12 @@ def run_inference_on_checkpoint(ckpt_path: Path):
     (viz_dir / "triptychs").mkdir(exist_ok=True)
 
     logger.info(f"\n{'='*70}")
-    logger.info(f"开始推理可视化: {ckpt_name} (step {step_num})")
+    logger.info(f"Starting inference visualization: {ckpt_name} (step {step_num})")
     logger.info(f"{'='*70}")
 
-    # 加载模型 + LoRA
+    # load the model + LoRA
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    logger.info(f"加载 SSD-1B + LoRA ({ckpt_name}) on {device}...")
+    logger.info(f"Loading SSD-1B + LoRA ({ckpt_name}) on {device}...")
     t0 = time.time()
     generator = BaseGenerator(
         model_name=MODEL_NAME,
@@ -453,7 +453,7 @@ def run_inference_on_checkpoint(ckpt_path: Path):
         device=device,
         dtype=torch.bfloat16,
     )
-    logger.info(f"模型加载完成: {time.time()-t0:.1f}s")
+    logger.info(f"Model loaded: {time.time()-t0:.1f}s")
 
     all_results = []
     metrics_summary = {}
@@ -465,10 +465,10 @@ def run_inference_on_checkpoint(ckpt_path: Path):
 
         val_samples, test_samples = get_val_test_samples(subdir, task_key)
         if not val_samples and not test_samples:
-            logger.warning(f"  [{label}] 无可用验证/测试样本，跳过")
+            logger.warning(f"  [{label}] no validation/test samples available, skipping")
             continue
 
-        logger.info(f"\n  [{label}] 验证集: {len(val_samples)} 张, 测试集: {len(test_samples)} 张")
+        logger.info(f"\n  [{label}] validation: {len(val_samples)} images, test: {len(test_samples)} images")
 
         task_dir = DATA_DIR / subdir
         task_metrics = {"val": [], "test": []}
@@ -482,30 +482,30 @@ def run_inference_on_checkpoint(ckpt_path: Path):
                 tgt_path = sample["target"]
                 sample_name = img_path.stem
 
-                # 加载原图和 GT
+                # load the image and the GT
                 input_pil = load_image(img_path, RESOLUTION)
 
-                # Generation 任务: targets 是 .txt 文本提示, 不是图片
-                # GT 就是 images/ 中的参考图, Input 用文本渲染图代替
+                # generation task: targets are .txt text prompts, not images
+                # the GT is the reference image in images/, and a rendered text image replaces the Input
                 if task_key == "generation":
-                    target_pil = input_pil  # GT = 参考生成图
+                    target_pil = input_pil  # GT = reference generated image
                 elif tgt_path and tgt_path.exists() and tgt_path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".bmp"):
                     target_pil = load_image(tgt_path, RESOLUTION)
                 else:
                     target_pil = input_pil
 
-                # 确定 prompt
+                # pick the prompt
                 if task_key == "generation":
                     task_prompt = get_generation_prompt(task_dir, img_path.name)
-                    # 如果 prompts.jsonl 没有匹配, 尝试从 .txt target 读取
+                    # if prompts.jsonl has no match, try reading the .txt target
                     if task_prompt == "a photograph" and tgt_path and tgt_path.exists() and tgt_path.suffix == ".txt":
                         task_prompt = tgt_path.read_text().strip() or "a photograph"
-                    # 为 generation 创建文本渲染的 Input 图
+                    # build a text-rendered Input image for generation
                     input_pil = _render_text_image(task_prompt, RESOLUTION)
                 else:
                     task_prompt = prompt
 
-                # 推理
+                # inference
                 try:
                     t1 = time.time()
                     with torch.no_grad():
@@ -520,7 +520,7 @@ def run_inference_on_checkpoint(ckpt_path: Path):
                             )
                             pred_pil = tensor_to_pil(result[0])
                         else:
-                            # 多步 epsilon→x0 迭代推理（或单步，取决于 MULTI_STEP_INFERENCE）
+                            # multi-step epsilon→x0 iterative inference (or single step, depending on MULTI_STEP_INFERENCE)
                             if MULTI_STEP_INFERENCE:
                                 pred_pil = multi_step_x0_predict(
                                     generator, input_pil, task_prompt,
@@ -535,7 +535,7 @@ def run_inference_on_checkpoint(ckpt_path: Path):
                                 )
                     elapsed = time.time() - t1
 
-                    # 计算任务感知指标
+                    # task-aware metrics
                     pred_arr = np.array(pred_pil, dtype=np.float32) / 255.0
                     tgt_arr = np.array(target_pil, dtype=np.float32) / 255.0
                     mse = float(np.mean((pred_arr - tgt_arr) ** 2))
@@ -619,7 +619,7 @@ def run_inference_on_checkpoint(ckpt_path: Path):
                         **task_specific,
                     })
 
-                    # 保存三列对比图
+                    # save the three-column comparison figure
                     triptych_path = make_triptych(
                         input_pil, pred_pil, target_pil,
                         label, f"{split_name}_{sample_name}",
@@ -639,12 +639,12 @@ def run_inference_on_checkpoint(ckpt_path: Path):
                     )
 
                 except Exception as e:
-                    logger.error(f"    [{split_name}] {sample_name} 推理失败: {e}")
+                    logger.error(f"    [{split_name}] {sample_name} inference failed: {e}")
                     import traceback
                     traceback.print_exc()
                     continue
 
-        # 汇总该任务的指标
+        # summarize this task's metrics
         for split_name in ["val", "test"]:
             if task_metrics[split_name]:
                 avg_r = np.mean([m["pearson_r"] for m in task_metrics[split_name]])
@@ -680,20 +680,20 @@ def run_inference_on_checkpoint(ckpt_path: Path):
                         extra_str += f", {k}={np.mean(vals):.3f}"
 
                 logger.info(
-                    f"  [{label}/{split_name}] 平均: r={avg_r:.3f}, MSE={avg_mse:.4f}, "
+                    f"  [{label}/{split_name}] mean: r={avg_r:.3f}, MSE={avg_mse:.4f}, "
                     f"MAE={avg_mae:.4f}{extra_str}"
                 )
 
-    # 生成汇总网格图
+    # build the summary grid
     if all_results:
         grid_path = make_grid(
             all_results, viz_dir,
             f"SSD-1B LoRA — {ckpt_name} | Steps={INFERENCE_STEPS} CFG={GUIDANCE_SCALE}"
         )
         if grid_path:
-            logger.info(f"\n网格图已保存: {grid_path}")
+            logger.info(f"\nGrid saved: {grid_path}")
 
-    # 保存指标 JSON
+    # save the metrics JSON
     metrics_path = viz_dir / "metrics.json"
     with open(metrics_path, "w") as f:
         json.dump({
@@ -708,20 +708,20 @@ def run_inference_on_checkpoint(ckpt_path: Path):
             },
             "metrics": metrics_summary,
         }, f, indent=2)
-    logger.info(f"指标已保存: {metrics_path}")
+    logger.info(f"Metrics saved: {metrics_path}")
 
-    # 释放模型内存
+    # free the model memory
     del generator
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
-    logger.info(f"\n✓ {ckpt_name} 可视化完成! 输出: {viz_dir}")
+    logger.info(f"\n✓ {ckpt_name} visualization done! Output: {viz_dir}")
     return viz_dir
 
 
-# ─── 监控逻辑 ─────────────────────────────────────────────────────────────
+# ─── Monitoring ──────────────────────────────────────────────────────────
 def find_checkpoints() -> list[Path]:
-    """查找所有有效的 checkpoint 目录。"""
+    """Find every valid checkpoint directory."""
     if not CKPT_DIR.exists():
         return []
     ckpts = []
@@ -732,7 +732,7 @@ def find_checkpoints() -> list[Path]:
 
 
 def get_processed_checkpoints() -> set[str]:
-    """获取已处理过的 checkpoint 名称。"""
+    """Get the names of the checkpoints already processed."""
     processed_file = OUTPUT_BASE / ".processed_checkpoints.json"
     if processed_file.exists():
         with open(processed_file) as f:
@@ -741,7 +741,7 @@ def get_processed_checkpoints() -> set[str]:
 
 
 def mark_processed(ckpt_name: str):
-    """标记 checkpoint 为已处理。"""
+    """Mark a checkpoint as processed."""
     OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
     processed_file = OUTPUT_BASE / ".processed_checkpoints.json"
     processed = get_processed_checkpoints()
@@ -751,11 +751,11 @@ def mark_processed(ckpt_name: str):
 
 
 def monitor_loop():
-    """持续监控新 checkpoint 并自动触发推理可视化。"""
-    logger.info(f"开始监控 checkpoint 目录: {CKPT_DIR}")
-    logger.info(f"轮询间隔: {POLL_INTERVAL}s")
-    logger.info(f"可视化输出: {OUTPUT_BASE}")
-    logger.info("等待训练保存 checkpoint...")
+    """Keep monitoring for new checkpoints and trigger the inference visualization automatically."""
+    logger.info(f"Monitoring checkpoint directory: {CKPT_DIR}")
+    logger.info(f"Poll interval: {POLL_INTERVAL}s")
+    logger.info(f"Visualization output: {OUTPUT_BASE}")
+    logger.info("Waiting for training to save a checkpoint...")
 
     while True:
         ckpts = find_checkpoints()
@@ -764,67 +764,67 @@ def monitor_loop():
 
         if new_ckpts:
             for ckpt in new_ckpts:
-                logger.info(f"\n检测到新 checkpoint: {ckpt.name}")
+                logger.info(f"\nNew checkpoint detected: {ckpt.name}")
                 try:
                     run_inference_on_checkpoint(ckpt)
                 except Exception as e:
-                    logger.error(f"处理 {ckpt.name} 失败: {e}")
+                    logger.error(f"Processing {ckpt.name} failed: {e}")
                     import traceback
                     traceback.print_exc()
                 finally:
-                    # 无论成功失败都标记为已处理，避免无限重试
+                    # mark it processed whether it succeeded or failed, to avoid retrying forever
                     mark_processed(ckpt.name)
         else:
-            # 静默等待（每 5 分钟打印一次状态）
+            # wait quietly (print a status every 5 minutes)
             if int(time.time()) % 300 < POLL_INTERVAL:
-                logger.info(f"等待中... 已处理 {len(processed)} 个 checkpoint")
+                logger.info(f"Waiting... {len(processed)} checkpoints processed")
 
         time.sleep(POLL_INTERVAL)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Checkpoint 监控 + 多任务推理可视化")
+    parser = argparse.ArgumentParser(description="Checkpoint monitoring + multi-task inference visualization")
     parser.add_argument("--once", action="store_true",
-                        help="只处理最新的 checkpoint 后退出")
+                        help="Process only the latest checkpoint and exit")
     parser.add_argument("--checkpoint", type=str, default=None,
-                        help="指定要处理的 checkpoint 路径")
+                        help="Path of the checkpoint to process")
     parser.add_argument("--all", action="store_true",
-                        help="处理所有未处理的 checkpoint")
+                        help="Process every unprocessed checkpoint")
     args = parser.parse_args()
 
     OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
 
     if args.checkpoint:
-        # 处理指定 checkpoint
+        # process the given checkpoint
         ckpt = Path(args.checkpoint)
         if not ckpt.exists():
-            logger.error(f"Checkpoint 不存在: {ckpt}")
+            logger.error(f"Checkpoint not found: {ckpt}")
             sys.exit(1)
         run_inference_on_checkpoint(ckpt)
         mark_processed(ckpt.name)
     elif args.once:
-        # 处理最新 checkpoint
+        # process the latest checkpoint
         ckpts = find_checkpoints()
         if not ckpts:
-            logger.info("暂无可用 checkpoint")
+            logger.info("No checkpoint available yet")
             sys.exit(0)
         latest = ckpts[-1]
-        logger.info(f"处理最新 checkpoint: {latest.name}")
+        logger.info(f"Processing the latest checkpoint: {latest.name}")
         run_inference_on_checkpoint(latest)
         mark_processed(latest.name)
     elif args.all:
-        # 处理所有未处理的
+        # process every unprocessed one
         ckpts = find_checkpoints()
         processed = get_processed_checkpoints()
         new_ckpts = [c for c in ckpts if c.name not in processed]
         if not new_ckpts:
-            logger.info("所有 checkpoint 已处理完毕")
+            logger.info("Every checkpoint has been processed")
             sys.exit(0)
         for ckpt in new_ckpts:
             run_inference_on_checkpoint(ckpt)
             mark_processed(ckpt.name)
     else:
-        # 持续监控模式
+        # keep-monitoring mode
         monitor_loop()
 
 

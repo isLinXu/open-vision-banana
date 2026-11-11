@@ -1,6 +1,6 @@
-# Open-Vision-Banana -- Sana_600M_512px 三任务续训 (depth + normal + seg)
+# Open-Vision-Banana: Sana_600M_512px three-task continued training (depth + normal + seg)
 #
-# 基于 checkpoint-16000_best (val_loss=0.0413) 续训，添加 seg 任务
+# Continues from checkpoint-16000_best (val_loss=0.0413) and adds the seg task
 #
 # Usage:
 #   export OPEN_VISION_BANANA_MODEL_PATH=Efficient-Large-Model/Sana_600M_512px_diffusers

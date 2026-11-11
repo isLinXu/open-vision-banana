@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Janus-1.3B continuous RGB v7 — Two-stage: Depth Prediction + Colormap.
 
-v3~v6 结论：直接预测 RGB 效果差，因为 SigLIP 提取语义特征而非几何特征
-v7 方案：
-  1. 不直接预测 RGB，而是预测 relative depth（单通道 [0,1]）
-  2. 训练时：target_rgb → rgb_to_depth → normalized_depth → L1 loss
-  3. 推理时：predicted_depth → depth_to_rgb (cube-edge colormap) → RGB
-  4. 优势：深度估计比 RGB 回归简单得多，colormap 是确定性可逆的
+v3~v6 finding: predicting RGB directly works poorly, because SigLIP extracts semantic rather than geometric features
+v7 approach:
+  1. Predict relative depth (one channel in [0,1]) instead of RGB
+  2. Training: target_rgb → rgb_to_depth → normalized_depth → L1 loss
+  3. Inference: predicted_depth → depth_to_rgb (cube-edge colormap) → RGB
+  4. Advantage: depth estimation is much easier than RGB regression, and the colormap is deterministic and invertible
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v7.py
 """
 from __future__ import annotations
@@ -60,7 +60,7 @@ VAL_EVERY = int(os.environ.get("VB_VAL_EVERY", "50"))
 GRAD_CLIP = float(os.environ.get("VB_GRAD_CLIP", "1.0"))
 AUGMENT_FLIP = os.environ.get("VB_AUGMENT_FLIP", "1") == "1"
 
-# v7: 解冻 vision model 最后 N 层（比 v5 的 4 层多，比 v6 的 24 层少）
+# v7: unfreeze the last N layers of the vision model (more than v5's 4, fewer than v6's 24)
 UNFREEZE_VISION_BLOCKS = int(os.environ.get("VB_UNFREEZE_BLOCKS", "8"))
 
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "janus_continuous_rgb_v7")))
@@ -75,9 +75,9 @@ TASK_PROMPTS = {
 
 
 class DepthDecoder(nn.Module):
-    """轻量级 depth decoder：SigLIP features → 单通道 normalized depth.
+    """Lightweight depth decoder: SigLIP features → one-channel normalized depth.
 
-    架构：
+    Architecture:
       stem:     [B, 1024, 24, 24] → [B, 256, 24, 24]
       up1+PS:   → [B, 128, 48, 48]
       up2+PS:   → [B, 64, 96, 96]
@@ -163,7 +163,7 @@ def _augment_flip(image: torch.Tensor, target_rgb: torch.Tensor):
 
 
 def _unfreeze_vision_blocks(vision_model, n_blocks: int):
-    """解冻 vision model 最后 N 个 transformer block."""
+    """Unfreeze the last N transformer blocks of the vision model."""
     vision_model.requires_grad_(False)
     if hasattr(vision_model, "vision_tower"):
         tower = vision_model.vision_tower
@@ -193,7 +193,7 @@ def main() -> None:
     print(f"[cfg] out={OUT}")
     print(f"[cfg] *** v7: predict depth + colormap (two-stage) ***")
 
-    # 1) 加载 Janus ──────────────────────────────────────────────────
+    # 1) load Janus ────────────────────────────────────────────────────
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
                     janus_vlm.GenVisionConfig, janus_vlm.GenAlignerConfig,
@@ -220,10 +220,10 @@ def main() -> None:
     n_params = sum(p.numel() for p in decoder.parameters())
     print(f"[decoder] DepthDecoder, params={n_params:,}")
 
-    # 3) 解冻 vision blocks ─────────────────────────────────────────
+    # 3) unfreeze the vision blocks ────────────────────────────────────
     _unfreeze_vision_blocks(model.vision_model, UNFREEZE_VISION_BLOCKS)
 
-    # 4) LoRA on language_model（保持与 v3~v6 一致）──────────────────
+    # 4) LoRA on language_model (same as v3~v6) ────────────────────────
     from peft import LoraConfig, get_peft_model
     lora_cfg = LoraConfig(
         r=RANK, lora_alpha=ALPHA, lora_dropout=0.05,
@@ -238,7 +238,7 @@ def main() -> None:
     n_lora = sum(p.numel() for p in model.language_model.parameters() if p.requires_grad)
     print(f"[lora] rank={RANK}  alpha={ALPHA}  trainable={n_lora:,}")
 
-    # 5) 数据集 ─────────────────────────────────────────────────────
+    # 5) dataset ───────────────────────────────────────────────────────
     all_train_datasets, all_val_datasets = [], []
     for task in TASKS:
         data_path = Path(DATA_ROOT) / task
@@ -264,9 +264,9 @@ def main() -> None:
         collate_fn=_collate_fn, drop_last=True)
     print(f"[data] combined train={len(train_combined)}  val={len(val_combined)}")
 
-    # 6) Depth mapper（用于 RGB ↔ depth 转换）──────────────────────
+    # 6) depth mapper (for RGB ↔ depth conversion) ─────────────────────
     depth_mapper = DepthRGBMapper()  # cube_edge colormap
-    # 将 mapper 的 keypoints 移到 GPU 用于批量转换
+    # move the mapper keypoints to the GPU for batched conversion
     _keypoints = depth_mapper.colormap_keypoints.to(device)
 
     def target_rgb_to_normalized_depth(rgb_tensor: torch.Tensor) -> torch.Tensor:
@@ -277,7 +277,7 @@ def main() -> None:
         """predicted normalized depth [B, 1, H, W] in [0,1] → RGB [B, 3, H, W] in [0,1]."""
         return depth_mapper.normalized_to_rgb(depth_tensor)
 
-    # 7) 优化器 ─────────────────────────────────────────────────────
+    # 7) optimizer ─────────────────────────────────────────────────────
     trainable_params = [
         {"params": [p for p in decoder.parameters() if p.requires_grad], "lr": LR},
         {"params": [p for p in model.vision_model.parameters() if p.requires_grad], "lr": VISION_LR},
@@ -289,7 +289,7 @@ def main() -> None:
     optimizer = torch.optim.AdamW(trainable_params, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=STEPS, eta_min=LR * 0.01)
 
-    # 8) 训练循环 ───────────────────────────────────────────────────
+    # 8) training loop ─────────────────────────────────────────────────
     best_val_loss = float("inf")
     patience_counter = 0
     global_step = 0
@@ -308,7 +308,7 @@ def main() -> None:
             if AUGMENT_FLIP:
                 image, target_rgb = _augment_flip(image, target_rgb)
 
-            # ★ v7 核心：将 target RGB 转换为 normalized depth
+            # ★ v7 core: convert the target RGB to normalized depth
             with torch.no_grad():
                 target_depth = target_rgb_to_normalized_depth(target_rgb)  # [B, 1, H, W]
 
@@ -363,7 +363,7 @@ def main() -> None:
 
                 val_loss = sum(val_losses) / len(val_losses)
 
-                # 也计算 RGB-space loss 用于对比
+                # also compute the RGB-space loss for comparison
                 val_pred_rgb = predicted_depth_to_rgb(pred_depth)
                 val_rgb_mae = F.l1_loss(val_pred_rgb, target_rgb).item()
 
@@ -372,11 +372,11 @@ def main() -> None:
                     best_val_loss = val_loss
                     patience_counter = 0
                     status = " *BEST*"
-                    # 保存 checkpoint
+                    # save the checkpoint
                     ckpt_dir = OUT / "ckpt_best"
                     ckpt_dir.mkdir(exist_ok=True)
                     torch.save(decoder.state_dict(), ckpt_dir / "decoder.pt")
-                    # 保存 vision tail
+                    # save the vision tail
                     vision_state = {}
                     for name, param in model.vision_model.named_parameters():
                         if param.requires_grad:
@@ -399,18 +399,18 @@ def main() -> None:
                     print(f"[early stop] patience={PATIENCE} reached at step {global_step}")
                     break
 
-    # 9) 最终评估 ───────────────────────────────────────────────────
+    # 9) final evaluation ──────────────────────────────────────────────
     print(f"\n[eval] running final evaluation on val set...")
     decoder.eval()
     model.eval()
 
-    # 加载 best checkpoint
+    # load the best checkpoint
     ckpt_path = OUT / "ckpt_best" / "decoder.pt"
     if ckpt_path.exists():
         decoder.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
         print(f"[eval] loaded best decoder from step with val_loss={best_val_loss:.4f}")
 
-    # 加载 vision tail
+    # load the vision tail
     vision_tail_path = OUT / "ckpt_best" / "vision_tail.pt"
     if vision_tail_path.exists():
         vision_state = torch.load(vision_tail_path, map_location="cpu", weights_only=True)
@@ -462,7 +462,7 @@ def main() -> None:
               f"depth_mae={depth_mae:.4f}  psnr={psnr:.1f}dB  "
               f"pred_std={pred_std:.4f}  tgt_std={tgt_std:.4f}")
 
-        # 保存面板图: Input | Pred | Target
+        # save the panel figure: Input | Pred | Target
         pil_in = Image.fromarray(
             (inp_tensor.permute(1, 2, 0).clamp(-1, 1) * 0.5 + 0.5).mul(255).byte().numpy()
         )
@@ -476,7 +476,7 @@ def main() -> None:
         ).resize((RES, RES)), (RES * 2, 0))
         panel.save(eval_dir / f"eval_depth_{idx_i:02d}.png")
 
-    # 汇总
+    # summary
     avg_mae = sum(m["rgb_mae"] for m in all_metrics) / len(all_metrics)
     avg_depth_mae = sum(m["depth_mae"] for m in all_metrics) / len(all_metrics)
     avg_psnr = sum(m["psnr"] for m in all_metrics) / len(all_metrics)

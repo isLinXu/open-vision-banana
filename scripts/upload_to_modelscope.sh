@@ -21,31 +21,31 @@ fi
 EXTRA=("$@")
 
 if [ ! -d "$MERGED" ]; then
-  echo "找不到合并产物目录: $MERGED" >&2
+  echo "Merged output directory not found: $MERGED" >&2
   exit 1
 fi
 
 REPO_NAME="$(basename "$MERGED")"
 
-echo "合并产物: $MERGED"
-echo "将上传到: https://www.modelscope.cn/models/<你的用户名>/$REPO_NAME （默认私有）"
+echo "Merged output: $MERGED"
+echo "Will upload to: https://www.modelscope.cn/models/<your username>/$REPO_NAME (private by default)"
 echo
-printf 'ModelScope 用户名/组织名: '
+printf 'ModelScope username/organization: '
 read -r OWNER
 if [ -z "${OWNER:-}" ]; then
-  echo "必须填写用户名，已退出。" >&2
+  echo "A username is required, exiting." >&2
   exit 1
 fi
 
 PY="${PYTHON:-python3}"
 
 if ! "$PY" -c 'import modelscope' >/dev/null 2>&1; then
-  echo "未检测到 modelscope，正在安装（仅安装 SDK，不改动 torch 等训练依赖）..."
+  echo "modelscope not found, installing it (SDK only, training dependencies such as torch are untouched)..."
   "$PY" -m pip install -U modelscope
 fi
 
 echo
-echo "== 第一步：本地校验（不联网、不认证）=="
+echo "== Step 1: local check (no network, no authentication) =="
 "$PY" -u "$ROOT/scripts/publish_to_hub.py" \
   --checkpoint "$MERGED" \
   --merged-pipeline \
@@ -54,15 +54,15 @@ echo "== 第一步：本地校验（不联网、不认证）=="
   --dry-run
 
 echo
-printf '文件清单无误则开始正式上传，输入 yes 继续: '
+printf 'If the file list looks right, type yes to start the upload: '
 read -r CONFIRM
 if [ "$CONFIRM" != "yes" ]; then
-  echo "已取消，未上传任何内容。"
+  echo "Cancelled, nothing was uploaded."
   exit 0
 fi
 
 echo
-echo "== 第二步：正式上传（接下来请输入隐藏 token）=="
+echo "== Step 2: upload (enter the hidden token next) =="
 "$PY" -u "$ROOT/scripts/publish_to_hub.py" \
   --checkpoint "$MERGED" \
   --merged-pipeline \
@@ -71,5 +71,5 @@ echo "== 第二步：正式上传（接下来请输入隐藏 token）=="
   ${EXTRA[@]+"${EXTRA[@]}"}
 
 echo
-echo "完成。若建库时报 license 错误：去 modelscope.cn 手动创建私有模型库（许可证选「其他」），"
-echo "然后执行 bash scripts/upload_to_modelscope.sh --no-create 重跑，已上传文件会自动跳过。"
+echo "Done. If creating the repo fails with a license error, create a private model repo by hand on modelscope.cn (license: Other),"
+echo "then rerun bash scripts/upload_to_modelscope.sh --no-create; files already uploaded are skipped."

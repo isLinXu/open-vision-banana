@@ -1,7 +1,7 @@
-# FLUX.1-schnell 深度估计训练配置
+# FLUX.1-schnell depth estimation training config
 # ================================
-# 符合 vision-banana 论文要求：纯深度估计数据集训练
-# 数据集: data/vb_depth_pseudo_5k (5000 样本)
+# Follows the vision-banana paper: trained on depth estimation data only
+# Dataset: data/vb_depth_pseudo_5k (5000 samples)
 
 model:
   name: "black-forest-labs/FLUX.1-schnell"
@@ -45,14 +45,14 @@ training:
   early_stopping_min_delta: 0.0
 
 data:
-  vision_ratio: 1.0          # 100% 视觉数据，不混合生成数据
+  vision_ratio: 1.0          # 100% vision data, no generation data mixed in
   generation_ratio: 0.0
   resolution: 512
   batch_size: 1
   num_workers: 0
   augmentation: false
   val_split: 0.05
-  # generation_path 不设置，纯深度估计训练
+  # generation_path is not set: depth-only training
 
   tasks:
     depth_estimation:

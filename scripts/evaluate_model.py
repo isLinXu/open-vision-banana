@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 """
-Open-Vision-Banana 模型评估脚本 (evaluate_model.py)
+Open-Vision-Banana model evaluation script (evaluate_model.py)
 
-功能:
-    - 对训练后的 Vision Banana 模型在所有支持的 vision task 上进行端到端评估
-    - 支持 resume: 评估中断后可从断点恢复, 避免重复推理
-    - 支持 DDP 分布式评估 (torchrun 启动)
-    - 支持逐 batch error handling, 可配置遇到异常时跳过继续
-    - 支持可视化结果导出、SOTA baseline 对比、W&B 自动上传
+Features:
+    - End-to-end evaluation of a trained Vision Banana model on every supported vision task
+    - Resume: an interrupted evaluation continues from its checkpoint without repeating inference
+    - DDP distributed evaluation (launched with torchrun)
+    - Per-batch error handling, optionally skipping a failing batch and continuing
+    - Visualization export, SOTA baseline comparison, automatic W&B upload
 
 Usage:
-    # 单卡评估 depth
+    # single-GPU depth evaluation
     python scripts/evaluate_model.py --task depth --data-path /data/nyu --lora-path output/checkpoint-best
 
-    # 多卡分布式评估 (DDP)
+    # multi-GPU distributed evaluation (DDP)
     torchrun --nproc_per_node=4 scripts/evaluate_model.py --task semantic --data-path /data/cityscapes --ddp
 
-    # 断点续评 (resume)
+    # resume an interrupted evaluation
     python scripts/evaluate_model.py --task normal --data-path /data/scannet --resume-state output/eval_normal_state.json
 
-    # 限制 batch 数快速 smoke test
+    # quick smoke test with a limited number of batches
     python scripts/evaluate_model.py --task depth --data-path /data/nyu --max-batches 10 --compare-sota
 """
 
@@ -39,7 +39,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
 # ------------------------------------------------------------------
-# 日志配置
+# Logging setup
 # ------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
@@ -49,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
-# Task 常量与映射
+# Task constants and mappings
 # ------------------------------------------------------------------
 SUPPORTED_TASKS: list[str] = [
     "depth",
@@ -65,7 +65,7 @@ SUPPORTED_TASKS: list[str] = [
     "generation_preservation",
 ]
 
-# CLI task name → build_dataset registry key 的映射
+# Mapping from CLI task name to build_dataset registry key
 TASK_TO_DATASET_KEY: dict[str, str] = {
     "object_detection": "coco_detection",
     "flow": "sintel",
@@ -77,163 +77,163 @@ TASK_TO_DATASET_KEY: dict[str, str] = {
 
 
 def parse_args() -> argparse.Namespace:
-    """解析命令行参数并返回 Namespace."""
+    """Parse the command-line arguments and return the Namespace."""
     parser = argparse.ArgumentParser(
         description="Evaluate Vision Banana model on vision tasks",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
+Examples:
   %(prog)s --task depth --data-path ./data/nyu --lora-path ./output/checkpoint-best
   %(prog)s --task semantic --data-path ./data/cityscapes --num-classes 19 --ddp
   %(prog)s --task normal --data-path ./data/scannet --resume-state ./eval_state.json
         """,
     )
 
-    # 基础配置
+    # basic settings
     parser.add_argument(
         "--task",
         type=str,
         required=True,
         choices=SUPPORTED_TASKS,
-        help="评估任务类型",
+        help="Evaluation task",
     )
     parser.add_argument(
         "--data-path",
         type=str,
         required=True,
-        help="评估数据集根目录路径",
+        help="Root directory of the evaluation dataset",
     )
     parser.add_argument(
         "--lora-path",
         type=str,
         default=None,
-        help="训练好的 LoRA checkpoint 路径 (目录或 hf:repo_id)",
+        help="Trained LoRA checkpoint path (directory or hf:repo_id)",
     )
     parser.add_argument(
         "--model-name",
         type=str,
         default="black-forest-labs/FLUX.1-schnell",
-        help="Base FLUX.1 model name (默认 FLUX.1-schnell)",
+        help="Base FLUX.1 model name (default FLUX.1-schnell)",
     )
     parser.add_argument(
         "--num-classes",
         type=int,
         default=19,
-        help="Semantic segmentation 的类别数 (默认 19, Cityscapes)",
+        help="Number of classes for semantic segmentation (default 19, Cityscapes)",
     )
 
-    # 推理超参
+    # inference hyperparameters
     parser.add_argument(
         "--batch-size",
         type=int,
         default=4,
-        help="推理 batch size (默认 4)",
+        help="Inference batch size (default 4)",
     )
     parser.add_argument(
         "--resolution",
         type=int,
         default=512,
-        help="输入图像分辨率 (默认 512)",
+        help="Input image resolution (default 512)",
     )
     parser.add_argument(
         "--num-inference-steps",
         type=int,
         default=1,
-        help="Diffusion denoising steps (默认 1, schnell 推荐)",
+        help="Diffusion denoising steps (default 1, recommended for schnell)",
     )
     parser.add_argument(
         "--strength",
         type=float,
         default=0.85,
-        help="img2img noise strength, 越低越接近输入图 (默认 0.85)",
+        help="img2img noise strength; lower stays closer to the input image (default 0.85)",
     )
     parser.add_argument(
         "--max-batches",
         type=int,
         default=None,
-        help="限制最大评估 batch 数量 (用于 smoke test)",
+        help="Maximum number of batches to evaluate (for smoke tests)",
     )
     parser.add_argument(
         "--device",
         type=str,
         default=None,
-        help="计算设备 (cuda / mps / cpu / auto)",
+        help="Compute device (cuda / mps / cpu / auto)",
     )
     parser.add_argument(
         "--dtype",
         type=str,
         default="bfloat16",
         choices=["float32", "float16", "bfloat16"],
-        help="模型 weight dtype (默认 bfloat16)",
+        help="Model weight dtype (default bfloat16)",
     )
 
-    # 输出配置
+    # output settings
     parser.add_argument(
         "--output-json",
         type=str,
         default=None,
-        help="评估 metrics 输出 JSON 文件路径",
+        help="Output JSON path for the evaluation metrics",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default="output/evaluation",
-        help="可视化结果与 state 文件保存目录 (默认 output/evaluation)",
+        help="Directory for visualizations and the state file (default output/evaluation)",
     )
     parser.add_argument(
         "--save-visualizations",
         action="store_true",
-        help="是否保存 prediction vs ground-truth 可视化图像",
+        help="Save prediction vs ground-truth visualizations",
     )
     parser.add_argument(
         "--viz-freq",
         type=int,
         default=50,
-        help="每 N 个 batch 保存一次可视化 (默认 50)",
+        help="Save a visualization every N batches (default 50)",
     )
     parser.add_argument(
         "--compare-sota",
         action="store_true",
-        help="是否打印与 SOTA baseline 的对比表",
+        help="Print a comparison table against SOTA baselines",
     )
 
-    # Resume 与容错
+    # resume and fault tolerance
     parser.add_argument(
         "--resume-state",
         type=str,
         default=None,
-        help="Resume state JSON 路径; 若存在则跳过已评估 batch",
+        help="Resume state JSON path; batches already evaluated are skipped if it exists",
     )
     parser.add_argument(
         "--continue-on-error",
         action="store_true",
-        help="单个 batch 出错时跳过继续, 而非直接退出",
+        help="Skip a failing batch and continue instead of exiting",
     )
     parser.add_argument(
         "--max-errors",
         type=int,
         default=10,
-        help="允许的最大连续错误次数 (默认 10)",
+        help="Maximum number of consecutive errors allowed (default 10)",
     )
 
-    # 分布式
+    # distributed
     parser.add_argument(
         "--ddp",
         action="store_true",
-        help="启用 DDP 分布式评估 (需用 torchrun 启动)",
+        help="Enable DDP distributed evaluation (launch with torchrun)",
     )
     parser.add_argument(
         "--num-workers",
         type=int,
         default=0,
-        help="DataLoader num_workers (默认 0, MPS/CPU 建议保持 0)",
+        help="DataLoader num_workers (default 0; keep 0 on MPS/CPU)",
     )
 
     # W&B
     parser.add_argument(
         "--wandb",
         action="store_true",
-        help="启用 Weights & Biases 自动记录 metrics",
+        help="Log metrics to Weights & Biases automatically",
     )
     parser.add_argument(
         "--wandb-project",
@@ -245,14 +245,14 @@ def parse_args() -> argparse.Namespace:
         "--wandb-run-name",
         type=str,
         default=None,
-        help="W&B run name (默认自动生成)",
+        help="W&B run name (generated automatically by default)",
     )
 
     return parser.parse_args()
 
 
 def _resolve_device(device_arg: str | None) -> str:
-    """根据参数与环境自动选择最优 device."""
+    """Pick the best device from the arguments and the environment."""
     if device_arg and device_arg != "auto":
         return device_arg
     if torch.cuda.is_available():
@@ -263,7 +263,7 @@ def _resolve_device(device_arg: str | None) -> str:
 
 
 def _resolve_dtype(dtype_str: str) -> torch.dtype:
-    """将字符串 dtype 映射为 torch.dtype."""
+    """Map a dtype string to a torch.dtype."""
     mapping = {
         "float32": torch.float32,
         "float16": torch.float16,
@@ -273,29 +273,29 @@ def _resolve_dtype(dtype_str: str) -> torch.dtype:
 
 
 def _load_state(state_path: str | None) -> dict[str, Any]:
-    """加载 resume state; 若文件不存在则返回空状态."""
+    """Load the resume state; return an empty state if the file does not exist."""
     if state_path is None:
         return {}
     path = Path(state_path)
     if not path.exists():
-        logger.info("Resume state 文件不存在, 将从头开始评估: %s", path)
+        logger.info("Resume state file not found, evaluating from the start: %s", path)
         return {}
     try:
         with open(path, encoding="utf-8") as f:
             state = json.load(f)
         logger.info(
-            "Loaded resume state: 已完成 %d / %d batches",
+            "Loaded resume state: %d / %d batches done",
             state.get("completed_batches", 0),
             state.get("total_batches", 0),
         )
         return state
     except Exception as exc:
-        logger.warning("读取 resume state 失败 (%s), 将从头开始", exc)
+        logger.warning("Failed to read the resume state (%s), starting from scratch", exc)
         return {}
 
 
 def _save_state(state: dict[str, Any], state_path: str | None) -> None:
-    """将当前评估状态持久化到磁盘, 用于 resume."""
+    """Persist the current evaluation state to disk for resume."""
     if state_path is None:
         return
     path = Path(state_path)
@@ -305,10 +305,10 @@ def _save_state(state: dict[str, Any], state_path: str | None) -> None:
 
 
 def _advance_dataloader(dataloader: DataLoader, skip_batches: int, device: str) -> None:
-    """通过空转 iterator 跳过已评估的 batch (resume 场景)."""
+    """Skip already evaluated batches by draining the iterator (resume)."""
     if skip_batches <= 0:
         return
-    logger.info("Resuming: 跳过前 %d 个已评估 batch …", skip_batches)
+    logger.info("Resuming: skipping the first %d evaluated batches …", skip_batches)
     iterator = iter(dataloader)
     skipped = 0
     for _ in range(skip_batches):
@@ -316,9 +316,9 @@ def _advance_dataloader(dataloader: DataLoader, skip_batches: int, device: str) 
             next(iterator)
             skipped += 1
         except StopIteration:
-            logger.warning("DataLoader 在 skip 过程中提前结束 (skipped %d / %d)", skipped, skip_batches)
+            logger.warning("DataLoader ended early while skipping (skipped %d / %d)", skipped, skip_batches)
             break
-    logger.info("实际跳过 %d 个 batch", skipped)
+    logger.info("Skipped %d batches", skipped)
 
 
 def _save_visualization(
@@ -329,14 +329,14 @@ def _save_visualization(
     task: str,
     sample_idx: int = 0,
 ) -> None:
-    """将单张 prediction 与 ground truth 并排保存为 PNG."""
+    """Save one prediction and its ground truth side by side as a PNG."""
     try:
         import numpy as np
         from PIL import Image
 
         pred = pred_rgb[sample_idx].detach().cpu().clamp(0, 1).permute(1, 2, 0).numpy()
         gt = gt_rgb[sample_idx].detach().cpu().clamp(0, 1).permute(1, 2, 0).numpy()
-        # 拼接: pred | gt
+        # concatenate: pred | gt
         canvas = np.concatenate([pred, gt], axis=1)
         canvas = (canvas * 255).astype(np.uint8)
         img = Image.fromarray(canvas)
@@ -346,11 +346,11 @@ def _save_visualization(
         save_path = viz_dir / f"batch_{batch_idx:06d}_sample_{sample_idx}.png"
         img.save(save_path)
     except Exception as exc:
-        logger.warning("可视化保存失败 (batch %d): %s", batch_idx, exc)
+        logger.warning("Failed to save the visualization (batch %d): %s", batch_idx, exc)
 
 
 def _init_wandb(args: argparse.Namespace, is_main: bool) -> Any:
-    """初始化 W&B logger (仅在主进程启用)."""
+    """Initialize the W&B logger (main process only)."""
     if not args.wandb or not is_main:
         return None
     try:
@@ -374,29 +374,29 @@ def _init_wandb(args: argparse.Namespace, is_main: bool) -> Any:
         logger.info("W&B run initialized: %s", run.name)
         return run
     except ImportError:
-        logger.warning("wandb 未安装, 跳过 W&B 记录")
+        logger.warning("wandb is not installed, skipping W&B logging")
         return None
     except Exception as exc:
-        logger.warning("W&B 初始化失败: %s", exc)
+        logger.warning("W&B initialization failed: %s", exc)
         return None
 
 
 def _log_to_wandb(wandb_run: Any, metrics: dict[str, float], step: int | None = None) -> None:
-    """向 W&B 上传 scalar metrics."""
+    """Upload scalar metrics to W&B."""
     if wandb_run is None:
         return
     try:
         import wandb
 
-        # 过滤非 scalar 值
+        # drop non-scalar values
         scalar_metrics = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
         wandb.log(scalar_metrics, step=step)
     except Exception as exc:
-        logger.debug("W&B log 失败 (非致命): %s", exc)
+        logger.debug("W&B log failed (non-fatal): %s", exc)
 
 
 def _print_metrics(metrics: dict[str, Any], task: str) -> None:
-    """在终端打印格式化后的 metrics 表格."""
+    """Print the formatted metrics table to the terminal."""
     logger.info("=" * 60)
     logger.info("Evaluation Results — Task: %s", task)
     logger.info("=" * 60)
@@ -418,10 +418,10 @@ def _print_metrics(metrics: dict[str, Any], task: str) -> None:
 
 
 def main() -> int:
-    """主入口函数, 返回进程退出码 (0 为成功)."""
+    """Main entry point; returns the process exit code (0 on success)."""
     args = parse_args()
 
-    # ── DDP 初始化 ────────────────────────────────────────────────────
+    # ── DDP setup ─────────────────────────────────────────────────────
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     use_ddp = args.ddp and torch.cuda.is_available()
 
@@ -450,7 +450,7 @@ def main() -> int:
         logger.info("DDP         : %s", f"enabled (world_size={world_size})" if use_ddp else "disabled")
         logger.info("Resume      : %s", args.resume_state or "no")
 
-    # ── 加载模型 ──────────────────────────────────────────────────────
+    # ── Load the model ────────────────────────────────────────────────
     dtype = _resolve_dtype(args.dtype)
 
     if args.lora_path:
@@ -466,12 +466,12 @@ def main() -> int:
                 dtype=dtype,
             )
         except Exception as exc:
-            logger.error("模型加载失败: %s", exc)
+            logger.error("Model loading failed: %s", exc)
             traceback.print_exc()
             return 1
     else:
         if is_main:
-            logger.warning("未提供 --lora-path, 使用 base FLUX.1 进行 zero-shot 评估")
+            logger.warning("No --lora-path given, running a zero-shot evaluation of base FLUX.1")
         from open_vision_banana.inference.pipeline import VisionBanana
 
         try:
@@ -481,11 +481,11 @@ def main() -> int:
                 dtype=dtype,
             )
         except Exception as exc:
-            logger.error("模型加载失败: %s", exc)
+            logger.error("Model loading failed: %s", exc)
             traceback.print_exc()
             return 1
 
-    # ── 构建 Dataset & DataLoader ─────────────────────────────────────
+    # ── Build the Dataset & DataLoader ────────────────────────────────
     from open_vision_banana.data import build_dataset
 
     dataset_task = TASK_TO_DATASET_KEY.get(args.task, args.task)
@@ -497,13 +497,13 @@ def main() -> int:
             resolution=args.resolution,
         )
     except Exception as exc:
-        logger.error("Dataset 构建失败: %s", exc)
+        logger.error("Dataset construction failed: %s", exc)
         traceback.print_exc()
         return 1
 
     if len(dataset) == 0:
         if is_main:
-            logger.error("Dataset 为空, 请检查 --data-path: %s", args.data_path)
+            logger.error("The dataset is empty, check --data-path: %s", args.data_path)
         return 1
 
     if is_main:
@@ -516,7 +516,7 @@ def main() -> int:
     num_workers = args.num_workers
     if device in ("mps", "cpu") and num_workers > 0:
         if is_main:
-            logger.warning("%s 设备下 num_workers>0 可能导致 hang, 强制设为 0", device)
+            logger.warning("num_workers>0 may hang on %s, forcing it to 0", device)
         num_workers = 0
 
     dataloader = DataLoader(
@@ -529,17 +529,17 @@ def main() -> int:
     )
     total_batches = len(dataloader)
 
-    # ── Resume 状态恢复 ───────────────────────────────────────────────
+    # ── Restore the resume state ──────────────────────────────────────
     state: dict[str, Any] = {}
     state_path = args.resume_state
     if state_path is None:
-        # 自动生成 state 文件路径
+        # generate the state file path automatically
         state_path = str(Path(args.output_dir) / f"eval_{args.task}_state.json")
 
     if is_main:
         state = _load_state(state_path)
     if use_ddp:
-        # 广播 state 到所有 rank
+        # broadcast the state to every rank
         state_list = [state] if is_main else [None]
         torch.distributed.broadcast_object_list(state_list, src=0)
         state = state_list[0] if state_list[0] is not None else {}
@@ -550,7 +550,7 @@ def main() -> int:
     if skip_batches > 0:
         _advance_dataloader(dataloader, skip_batches, device)
 
-    # ── Evaluator 初始化 ──────────────────────────────────────────────
+    # ── Evaluator setup ───────────────────────────────────────────────
     from open_vision_banana.evaluation.evaluator import VisionEvaluator
 
     class_color_map = None
@@ -560,30 +560,30 @@ def main() -> int:
 
     evaluator = VisionEvaluator(model, device=device)
 
-    # ── W&B 初始化 ────────────────────────────────────────────────────
+    # ── W&B setup ─────────────────────────────────────────────────────
     wandb_run = _init_wandb(args, is_main)
 
-    # ── 主评估循环 ────────────────────────────────────────────────────
+    # ── Main evaluation loop ──────────────────────────────────────────
     if is_main:
-        logger.info("开始评估, total_batches=%d, 已跳过 %d", total_batches, skip_batches)
+        logger.info("Starting evaluation, total_batches=%d, skipped %d", total_batches, skip_batches)
 
     all_metrics: dict[str, Any] = {}
     n_batches_evaluated = 0
     n_errors = 0
     start_time = time.time()
 
-    # 用于 resume 的实时状态
+    # live state for resume
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for batch_idx, batch in enumerate(dataloader, start=skip_batches):
-        # max_batches 限制
+        # max_batches limit
         if args.max_batches is not None and batch_idx >= (skip_batches + args.max_batches):
             if is_main:
-                logger.info("达到 --max-batches 限制, 提前结束")
+                logger.info("Reached the --max-batches limit, stopping early")
             break
 
-        # DDP 下确保各 rank 进度一致 (barrier 可选, 这里用 iterator 同步)
+        # under DDP keep the ranks in step (a barrier is optional; the iterator synchronizes here)
         if batch_idx in completed_batches:
             continue
 
@@ -591,7 +591,7 @@ def main() -> int:
             image = batch["image"].to(device)
             target_rgb = batch["target_rgb"].to(device)
 
-            # 构造额外 kwargs
+            # build the extra kwargs
             eval_kwargs: dict[str, Any] = {
                 "num_inference_steps": args.num_inference_steps,
                 "strength": args.strength,
@@ -603,7 +603,7 @@ def main() -> int:
             if "object_name" in batch:
                 eval_kwargs["object_name"] = batch["object_name"]
 
-            # 运行 evaluate_batch (单 batch 模式, 更细粒度)
+            # run evaluate_batch (single-batch mode, finer grained)
             batch_metrics = evaluator.evaluate_batch(
                 image=image,
                 target_rgb=target_rgb,
@@ -611,7 +611,7 @@ def main() -> int:
                 **eval_kwargs,
             )
 
-            # 累加 metrics
+            # accumulate metrics
             for k, v in batch_metrics.items():
                 if isinstance(v, (int, float)):
                     all_metrics[k] = all_metrics.get(k, 0.0) + v
@@ -627,16 +627,16 @@ def main() -> int:
                             all_metrics[k][sub_k] = all_metrics[k].get(sub_k, 0.0) + sub_v
 
             n_batches_evaluated += 1
-            n_errors = 0  # 重置错误计数
+            n_errors = 0  # reset the error count
             completed_batches.add(batch_idx)
 
-            # 可视化导出
+            # visualization export
             if args.save_visualizations and is_main and (batch_idx % args.viz_freq == 0):
-                # 需要重新推理获取 pred_rgb (evaluate_batch 未返回 rgb)
-                # 这里用 predict 做一次快速前向, 仅用于可视化
+                # pred_rgb needs another inference (evaluate_batch does not return the rgb)
+                # a quick forward with predict, used only for the visualization
                 with torch.no_grad():
                     predict_kwargs = {"task": args.task, **eval_kwargs}
-                    # 移除 evaluate_batch 不接受的 key
+                    # drop the keys evaluate_batch does not accept
                     predict_kwargs.pop("class_color_map", None)
                     if args.task == "semantic" and class_color_map is not None:
                         predict_kwargs["class_color_map"] = class_color_map
@@ -644,7 +644,7 @@ def main() -> int:
                     pred_rgb = result.get("rgb_output", image)
                 _save_visualization(pred_rgb, target_rgb, batch_idx, output_dir, args.task, sample_idx=0)
 
-            # 每 10 个 batch 保存一次 state (resume 粒度)
+            # save the state every 10 batches (resume granularity)
             if is_main and (batch_idx % 10 == 0):
                 state["completed_batch_indices"] = sorted(completed_batches)
                 state["total_batches"] = total_batches
@@ -652,7 +652,7 @@ def main() -> int:
                 state["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 _save_state(state, state_path)
 
-            # 进度打印
+            # progress output
             if is_main and (batch_idx % 10 == 0 or batch_idx == total_batches - 1):
                 elapsed = time.time() - start_time
                 throughput = (batch_idx - skip_batches + 1) / (elapsed + 1e-6)
@@ -666,21 +666,21 @@ def main() -> int:
 
         except Exception as exc:
             n_errors += 1
-            logger.error("Batch %d 评估失败 (%d/%d 次错误): %s", batch_idx, n_errors, args.max_errors, exc)
+            logger.error("Batch %d evaluation failed (%d/%d errors): %s", batch_idx, n_errors, args.max_errors, exc)
             if not args.continue_on_error:
                 traceback.print_exc()
                 if is_main:
-                    logger.error("使用 --continue-on-error 可跳过错误 batch 继续")
+                    logger.error("Use --continue-on-error to skip failing batches and continue")
                 return 1
             if n_errors >= args.max_errors:
-                logger.error("连续错误次数达到上限 %d, 终止评估", args.max_errors)
+                logger.error("Consecutive errors reached the limit %d, stopping evaluation", args.max_errors)
                 return 1
             continue
 
-    # ── Metrics 归一化 ────────────────────────────────────────────────
+    # ── Normalize the metrics ─────────────────────────────────────────
     if n_batches_evaluated == 0:
         if is_main:
-            logger.error("没有成功评估任何 batch")
+            logger.error("No batch was evaluated successfully")
         return 1
 
     final_metrics: dict[str, Any] = {}
@@ -711,18 +711,18 @@ def main() -> int:
         else:
             final_metrics[k] = v
 
-    # ── DDP 聚合 ──────────────────────────────────────────────────────
+    # ── DDP aggregation ───────────────────────────────────────────────
     if use_ddp:
         final_metrics = VisionEvaluator.reduce_metrics(final_metrics, device=device)
         torch.distributed.barrier()
 
-    # 非主进程直接退出
+    # non-main processes exit here
     if not is_main:
         if use_ddp:
             torch.distributed.destroy_process_group()
         return 0
 
-    # ── 结果输出 ──────────────────────────────────────────────────────
+    # ── Output the results ────────────────────────────────────────────
     total_time = time.time() - start_time
     final_metrics["eval_time_seconds"] = round(total_time, 2)
     final_metrics["batches_evaluated"] = n_batches_evaluated
@@ -731,11 +731,11 @@ def main() -> int:
 
     _print_metrics(final_metrics, args.task)
 
-    # JSON 输出
+    # JSON output
     if args.output_json:
         out_path = Path(args.output_json)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        # 将 float 四舍五入以便人类阅读
+        # round floats for readability
         json_safe = {}
         for k, v in final_metrics.items():
             if isinstance(v, float):
@@ -746,16 +746,16 @@ def main() -> int:
                 json_safe[k] = v
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(json_safe, f, indent=2, ensure_ascii=False)
-        logger.info("Metrics 已保存至: %s", out_path)
+        logger.info("Metrics saved to: %s", out_path)
 
-    # 对比 SOTA
+    # compare with SOTA
     if args.compare_sota:
         from open_vision_banana.evaluation.baselines import format_sota_comparison
 
-        print()  # 空行分隔
+        print()  # blank separator line
         print(format_sota_comparison(args.task, final_metrics))
 
-    # W&B 上传
+    # W&B upload
     _log_to_wandb(wandb_run, final_metrics)
     if wandb_run is not None:
         try:
@@ -765,17 +765,17 @@ def main() -> int:
         except Exception:
             pass
 
-    # 清理 resume state (评估成功完成后)
+    # clean up the resume state (after a successful evaluation)
     if state_path and Path(state_path).exists():
-        # 可选择保留或删除; 这里重命名为 .completed 作为归档
+        # it could be kept or deleted; here it is renamed to .completed as an archive
         completed_path = str(Path(state_path).with_suffix(".completed.json"))
         Path(state_path).rename(completed_path)
-        logger.info("Resume state 已归档: %s", completed_path)
+        logger.info("Resume state archived: %s", completed_path)
 
     if use_ddp:
         torch.distributed.destroy_process_group()
 
-    logger.info("评估完成, 总耗时 %.2f 秒", total_time)
+    logger.info("Evaluation done, total time %.2f s", total_time)
     return 0
 
 

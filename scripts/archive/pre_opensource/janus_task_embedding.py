@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Janus-1.3B task embedding —— 学习任务特定向量注入模型.
+"""Janus-1.3B task embedding: learn task-specific vectors injected into the model.
 
-改进：
-- 为每个任务学习一个 task embedding 向量
-- 注入到 LLM 的输入 embeds 中
-- 帮助模型区分不同任务
+Improvements:
+- Learn one task embedding vector per task
+- Inject it into the LLM input embeds
+- Helps the model tell tasks apart
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_task_embedding.py
 """
 from __future__ import annotations
@@ -69,7 +69,7 @@ TASK_PROMPTS = {
 
 
 class RGBHead(nn.Module):
-    """RGB 预测头：LLM hidden states → RGB 值（带 dropout）."""
+    """RGB prediction head: LLM hidden states → RGB values (with dropout)."""
 
     def __init__(self, hidden_dim: int, image_token_num: int, image_size: int, dropout: float = 0.1):
         super().__init__()
@@ -92,7 +92,7 @@ class RGBHead(nn.Module):
 
 
 class TaskEmbedding(nn.Module):
-    """Task embedding：为每个任务学习一个向量."""
+    """Task embedding: learn one vector per task."""
 
     def __init__(self, num_tasks: int, hidden_dim: int):
         super().__init__()
@@ -120,7 +120,7 @@ def main() -> None:
     print(f"[cfg] steps={STEPS}  res={RES}  batch={BATCH}  lr={LR}  rank={RANK}  alpha={ALPHA}")
     print(f"[cfg] dropout={DROPOUT}  wd={WEIGHT_DECAY}  patience={PATIENCE}  out={OUT}")
 
-    # 1) 加载多任务数据集 ──────────────────────────────────────────────
+    # 1) load the multi-task datasets ──────────────────────────────────
     task_datasets = {}
     task_loaders = {}
     task_to_id = {task: i for i, task in enumerate(TASKS)}
@@ -147,7 +147,7 @@ def main() -> None:
         }
         print(f"[data] {task}: {len(ds)} total, train={len(train_idx)}, val={len(val_idx)}")
 
-    # 2) 加载模型 ───────────────────────────────────────────────────────
+    # 2) load the model ────────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -174,7 +174,7 @@ def main() -> None:
     n_train = sum(p.numel() for p in peft_model.parameters() if p.requires_grad)
     print(f"[lora] trainable = {n_train:,}")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -206,7 +206,7 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 6) 验证函数 ─────────────────────────────────────────────────────
+    # 6) validation function ───────────────────────────────────────────
     @torch.no_grad()
     def run_validation(task: str) -> float:
         peft_model.eval()
@@ -239,9 +239,9 @@ def main() -> None:
                 images_emb_mask=images_emb_mask,
             )
 
-            # 注入 task embedding
+            # inject the task embedding
             # input_embeds: [1, seq_len, D], task_emb: [1, D]
-            # 将 task_emb 加到所有位置（广播）
+            # add task_emb at every position (broadcast)
             input_embeds = input_embeds + task_emb.unsqueeze(1)  # [1, seq_len, D]
 
             outputs = peft_model.model(
@@ -259,7 +259,7 @@ def main() -> None:
         task_embedding.train()
         return sum(val_losses) / len(val_losses)
 
-    # 7) 训练循环 ─────────────────────────────────────────────────────
+    # 7) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus task embedding: {STEPS} steps")
 
     losses: list[float] = []
@@ -270,7 +270,7 @@ def main() -> None:
     t_train = time.time()
 
     for step in range(1, STEPS + 1):
-        # 随机选择任务
+        # pick a task at random
         task = TASKS[torch.randint(0, len(TASKS), (1,)).item()]
         try:
             batch = next(task_iters[task])
@@ -304,7 +304,7 @@ def main() -> None:
             images_emb_mask=images_emb_mask,
         )
 
-        # 注入 task embedding
+        # inject the task embedding
         input_embeds = input_embeds + task_emb.unsqueeze(1)  # [1, seq_len, D]
 
         outputs = peft_model.model(
@@ -335,7 +335,7 @@ def main() -> None:
                   f"task={task}  ({(time.time()-t_train)/step:.2f}s/step)", flush=True)
 
         if step % VAL_EVERY == 0:
-            # 验证所有任务
+            # validate every task
             total_val_loss = 0.0
             for task in TASKS:
                 val_loss = run_validation(task)
@@ -371,7 +371,7 @@ def main() -> None:
     print(f"\n[train] avg(first 1/3)={avg_first:.4f}  avg(last 1/3)={avg_last:.4f}  "
           f"({'DECREASING' if avg_last < avg_first else 'NOT decreasing'})")
 
-    # 保存最终 checkpoint
+    # save the final checkpoint
     final_ckpt = OUT / "ckpt_final"
     final_ckpt.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(final_ckpt / "lora"))
@@ -379,7 +379,7 @@ def main() -> None:
     torch.save(task_embedding.state_dict(), final_ckpt / "task_embedding.pt")
     print(f"[ckpt] saved → {final_ckpt}")
 
-    # 8) 推理评估 ─────────────────────────────────────────────────────
+    # 8) inference evaluation ──────────────────────────────────────────
     print("\n[eval] inference on all tasks...")
     mapper = DepthRGBMapper(colormap="viridis")
     all_results = {}
@@ -457,7 +457,7 @@ def main() -> None:
     print(f"\n[done] Janus task embedding complete ({total_min:.1f} min)")
     print(f"[done] best val_loss={best_val_loss:.4f}")
 
-    # 保存结果
+    # save the results
     (OUT / "task_embedding_result.json").write_text(json.dumps({
         "model": MODEL_ID, "device": device,
         "tasks": TASKS, "nsamples": NSAMPLES, "val_samples": VAL_SAMPLES,

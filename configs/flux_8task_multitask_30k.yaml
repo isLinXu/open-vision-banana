@@ -1,13 +1,13 @@
-# FLUX.1-dev 八任务训练配置 (Vision Banana 复现 · SenseNova-Vision 全覆盖)
+# FLUX.1-dev eight-task training config (Vision Banana reproduction: full SenseNova-Vision coverage)
 # =====================================================================
-# 模型: FLUX.1-dev (12B transformer, 4-bit NF4 量化)
-# 数据: SNVC-50M v5_full 八任务 manifest (RGB 参数化)
+# Model: FLUX.1-dev (12B transformer, 4-bit NF4 quantization)
+# Data: SNVC-50M v5_full eight-task manifest (RGB parameterization)
 #   depth + normal + semantic seg + object detection + keypoint +
 #   referring seg + edge + depth_edge
-#   targets 由 scripts/gen_detpoint_refer_targets.py 生成 (坐标渲染 / Canny 派生 / GT labelmap)
-#   合并校验由 scripts/merge_multitask_manifest.py 完成 (仅保留文件存在的行)
-# 覆盖: README 10 任务中除 optical flow / instance seg 外全部 (后两者缺数据集 GT)
-# 目标: RTX 4090 24GB 单卡 LoRA 微调, 30000 steps, 同步 W&B
+#   targets are produced by scripts/gen_detpoint_refer_targets.py (coordinate rendering / Canny-derived / GT labelmap)
+#   merged and checked by scripts/merge_multitask_manifest.py (keeps only rows whose files exist)
+# Coverage: all 10 README tasks except optical flow / instance seg (no dataset GT for those two)
+# Target: single RTX 4090 24GB LoRA fine-tuning, 30000 steps, synced to W&B
 
 model:
   name: "flux-dev"

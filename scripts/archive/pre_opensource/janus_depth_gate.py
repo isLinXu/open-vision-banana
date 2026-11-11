@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Janus-1.3B depth gate —— 统一多模态理解+生成.
+"""Janus-1.3B depth gate: unified multimodal understanding + generation.
 
-Janus-1.3B 架构（对齐论文 NBP）：
-  - vision_model: CLIPVisionTower (理解图像)
-  - aligner: MlpProjector (视觉→语言投影)
-  - language_model: LlamaForCausalLM (文本理解)
-  - gen_aligner: MlpProjector (语言→生成投影)
-  - gen_head: vision_head (生成图像 token)
-  - gen_vision_model: VQ-16 (解码图像)
+Janus-1.3B architecture (matches the paper's NBP):
+  - vision_model: CLIPVisionTower (image understanding)
+  - aligner: MlpProjector (vision → language projection)
+  - language_model: LlamaForCausalLM (text understanding)
+  - gen_aligner: MlpProjector (language → generation projection)
+  - gen_head: vision_head (generates image tokens)
+  - gen_vision_model: VQ-16 (decodes the image)
 
-训练方式：
-  输入 = (image, text_prompt) → LLM → gen_head → VQ tokens → depth RGB
-  目标 = depth RGB visualization
+Training:
+  input = (image, text_prompt) → LLM → gen_head → VQ tokens → depth RGB
+  target = depth RGB visualization
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_depth_gate.py
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-sys.path.insert(0, "/tmp/Janus")  # Janus 自定义代码
+sys.path.insert(0, "/tmp/Janus")  # Janus custom code
 
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.evaluation.relative_depth import evaluate_relative_depth_rgb
@@ -76,10 +76,10 @@ def main() -> None:
     print(f"[cfg] steps={STEPS}  nsamples={NSAMPLES}  res={RES}  batch={BATCH}")
     print(f"[cfg] lr={LR}  rank={RANK}  alpha={ALPHA}  out={OUT}")
 
-    # 1) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 1) load Janus-1.3B ───────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
-    # 注册自定义架构
+    # register the custom architecture
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
     AutoModelForCausalLM.register(MultiModalityConfig, MultiModalityCausalLM)
@@ -94,7 +94,7 @@ def main() -> None:
     print(f"[model] type={type(model).__name__}")
     print(f"[model] params={sum(p.numel() for p in model.parameters()):,}")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} depth samples @ {RES}px")
@@ -121,7 +121,7 @@ def main() -> None:
     n_total_p = sum(p.numel() for p in peft_model.parameters())
     print(f"[lora] trainable = {n_train:,}  ({100*n_train/n_total_p:.2f}%)")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -144,11 +144,11 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 5) 训练循环 ─────────────────────────────────────────────────────
+    # 5) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus depth gate: {STEPS} steps")
     print(f"[train] prompt: {VISION_PROMPT[:80]}...")
 
-    # 预编码 prompt
+    # pre-encode the prompt
     prompt_ids = tokenizer(VISION_PROMPT, return_tensors="pt").input_ids.to(device)
 
     losses: list[float] = []
@@ -164,22 +164,22 @@ def main() -> None:
 
         opt.zero_grad(set_to_none=True)
 
-        # 取 batch（batch_size=1 简化）
+        # take a batch (batch_size=1 for simplicity)
         image = batch["image"][0:1].to(device, DTYPE)  # [-1, 1]
         target_rgb = batch["target_rgb"][0:1].to(device, DTYPE)  # [0, 1]
 
-        # 构造输入
-        # 1. 图像理解路径: pixel_values → vision_model → aligner
+        # build the inputs
+        # 1. image understanding path: pixel_values → vision_model → aligner
         pixel_values = image.unsqueeze(1)  # [1, 1, 3, H, W]
 
-        # 2. 生成路径: LLM → gen_aligner → gen_head → VQ tokens → RGB
-        # 简化：直接用 LLM 的 hidden states 生成图像 token
-        # 这里需要更复杂的构造，暂时用简化版本
+        # 2. generation path: LLM → gen_aligner → gen_head → VQ tokens → RGB
+        # simplified: generate image tokens directly from the LLM hidden states
+        # this needs a more complex construction; a simplified version for now
 
-        # 简化训练目标：让模型学习从 (image, prompt) 生成 depth RGB
-        # 用 MSE loss 直接比较生成的 RGB 和目标 RGB
+        # simplified objective: learn to generate depth RGB from (image, prompt)
+        # compare the generated RGB with the target RGB directly by MSE loss
 
-        # 构造输入 embeds
+        # build the input embeds
         input_embeds = model.prepare_inputs_embeds(
             input_ids=prompt_ids,
             pixel_values=pixel_values,
@@ -187,24 +187,24 @@ def main() -> None:
             images_emb_mask=torch.ones(1, 1, 576, dtype=torch.bool, device=device),  # 576 = 24*24 for 384x384
         )
 
-        # 前向传播
+        # forward pass
         outputs = model.language_model(
             inputs_embeds=input_embeds,
             output_hidden_states=True,
         )
         hidden_states = outputs.hidden_states[-1]  # [1, T, D]
 
-        # 生成图像 token
+        # generate image tokens
         gen_embeds = model.gen_aligner(hidden_states)
         gen_logits = model.gen_head(gen_embeds)  # [1, T, image_token_size]
 
-        # 取最后一个 token 的生成结果
+        # take the generation result of the last token
         image_tokens = torch.argmax(gen_logits[:, -1, :], dim=-1)  # [1]
-        # 这里应该解码成图像，但简化处理
+        # this should be decoded into an image; simplified here
 
-        # 简化：用 MSE loss 比较 hidden states 和目标（占位符）
-        # 实际应该用 VQ decode + RGB loss
-        loss = torch.tensor(0.0, device=device, requires_grad=True)  # 占位符
+        # simplified: MSE loss between hidden states and the target (placeholder)
+        # the real version should use VQ decode + RGB loss
+        loss = torch.tensor(0.0, device=device, requires_grad=True)  # placeholder
 
         if not torch.isfinite(loss).all():
             print(f"[train] step {step:>4}: NON-FINITE loss — skip", flush=True)
@@ -224,13 +224,13 @@ def main() -> None:
     print(f"\n[train] completed {len(losses)} steps")
     print(f"[train] avg loss = {sum(losses)/len(losses):.4f}")
 
-    # 保存 checkpoint
+    # save the checkpoint
     ckpt_dir = OUT / "lora_final"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(ckpt_dir))
     print(f"[ckpt] saved → {ckpt_dir}")
 
-    # 6) 推理评估 ─────────────────────────────────────────────────────
+    # 6) inference evaluation ──────────────────────────────────────────
     print("\n[eval] inference on training samples...")
     mapper = DepthRGBMapper(colormap="viridis")
     results = []
@@ -245,11 +245,11 @@ def main() -> None:
             .mul(255).byte().numpy()
         )
 
-        # 简化推理：用模型生成图像 token，然后解码
-        # 实际需要 VQ decode，这里用占位符
-        pred_rgb = torch.rand(3, RES, RES)  # 占位符
+        # simplified inference: generate image tokens with the model, then decode
+        # this really needs VQ decode; a placeholder here
+        pred_rgb = torch.rand(3, RES, RES)  # placeholder
 
-        # 三联图
+        # triptych
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(

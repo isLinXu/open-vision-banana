@@ -828,7 +828,7 @@ def main() -> None:
     logger.info("Using audited depth prompt: %s", depth_prompt)
 
     started = time.time()
-    # MPS 上 bf16 不稳定；SSD-1B 足够小，fp32 可行
+    # bf16 is unstable on MPS; SSD-1B is small enough for fp32
     _dtype = torch.float32 if device.type == "mps" else torch.bfloat16
     logger.info("Using dtype=%s on device=%s", _dtype, device)
     generator = BaseGenerator(

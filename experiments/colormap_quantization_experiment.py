@@ -570,7 +570,7 @@ See `colormap_resolution_scaling.png` for full scaling curves.
 
 This experiment directly addresses the v0.5.0 P3 action item:
 
-> *"在 evaluation/depth.py 中默认报告含 8-bit 量化的端到端 AbsRel，使评估贴近真实部署。"*
+> *"Report the end-to-end AbsRel with 8-bit quantization by default in evaluation/depth.py, so evaluation matches real deployment."*
 
 The data here provides the **calibration curves** needed to implement that: for any given colormap and depth domain, the experiment yields the expected `quantization_baseline` that should be subtracted from raw end-to-end metrics to isolate model error from encoding noise.
 

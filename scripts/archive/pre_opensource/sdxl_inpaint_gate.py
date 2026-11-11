@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""SDXL Inpainting depth gate — 论文范式的合理开源替代.
+"""SDXL Inpainting depth gate: a reasonable open-source substitute for the paper's setup.
 
-SDXL inpainting 模型天生支持图像条件（masked_image_latent + mask），
-天然具备"看图生成"能力。训练时：
-  输入 = (photo, full_mask, vision_prompt) → depth_rgb
-  模型在原有图像基础上，按 prompt 将遮罩区域重绘为 viridis 深度色图
+The SDXL inpainting model supports image conditioning natively (masked_image_latent + mask),
+so it can already "generate from an image". In training:
+  input = (photo, full_mask, vision_prompt) → depth_rgb
+  the model repaints the masked region of the image as a viridis depth colormap, following the prompt
 
-与 paper-style (SSD-1B) 的关键区别：
-  - inpainting 模型 UNet 有 9 通道输入（4 noisy + 4 masked + 1 mask）
-  - masked_image_latent 提供图像上下文，让模型"看见"输入
-  - 无需额外扩 conv_in，用模型原生条件注入
+Key differences from the paper-style (SSD-1B) gate:
+  - the inpainting UNet has 9 input channels (4 noisy + 4 masked + 1 mask)
+  - masked_image_latent provides image context, so the model "sees" the input
+  - no extra conv_in widening, the model's native conditioning is used
 
-用法:
+Usage:
     PYTHONPATH=src python scripts/sdxl_inpaint_gate.py
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
-PIXEL_LOSS_WEIGHT = float(os.environ.get("VB_PIXEL_LOSS_WEIGHT", "0.5"))  # 直接监督 RGB 输出
+PIXEL_LOSS_WEIGHT = float(os.environ.get("VB_PIXEL_LOSS_WEIGHT", "0.5"))  # supervises the RGB output directly
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "sdxl_inpaint_gate")))
 OUT.mkdir(parents=True, exist_ok=True)
 
@@ -79,7 +79,7 @@ def main() -> None:
     print(f"[cfg] steps={STEPS}  nsamples={NSAMPLES}  res={RES}  batch={BATCH}")
     print(f"[cfg] lr={LR}  rank={RANK}  alpha={ALPHA}  out={OUT}")
 
-    # 1) 加载 SDXL Inpainting Pipeline ──────────────────────────────────
+    # 1) load the SDXL Inpainting Pipeline ─────────────────────────────
     from diffusers import StableDiffusionXLInpaintPipeline
 
     t0 = time.time()
@@ -92,7 +92,7 @@ def main() -> None:
     print(f"[model] UNet conv_in: {unet.conv_in.in_channels} channels "
           f"(4 noisy + 4 masked + 1 mask)")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} depth samples @ {RES}px")
@@ -139,14 +139,14 @@ def main() -> None:
     vae.requires_grad_(False)
     vae.eval()
 
-    # 预计算 VAE scaling factor（SDXL 用 0.13025）
+    # precompute the VAE scaling factor (SDXL uses 0.13025)
     vae_scale = getattr(vae.config, "scaling_factor", 0.13025)
 
-    # 5) 训练循环 ─────────────────────────────────────────────────────
+    # 5) training loop ─────────────────────────────────────────────────
     print(f"\n[train] SDXL inpainting gate: {STEPS} steps")
     print(f"[train] prompt: {VISION_PROMPT[:80]}...")
 
-    # 预编码文本 — SDXL 需要两个 text encoder + pooled + time_ids
+    # pre-encode the text: SDXL needs two text encoders + pooled + time_ids
     text_input = pipe.tokenizer_2(
         VISION_PROMPT, padding="max_length", max_length=pipe.tokenizer_2.model_max_length,
         truncation=True, return_tensors="pt",
@@ -160,15 +160,15 @@ def main() -> None:
             text_input.input_ids.to(device), output_hidden_states=True
         )
         prompt_embeds_2 = enc2_out.hidden_states[-2]  # [B, 77, 1280]
-        pooled = enc2_out.text_embeds  # [B, 1280] — CLIPTextModelWithProjection 的投影输出
+        pooled = enc2_out.text_embeds  # [B, 1280]: projection output of CLIPTextModelWithProjection
         prompt_embeds_1 = pipe.text_encoder(
             text_input2.input_ids.to(device), output_hidden_states=True
         ).hidden_states[-2]  # [B, 77, 768]
         prompt_embeds = torch.cat([prompt_embeds_1, prompt_embeds_2], dim=-1)  # [B, 77, 2048]
 
-    # SDXL micro-conditioning: time_ids 格式 [6]
-    # 包含: original_size(2), crops_coords_top_left(2), target_size(2)
-    # inpainting pipeline 需要额外 aesthetic_score + negative_* 参数
+    # SDXL micro-conditioning: time_ids has the layout [6]
+    # containing: original_size(2), crops_coords_top_left(2), target_size(2)
+    # the inpainting pipeline also needs aesthetic_score + negative_* arguments
     time_ids = torch.tensor([
         RES, RES,    # original_size
         0, 0,        # crops_coords_top_left
@@ -194,35 +194,35 @@ def main() -> None:
 
         opt.zero_grad(set_to_none=True)
 
-        # 取 batch（batch_size=1 简化）
+        # take a batch (batch_size=1 for simplicity)
         image = batch["image"][0:1].to(device, DTYPE)  # [-1, 1]
-        target_rgb = batch["target_rgb"][0:1].to(device, DTYPE)  # [0, 1] 或 [-1, 1]
+        target_rgb = batch["target_rgb"][0:1].to(device, DTYPE)  # [0, 1] or [-1, 1]
 
         with torch.no_grad():
-            # 编码目标 depth RGB → latent
+            # encode the target depth RGB → latent
             z0 = vae.encode(target_rgb).latent_dist.mode() * vae_scale
-            # 编码输入 photo → masked_image_latent
+            # encode the input photo → masked_image_latent
             masked_image_latent = vae.encode(image).latent_dist.mode() * vae_scale
-            # 全遮罩 mask（整张图都要重绘）
+            # full mask (the whole image is repainted)
             mask = torch.ones(
                 (1, 1, z0.shape[-2] * 8, z0.shape[-1] * 8),
                 device=device, dtype=DTYPE
             )
             mask = F.interpolate(mask, size=(z0.shape[-2], z0.shape[-1]))
 
-        # 噪声
+        # noise
         noise = torch.randn_like(z0)
         timesteps = torch.randint(
             0, pipe.scheduler.config.num_train_timesteps, (1,), device=device
         ).long()
 
-        # 噪声目标 latent
+        # noisy target latent
         noisy_z0 = pipe.scheduler.add_noise(z0, noise, timesteps)
 
-        # 模型输入: [noisy_z0, masked_image_latent, mask] → 9ch
+        # model input: [noisy_z0, masked_image_latent, mask] → 9ch
         model_input = torch.cat([noisy_z0, mask, masked_image_latent], dim=1)
 
-        # 预测噪声 — SDXL 需要 added_cond_kwargs
+        # predict the noise: SDXL needs added_cond_kwargs
         pred = peft_model(
             model_input,
             timesteps,
@@ -232,14 +232,14 @@ def main() -> None:
 
         loss = F.mse_loss(pred, noise)
 
-        # Pixel loss: 解码预测噪声 → RGB，直接与目标比较颜色分布
+        # pixel loss: decode the predicted noise → RGB and compare the color distribution with the target directly
         if PIXEL_LOSS_WEIGHT > 0:
             with torch.no_grad():
-                # 从预测噪声反推 x0
+                # recover x0 from the predicted noise
                 alpha_t = pipe.scheduler.alphas_cumprod.to(device)[timesteps].to(DTYPE)
                 sqrt_one_minus_alpha = (1 - alpha_t).sqrt()
                 pred_x0 = (noisy_z0 - sqrt_one_minus_alpha * pred) / alpha_t.sqrt()
-                # VAE 解码
+                # VAE decode
                 pred_rgb = vae.decode(pred_x0 / vae_scale).sample
                 pred_rgb = (pred_rgb / 2 + 0.5).clamp(0, 1)
             pixel_loss = F.l1_loss(pred_rgb, target_rgb)
@@ -274,7 +274,7 @@ def main() -> None:
     peft_model.save_pretrained(str(ckpt_dir))
     print(f"[ckpt] saved → {ckpt_dir}")
 
-    # 6) 推理评估 ─────────────────────────────────────────────────────
+    # 6) inference evaluation ──────────────────────────────────────────
     print("\n[eval] inpainting inference on training samples...")
     mapper = DepthRGBMapper(colormap="viridis")
     results = []
@@ -292,21 +292,21 @@ def main() -> None:
         out = pipe(
             prompt=VISION_PROMPT,
             image=pil_in,
-            mask_image=Image.new("L", pil_in.size, 255),  # 全遮罩
-            num_inference_steps=20,  # 更多步数
-            strength=0.85,  # 保留部分输入结构
+            mask_image=Image.new("L", pil_in.size, 255),  # full mask
+            num_inference_steps=20,  # more steps
+            strength=0.85,  # keep part of the input structure
             guidance_scale=0.0,
             height=RES,
             width=RES,
         )
         pred_rgb = out.images[0]
         pred_rgb = torch.from_numpy(np.array(pred_rgb)).permute(2, 0, 1).float() / 255.0
-        # resize 到训练分辨率
+        # resize to the training resolution
         pred_rgb = F.interpolate(
             pred_rgb.unsqueeze(0), size=(RES, RES), mode="bilinear", align_corners=False
         ).squeeze(0)
 
-        # 三联图
+        # triptych
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(

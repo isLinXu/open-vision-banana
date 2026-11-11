@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Janus v4 推理脚本 — 用训练好的模型做 depth 预测.
+"""Janus v4 inference script: depth prediction with the trained model.
 
-用法:
-    # 单张图片推理
+Usage:
+    # single-image inference
     PYTHONPATH=src:/tmp/Janus python scripts/infer_v4.py --input path/to/image.jpg --output output/pred.png
 
-    # 批量推理（一个目录）
+    # batch inference (a directory)
     PYTHONPATH=src:/tmp/Janus python scripts/infer_v4.py --input path/to/images/ --output output/predictions/
 
-    # 指定 checkpoint
+    # choose a checkpoint
     PYTHONPATH=src:/tmp/Janus python scripts/infer_v4.py --input image.jpg --ckpt output/janus_continuous_rgb_v4/ckpt_best
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, "/tmp/Janus")
 
-# ── 默认配置 ─────────────────────────────────────────────────────────────
+# ── Default config ───────────────────────────────────────────────────────
 DEFAULT_CKPT = str(PROJECT_ROOT / "output" / "janus_continuous_rgb_v4" / "ckpt_best")
 MODEL_ID = "deepseek-ai/Janus-1.3B"
 RES = 384
@@ -42,7 +42,7 @@ TASK_PROMPT = "Generate a metric depth visualization of this image."
 
 
 class RGBHead(nn.Module):
-    """与训练时一致的 RGB Head（手动归一化）."""
+    """RGB head matching the training one (manual normalization)."""
 
     def __init__(self, input_dim: int, image_token_num: int, image_size: int, dropout: float = 0.0):
         super().__init__()
@@ -64,7 +64,7 @@ class RGBHead(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         b = hidden_states.shape[0]
-        # 推理时用 running stats 归一化
+        # normalize with running stats at inference
         mean = self.running_mean
         var = self.running_var
         x = (hidden_states - mean) / (var.sqrt() + 1e-6)
@@ -86,7 +86,7 @@ def _resolve_device() -> str:
 
 
 def load_model(ckpt_dir: str, device: str):
-    """加载 Janus + LoRA + RGB Head."""
+    """Load Janus + LoRA + RGB head."""
     import json
 
     import janus.models.modeling_vlm as janus_vlm
@@ -102,7 +102,7 @@ def load_model(ckpt_dir: str, device: str):
     AutoConfig.register("multi_modality", MultiModalityConfig)
     AutoModelForCausalLM.register(MultiModalityConfig, MultiModalityCausalLM)
 
-    # 读取训练配置
+    # read the training config
     config_path = Path(ckpt_dir) / "train_config.json"
     if config_path.exists():
         with open(config_path) as f:
@@ -116,7 +116,7 @@ def load_model(ckpt_dir: str, device: str):
         dropout = 0.0
         feature_src = "vision"
 
-    # 加载基础模型
+    # load the base model
     print(f"[load] loading base model: {model_id}")
     model = AutoModelForCausalLM.from_pretrained(
         model_id, torch_dtype=DTYPE, trust_remote_code=True
@@ -125,7 +125,7 @@ def load_model(ckpt_dir: str, device: str):
     model = model.to(device)
     model.eval()
 
-    # 加载 LoRA
+    # load the LoRA
     adapter_dir = Path(ckpt_dir) / "lora"
     if adapter_dir.exists():
         from peft import PeftModel
@@ -133,7 +133,7 @@ def load_model(ckpt_dir: str, device: str):
         model.language_model.eval()
         print(f"[load] LoRA loaded from {adapter_dir}")
 
-    # 加载 RGB Head
+    # load the RGB head
     vision_dim = 1024
     rgb_head = RGBHead(vision_dim, IMAGE_TOKEN_NUM, RES, dropout=0.0).to(device, DTYPE)
     rgb_head_path = Path(ckpt_dir) / "rgb_head.pt"
@@ -150,14 +150,14 @@ def load_model(ckpt_dir: str, device: str):
 @torch.no_grad()
 def predict(model, tokenizer, rgb_head, image_path: str, device: str,
             feature_src: str = "vision") -> tuple[torch.Tensor, Image.Image]:
-    """对单张图片做 depth → RGB 预测.
+    """Depth → RGB prediction for one image.
 
     Returns:
         (pred_rgb_tensor, input_pil_image)
     """
     from torchvision import transforms
 
-    # 加载并预处理图像
+    # load and preprocess the image
     pil_img = Image.open(image_path).convert("RGB")
     original_size = pil_img.size
 
@@ -168,7 +168,7 @@ def predict(model, tokenizer, rgb_head, image_path: str, device: str,
     ])
     inp_tensor = transform(pil_img)
 
-    # 准备输入
+    # prepare the inputs
     prompt = TASK_PROMPT
     p_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
     p_len = p_ids.shape[1]
@@ -226,7 +226,7 @@ def predict(model, tokenizer, rgb_head, image_path: str, device: str,
 
 def predict_to_panel(model, tokenizer, rgb_head, image_path: str, device: str,
                      feature_src: str = "vision", target_path: str | None = None) -> Image.Image:
-    """生成对比面板图: [input | prediction | (optional target)]."""
+    """Build the comparison panel: [input | prediction | (optional target)]."""
     pred_rgb, pil_img = predict(model, tokenizer, rgb_head, image_path, device, feature_src)
 
     if target_path:
@@ -250,15 +250,15 @@ def predict_to_panel(model, tokenizer, rgb_head, image_path: str, device: str,
 def main():
     parser = argparse.ArgumentParser(description="Janus v4 depth→RGB inference")
     parser.add_argument("--input", "-i", required=True,
-                        help="输入图片路径或目录")
+                        help="Input image path or directory")
     parser.add_argument("--output", "-o", default="output/v4_predictions",
-                        help="输出路径")
+                        help="Output path")
     parser.add_argument("--ckpt", "-c", default=DEFAULT_CKPT,
-                        help="checkpoint 目录")
+                        help="Checkpoint directory")
     parser.add_argument("--panel", action="store_true",
-                        help="生成 input|pred|target 对比面板")
+                        help="Build an input|pred|target comparison panel")
     parser.add_argument("--target-dir",
-                        help="target 图片目录（用于对比）")
+                        help="Target image directory (for comparison)")
     args = parser.parse_args()
 
     device = _resolve_device()
@@ -270,7 +270,7 @@ def main():
     output_path = Path(args.output)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # 收集输入图片
+    # collect the input images
     if input_path.is_file():
         image_files = [input_path]
     elif input_path.is_dir():

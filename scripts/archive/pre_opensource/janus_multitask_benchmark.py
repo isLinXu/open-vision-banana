@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Janus-1.3B 多任务 benchmark —— 评估所有任务."""
+"""Janus-1.3B multi-task benchmark: evaluate every task."""
 from __future__ import annotations
 
 import json
@@ -61,7 +61,7 @@ def main() -> None:
     if not CKPT_DIR or not Path(CKPT_DIR).exists():
         raise RuntimeError(f"Checkpoint not found: {CKPT_DIR}")
 
-    # 加载模型
+    # load the model
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -74,7 +74,7 @@ def main() -> None:
     model = model.to(device)
     print(f"[model] loaded")
 
-    # 加载 LoRA
+    # load the LoRA
     from peft.utils.save_and_load import load_peft_weights, set_peft_model_state_dict
     ckpt = Path(CKPT_DIR)
     adapter_dir = ckpt / "adapter"
@@ -83,7 +83,7 @@ def main() -> None:
         set_peft_model_state_dict(model.language_model, adapter_state)
         print(f"[ckpt] loaded adapter from {adapter_dir}")
 
-    # 加载数据集
+    # load the datasets
     mapper = DepthRGBMapper(colormap="viridis")
     all_results = {}
 
@@ -99,7 +99,7 @@ def main() -> None:
             .mul(255).byte().numpy()
         )
 
-        # 推理
+        # inference
         pixel_values = inp_tensor.unsqueeze(0).unsqueeze(0).to(device, DTYPE)
         prompt_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         prompt_len = prompt_ids.shape[1]
@@ -126,7 +126,7 @@ def main() -> None:
         gen_logits = model.gen_head(gen_hidden)
         pred_tokens = torch.argmax(gen_logits, dim=-1)
 
-        # 解码
+        # decode
         pred_tokens_flat = pred_tokens.squeeze(0)
         dec = model.gen_vision_model.decode_code(
             pred_tokens_flat,
@@ -134,7 +134,7 @@ def main() -> None:
         )
         pred_rgb = dec.squeeze(0).clamp(0, 1).cpu()
 
-        # 三联图
+        # triptych
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(

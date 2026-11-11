@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-综合数据转换脚本 v2
+Combined data conversion script v2
 
-整合所有可用数据源到 data/vb_snvc_train/ 训练格式：
+Merges every available data source into the data/vb_snvc_train/ training format:
 
-1. Depth: COCO2017 images + Depth-Anything 伪深度标签 (3000 pairs)
-2. Segmentation: Cityscapes (726) + RefCOCO+ (从 parquet 提取, 500) + COCO panoptic (300) + IDD (500)
+1. Depth: COCO2017 images + Depth-Anything pseudo depth labels (3000 pairs)
+2. Segmentation: Cityscapes (726) + RefCOCO+ (extracted from parquet, 500) + COCO panoptic (300) + IDD (500)
 3. Generation: COCO2017 captions (5000) + COCO2014 captions (3000)
-4. Structure: GroceryStore (500) + COCO panoptic boxes (500) + BDD100K/DeepFashion/VisDrone JSONL (各 500)
+4. Structure: GroceryStore (500) + COCO panoptic boxes (500) + BDD100K/DeepFashion/VisDrone JSONL (500 each)
 """
 
 from __future__ import annotations

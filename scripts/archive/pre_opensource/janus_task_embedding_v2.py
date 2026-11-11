@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Janus-1.3B task embedding v2 —— 加权 loss + 颜色标定 + 诚实评估.
+"""Janus-1.3B task embedding v2: weighted loss + color calibration + honest evaluation.
 
-改进：
-1. 离散任务加权 loss：非黑像素 10x 权重，防止模型偷懒输出全黑
-2. 连续任务颜色标定：直方图匹配损失，让 depth 用完整 viridis 范围
-3. 诚实评估：非黑像素 IoU/F1 评估离散任务，δ1/AbsRel 评估 depth
+Improvements:
+1. Weighted loss for discrete tasks: 10x weight on non-black pixels, so the model cannot get away with all-black output
+2. Color calibration for continuous tasks: a histogram-matching loss so depth uses the full viridis range
+3. Honest evaluation: non-black-pixel IoU/F1 for discrete tasks, δ1/AbsRel for depth
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_task_embedding_v2.py
 """
 from __future__ import annotations
@@ -54,10 +54,10 @@ DROPOUT = float(os.environ.get("VB_DROPOUT", "0.1"))
 WEIGHT_DECAY = float(os.environ.get("VB_WEIGHT_DECAY", "0.01"))
 PATIENCE = int(os.environ.get("VB_PATIENCE", "10"))
 VAL_EVERY = int(os.environ.get("VB_VAL_EVERY", "50"))
-# 新增：加权 loss 配置
+# new: weighted loss config
 NONBLACK_WEIGHT = float(os.environ.get("VB_NONBLACK_WEIGHT", "10.0"))
 BLACK_THRESHOLD = float(os.environ.get("VB_BLACK_THRESHOLD", "0.05"))
-# 新增：颜色标定 loss 权重
+# new: color calibration loss weight
 COLOR_MATCH_WEIGHT = float(os.environ.get("VB_COLOR_MATCH_WEIGHT", "0.1"))
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "janus_task_embedding_v2")))
 OUT.mkdir(parents=True, exist_ok=True)
@@ -73,7 +73,7 @@ TASK_PROMPTS = {
     "keypoint": "Generate a keypoint detection visualization of this image.",
 }
 
-# 任务类型：连续 vs 离散
+# task type: continuous vs discrete
 CONTINUOUS_TASKS = {"depth", "normal"}
 DISCRETE_TASKS = {"instance", "referring", "keypoint"}
 
@@ -111,13 +111,13 @@ class TaskEmbedding(nn.Module):
 def weighted_mse_loss(pred: torch.Tensor, target: torch.Tensor,
                       task: str, nonblack_weight: float = 10.0,
                       black_threshold: float = 0.05) -> torch.Tensor:
-    """加权 MSE loss：离散任务的非黑像素加权，防止模型偷懒输出全黑."""
+    """Weighted MSE loss: weights the non-black pixels of discrete tasks, so the model cannot get away with all-black output."""
     if task in DISCRETE_TASKS:
-        # 计算目标中的非黑像素 mask（任一通道 > threshold）
+        # non-black pixel mask of the target (any channel > threshold)
         nonblack_mask = (target > black_threshold).any(dim=1, keepdim=True).float()
-        # 权重：非黑像素 = nonblack_weight，黑像素 = 1.0
+        # weights: non-black pixel = nonblack_weight, black pixel = 1.0
         weight = 1.0 + (nonblack_weight - 1.0) * nonblack_mask
-        # 加权 MSE
+        # weighted MSE
         loss = (weight * (pred - target) ** 2).mean()
     else:
         loss = F.mse_loss(pred, target)
@@ -125,7 +125,7 @@ def weighted_mse_loss(pred: torch.Tensor, target: torch.Tensor,
 
 
 def color_match_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """颜色标定 loss：匹配 pred 和 target 的颜色统计（均值+标准差）."""
+    """Color calibration loss: match the color statistics (mean + std) of pred and target."""
     # pred, target: [b, 3, h, w]
     pred_mean = pred.mean(dim=(2, 3))  # [b, 3]
     pred_std = pred.std(dim=(2, 3))  # [b, 3]
@@ -137,12 +137,12 @@ def color_match_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 
 def compute_honest_metrics(pred: torch.Tensor, target: torch.Tensor,
                            task: str, black_threshold: float = 0.05) -> dict:
-    """诚实评估：非黑像素 IoU/F1（离散任务）或 δ1/AbsRel（depth）."""
+    """Honest evaluation: non-black-pixel IoU/F1 (discrete tasks) or δ1/AbsRel (depth)."""
     pred_np = pred.cpu().numpy()
     tgt_np = target.cpu().numpy()
 
     if task in DISCRETE_TASKS:
-        # 非黑像素 IoU
+        # non-black pixel IoU
         pred_fg = (pred_np > black_threshold).any(axis=0)  # [h, w]
         tgt_fg = (tgt_np > black_threshold).any(axis=0)
         intersection = (pred_fg & tgt_fg).sum()
@@ -155,7 +155,7 @@ def compute_honest_metrics(pred: torch.Tensor, target: torch.Tensor,
         f1 = 2 * tp / max(2 * tp + fp + fn, 1)
         return {"iou": iou, "f1": f1, "fg_pixels": int(tgt_fg.sum())}
     else:
-        # 连续任务用 rgb_mae
+        # continuous tasks use rgb_mae
         rgb_mae = np.abs(pred_np - tgt_np).mean()
         return {"rgb_mae": rgb_mae}
 
@@ -178,7 +178,7 @@ def main() -> None:
     print(f"[cfg] nonblack_weight={NONBLACK_WEIGHT}  black_threshold={BLACK_THRESHOLD}")
     print(f"[cfg] color_match_weight={COLOR_MATCH_WEIGHT}  out={OUT}")
 
-    # 1) 数据集 ───────────────────────────────────────────────────────
+    # 1) dataset ───────────────────────────────────────────────────────
     task_datasets = {}
     task_loaders = {}
     task_to_id = {task: i for i, task in enumerate(TASKS)}
@@ -199,7 +199,7 @@ def main() -> None:
         }
         print(f"[data] {task}: {len(ds)} total")
 
-    # 2) 模型 ─────────────────────────────────────────────────────────
+    # 2) model ─────────────────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -247,15 +247,15 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 预编码 prompts
+    # pre-encode the prompts
     prompt_ids_map = {}
     for task in TASKS:
         prompt_ids_map[task] = tokenizer(
             TASK_PROMPTS[task], return_tensors="pt").input_ids.to(device)
 
-    # 6) 训练/验证函数 ─────────────────────────────────────────────────
+    # 6) train/validation functions ────────────────────────────────────
     def forward_step(task: str, image: torch.Tensor, target_rgb: torch.Tensor) -> torch.Tensor:
-        """单步前向 + loss."""
+        """One forward step + loss."""
         task_id = torch.tensor([task_to_id[task]], device=device)
         task_emb = task_embedding(task_id)
         prompt_ids = prompt_ids_map[task]
@@ -281,10 +281,10 @@ def main() -> None:
         gen_hidden = hidden_states[:, prompt_len:, :]
         pred_rgb = rgb_head(gen_hidden)
 
-        # 加权 MSE loss（离散任务防偷懒）
+        # weighted MSE loss (keeps discrete tasks from taking the shortcut)
         loss = weighted_mse_loss(pred_rgb, target_rgb, task,
                                  NONBLACK_WEIGHT, BLACK_THRESHOLD)
-        # 颜色标定 loss（连续任务）
+        # color calibration loss (continuous tasks)
         if task in CONTINUOUS_TASKS and COLOR_MATCH_WEIGHT > 0:
             loss = loss + COLOR_MATCH_WEIGHT * color_match_loss(pred_rgb, target_rgb)
         return loss
@@ -305,7 +305,7 @@ def main() -> None:
         task_embedding.train()
         return sum(val_losses) / len(val_losses)
 
-    # 7) 训练循环 ─────────────────────────────────────────────────────
+    # 7) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus task embedding v2: {STEPS} steps")
     losses: list[float] = []
     best_val_loss = float('inf')
@@ -362,14 +362,14 @@ def main() -> None:
                 print(f"[early] stop at step {step}")
                 break
 
-    # 保存最终 checkpoint
+    # save the final checkpoint
     final_ckpt = OUT / "ckpt_final"
     final_ckpt.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(final_ckpt / "lora"))
     torch.save(rgb_head.state_dict(), final_ckpt / "rgb_head.pt")
     torch.save(task_embedding.state_dict(), final_ckpt / "task_embedding.pt")
 
-    # 8) 诚实评估 ─────────────────────────────────────────────────────
+    # 8) honest evaluation ─────────────────────────────────────────────
     print("\n[eval] honest evaluation on all tasks...")
     all_results = {}
 
@@ -407,7 +407,7 @@ def main() -> None:
         gen_hidden = hidden_states[:, prompt_len:, :]
         pred_rgb = rgb_head(gen_hidden).squeeze(0).clamp(0, 1).cpu()
 
-        # 保存可视化
+        # save the visualization
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(
@@ -418,7 +418,7 @@ def main() -> None:
         ).resize((RES, RES)), (RES * 2, 0))
         panel.save(OUT / f"panel_{task}_{sample_idx:02d}.png")
 
-        # 诚实评估
+        # honest evaluation
         metrics = compute_honest_metrics(pred_rgb, tgt_rgb, task, BLACK_THRESHOLD)
         rgb_mae = (pred_rgb.float() - tgt_rgb.float()).abs().mean().item()
         metrics["rgb_mae"] = rgb_mae

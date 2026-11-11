@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""独立 depth benchmark —— 加载已训练 checkpoint 并评估."""
+"""Standalone depth benchmark: load a trained checkpoint and evaluate it."""
 from __future__ import annotations
 
 import json
@@ -58,11 +58,11 @@ def main() -> None:
     if not CKPT_DIR or not Path(CKPT_DIR).exists():
         raise RuntimeError(f"Checkpoint not found: {CKPT_DIR}")
 
-    # 加载模型
+    # load the model
     gen = BaseGenerator(MODEL_ID, device=device, dtype=DTYPE)
     print(f"[model] loaded")
 
-    # 加载 checkpoint
+    # load the checkpoint
     from peft.utils.save_and_load import load_peft_weights, set_peft_model_state_dict
     from open_vision_banana.conditioning import expand_unet_conv_in
     ckpt = Path(CKPT_DIR)
@@ -70,7 +70,7 @@ def main() -> None:
     conv_path = ckpt / CONV_IN_STATE_NAME
     if conv_path.exists():
         conv = torch.load(conv_path, map_location=device, weights_only=True)
-        # 先扩展 conv_in 到 8 通道，再加载
+        # widen conv_in to 8 channels first, then load
         expand_unet_conv_in(gen._t2i_pipe.unet, condition_channels=4)
         gen._t2i_pipe.unet.conv_in.load_state_dict(conv)
         print(f"[ckpt] loaded conv_in from {conv_path}")
@@ -83,7 +83,7 @@ def main() -> None:
         gen.source_conditioning_config = cond_config
         print(f"[ckpt] loaded source conditioning config")
 
-    # 数据集
+    # dataset
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} samples")
@@ -110,7 +110,7 @@ def main() -> None:
         m = evaluate_depth(pred_d.reshape(1, 1, *pred_d.shape),
                            gt_d.reshape(1, 1, *gt_d.shape))
 
-        # 保存可视化
+        # save the visualization
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(

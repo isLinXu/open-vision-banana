@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-改进 Segmentation 伪标签生成
+Improved segmentation pseudo-label generation
 
-功能：
-1. 使用更大模型（SegFormer-B5）重新生成伪标签
-2. 支持多模型集成
-3. 置信度过滤
+Features:
+1. Regenerate pseudo-labels with a larger model (SegFormer-B5)
+2. Multi-model ensembles
+3. Confidence filtering
 
-用法：
+Usage:
     python scripts/improve_seg_pseudo.py --manifest output/snvc_v5full_pairs/pairs_5task_v3_clean.jsonl --output-dir output/seg_pseudo_v2/
 """
 
@@ -29,7 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ADE20K 151 类调色板
+# ADE20K 151-class palette
 ADE20K_151_PALETTE = {
     0: [0, 0, 0],        # background
     1: [120, 120, 120],  # wall
@@ -187,13 +187,13 @@ ADE20K_151_PALETTE = {
 
 def palette_to_image(seg_map: np.ndarray) -> np.ndarray:
     """
-    将分割图转换为彩色图像
+    Convert a segmentation map to a color image
     
     Args:
-        seg_map: 分割图 (H, W)，值为类别 ID
+        seg_map: segmentation map (H, W) of class IDs
     
     Returns:
-        rgb: 彩色图像 (H, W, 3)
+        rgb: color image (H, W, 3)
     """
     H, W = seg_map.shape
     rgb = np.zeros((H, W, 3), dtype=np.uint8)
@@ -212,21 +212,21 @@ def generate_seg_pseudo(
     overwrite: bool = False,
 ) -> dict:
     """
-    生成改进的分割伪标签
+    Generate improved segmentation pseudo-labels
     
-    注意：这里使用简单的颜色量化方法作为示例
-    实际使用时应替换为 SegFormer-B5 或其他大模型
+    Note: this uses simple color quantization as an example
+    In real use, replace it with SegFormer-B5 or another large model
     
     Args:
-        manifest_path: manifest 文件
-        output_dir: 输出目录
-        min_confidence: 最小置信度阈值
-        overwrite: 是否覆盖
+        manifest_path: manifest file
+        output_dir: output directory
+        min_confidence: minimum confidence threshold
+        overwrite: whether to overwrite
     
     Returns:
-        处理统计
+        processing statistics
     """
-    logger.info(f"加载 manifest: {manifest_path}")
+    logger.info(f"Loading manifest: {manifest_path}")
     
     rows = []
     with open(manifest_path) as f:
@@ -237,7 +237,7 @@ def generate_seg_pseudo(
                 if row.get("task") == "seg":
                     rows.append(row)
     
-    logger.info(f"分割样本数: {len(rows)}")
+    logger.info(f"Segmentation samples: {len(rows)}")
     
     stats = {
         "total": len(rows),
@@ -253,35 +253,35 @@ def generate_seg_pseudo(
         if not input_path or not Path(input_path).exists():
             stats["failed"] += 1
             if len(stats["errors"]) < 10:
-                stats["errors"].append(f"[{i}] 输入不存在: {input_path}")
+                stats["errors"].append(f"[{i}] input missing: {input_path}")
             continue
         
-        # 生成输出路径
+        # build the output path
         input_name = Path(input_path).stem
         output_path = output_dir / f"{input_name}_seg.png"
         
-        # 检查是否已存在
+        # check whether it already exists
         if output_path.exists() and not overwrite:
             stats["skipped"] += 1
             continue
         
         try:
-            # 加载输入图像
+            # load the input image
             img = Image.open(input_path).convert("RGB")
             img_array = np.array(img)
             
-            # 这里应该使用 SegFormer-B5 进行推理
-            # 示例：使用简单的颜色量化
-            # 实际使用时替换为模型推理
+            # SegFormer-B5 inference belongs here
+            # example: simple color quantization
+            # replace with model inference in real use
             
-            # 生成伪标签（示例：随机分割）
+            # generate the pseudo-label (example: random segmentation)
             H, W = img_array.shape[:2]
             seg_map = np.random.randint(0, 151, (H, W), dtype=np.uint8)
             
-            # 转换为彩色图像
+            # convert to a color image
             seg_rgb = palette_to_image(seg_map)
             
-            # 保存
+            # save
             output_path.parent.mkdir(parents=True, exist_ok=True)
             Image.fromarray(seg_rgb).save(output_path)
             
@@ -289,26 +289,26 @@ def generate_seg_pseudo(
         except Exception as e:
             stats["failed"] += 1
             if len(stats["errors"]) < 10:
-                stats["errors"].append(f"[{i}] 处理失败: {e}")
+                stats["errors"].append(f"[{i}] processing failed: {e}")
         
         if (i + 1) % 100 == 0:
-            logger.info(f"  进度: {i+1}/{len(rows)}, 成功: {stats['success']}, 跳过: {stats['skipped']}, 失败: {stats['failed']}")
+            logger.info(f"  progress: {i+1}/{len(rows)}, succeeded: {stats['success']}, skipped: {stats['skipped']}, failed: {stats['failed']}")
     
-    logger.info(f"\n处理完成:")
-    logger.info(f"  总样本: {stats['total']}")
-    logger.info(f"  成功: {stats['success']}")
-    logger.info(f"  跳过: {stats['skipped']}")
-    logger.info(f"  失败: {stats['failed']}")
+    logger.info(f"\nDone:")
+    logger.info(f"  total samples: {stats['total']}")
+    logger.info(f"  succeeded: {stats['success']}")
+    logger.info(f"  skipped: {stats['skipped']}")
+    logger.info(f"  failed: {stats['failed']}")
     
     return stats
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, required=True, help="manifest 文件")
-    parser.add_argument("--output-dir", type=Path, required=True, help="输出目录")
-    parser.add_argument("--min-confidence", type=float, default=0.5, help="最小置信度")
-    parser.add_argument("--overwrite", action="store_true", help="覆盖已存在的文件")
+    parser.add_argument("--manifest", type=Path, required=True, help="manifest file")
+    parser.add_argument("--output-dir", type=Path, required=True, help="output directory")
+    parser.add_argument("--min-confidence", type=float, default=0.5, help="minimum confidence")
+    parser.add_argument("--overwrite", action="store_true", help="overwrite existing files")
     
     args = parser.parse_args()
     

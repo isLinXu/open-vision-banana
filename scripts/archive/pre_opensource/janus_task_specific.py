@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Janus-1.3B task-specific 训练 —— 每任务单独训练，然后合并.
+"""Janus-1.3B task-specific training: train each task separately, then merge.
 
-任务：depth/normal/instance/referring/keypoint
-每任务单独训练，使用 continuous RGB 输出
+Tasks: depth/normal/instance/referring/keypoint
+Each task is trained separately with continuous RGB output
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_task_specific.py --task depth
     PYTHONPATH=src:/tmp/Janus python scripts/janus_task_specific.py --task normal
     ...
@@ -67,7 +67,7 @@ TASK_PROMPTS = {
 
 
 class RGBHead(nn.Module):
-    """RGB 预测头：LLM hidden states → RGB 值（带 dropout）."""
+    """RGB prediction head: LLM hidden states → RGB values (with dropout)."""
 
     def __init__(self, hidden_dim: int, image_token_num: int, image_size: int, dropout: float = 0.1):
         super().__init__()
@@ -98,7 +98,7 @@ def _resolve_device() -> str:
 
 
 def train_task(task: str, out_dir: Path) -> dict:
-    """训练单个任务."""
+    """Train one task."""
     device = _resolve_device()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -106,7 +106,7 @@ def train_task(task: str, out_dir: Path) -> dict:
     print(f"[task] {task}")
     print(f"{'='*60}")
 
-    # 1) 数据集 ───────────────────────────────────────────────────────
+    # 1) dataset ───────────────────────────────────────────────────────
     data_path = Path(DATA_ROOT) / task
     if not data_path.exists():
         raise FileNotFoundError(f"Task data not found: {data_path}")
@@ -130,7 +130,7 @@ def train_task(task: str, out_dir: Path) -> dict:
     )
     print(f"[data] train={len(train_idx)}  val={len(val_idx)}")
 
-    # 2) 加载模型 ───────────────────────────────────────────────────────
+    # 2) load the model ────────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -157,7 +157,7 @@ def train_task(task: str, out_dir: Path) -> dict:
     n_train = sum(p.numel() for p in peft_model.parameters() if p.requires_grad)
     print(f"[lora] trainable = {n_train:,}")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -185,7 +185,7 @@ def train_task(task: str, out_dir: Path) -> dict:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 6) 验证函数 ─────────────────────────────────────────────────────
+    # 6) validation function ───────────────────────────────────────────
     prompt = TASK_PROMPTS.get(task, "Generate a visualization of this image.")
     prompt_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
     prompt_len = prompt_ids.shape[1]
@@ -228,7 +228,7 @@ def train_task(task: str, out_dir: Path) -> dict:
         rgb_head.train()
         return sum(val_losses) / len(val_losses)
 
-    # 7) 训练循环 ─────────────────────────────────────────────────────
+    # 7) training loop ─────────────────────────────────────────────────
     print(f"\n[train] {task}: {STEPS} steps")
 
     losses: list[float] = []
@@ -319,14 +319,14 @@ def train_task(task: str, out_dir: Path) -> dict:
     print(f"\n[train] avg(first 1/3)={avg_first:.4f}  avg(last 1/3)={avg_last:.4f}  "
           f"({'DECREASING' if avg_last < avg_first else 'NOT decreasing'})")
 
-    # 保存最终 checkpoint
+    # save the final checkpoint
     final_ckpt = out_dir / "ckpt_final"
     final_ckpt.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(final_ckpt / "lora"))
     torch.save(rgb_head.state_dict(), final_ckpt / "rgb_head.pt")
     print(f"[ckpt] saved → {final_ckpt}")
 
-    # 8) 推理评估 ─────────────────────────────────────────────────────
+    # 8) inference evaluation ──────────────────────────────────────────
     print(f"\n[eval] inference on training samples...")
     results = []
 
@@ -407,7 +407,7 @@ def main() -> None:
     out_dir = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "janus_task_specific"))) / args.task
     result = train_task(args.task, out_dir)
 
-    # 保存结果
+    # save the results
     (out_dir / "task_result.json").write_text(json.dumps(result, indent=2))
     print(f"\n[out] → {out_dir / 'task_result.json'}")
 

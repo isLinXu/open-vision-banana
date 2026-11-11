@@ -1,8 +1,8 @@
-# MPS 深度训练配置 — 论文对齐验证
+# MPS depth training config: paper-alignment check
 # =================================
-# 针对 Apple Silicon (MPS) 优化
-# 使用 vb_depth_pseudo_5k 深度数据 + vb_generation_5k 生成数据
-# 目标: 验证论文 depth 训练 pipeline 在 MPS 上可收敛
+# Tuned for Apple Silicon (MPS)
+# Uses vb_depth_pseudo_5k depth data + vb_generation_5k generation data
+# Goal: check that the paper's depth training pipeline converges on MPS
 
 model:
   name: "black-forest-labs/FLUX.1-schnell"
@@ -34,8 +34,8 @@ logging:
 
 training:
   epochs: 3
-  gradient_accumulation_steps: 4        # 等效 batch=4
-  use_amp: false                        # MPS bfloat16 有兼容性问题
+  gradient_accumulation_steps: 4        # equivalent batch=4
+  use_amp: false                        # MPS bfloat16 has compatibility issues
   use_ema: true
   ema_decay: 0.9999
   ema_warmup_steps: 500
@@ -48,18 +48,18 @@ training:
   early_stopping_min_delta: 0.0
 
 data:
-  # 论文 "very low ratio" — 因生成数据有限，使用 1:4 (20% 视觉)
-  # 等效: 深度 ~1230 steps/epoch + 生成 ~492 steps/epoch
+  # paper "very low ratio": generation data is limited, so use 1:4 (20% vision)
+  # equivalent: depth ~1230 steps/epoch + generation ~492 steps/epoch
   vision_ratio: 0.2
   generation_ratio: 0.8
   resolution: 512
-  batch_size: 1                         # MPS 保守设置
-  num_workers: 0                        # MPS 必须 0
+  batch_size: 1                         # conservative on MPS
+  num_workers: 0                         # must be 0 on MPS
   augmentation: true
   val_split: 0.05
   generation_path: "data/vb_generation_5k"
 
-  # 色图增强: 论文要求 plasma/inferno/viridis/grayscale
+  # colormap augmentation: the paper uses plasma/inferno/viridis/grayscale
   colormaps:
     - "cube_edge"
     - "plasma"

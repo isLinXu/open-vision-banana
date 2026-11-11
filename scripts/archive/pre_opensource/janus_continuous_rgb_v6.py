@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Janus-1.3B continuous RGB v6 — U-Net Skip + Full Vision Unfreeze.
 
-v5 结论：Conv2D Decoder 比 MLP 好（val_loss 0.0282 vs 0.0305），但 MAE 仍不如 v3
-v6 改进：
-  1. U-Net 风格 skip connection：输入图像像素直接注入 decoder 每个分辨率层
-  2. 全解冻 SigLIP（24 blocks）+ 低学习率
-  3. 输入图像经 learnable stem 在 bottleneck 与 SigLIP features 融合
+v5 finding: the Conv2D decoder beats the MLP (val_loss 0.0282 vs 0.0305), but its MAE is still worse than v3
+v6 improvements:
+  1. U-Net style skip connections: input image pixels go straight into every decoder resolution level
+  2. Fully unfrozen SigLIP (24 blocks) + low learning rate
+  3. The input image passes a learnable stem and is fused with the SigLIP features at the bottleneck
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v6.py
 """
 from __future__ import annotations
@@ -70,9 +70,9 @@ TASK_PROMPTS = {
 
 
 class UNetRGBDecoder(nn.Module):
-    """U-Net 风格 decoder：SigLIP features + 输入图像 skip connections → RGB.
+    """U-Net style decoder: SigLIP features + input image skip connections → RGB.
 
-    架构：
+    Architecture:
       bottleneck: [B, 1024+64, 24, 24]  (SigLIP + image stem)
       up1 + skip: [B, 256+3, 48, 48]    → conv → 256
       up2 + skip: [B, 128+3, 96, 96]    → conv → 128
@@ -87,7 +87,7 @@ class UNetRGBDecoder(nn.Module):
         self.grid_size = grid_size
         self.target_size = target_size
 
-        # 输入图像 stem：384×384 RGB → 24×24×64（与 SigLIP 对齐）
+        # input image stem: 384×384 RGB → 24×24×64 (aligned with SigLIP)
         self.img_stem = nn.Sequential(
             nn.Conv2d(3, 32, 7, stride=2, padding=3),   # → 192×192
             nn.BatchNorm2d(32), nn.GELU(),
@@ -162,7 +162,7 @@ class UNetRGBDecoder(nn.Module):
     def forward(self, features: torch.Tensor, input_image: torch.Tensor) -> torch.Tensor:
         """
         features:    [B, 576, D]  SigLIP output
-        input_image: [B, 3, 384, 384]  归一化后的输入图像
+        input_image: [B, 3, 384, 384]  normalized input image
         → [B, 3, 384, 384]
         """
         b = features.shape[0]
@@ -226,7 +226,7 @@ def main() -> None:
     print(f"[cfg] augment_flip={AUGMENT_FLIP}")
     print(f"[cfg] out={OUT}")
 
-    # 1) 加载 Janus ──────────────────────────────────────────────────
+    # 1) load Janus ────────────────────────────────────────────────────
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
                     janus_vlm.GenVisionConfig, janus_vlm.GenAlignerConfig,
@@ -248,7 +248,7 @@ def main() -> None:
     model = model.to(device)
     print(f"[model] loaded in {time.time()-t0:.1f}s")
 
-    # 2) 数据集 ──────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     all_train_datasets, all_val_datasets = [], []
     for task in TASKS:
         data_path = Path(DATA_ROOT) / task
@@ -274,12 +274,12 @@ def main() -> None:
         collate_fn=_collate_fn, drop_last=True)
     print(f"[data] combined train={len(train_combined)}  val={len(val_combined)}")
 
-    # 3) 全解冻 vision model ─────────────────────────────────────────
+    # 3) fully unfreeze the vision model ───────────────────────────────
     model.vision_model.requires_grad_(True)
     n_vision = sum(p.numel() for p in model.vision_model.parameters() if p.requires_grad)
     print(f"[vision] ALL unfrozen, params={n_vision:,}")
 
-    # 冻结其他部分
+    # freeze the other parts
     model.language_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
@@ -312,18 +312,18 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 6) 前向传播 ────────────────────────────────────────────────────
+    # 6) forward pass ──────────────────────────────────────────────────
     def _forward(image_normalized: torch.Tensor) -> torch.Tensor:
-        """image_normalized: [1, 3, 384, 384] (归一化到 [-1,1]).
-        返回 pred_rgb: [1, 3, 384, 384].
+        """image_normalized: [1, 3, 384, 384] (normalized to [-1,1]).
+        Returns pred_rgb: [1, 3, 384, 384].
         """
-        # 反归一化到 [0,1] 给 decoder 做 skip
+        # denormalize to [0,1] for the decoder skip
         image_01 = image_normalized * 0.5 + 0.5
         vis_features = model.vision_model(image_normalized)  # [1, 576, 1024]
         pred_rgb = decoder(vis_features, image_01)           # [1, 3, 384, 384]
         return pred_rgb
 
-    # 7) 验证 ────────────────────────────────────────────────────────
+    # 7) validation ────────────────────────────────────────────────────
     @torch.no_grad()
     def run_validation() -> float:
         decoder.eval()
@@ -339,7 +339,7 @@ def main() -> None:
         model.vision_model.train()
         return sum(val_losses) / len(val_losses) if val_losses else float("inf")
 
-    # 8) 训练循环 ────────────────────────────────────────────────────
+    # 8) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus continuous RGB v6: {STEPS} steps")
     print(f"[train] U-Net skip + full vision unfreeze")
 
@@ -424,7 +424,7 @@ def main() -> None:
     if not losses:
         raise RuntimeError("No finite training steps")
 
-    # 9) 保存 ────────────────────────────────────────────────────────
+    # 9) save ──────────────────────────────────────────────────────────
     k = max(1, len(losses) // 3)
     avg_first = sum(losses[:k]) / k
     avg_last = sum(losses[-k:]) / k
@@ -447,7 +447,7 @@ def main() -> None:
             "val_history": val_history,
         }, f, indent=2)
 
-    # 10) 快速 eval ──────────────────────────────────────────────────
+    # 10) quick eval ───────────────────────────────────────────────────
     print("\n[eval] inference on held-out samples...")
     decoder.eval()
     model.vision_model.eval()

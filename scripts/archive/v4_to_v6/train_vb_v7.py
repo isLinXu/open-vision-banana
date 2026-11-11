@@ -9,7 +9,7 @@
 Key improvements over v6:
   1. Default img2img_strength = 0.3 (was 0.6, reduces texture leakage)
   2. Default colormaps = cube_edge (single colormap, lower learning difficulty)
-  3. Default steps = 3000 (was 500,严重不足)
+  3. Default steps = 3000 (was 500, far too few)
   4. Default grad-accum = 8 (effective batch = 8)
   5. --data-dir and --auto-select-data for flexible dataset discovery
   6. Per-sample validation logging (each sample's Pearson r, MSE, MAE, best strength)

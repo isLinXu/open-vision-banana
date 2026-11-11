@@ -27,7 +27,7 @@ Usage:
     # Retry an interrupted merged upload: add --resume to the same command.
     # Hub 2.x with hf_xet handles streamed, deduplicated uploads.
 
-    # Publish the same merged pipeline to ModelScope (魔搭) as a PRIVATE repo.
+    # Publish the same merged pipeline to ModelScope as a PRIVATE repo.
     # --repo-id is required here because the namespace is not guessed from a token.
     python scripts/publish_to_hub.py \
         --checkpoint output/ovb-e2b_cap10k_s42_10000_merged \

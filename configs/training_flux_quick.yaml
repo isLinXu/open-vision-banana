@@ -1,7 +1,7 @@
-# FLUX.1-schnell 快速验证配置
+# FLUX.1-schnell quick check config
 # ================================
-# 目标: 100 步训练，验证 checkpoint 保存 + 推理加载全链路
-# 预计时间: ~40 分钟 (100 steps × 4 micro-steps × ~36s)
+# Goal: 100 training steps to check the whole checkpoint save + inference load path
+# Expected time: ~40 minutes (100 steps x 4 micro-steps x ~36s)
 
 model:
   name: "black-forest-labs/FLUX.1-schnell"

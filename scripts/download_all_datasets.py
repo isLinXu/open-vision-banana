@@ -1,39 +1,39 @@
 #!/usr/bin/env python3
-"""一键下载 Vision Banana 全量数据集（训练 / 验证 / 测试）。
+"""One-shot download of every Vision Banana dataset (train / val / test).
 
-论文指定评估基准 + 训练数据集，自动下载、解压、格式化到标准目录结构。
+The paper's evaluation benchmarks plus the training datasets, downloaded, extracted and laid out in the standard directory structure.
 
-数据集清单
+Datasets
 ==========
-训练数据:
-  - COCO 2017 (train/val)          — 图像生成 + 深度估计伪标签
-  - ADE20K (train/val)             — 语义分割
-  - BSDS500 (train/val/test)       — 边缘检测
-  - Hypersim (selected scenes)     — 深度估计 (ground truth)
+Training data:
+  - COCO 2017 (train/val)          : image generation + depth estimation pseudo-labels
+  - ADE20K (train/val)             : semantic segmentation
+  - BSDS500 (train/val/test)       : edge detection
+  - Hypersim (selected scenes)     : depth estimation (ground truth)
 
-评估基准 (论文指定):
-  - Cityscapes val                 — 语义分割评估
-  - RefCOCOg UMD val               — 指代分割评估
-  - ReasonSeg val                  — 推理分割评估
-  - GenAI-Bench                    — 图像生成评估
+Evaluation benchmarks (from the paper):
+  - Cityscapes val                 : semantic segmentation evaluation
+  - RefCOCOg UMD val               : referring segmentation evaluation
+  - ReasonSeg val                  : reasoning segmentation evaluation
+  - GenAI-Bench                    : image generation evaluation
 
 Usage:
-    # 下载全部数据集（训练 + 评估）
+    # download every dataset (train + eval)
     python scripts/download_all_datasets.py
 
-    # 只下载训练数据
+    # training data only
     python scripts/download_all_datasets.py --split train
 
-    # 只下载评估基准
+    # evaluation benchmarks only
     python scripts/download_all_datasets.py --split eval
 
-    # 指定输出目录
+    # custom output directory
     python scripts/download_all_datasets.py --output-dir /data/datasets
 
-    # Dry-run（只打印计划）
+    # dry run (print the plan only)
     python scripts/download_all_datasets.py --dry-run
 
-    # 列出所有数据集
+    # list every dataset
     python scripts/download_all_datasets.py --list
 
 Requires: wget/curl, unzip, tar (system tools), huggingface_hub, torch
@@ -541,32 +541,32 @@ def list_datasets() -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="一键下载 Vision Banana 全量数据集（训练 + 评估）",
+        description="One-shot download of every Vision Banana dataset (train + eval)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # 下载全部数据集
+    # download every dataset
     python scripts/download_all_datasets.py
 
-    # 只下载训练数据
+    # training data only
     python scripts/download_all_datasets.py --split train
 
-    # 只下载评估基准
+    # evaluation benchmarks only
     python scripts/download_all_datasets.py --split eval
 
-    # 指定输出目录
+    # custom output directory
     python scripts/download_all_datasets.py --output-dir /data/datasets
 
-    # 跳过可选的大数据集（如 Hypersim 50GB）
+    # skip the optional large datasets (e.g. Hypersim 50GB)
     python scripts/download_all_datasets.py --skip-optional
 
-    # 只下载特定数据集
+    # only specific datasets
     python scripts/download_all_datasets.py --only coco2017 ade20k
 
     # Dry-run
     python scripts/download_all_datasets.py --dry-run
 
-    # 列出所有数据集
+    # list every dataset
     python scripts/download_all_datasets.py --list
         """,
     )

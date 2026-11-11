@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-SN-VC-50M 源图像补充下载脚本 (v3 supplement)
+SN-VC-50M source image supplementary download script (v3 supplement)
 
-基于对 58,331 个 JSONL 样本的精确分析，系统性地下载缺失的源图像。
+Based on an exact analysis of 58,331 JSONL samples, systematically downloads the missing source images.
 
-分层策略:
-  Tier 0: 路径修复（无需下载，只需 symlink/refix）
-  Tier 1: 公开 HF 数据集（直接 curl 下载）
-  Tier 2: 需注册/许可数据集（提供替代方案）
-  Tier 3: 大型数据集（按需子集下载）
+Tiered strategy:
+  Tier 0: path fixes (no download, only symlink/refix)
+  Tier 1: public HF datasets (direct curl download)
+  Tier 2: datasets that need registration or a license (alternatives provided)
+  Tier 3: large datasets (subset downloads on demand)
 
 Usage:
-  python scripts/download_v3_supplement.py --tier 0          # 只修复路径
-  python scripts/download_v3_supplement.py --tier 1          # 下载公开数据集
-  python scripts/download_v3_supplement.py --tier all        # 全部执行
-  python scripts/download_v3_supplement.py --task depth      # 只下载某任务
-  python scripts/download_v3_supplement.py --dry-run         # 只打印计划
+  python scripts/download_v3_supplement.py --tier 0          # fix paths only
+  python scripts/download_v3_supplement.py --tier 1          # download the public datasets
+  python scripts/download_v3_supplement.py --tier all        # run everything
+  python scripts/download_v3_supplement.py --task depth      # download one task only
+  python scripts/download_v3_supplement.py --dry-run         # print the plan only
 """
 
 from __future__ import annotations

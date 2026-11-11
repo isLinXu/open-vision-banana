@@ -1,8 +1,8 @@
-# FLUX.1-dev 三任务训练配置 (Vision Banana 复现)
+# FLUX.1-dev three-task training config (Vision Banana reproduction)
 # ================================================
-# 模型: FLUX.1-dev (12B transformer, 4-bit NF4 量化, T5 8-bit)
-# 数据: SenseNova-Vision-Corpus-50M 三任务子集 (depth + normal + seg)
-# 目标: RTX 4090 24GB 单卡 LoRA 微调
+# Model: FLUX.1-dev (12B transformer, 4-bit NF4 quantization, T5 8-bit)
+# Data: three-task subset of SenseNova-Vision-Corpus-50M (depth + normal + seg)
+# Target: single RTX 4090 24GB LoRA fine-tuning
 
 model:
   name: "flux-dev"

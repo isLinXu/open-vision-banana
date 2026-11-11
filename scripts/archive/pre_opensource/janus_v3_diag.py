@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Janus v3 checkpoint 诊断评估 — 多样本 + 统计分析."""
+"""Janus v3 checkpoint diagnostic evaluation: multiple samples + statistics."""
 from __future__ import annotations
 
 import json
@@ -32,7 +32,7 @@ RES = 384
 BATCH = 1
 IMAGE_TOKEN_NUM = 576
 DTYPE = torch.float32
-N_EVAL = 10  # 评估样本数
+N_EVAL = 10  # number of evaluation samples
 
 
 class RGBHead(nn.Module):
@@ -72,7 +72,7 @@ def main():
     device = _resolve_device()
     print(f"[cfg] device={device}  ckpt={CKPT}  n_eval={N_EVAL}")
 
-    # 1) 加载模型
+    # 1) load the model
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
                     janus_vlm.GenVisionConfig, janus_vlm.GenAlignerConfig,
@@ -91,7 +91,7 @@ def main():
     model = model.to(device)
     model.eval()
 
-    # 2) 加载 LoRA
+    # 2) load the LoRA
     from peft import PeftModel
     adapter_dir = Path(CKPT) / "lora"
     if adapter_dir.exists():
@@ -100,7 +100,7 @@ def main():
         model.language_model.eval()
         print(f"[lora] loaded from {adapter_dir}")
 
-    # 3) 加载 RGB Head
+    # 3) load the RGB head
     hidden_dim = model.config.language_config.hidden_size
     rgb_head = RGBHead(hidden_dim, IMAGE_TOKEN_NUM, RES, dropout=0.0).to(device, DTYPE)
     rgb_head_path = Path(CKPT) / "rgb_head.pt"
@@ -108,10 +108,10 @@ def main():
     rgb_head.eval()
     print(f"[rgb_head] loaded, params={sum(p.numel() for p in rgb_head.parameters()):,}")
 
-    # 4) 加载验证集
+    # 4) load the validation set
     ds = VisionTaskDataset(data_path=str(Path(DATA_ROOT) / "depth"), resolution=RES, task="depth")
     n_total = len(ds)
-    # 用训练集之后的样本做评估（避免和训练集重叠）
+    # evaluate on the samples after the training set (no overlap with training)
     n_train = 500
     val_indices = list(range(n_train, min(n_train + N_EVAL, n_total)))
     print(f"[data] total={n_total}, eval indices={val_indices[0]}-{val_indices[-1]}")
@@ -120,7 +120,7 @@ def main():
     p_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
     p_len = p_ids.shape[1]
 
-    # 5) 推理 + 诊断
+    # 5) inference + diagnostics
     all_metrics = []
     OUT = PROJECT_ROOT / "output" / "janus_continuous_rgb_v3" / "diag"
     OUT.mkdir(parents=True, exist_ok=True)
@@ -156,18 +156,18 @@ def main():
             gen_hidden = hidden_states[:, p_len:, :]
             pred_rgb = rgb_head(gen_hidden).squeeze(0).clamp(0, 1).cpu()
 
-        # 指标计算
+        # metrics
         rgb_mae = (pred_rgb.float() - tgt_rgb.float()).abs().mean().item()
         rgb_mse = ((pred_rgb.float() - tgt_rgb.float()) ** 2).mean().item()
         psnr = 10 * math.log10(1.0 / max(rgb_mse, 1e-10))
 
-        # 逐通道分析
+        # per-channel analysis
         per_ch_mae = []
         for c in range(3):
             ch_mae = (pred_rgb[c].float() - tgt_rgb[c].float()).abs().mean().item()
             per_ch_mae.append(ch_mae)
 
-        # 预测统计
+        # prediction statistics
         pred_mean = pred_rgb.mean().item()
         pred_std = pred_rgb.std().item()
         pred_min = pred_rgb.min().item()
@@ -175,7 +175,7 @@ def main():
         tgt_mean = tgt_rgb.mean().item()
         tgt_std = tgt_rgb.std().item()
 
-        # 空间均匀性分析：将图像分成 4 象限，看预测是否区分不同区域
+        # spatial uniformity: split the image into 4 quadrants and check whether predictions tell regions apart
         h_half, w_half = pred_rgb.shape[1] // 2, pred_rgb.shape[2] // 2
         quadrants_pred = [
             pred_rgb[:, :h_half, :w_half].mean().item(),
@@ -215,7 +215,7 @@ def main():
         print(f"  tgt:  mean={tgt_mean:.4f} std={tgt_std:.4f}")
         print(f"  quadrant_err={[f'{e:.4f}' for e in quadrant_diff]}")
 
-        # 保存面板图
+        # save the panel figure
         pil_in = Image.fromarray(
             (inp_tensor.permute(1, 2, 0).clamp(-1, 1) * 0.5 + 0.5).mul(255).byte().numpy()
         )
@@ -229,14 +229,14 @@ def main():
         ).resize((RES, RES)), (RES * 2, 0))
         panel.save(OUT / f"diag_depth_{idx:04d}.png")
 
-        # 额外：保存差异图（放大 5x）
+        # extra: save the difference map (amplified 5x)
         diff = (pred_rgb.float() - tgt_rgb.float()).abs()
         diff_vis = (diff * 5.0).clamp(0, 1)
         Image.fromarray(
             (diff_vis.permute(1, 2, 0).mul(255).byte().numpy())
         ).resize((RES, RES)).save(OUT / f"diag_depth_{idx:04d}_diff.png")
 
-    # 6) 汇总统计
+    # 6) summary statistics
     print("\n" + "=" * 60)
     print("DIAGNOSTIC SUMMARY")
     print("=" * 60)
@@ -252,19 +252,19 @@ def main():
     print(f"avg pred: mean={avg_pred_mean:.4f}  std={avg_pred_std:.4f}")
     print(f"avg tgt:  mean={avg_tgt_mean:.4f}  std={avg_tgt_std:.4f}")
 
-    # 分析预测是否退化为常量
+    # check whether the prediction collapsed to a constant
     pred_means = [m["pred_mean"] for m in all_metrics]
     pred_stds = [m["pred_std"] for m in all_metrics]
     print(f"\npred_mean across samples: min={min(pred_means):.4f} max={max(pred_means):.4f}")
     print(f"pred_std across samples:  min={min(pred_stds):.4f} max={max(pred_stds):.4f}")
 
-    # 判断是否退化为接近常量输出
+    # decide whether the output is close to a constant
     if avg_pred_std < 0.05:
-        print("\n[WARN] 预测几乎退化为常量！RGB Head 没有学到有意义的空间变化。")
+        print("\n[WARN] The prediction has almost collapsed to a constant! The RGB head learned no meaningful spatial variation.")
     if max(pred_means) - min(pred_means) < 0.05:
-        print("\n[WARN] 不同样本的预测均值几乎相同！模型没有区分不同输入。")
+        print("\n[WARN] The mean prediction is almost the same for every sample! The model does not tell inputs apart.")
 
-    # 保存完整诊断
+    # save the full diagnostics
     with open(OUT / "diag_summary.json", "w") as f:
         json.dump({"metrics": all_metrics, "summary": {
             "avg_mae": avg_mae, "avg_psnr": avg_psnr,

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-SN-VC-50M 数据集补充下载脚本
+SN-VC-50M dataset supplementary download script
 
-在已有 26 个 JSONL 基础上，补充下载缺失的小型 JSONL 标注文件（<100MB），
-解压已有数据集（FSC147），并尝试下载 TAS500。
+On top of the existing 26 JSONL files, download the missing small JSONL annotation files (<100MB),
+extract the existing datasets (FSC147) and try to download TAS500.
 
-策略：按任务族抽样下载，不全量下载。
+Strategy: sample downloads per task family instead of downloading everything.
 """
 
 import json

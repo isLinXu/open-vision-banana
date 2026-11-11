@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-SN-VC-50M 数据集抽样下载与准备脚本
+SN-VC-50M dataset sampled download and preparation script
 
-从 SenseNova-Vision-Corpus-50M 下载 JSONL 标注文件，
-并准备对应的原始图片和目标图（深度/法线/分割等）。
+Downloads the JSONL annotation files of SenseNova-Vision-Corpus-50M
+and prepares the matching source images and targets (depth/normal/segmentation, etc.).
 
-策略：
-- JSONL 标注：直接从 HF 下载（小文件）
-- 原始图片：从各原始数据集官方源下载
-- 目标图（depth/normal/seg masks）：8TB tar.gz 无法全量下载，
-  改为从原始数据集标注生成或用预训练模型推理
+Strategy:
+- JSONL annotations: downloaded directly from HF (small files)
+- Source images: downloaded from each source dataset's official host
+- Targets (depth/normal/seg masks): the 8TB tar.gz cannot be downloaded in full,
+  so they are generated from the source dataset annotations or by pretrained model inference
 
-任务覆盖：
+Task coverage:
 1. Dense Geometric Prediction (depth/normal) — COCO 2017
 2. Segmentation — Cityscapes, RefCOCOg, Hypersim, LOVEDA
 3. Structure View Understanding — FSC147, DOTA, GroceryStore, HumanParts

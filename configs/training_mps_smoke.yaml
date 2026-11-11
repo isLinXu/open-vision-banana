@@ -1,9 +1,9 @@
-# MPS Smoke Test 配置 — 快速验证训练 pipeline
+# MPS smoke test config: quick check of the training pipeline
 # ===========================================
-# 使用极小规模数据，50 steps 内验证:
-# 1. 数据加载 + MixedVisionDataset 色图增强
-# 2. LoRA 训练 loop 通畅
-# 3. Checkpoint 保存正常
+# Uses a tiny dataset and checks within 50 steps:
+# 1. data loading + MixedVisionDataset colormap augmentation
+# 2. the LoRA training loop runs
+# 3. checkpoints save correctly
 
 model:
   name: "black-forest-labs/FLUX.1-schnell"
@@ -37,7 +37,7 @@ training:
   epochs: 1
   gradient_accumulation_steps: 1
   use_amp: false
-  use_ema: false                        # smoke test 不需要 EMA
+  use_ema: false                        # the smoke test needs no EMA
   save_every: 10
   eval_every: 999                       # disable eval
   max_keep: 2
@@ -47,15 +47,15 @@ training:
   early_stopping_min_delta: 0.0
 
 data:
-  vision_ratio: 1.0                     # 纯视觉，不混合生成（简化）
+  vision_ratio: 1.0                     # vision only, no generation mixed in (simpler)
   generation_ratio: 0.0
-  resolution: 256                       # 更小的分辨率加速
+  resolution: 256                       # smaller resolution for speed
   batch_size: 1
   num_workers: 0
-  augmentation: false                   # smoke test 不需要增强
+  augmentation: false                   # the smoke test needs no augmentation
   val_split: 0.0
 
-  # 色图增强验证
+  # colormap augmentation check
   colormaps:
     - "cube_edge"
     - "plasma"
@@ -63,7 +63,7 @@ data:
   tasks:
     depth_estimation:
       datasets:
-        - name: "vb_depth_300"          # 小数据集快速跑通
+        - name: "vb_depth_300"          # small dataset for a quick end-to-end run
           split: "train"
 
 depth_mapping:

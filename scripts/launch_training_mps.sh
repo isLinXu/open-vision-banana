@@ -1,11 +1,11 @@
 #!/bin/bash
-# MPS 训练启动脚本
+# MPS training launcher
 # ================================
-# 使用方法：
+# Usage:
 #   bash scripts/launch_training_mps.sh [fluxe|sd15]
 #
-# 方案 A (fluxe): 使用 FLUX.1-schnell（需要 Hugging Face token）
-# 方案 B (sd15):  使用 SD 1.5（公开模型，无需 token，用于验证 MPS 流程）
+# Option A (fluxe): FLUX.1-schnell (needs a Hugging Face token)
+# Option B (sd15):  SD 1.5 (public model, no token needed, to check the MPS pipeline)
 
 set -e
 
@@ -14,7 +14,7 @@ PYTHON="/usr/local/bin/python3.11"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH}"
 
-# 设置 HF Token（如果存在）
+# Set the HF token (if present)
 if [ -f "$HOME/.huggingface/token" ]; then
     export HF_TOKEN="$(cat "$HOME/.huggingface/token")"
     export HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
@@ -30,8 +30,8 @@ echo "MPS: $(python3 -c 'import torch; print(torch.backends.mps.is_available())'
 echo ""
 
 if [ "$MODE" = "sd15" ]; then
-    echo ">> 使用 SD 1.5 进行 MPS 训练流程验证（无需 HF token）"
-    echo ">> 注意：SD 1.5 不是 FLUX.1，训练效果不同，仅用于验证流程"
+    echo ">> Using SD 1.5 to check the MPS training pipeline (no HF token needed)"
+    echo ">> Note: SD 1.5 is not FLUX.1 and trains differently; this only checks the pipeline"
     echo ""
 
     $PYTHON scripts/train.py \
@@ -47,28 +47,28 @@ if [ "$MODE" = "sd15" ]; then
         --output-dir "output/checkpoints_sd15_smoke"
 
 elif [ "$MODE" = "fluxe" ]; then
-    echo ">> 使用 FLUX.1-schnell 进行正式训练"
-    echo ">> 检查 HF token..."
+    echo ">> Using FLUX.1-schnell for the real training run"
+    echo ">> Checking the HF token..."
 
     HF_TOKEN_FILE="$HOME/.huggingface/token"
     if [ ! -f "$HF_TOKEN_FILE" ] && [ -z "$HF_TOKEN" ]; then
         echo ""
-        echo "⚠️  FLUX.1-schnell 是 Hugging Face Gated Repository，需要 Access Token"
+        echo "⚠️  FLUX.1-schnell is a gated Hugging Face repository and needs an access token"
         echo ""
-        echo "请按以下步骤获取 token："
-        echo "  1. 访问 https://huggingface.co/black-forest-labs/FLUX.1-schnell"
-        echo "  2. 点击 'Access repository' 并同意许可协议"
-        echo "  3. 进入 Settings → Access Tokens → New Token"
-        echo "  4. 创建 Read 权限的 token"
-        echo "  5. 在终端运行: echo 'YOUR_TOKEN' > ~/.huggingface/token"
+        echo "Get a token as follows:"
+        echo "  1. Open https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+        echo "  2. Click 'Access repository' and accept the license"
+        echo "  3. Go to Settings → Access Tokens → New Token"
+        echo "  4. Create a token with Read permission"
+        echo "  5. In a terminal run: echo 'YOUR_TOKEN' > ~/.huggingface/token"
         echo ""
-        echo "或者使用备用方案验证 MPS 训练流程："
+        echo "Or check the MPS training pipeline with the fallback option:"
         echo "  bash scripts/launch_training_mps.sh sd15"
         echo ""
         exit 1
     fi
 
-    echo ">> HF token 已配置，开始训练..."
+    echo ">> HF token configured, starting training..."
     echo ""
 
     $PYTHON scripts/train.py \
@@ -81,9 +81,9 @@ elif [ "$MODE" = "fluxe" ]; then
         --output-dir "output/checkpoints_mps"
 
 else
-    echo "用法: bash scripts/launch_training_mps.sh [fluxe|sd15]"
-    echo "  fluxe - FLUX.1-schnell 正式训练（需要 HF token）"
-    echo "  sd15  - SD 1.5 流程验证（无需 HF token）"
+    echo "Usage: bash scripts/launch_training_mps.sh [fluxe|sd15]"
+    echo "  fluxe - real FLUX.1-schnell training (needs an HF token)"
+    echo "  sd15  - SD 1.5 pipeline check (no HF token needed)"
     exit 1
 fi
 

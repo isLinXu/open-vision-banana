@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Open-Vision-Banana 数据集质量清洗工具
+Open-Vision-Banana dataset quality cleaning tool
 
-功能：
-1. 验证 manifest 中所有文件路径是否存在
-2. 检查图像质量（尺寸、格式、有效性）
-3. 检测异常目标图像（全黑、全白、低对比度）
-4. 生成清洗后的干净 manifest
+Features:
+1. Check that every file path in the manifest exists
+2. Check image quality (size, format, validity)
+3. Detect abnormal target images (all black, all white, low contrast)
+4. Produce a cleaned manifest
 
-用法：
+Usage:
     python scripts/clean_dataset.py --manifest output/snvc_v5full_pairs/pairs_5task_v3.jsonl --output output/snvc_v5full_pairs/pairs_5task_v3_clean.jsonl
 """
 
@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 
 
 def check_file_exists(path: str) -> bool:
-    """检查文件是否存在"""
+    """Check whether a file exists"""
     return Path(path).exists()
 
 
 def check_image_valid(path: str, min_size: int = 64) -> tuple[bool, str]:
     """
-    检查图像是否有效
+    Check whether an image is valid
     
     Returns:
         (is_valid, error_message)
@@ -46,12 +46,12 @@ def check_image_valid(path: str, min_size: int = 64) -> tuple[bool, str]:
         img = Image.open(path)
         img.verify()
         
-        # 重新打开以获取尺寸（verify 后需要重新打开）
+        # reopen to get the size (the image must be reopened after verify)
         img = Image.open(path)
         w, h = img.size
         
         if w < min_size or h < min_size:
-            return False, f"尺寸过小: {w}x{h}"
+            return False, f"too small: {w}x{h}"
         
         return True, ""
     except Exception as e:
@@ -60,7 +60,7 @@ def check_image_valid(path: str, min_size: int = 64) -> tuple[bool, str]:
 
 def check_image_quality(path: str) -> dict:
     """
-    检查图像质量指标
+    Check image quality metrics
     
     Returns:
         dict with quality metrics
@@ -69,18 +69,18 @@ def check_image_quality(path: str) -> dict:
         img = Image.open(path).convert("RGB")
         arr = np.array(img)
         
-        # 基本统计
+        # basic statistics
         mean = arr.mean()
         std = arr.std()
         
-        # 检测全黑/全白
+        # detect all black / all white
         is_all_black = mean < 5
         is_all_white = mean > 250
         
-        # 检测低对比度
+        # detect low contrast
         low_contrast = std < 10
         
-        # 检测单通道（灰度）
+        # detect single channel (grayscale)
         channel_std = arr.std(axis=(0, 1))
         is_grayscale = channel_std.max() < 5
         
@@ -99,16 +99,16 @@ def check_image_quality(path: str) -> dict:
 
 def validate_manifest(manifest_path: Path, sample_rate: float = 1.0) -> dict:
     """
-    验证 manifest 文件
+    Validate a manifest file
     
     Args:
-        manifest_path: manifest 文件路径
-        sample_rate: 采样率（1.0 = 全部检查）
+        manifest_path: manifest file path
+        sample_rate: sampling rate (1.0 = check everything)
     
     Returns:
-        验证结果统计
+        validation statistics
     """
-    logger.info(f"加载 manifest: {manifest_path}")
+    logger.info(f"Loading manifest: {manifest_path}")
     
     rows = []
     with open(manifest_path) as f:
@@ -117,17 +117,17 @@ def validate_manifest(manifest_path: Path, sample_rate: float = 1.0) -> dict:
             if line:
                 rows.append(json.loads(line))
     
-    logger.info(f"总样本数: {len(rows)}")
+    logger.info(f"Total samples: {len(rows)}")
     
-    # 按任务分组
+    # group by task
     task_counts = {}
     for row in rows:
         task = row.get("task", "unknown")
         task_counts[task] = task_counts.get(task, 0) + 1
     
-    logger.info(f"任务分布: {task_counts}")
+    logger.info(f"Task distribution: {task_counts}")
     
-    # 验证结果
+    # validation results
     results = {
         "total": len(rows),
         "valid": 0,
@@ -138,45 +138,45 @@ def validate_manifest(manifest_path: Path, sample_rate: float = 1.0) -> dict:
         "errors": [],
     }
     
-    # 采样检查
+    # sampled check
     if sample_rate < 1.0:
         import random
         random.seed(42)
         rows = random.sample(rows, int(len(rows) * sample_rate))
-        logger.info(f"采样检查: {len(rows)} 样本 ({sample_rate*100:.0f}%)")
+        logger.info(f"Sampled check: {len(rows)} samples ({sample_rate*100:.0f}%)")
     
     for i, row in enumerate(rows):
         input_path = row.get("input", "")
         target_path = row.get("target", "")
         task = row.get("task", "unknown")
         
-        # 检查文件存在性
+        # check that the files exist
         input_exists = check_file_exists(input_path)
         target_exists = check_file_exists(target_path)
         
         if not input_exists:
             results["missing_input"] += 1
             if len(results["errors"]) < 10:
-                results["errors"].append(f"[{i}] 输入缺失: {input_path}")
+                results["errors"].append(f"[{i}] input missing: {input_path}")
             continue
         
         if not target_exists:
             results["missing_target"] += 1
             if len(results["errors"]) < 10:
-                results["errors"].append(f"[{i}] 目标缺失: {target_path}")
+                results["errors"].append(f"[{i}] target missing: {target_path}")
             continue
         
-        # 检查图像有效性
+        # check image validity
         input_valid, input_err = check_image_valid(input_path)
         target_valid, target_err = check_image_valid(target_path)
         
         if not input_valid or not target_valid:
             results["invalid_image"] += 1
             if len(results["errors"]) < 10:
-                results["errors"].append(f"[{i}] 图像无效: input={input_err}, target={target_err}")
+                results["errors"].append(f"[{i}] invalid image: input={input_err}, target={target_err}")
             continue
         
-        # 检查目标图像质量
+        # check the target image quality
         quality = check_image_quality(target_path)
         
         has_quality_issue = False
@@ -185,18 +185,18 @@ def validate_manifest(manifest_path: Path, sample_rate: float = 1.0) -> dict:
         if quality.get("is_all_white"):
             has_quality_issue = True
         if quality.get("low_contrast") and task != "depth":
-            # depth 任务允许低对比度
+            # the depth task allows low contrast
             has_quality_issue = True
         
         if has_quality_issue:
             results["quality_issues"] += 1
             if len(results["errors"]) < 10:
-                results["errors"].append(f"[{i}] 质量问题: {quality}")
+                results["errors"].append(f"[{i}] quality issue: {quality}")
         
         results["valid"] += 1
         
         if (i + 1) % 1000 == 0:
-            logger.info(f"  进度: {i+1}/{len(rows)}")
+            logger.info(f"  progress: {i+1}/{len(rows)}")
     
     return results
 
@@ -209,19 +209,19 @@ def clean_manifest(
     skip_quality_issues: bool = True,
 ) -> dict:
     """
-    清洗 manifest，生成干净版本
+    Clean the manifest and write a clean version
     
     Args:
-        manifest_path: 原始 manifest
-        output_path: 输出干净 manifest
-        skip_missing: 跳过缺失文件
-        skip_invalid: 跳过无效图像
-        skip_quality_issues: 跳过质量问题
+        manifest_path: original manifest
+        output_path: output clean manifest
+        skip_missing: skip missing files
+        skip_invalid: skip invalid images
+        skip_quality_issues: skip quality issues
     
     Returns:
-        清洗统计
+        cleaning statistics
     """
-    logger.info(f"清洗 manifest: {manifest_path}")
+    logger.info(f"Cleaning manifest: {manifest_path}")
     
     rows = []
     with open(manifest_path) as f:
@@ -230,7 +230,7 @@ def clean_manifest(
             if line:
                 rows.append(json.loads(line))
     
-    logger.info(f"原始样本数: {len(rows)}")
+    logger.info(f"Original samples: {len(rows)}")
     
     clean_rows = []
     stats = {
@@ -247,13 +247,13 @@ def clean_manifest(
         target_path = row.get("target", "")
         task = row.get("task", "unknown")
         
-        # 检查文件存在性
+        # check that the files exist
         if skip_missing:
             if not check_file_exists(input_path) or not check_file_exists(target_path):
                 stats["skipped_missing"] += 1
                 continue
         
-        # 检查图像有效性
+        # check image validity
         if skip_invalid:
             input_valid, _ = check_image_valid(input_path)
             target_valid, _ = check_image_valid(target_path)
@@ -261,7 +261,7 @@ def clean_manifest(
                 stats["skipped_invalid"] += 1
                 continue
         
-        # 检查目标图像质量
+        # check the target image quality
         if skip_quality_issues:
             quality = check_image_quality(target_path)
             
@@ -282,47 +282,47 @@ def clean_manifest(
         stats["by_task"][task] = stats["by_task"].get(task, 0) + 1
         
         if (i + 1) % 1000 == 0:
-            logger.info(f"  进度: {i+1}/{len(rows)}, 保留: {stats['kept']}")
+            logger.info(f"  progress: {i+1}/{len(rows)}, kept: {stats['kept']}")
     
-    # 写入干净 manifest
+    # write the clean manifest
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         for row in clean_rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     
-    logger.info(f"清洗完成: {output_path}")
-    logger.info(f"  保留: {stats['kept']}/{stats['total']} ({stats['kept']/stats['total']*100:.1f}%)")
-    logger.info(f"  跳过缺失: {stats['skipped_missing']}")
-    logger.info(f"  跳过无效: {stats['skipped_invalid']}")
-    logger.info(f"  跳过质量: {stats['skipped_quality']}")
-    logger.info(f"  任务分布: {stats['by_task']}")
+    logger.info(f"Cleaning done: {output_path}")
+    logger.info(f"  Kept: {stats['kept']}/{stats['total']} ({stats['kept']/stats['total']*100:.1f}%)")
+    logger.info(f"  Skipped missing: {stats['skipped_missing']}")
+    logger.info(f"  Skipped invalid: {stats['skipped_invalid']}")
+    logger.info(f"  Skipped quality: {stats['skipped_quality']}")
+    logger.info(f"  Task distribution: {stats['by_task']}")
     
     return stats
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, required=True, help="原始 manifest 文件")
-    parser.add_argument("--output", type=Path, required=True, help="输出干净 manifest")
-    parser.add_argument("--validate-only", action="store_true", help="仅验证，不生成清洗后文件")
-    parser.add_argument("--sample-rate", type=float, default=1.0, help="采样率 (0.0-1.0)")
-    parser.add_argument("--keep-missing", action="store_true", help="保留缺失文件的样本")
-    parser.add_argument("--keep-invalid", action="store_true", help="保留无效图像")
-    parser.add_argument("--keep-quality-issues", action="store_true", help="保留质量问题的样本")
+    parser.add_argument("--manifest", type=Path, required=True, help="original manifest file")
+    parser.add_argument("--output", type=Path, required=True, help="output clean manifest")
+    parser.add_argument("--validate-only", action="store_true", help="validate only, do not write a cleaned file")
+    parser.add_argument("--sample-rate", type=float, default=1.0, help="sampling rate (0.0-1.0)")
+    parser.add_argument("--keep-missing", action="store_true", help="keep samples with missing files")
+    parser.add_argument("--keep-invalid", action="store_true", help="keep invalid images")
+    parser.add_argument("--keep-quality-issues", action="store_true", help="keep samples with quality issues")
     
     args = parser.parse_args()
     
     if args.validate_only:
         results = validate_manifest(args.manifest, args.sample_rate)
-        logger.info(f"\n验证结果:")
-        logger.info(f"  总样本: {results['total']}")
-        logger.info(f"  有效: {results['valid']}")
-        logger.info(f"  缺失输入: {results['missing_input']}")
-        logger.info(f"  缺失目标: {results['missing_target']}")
-        logger.info(f"  无效图像: {results['invalid_image']}")
-        logger.info(f"  质量问题: {results['quality_issues']}")
+        logger.info(f"\nValidation results:")
+        logger.info(f"  total samples: {results['total']}")
+        logger.info(f"  valid: {results['valid']}")
+        logger.info(f"  missing input: {results['missing_input']}")
+        logger.info(f"  missing target: {results['missing_target']}")
+        logger.info(f"  invalid images: {results['invalid_image']}")
+        logger.info(f"  quality issues: {results['quality_issues']}")
         if results["errors"]:
-            logger.info(f"\n错误示例 (前 10 个):")
+            logger.info(f"\nError examples (first 10):")
             for err in results["errors"]:
                 logger.info(f"  {err}")
     else:
