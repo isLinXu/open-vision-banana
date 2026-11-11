@@ -105,4 +105,4 @@ Active scripts for Open-Vision-Banana training, inference, evaluation, and utili
 ## Archive
 
 Historical and archived scripts are in `archive/`:
-- `archive/pre_opensource/` — Pre-open-source experimental scripts (245 files)
+- `archive/pre_opensource/` — Pre-open-source scripts still imported by tests, configs or active scripts (unreferenced ones were removed)

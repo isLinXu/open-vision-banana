@@ -10,9 +10,9 @@ Strip "_rgb" from target name to get matching stem "pixabay_123".
 """
 import os, sys, shutil
 
-VB_SRC = "/Users/gatilin/.cache/huggingface/hub/datasets--lllab--lllab-vision-banana-dataset/snapshots/f074bc5ea17e167d2a91561121f58f5a40eca882/semantic-segmentation/processed/semantic_all/train"
-DST_IMG = "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full/images/segmentation"
-DST_TGT = "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full/targets/segmentation"
+VB_SRC = "~/.cache/huggingface/hub/datasets--lllab--lllab-vision-banana-dataset/snapshots/f074bc5ea17e167d2a91561121f58f5a40eca882/semantic-segmentation/processed/semantic_all/train"
+DST_IMG = "data/vb_snvc_train_v5_full/images/segmentation"
+DST_TGT = "data/vb_snvc_train_v5_full/targets/segmentation"
 
 SRC_IMG = os.path.join(VB_SRC, "input")
 SRC_TGT = os.path.join(VB_SRC, "target")

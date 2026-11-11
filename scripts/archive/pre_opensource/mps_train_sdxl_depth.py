@@ -66,7 +66,7 @@ from open_vision_banana.training.tuner import (
 MODEL = os.environ.get("VB_MODEL", "segmind/SSD-1B")
 DEPTH = os.environ.get(
     "VB_DATA",
-    "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3/depth",
+    "data/vb_snvc_train_v3/depth",
 )
 STEPS = int(os.environ.get("VB_STEPS", "3000"))
 NSAMPLES = int(os.environ.get("VB_NSAMPLES", "100000"))  # large -> full dataset

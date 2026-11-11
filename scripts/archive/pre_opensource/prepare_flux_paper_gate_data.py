@@ -27,7 +27,7 @@ logger = logging.getLogger("prepare_flux_paper_gate")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_GENERATION = Path(
-    "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_generation_5k"
+    "data/vb_generation_5k"
 )
 
 

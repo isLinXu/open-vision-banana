@@ -23,7 +23,7 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE_MANIFEST = Path(
-    "/Users/gatilin/.cache/huggingface/hub/"
+    "~/.cache/huggingface/hub/"
     "datasets--lllab--lllab-vision-banana-dataset/snapshots/"
     "f074bc5ea17e167d2a91561121f58f5a40eca882/"
     "semantic-segmentation/processed/semantic_all/manifest.json"

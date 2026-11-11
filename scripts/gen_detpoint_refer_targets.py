@@ -49,9 +49,9 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 Image.MAX_IMAGE_PIXELS = None
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-ROOT = Path("/media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full")
+ROOT = Path("data/raw/open-vision-banana-snvc-train-full")
 RAW_CORPUS = Path(
-    "/media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M/"
+    "data/raw/SenseNova-Vision-Corpus-50M/"
     "SenseNova-Vision-Corpus-50M/SenseNova-Vision-Corpus-50M"
 )
 ANN_DIR = ROOT / "annotations"

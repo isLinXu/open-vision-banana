@@ -19,7 +19,7 @@ lora:
     - conv_point
 
 data:
-  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  dir: data/raw/open-vision-banana-snvc-train-full
   pair_manifest: output/snvc_v5full_pairs/pairs_3task_clean.jsonl
   resolution: 512
   vision_ratio: 1.0

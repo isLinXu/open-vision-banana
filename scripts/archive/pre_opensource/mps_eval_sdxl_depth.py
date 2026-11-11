@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="segmind/SSD-1B")
     ap.add_argument("--data",
-                    default="/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3/depth")
+                    default="data/vb_snvc_train_v3/depth")
     ap.add_argument("--lora", default=str(PROJECT_ROOT / "output/mps_train_sdxl/ckpt_final"))
     ap.add_argument("--out", default=str(PROJECT_ROOT / "output/mps_eval_sdxl"))
     ap.add_argument("--rank", type=int, default=64)

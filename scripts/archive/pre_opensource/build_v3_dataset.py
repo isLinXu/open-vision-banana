@@ -822,7 +822,7 @@ def main():
     parser.add_argument(
         "--dataset-root",
         type=str,
-        default="/Users/gatilin/MyWork/datasets/lllab-vision-banana-dataset",
+        default="data/raw/lllab-vision-banana-dataset",
     )
     parser.add_argument(
         "--output-root",

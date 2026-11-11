@@ -23,7 +23,7 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger("depth_gen_v5")
 
-DATA_ROOT = Path("/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full")
+DATA_ROOT = Path("data/vb_snvc_train_v5_full")
 DEPTH_IMG_DIR = DATA_ROOT / "images" / "depth"
 DEPTH_TGT_DIR = DATA_ROOT / "targets" / "depth"
 RESOLUTION = 256  # MAR-VB default img_size=256

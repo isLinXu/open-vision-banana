@@ -15,7 +15,7 @@ Supported task types:
 Usage::
 
     python scripts/build_snvc50m_manifest.py \\
-        --dataset-root /media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M \\
+        --dataset-root data/raw/SenseNova-Vision-Corpus-50M \\
         --output output/snvc50m_manifest/pairs_snvc50m.jsonl
 """
 
@@ -154,7 +154,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset-root", type=Path,
-        default=Path("/media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M"),
+        default=Path("data/raw/SenseNova-Vision-Corpus-50M"),
     )
     parser.add_argument(
         "--output", type=Path,

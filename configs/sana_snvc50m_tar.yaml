@@ -31,7 +31,7 @@ data:
   tar_target_mode: true
   tar_index: output/snvc50m_manifest/tar_index_v3.json
   task_tar_index_dir: output/snvc50m_manifest/task_indexes
-  tar_root: /media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M
+  tar_root: data/raw/SenseNova-Vision-Corpus-50M
   resolution: 512
   vision_ratio: 1.0
   num_workers: 4

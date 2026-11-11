@@ -27,7 +27,7 @@ Index format (JSON)::
 Usage::
 
     python scripts/build_tar_index_snvc50m_v2.py \\
-        --tar-root /media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M \\
+        --tar-root data/raw/SenseNova-Vision-Corpus-50M \\
         --output   output/snvc50m_manifest/tar_index.json
 """
 
@@ -282,7 +282,7 @@ def main() -> None:
     parser.add_argument(
         "--tar-root",
         type=Path,
-        default=Path("/media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M"),
+        default=Path("data/raw/SenseNova-Vision-Corpus-50M"),
         help="Directory containing the split tar.gz volumes",
     )
     parser.add_argument(

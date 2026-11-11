@@ -34,7 +34,7 @@ lora:
   dropout: 0.0
 
 data:
-  dir: /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full
+  dir: data/raw/open-vision-banana-snvc-train-full
   pair_manifest: output/snvc_v5full_pairs/pairs_multitask13.jsonl
   resolution: 512
   num_workers: 0

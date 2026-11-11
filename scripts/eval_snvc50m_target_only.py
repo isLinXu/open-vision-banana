@@ -195,7 +195,7 @@ def compute_seg_metrics(pred: np.ndarray, gt_samples: list[np.ndarray]) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Evaluate SNVC-50M target-only model")
     parser.add_argument("--checkpoint", type=Path, required=True, help="Path to lora.pt")
-    parser.add_argument("--tar-root", type=Path, default=Path("/media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M"))
+    parser.add_argument("--tar-root", type=Path, default=Path("data/raw/SenseNova-Vision-Corpus-50M"))
     parser.add_argument("--gzip-index", type=Path, default=Path("output/snvc50m_manifest/gzip_index/stream.gzidx"))
     parser.add_argument("--task-index-dir", type=Path, default=Path("output/snvc50m_manifest/task_indexes"))
     parser.add_argument("--output-dir", type=Path, default=Path("output/eval_snvc50m_target_only"))
@@ -384,7 +384,6 @@ def main():
     print(f"Samples per task: {args.samples_per_task}")
     print(f"GT samples for comparison: {args.gt_samples}")
     print(f"\nOutput directory: {args.output_dir}")
-    print(f"W&B: https://wandb.ai/linxu/open-vision-banana")
 
 
 if __name__ == "__main__":

@@ -437,7 +437,7 @@ def main():
 
     model_path = os.environ.get(
         "OPEN_VISION_BANANA_MODEL_PATH",
-        "/media/linxu/thinkHub/ckpts/black-forest-labs/FLUX.1-dev",
+        "black-forest-labs/FLUX.1-dev",
     )
     # Check if local path exists
     if not Path(model_path).is_dir():

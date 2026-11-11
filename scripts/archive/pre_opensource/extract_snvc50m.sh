@@ -19,8 +19,8 @@
 set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────
-DATASET_ROOT="${DATASET_ROOT:-/media/linxu/thinkHub/datasets/SenseNova-Vision-Corpus-50M}"
-EXTRACT_ROOT="${EXTRACT_ROOT:-/media/linxu/thinkHub/datasets/snvc50m_extracted}"
+DATASET_ROOT="${DATASET_ROOT:-data/raw/SenseNova-Vision-Corpus-50M}"
+EXTRACT_ROOT="${EXTRACT_ROOT:-data/raw/snvc50m_extracted}"
 TAR_PREFIX="SenseNova-Vision-Corpus-50M.tar.gz"
 INNER_PREFIX="SenseNova-Vision-Corpus-50M/"
 
