@@ -1,0 +1,47 @@
+{
+  "status": "passed",
+  "datasets": [
+    {
+      "dataset": "nyu",
+      "samples": 654,
+      "fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "status": "matched"
+    },
+    {
+      "dataset": "eth3d",
+      "samples": 454,
+      "fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "status": "matched"
+    },
+    {
+      "dataset": "diode",
+      "samples": 325,
+      "fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "status": "matched"
+    },
+    {
+      "dataset": "cityscapes",
+      "samples": 500,
+      "fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "status": "matched"
+    },
+    {
+      "dataset": "reasonseg",
+      "samples": 344,
+      "fingerprint": "8da98d8e6c7234788412665f409c045f95805d44e58093ec257bb827c12920f6",
+      "status": "matched"
+    },
+    {
+      "dataset": "refcocog",
+      "samples": 4896,
+      "fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "status": "matched"
+    }
+  ],
+  "all_input_fingerprints_match_pinned_historical_adapters": true,
+  "restored_archives_consumed": [
+    "eth3d",
+    "diode"
+  ],
+  "reasonseg_annotation_mode": "lisa_v1"
+}
