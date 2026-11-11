@@ -1,8 +1,12 @@
 {
   "scope": "Default complete six-benchmark metrics and independent comparison columns",
-  "cpu_tests_passed": 145,
+  "cpu_tests_passed": 147,
   "cpu_tests_failed": 0,
   "new_regression_file": "tests/test_full_external_metrics.py",
+  "checkpoint_discovery_test_file": "tests/test_checkpoint_discovery.py",
+  "live_discovery_complete_adapter_entries": 44,
+  "checkpoint_step_or_best_filter": false,
+  "same_path_update_and_document_only_revision_tested": true,
   "reasonseg_default_variants": ["legacy_union", "lisa_v1"],
   "reasonseg_primary_example_mode": "legacy_union",
   "reasonseg_inference_calls_per_query": 1,

@@ -16,6 +16,7 @@
 | 解码与指标 | `src/open_vision_banana/core/*mapper.py`、`evaluation/{evaluator,benchmark,referring,depth}.py` |
 | 分片合并 | `scripts/merge_eval_shards.py`、`evaluation/shards.py`：验证连续无重叠区间和相同 metadata，合并原始计数再算指标 |
 | 完整指标分列 | `scripts/export_external_eval_comparison.py`：原始、逐图平均、GT尺度对齐、ReasonSeg lisa_v1 分列；完整 JSON/CSV 和独立 HTML，不修改现有看板 |
+| 全量ckpt发现 | `scripts/discover_external_eval_checkpoints.py`：解析A/B最新revision，枚举ckpt全部步数/后缀，跟踪新增及同路径更新；不启动推理 |
 
 | 数据 | 集合/条目 | 原生标签 | 共享形式 |
 |---|---|---|---|
@@ -50,6 +51,8 @@ python scripts/run_external_eval_suite.py --config /absolute/suite.json --output
 历史调度另有守护进程、最多三次恢复和前批接续逻辑；新可移植入口不会假装完整迁移这些依赖特定服务器的行为。没有启动新的 GPU 评测来验证本分支。
 
 ## 权重和推理协议
+
+模型仓库、共同起点及全量checkpoint范围见 [模型与滚动发现清单](external-evaluation-models.md)。A/B的待测范围是`ckpt/`下所有完整、可加载权重，而非固定步数或仅`_best`；新增权重与同路径更新均纳入发现。记录到清单不等于评测完成。
 
 I108 起点是 `Melo111/Fusion-C1-KQ0r128-60-40` 的固定 revision `9d5b9b8ede04d7d9f4a4ff8a6a75a4b734ab1b4d`，不是原始 Qwen。best checkpoint 要检查实际 adapter 的 online/EMA 来源；现有 I108 best 文件的 adapter 来源为 EMA。r64、alpha64、rsLoRA 的缩放是 alpha/sqrt(r)=8。不能把 checkpoint 元数据的 online 字段当成实际 adapter 一定为 online 的证据；不能再次叠加已经 merged 的父 adapter。
 
@@ -130,6 +133,6 @@ python scripts/export_external_eval_comparison.py --records-json /absolute/compl
 
 验收实际样本数、零 skipped/failed、指标有限、GT 原生尺寸、实际输出画布、权重谱系、SHA、prompt、query/annotation 模式；分片区间无遗漏/重复且 metadata 一致。报告保留原始精度、单位与有效像素，不因为 query 或合理有效域不同自动否定比较，但必须展示这些差异。
 
-初版 CPU 回归139项通过，详见数据包 `audit/validation.json`；默认完整指标更新后的相关回归为145项通过，见 [本次核验记录](external-evaluation-full-metrics-audit.json)，覆盖双标注单次推理、native/canvas、空分片、混合口径拒绝及完整导出。无 GPU 重测，所以不承诺 corrected 模式会提高分数。公开结果快照中尚未完成的 checkpoint 项目仍是进行中，不能当作零分或已完成。本次仅更新分支代码与Issue，不修改当前看板或HF固定发布快照。
+初版 CPU 回归139项通过，详见数据包 `audit/validation.json`；默认完整指标更新为145项通过，追加全量checkpoint发现后为147项通过，见 [本次核验记录](external-evaluation-full-metrics-audit.json)，覆盖双标注单次推理、native/canvas、空分片、混合口径拒绝、完整导出及同路径更新发现。无 GPU 重测，所以不承诺 corrected 模式会提高分数。公开结果快照中尚未完成的 checkpoint 项目仍是进行中，不能当作零分或已完成。本次仅更新分支代码与Issue，不修改当前看板或HF固定发布快照。
 
 原始数据来源与许可： [NYUv2](https://cs.nyu.edu/~fergus/datasets/nyu_depth_v2.html)、[ETH3D CC BY-NC-SA4](https://www.eth3d.net/)、[DIODE MIT](https://diode-dataset.org/)、[Cityscapes 禁止转发条款](https://www.cityscapes-dataset.com/license/)、[ReasonSeg/LISA](https://github.com/JIA-Lab-research/LISA#dataset)、[RefCOCOg REFER](https://github.com/lichengunc/refer)、[COCO 使用条款](https://cocodataset.org/#termsofuse)。代码许可和数据许可分别适用；数据包没有覆盖上游权利声明。
