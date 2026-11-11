@@ -121,6 +121,7 @@ class TrainingCallbacks:
         lora_alpha: int = 64,
         suffix: str = "",
         selection_protocol: str | None = None,
+        validation_metrics: dict | None = None,
     ) -> Path:
         """Save online resume state; ``_best`` adapters use validated EMA weights.
 
@@ -145,6 +146,7 @@ class TrainingCallbacks:
             "step": step,
             "val_loss": val_loss,
             "best_val_loss": saved_best_loss,
+            "val_loss_per_task": (validation_metrics or {}).get("per_task"),
             "selection_protocol": selection_protocol,
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
@@ -180,6 +182,7 @@ class TrainingCallbacks:
             "step": step,
             "val_loss": val_loss,
             "best_val_loss": saved_best_loss,
+            "val_loss_per_task": (validation_metrics or {}).get("per_task"),
             "lora_rank": lora_rank,
             "lora_alpha": lora_alpha,
             "model_name": model_name,
@@ -205,17 +208,27 @@ class TrainingCallbacks:
         (ckpt_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
     def on_validation_loss(
-        self, step: int, val_loss: float, save_best: Callable[[], object]
+        self,
+        step: int,
+        val_loss: float,
+        save_best: Callable[[], object],
+        per_task: dict | None = None,
     ) -> bool:
         """Log a validation loss; when it improves, ``save_best()`` and record it as the best.
 
         Returns True only after a new best checkpoint is saved successfully.
         """
         logger.info("  [val] step=%d val_loss=%.4f", step, val_loss)
+        per_task = per_task or {}
+        if per_task:
+            detail = " ".join(f"{t}={v:.4f}" for t, v in sorted(per_task.items()))
+            logger.info("  [val/task] step=%d %s", step, detail)
         if self.wandb_enabled:
             import wandb
 
-            wandb.log({"val/loss": val_loss}, step=step)
+            payload = {"val/loss": val_loss}
+            payload.update({f"val/loss_{task}": v for task, v in per_task.items()})
+            wandb.log(payload, step=step)
         is_best = math.isfinite(val_loss) and val_loss < self.best_val_loss
         if is_best:
             save_best()
@@ -235,6 +248,7 @@ class TrainingCallbacks:
         lora_rank: int = 32,
         lora_alpha: int = 64,
         selection_protocol: str | None = None,
+        validation_metrics: dict | None = None,
     ) -> bool:
         """Handle an EMA validation loss (online when EMA is absent).
 
@@ -255,7 +269,9 @@ class TrainingCallbacks:
                 lora_alpha=lora_alpha,
                 suffix="_best",
                 selection_protocol=selection_protocol,
+                validation_metrics=validation_metrics,
             ),
+            per_task=(validation_metrics or {}).get("per_task"),
         )
 
     def on_finish(self, step: int) -> None:
