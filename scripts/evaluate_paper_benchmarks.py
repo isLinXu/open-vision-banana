@@ -284,7 +284,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Also score the log-scale median ensemble of K seeds per depth image under "
             "decoded_metrics.seed_ensemble (K times the inference). The main metrics stay "
-            "the single-seed reading."
+            "the single-seed reading; a non-finite output from any member skips the sample "
+            "for both readings."
         ),
     )
     parser.add_argument(

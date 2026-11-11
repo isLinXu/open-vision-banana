@@ -58,8 +58,9 @@ def decode_depth_rgb(
     return mapper.normalized_to_depth(normalized)
 
 
-# member k of a depth seed ensemble samples batch i with seed + i + k * stride
-DEPTH_ENSEMBLE_SEED_STRIDE = 1000
+# member k of a depth seed ensemble samples batch i with seed + i + k * stride; the stride is
+# larger than any benchmark, so no two (batch, member) pairs share a seed
+DEPTH_ENSEMBLE_SEED_STRIDE = 1_000_000
 
 
 def _midpoint_median(values: torch.Tensor) -> torch.Tensor:
@@ -797,6 +798,7 @@ class VisionEvaluator:
                 self.last_accumulator_states["seed_ensemble"] = accumulator_state(
                     ensemble_accumulator
                 )
+                self.last_accumulator_states["seed_ensemble_members"] = depth_seed_ensemble
         elif task == "semantic" and semantic_accumulator is not None:
             self.last_accumulator_states = {"main": accumulator_state(semantic_accumulator)}
         elif task == "referring" and referring_accumulator is not None:

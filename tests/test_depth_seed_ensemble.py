@@ -160,6 +160,10 @@ def test_merge_refuses_shards_that_disagree_on_the_ensemble():
     with pytest.raises(ValueError, match="seed ensemble"):
         merged_metrics(states)
     assert "seed_ensemble" not in merged_metrics(states[1:])
+    other_size = VisionEvaluator(_SeededModel(), device="cpu")
+    other_size.evaluate(batches[1:], task="depth", seed=43, depth_seed_ensemble=3)
+    with pytest.raises(ValueError, match="seed_ensemble_members"):
+        merged_metrics([states[0], other_size.last_accumulator_states])
 
 
 def test_eval_cli_rejects_an_empty_ensemble(tmp_path, monkeypatch, capsys):
