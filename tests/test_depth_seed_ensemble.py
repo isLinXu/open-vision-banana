@@ -121,7 +121,7 @@ def test_ensemble_at_native_resolution_is_upsampled_like_the_main_prediction():
 
 def test_a_non_finite_member_skips_the_sample_for_both_readings():
     model = _SeededModel(fail_seed=43 + DEPTH_ENSEMBLE_SEED_STRIDE)
-    report = VisionEvaluator(model, device="cpu").evaluate(
+    report = VisionEvaluator(model, device="cpu", strict_nonfinite=False).evaluate(
         _batches(2), task="depth", seed=42, depth_seed_ensemble=2
     )
     single = VisionEvaluator(_SeededModel(), device="cpu").evaluate(
