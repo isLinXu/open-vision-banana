@@ -42,7 +42,7 @@ TASK_NAME = "referring_multi"
 # Named colours the model can both read in a prompt and render unambiguously on black.
 MULTI_REFERRING_COLORS = ("white", "green", "cyan", "red", "yellow", "magenta", "blue", "orange")
 
-_PREFIX, _SUFFIX = BINARY_REFERRING_TEMPLATE.split("{expression}")
+_PREFIX, _SUFFIX = BINARY_REFERRING_TEMPLATE.split("{query}")
 
 
 def expression_from_binary_prompt(prompt: str) -> str | None:
