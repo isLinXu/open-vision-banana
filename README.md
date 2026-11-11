@@ -17,6 +17,9 @@
 
 ## Table of Contents
 
+External evaluation collaborators: [reproduction guide and protocol audit](docs/external-evaluation-handoff.md),
+[public benchmark input package](https://huggingface.co/datasets/Melo111/open-vision-banana-external-eval).
+
 - [Overview](#overview)
 - [Supported Tasks](#supported-tasks)
 - [Architecture](#architecture)

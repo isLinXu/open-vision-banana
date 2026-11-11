@@ -26,7 +26,12 @@ class ReferringAccumulator:
         self.fp = 0.0
         self.fn = 0.0
 
-    def update(self, pred_mask: torch.Tensor, gt_mask: torch.Tensor) -> None:
+    def update(
+        self, pred_mask: torch.Tensor, gt_mask: torch.Tensor,
+        valid_mask: torch.Tensor | None = None,
+    ) -> None:
+        if valid_mask is not None and valid_mask.shape != gt_mask.shape:
+            raise ValueError("valid_mask and gt_mask must have the same shape")
         if pred_mask.shape != gt_mask.shape:
             raise ValueError(
                 f"pred_mask and gt_mask must have the same shape, got "
@@ -38,6 +43,12 @@ class ReferringAccumulator:
 
         pred_bool = pred_mask.bool()
         gt_bool = gt_mask.bool()
+        if valid_mask is not None:
+            valid = valid_mask.to(device=pred_bool.device).bool().reshape_as(pred_bool)
+            if not bool(valid.flatten(1).any(dim=1).all()):
+                raise ValueError("Referring sample has no valid pixels")
+            pred_bool = pred_bool & valid
+            gt_bool = gt_bool & valid
         intersection = (pred_bool & gt_bool).sum(dim=(-2, -1)).double()
         union = (pred_bool | gt_bool).sum(dim=(-2, -1)).double()
         per_sample_iou = torch.where(
@@ -83,6 +94,7 @@ def evaluate_referring(
     pred_mask: torch.Tensor,
     gt_mask: torch.Tensor,
     iou_threshold: float = 0.5,
+    valid_mask: torch.Tensor | None = None,
 ) -> dict[str, float]:
     """Compute referring expression segmentation metrics.
 
@@ -95,7 +107,7 @@ def evaluate_referring(
         Dictionary with IoU, Precision@threshold, Recall, F-score.
     """
     accumulator = ReferringAccumulator(iou_threshold=iou_threshold)
-    accumulator.update(pred_mask, gt_mask)
+    accumulator.update(pred_mask, gt_mask, valid_mask=valid_mask)
     return {
         key: float(value)
         for key, value in accumulator.compute().items()

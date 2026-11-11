@@ -1,0 +1,48 @@
+import importlib.util
+import json
+from pathlib import Path
+import sys
+import types
+
+from PIL import Image
+import pytest
+
+from open_vision_banana.referring_contract import build_binary_referring_prompt
+
+spec = importlib.util.spec_from_file_location("audit_entry", Path(__file__).parents[1] / "scripts/evaluate_external_audited.py")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+
+
+@pytest.mark.parametrize("size,prompt,valid", [
+    (512, build_binary_referring_prompt("the red car"), True),
+    (768, build_binary_referring_prompt("the red car"), False),
+    (512, "wrong template", False),
+])
+def test_audit_checks_raw_output_and_actual_prompt(tmp_path, monkeypatch, size, prompt, valid):
+    class Pipeline:
+        def __call__(self, **kwargs):
+            return types.SimpleNamespace(images=[Image.new("RGB", (size, size))])
+
+    original = Pipeline.__call__
+    monkeypatch.setitem(sys.modules, "diffusers", types.SimpleNamespace(QwenImage21Pipeline=Pipeline))
+    output = tmp_path / "result.json"
+
+    def evaluate():
+        Pipeline()(prompt=prompt, output_resolution=512)
+        output.write_text(json.dumps(dict(metadata={})))
+        return 0
+
+    monkeypatch.setattr(audit.runpy, "run_path", lambda *args, **kwargs: {"main": evaluate})
+    monkeypatch.setattr(sys, "argv", ["audit", "--resolution", "512", "--benchmark", "referring",
+                                    "--referring-prompt-version", "query_v2", "--output-json", str(output)])
+    if valid:
+        audit.main()
+        result = json.loads(output.read_text())
+        assert result["metadata"]["resolution_verification"]["every_prediction_checked"]
+        proof = json.loads(output.with_suffix(".resolution-audit.json").read_text())
+        assert proof["predictions_verified"] == proof["referring_prompts_verified"] == 1
+    else:
+        with pytest.raises(ValueError):
+            audit.main()
+    assert Pipeline.__call__ is original

@@ -665,9 +665,15 @@ class VisionEvaluator:
                         ).squeeze(1)
                         > 0.5
                     )
+                valid_key = "valid_mask_native" if native_resolution else "valid_mask"
+                valid_mask = batch.get(valid_key)
+                if valid_mask is not None:
+                    valid_mask = valid_mask.to(self.device).bool()
+                    if valid_mask.dim() == 4 and valid_mask.shape[1] == 1:
+                        valid_mask = valid_mask.squeeze(1)
                 if referring_accumulator is not None:
-                    referring_accumulator.update(pred_mask, gt_mask)
-                metrics = evaluate_referring(pred_mask, gt_mask)
+                    referring_accumulator.update(pred_mask, gt_mask, valid_mask=valid_mask)
+                metrics = evaluate_referring(pred_mask, gt_mask, valid_mask=valid_mask)
 
             elif task == "edge":
                 # Edge detection: treat RGB as edge probability (grayscale)

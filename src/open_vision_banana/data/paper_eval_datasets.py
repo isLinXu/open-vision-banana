@@ -83,12 +83,16 @@ class ReasonSegDataset(BaseVisionDataset):
         resolution=512,
         native_gt=False,
         query_mode="all",
+        annotation_mode="legacy_union",
         **kwargs,
     ) -> None:
         self.native_gt = bool(native_gt)
         if query_mode not in {"all", "first"}:
             raise ValueError("ReasonSeg query_mode must be 'all' or 'first'")
         self.query_mode = query_mode
+        if annotation_mode not in {"legacy_union", "lisa_v1"}:
+            raise ValueError("Unknown ReasonSeg annotation_mode")
+        self.annotation_mode = annotation_mode
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -149,6 +153,9 @@ class ReasonSegDataset(BaseVisionDataset):
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
         expression, native = self._expression_and_mask(sample)
+        valid_native = native != 255 if native is not None else None
+        if native is not None:
+            native = (native == 1).astype(np.uint8)
         if native is None:
             gt_mask = torch.zeros(self.resolution, self.resolution, dtype=torch.bool)
             target_rgb = torch.zeros(3, self.resolution, self.resolution)
@@ -178,6 +185,14 @@ class ReasonSegDataset(BaseVisionDataset):
                 if native is not None
                 else gt_mask
             )
+        if self.annotation_mode == "lisa_v1" and valid_native is not None:
+            valid_tensor = torch.from_numpy(np.ascontiguousarray(valid_native))
+            item["valid_mask"] = torch.nn.functional.interpolate(
+                valid_tensor.float()[None, None],
+                size=(self.resolution, self.resolution), mode="nearest",
+            )[0, 0].bool()
+            if self.native_gt:
+                item["valid_mask_native"] = valid_tensor
         return item
 
     def _expression_and_mask(self, sample: dict) -> tuple[str, np.ndarray | None]:
@@ -194,6 +209,8 @@ class ReasonSegDataset(BaseVisionDataset):
             return None
         with Image.open(image_path) as source:
             width, height = source.size
+        if self.annotation_mode == "lisa_v1":
+            return reasonseg_lisa_labels(shapes, height, width)
         mask = np.zeros((height, width), dtype=np.uint8)
         for shape in shapes:
             if not isinstance(shape, dict):
@@ -214,6 +231,36 @@ class ReasonSegDataset(BaseVisionDataset):
             array = np.asarray(Image.open(mask_path).convert("L"))
             return (array > 127).astype(np.uint8)
         return self._mask_from_shapes(row.get("shapes") or [], image_path)
+
+
+def reasonseg_lisa_labels(shapes: list, height: int, width: int) -> np.ndarray:
+    """LISA-compatible polygon rasterization: background=0, target=1, ignore=255.
+
+    Protocol reference: JIA-Lab-research/LISA, utils/data_processing.py
+    (Apache-2.0). Uses integer truncation and descending rasterized polygon area;
+    small polygons override large ones, including target/ignore overlaps.
+    """
+    import cv2
+
+    polygons = []
+    areas = []
+    for shape in shapes:
+        if str(shape["label"]).lower() == "flag":
+            continue
+        points = np.asarray([shape["points"]], dtype=np.int32)
+        if points.ndim != 3 or points.shape[1] < 3 or points.shape[2] != 2:
+            raise ValueError("ReasonSeg polygon requires at least three 2D points")
+        region = np.zeros((height, width), dtype=np.uint8)
+        cv2.polylines(region, points, True, 1, 1)
+        cv2.fillPoly(region, points, 1)
+        polygons.append((points, 255 if "ignore" in shape["label"].lower() else 1))
+        areas.append(region.sum())
+    labels = np.zeros((height, width), dtype=np.uint8)
+    for index in np.argsort(areas)[::-1]:
+        points, value = polygons[index]
+        cv2.polylines(labels, points, True, value, 1)
+        cv2.fillPoly(labels, points, value)
+    return labels
 
 
 class GenAIBenchDataset(BaseVisionDataset):
