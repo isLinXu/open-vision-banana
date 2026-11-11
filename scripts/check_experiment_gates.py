@@ -345,7 +345,7 @@ def check_post_training(*, config_path: Path, sft_gate: Path | None = None) -> G
     except Exception as exc:
         report.add("post.config_loads", False, str(exc))
         return report
-    report.add("post.config_loads", True, f"objective={config.objective} tune_mode={config.train_mode}")
+    report.add("post.config_loads", True, f"objective={config.objective} tune_mode={config.tune_mode}")
     if config.objective == "sft":
         report.add("post.sft_default", True, "no post-training requested")
         return report
