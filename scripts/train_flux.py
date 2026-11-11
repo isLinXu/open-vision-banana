@@ -225,6 +225,9 @@ class ManifestVisionDataset(Dataset):
         self.resolution = resolution
         self.samples = []
         path_anchor = data_root.resolve() if data_root else manifest_path
+        from open_vision_banana.data.clean_depth import DepthAdmission
+
+        depth_admission = DepthAdmission(manifest_path, data_root or Path(manifest_path).parent)
         with Path(manifest_path).open(encoding="utf-8") as f:
             for line_no, line in enumerate(f, 1):
                 if not line.strip():
@@ -236,6 +239,8 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
+                if split == "train" and mapped in {"depth", "depth_edge"}:
+                    depth_admission.check(row, line_no)
                 img_path = resolve_manifest_path(row.get("input", ""), path_anchor)
                 tgt_path = resolve_manifest_path(row.get("target", ""), path_anchor)
                 if not img_path.is_file() or not tgt_path.is_file():
@@ -247,6 +252,8 @@ class ManifestVisionDataset(Dataset):
                 })
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
+        self._depth_admission_checked = split == "train"
+        depth_admission.log_summary(logger)
 
     def __len__(self):
         return len(self.samples)

@@ -758,6 +758,9 @@ class ManifestVisionDataset(Dataset):
         # for the SN-VC-50M manifest where paths are relative to the
         # extracted data root, not the manifest location.
         path_anchor = data_root.resolve() if data_root is not None else manifest_path
+        from open_vision_banana.data.clean_depth import DepthAdmission
+
+        depth_admission = DepthAdmission(manifest_path, data_root or Path(manifest_path).parent)
 
         with manifest_path.open(encoding="utf-8") as handle:
             for line_no, line in enumerate(handle, 1):
@@ -770,6 +773,8 @@ class ManifestVisionDataset(Dataset):
                     continue
                 if row.get("split") != split:
                     continue
+                if split == "train" and task_info[0] in {"depth", "depth_edge"}:
+                    depth_admission.check(row, line_no)
                 image_path = resolve_manifest_path(row.get("input") or "", path_anchor)
                 target_path = resolve_manifest_path(row.get("target") or "", path_anchor)
                 if not image_path.is_file() or not target_path.is_file():
@@ -797,6 +802,8 @@ class ManifestVisionDataset(Dataset):
 
         if max_samples is not None and max_samples > 0:
             self.samples = self.samples[:max_samples]
+        self._depth_admission_checked = split == "train"
+        depth_admission.log_summary(logger)
 
         if self.samples:
             names = {sample["dir_name"] for sample in self.samples}
@@ -978,6 +985,10 @@ def main():
         "specular_removal",
     ]
     tasks_to_load = args.tasks if args.tasks else all_tasks
+    if args.tar_target_mode or args.tar_index is not None or args.pair_manifest is None:
+        from open_vision_banana.data.clean_depth import require_depth_manifest
+
+        require_depth_manifest(tasks_to_load, "legacy tar/V3 input")
 
     generation_dataset = None
     if args.tar_target_mode:

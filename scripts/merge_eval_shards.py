@@ -121,6 +121,16 @@ def merge_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
             k: v for k, v in records[0].items() if k not in {"shard", "accumulator_states"}
         }
         merged_record["samples"] = sum(record["samples"] for record in records)
+        if any("depth_scale_ratios" in record for record in records):
+            if any(
+                "depth_scale_ratios" not in record
+                or len(record["depth_scale_ratios"]) != record["samples"]
+                for record in records
+            ):
+                raise ValueError(f"{key}: missing or incomplete depth scale ratios")
+            merged_record["depth_scale_ratios"] = [
+                ratio for record in records for ratio in record["depth_scale_ratios"]
+            ]
         merged_record["decoded_metrics"] = merged_metrics(states) if states else {}
         merged_record["merged_shards"] = merged_shards
         merged["benchmarks"][key] = merged_record

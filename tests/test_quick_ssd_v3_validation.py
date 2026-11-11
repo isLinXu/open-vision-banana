@@ -13,9 +13,28 @@ import torch.nn as nn
 from _paths import ARCHIVE_SCRIPTS
 from PIL import Image
 
-from open_vision_banana.training.tuner import InstructionTuner, VisionTaskDataset
+from open_vision_banana.training.trainer import ManifestVisionDataset
+from open_vision_banana.training.tuner import InstructionTuner
 
 ROOT = Path(__file__).parents[1]
+
+
+def clean_depth_dataset(root: Path):
+    """Use the supported manifest route with explicit synthetic native validity."""
+    Image.new("L", (8, 8), 255).save(root / "valid_mask.png")
+    rows = [
+        dict(
+            input=f"images/{image.name}",
+            target=f"targets/{image.name}",
+            task="depth",
+            split="train",
+            valid_mask="valid_mask.png",
+        )
+        for image in sorted((root / "images").glob("*.png"))
+    ]
+    path = root / "pairs.jsonl"
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    return ManifestVisionDataset(path, 8, "train", {"depth"})
 
 
 def load_script(name: str):
@@ -204,7 +223,7 @@ def test_tuner_stops_at_exact_optimizer_step(tmp_path: Path):
     target_dir.mkdir()
     Image.new("RGB", (8, 8), "black").save(image_dir / "a.png")
     Image.new("RGB", (8, 8), "white").save(target_dir / "a.png")
-    dataset = VisionTaskDataset(str(tmp_path), resolution=8, task="depth")
+    dataset = clean_depth_dataset(tmp_path)
     tuner = InstructionTuner(
         model=FakeGenerator(),
         lora_rank=2,
@@ -252,7 +271,7 @@ def test_resumed_scheduler_keeps_absolute_max_step_horizon(
         Image.new("RGB", (8, 8), "black").save(image_dir / f"{index}.png")
         Image.new("RGB", (8, 8), "white").save(target_dir / f"{index}.png")
 
-    dataset = VisionTaskDataset(str(tmp_path), resolution=8, task="depth")
+    dataset = clean_depth_dataset(tmp_path)
     tuner = InstructionTuner(
         model=FakeGenerator(),
         lora_rank=2,

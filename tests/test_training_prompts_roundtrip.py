@@ -74,8 +74,15 @@ def test_metric_depth_rows_train_as_depth_with_the_row_prompt(tmp_path):
     root = tmp_path / "hypersim"
     (root / "images").mkdir(parents=True)
     (root / "targets").mkdir()
-    (root / "images" / "a.png").write_bytes(b"x")
-    (root / "targets" / "a.png").write_bytes(b"x")
+    Image.new("RGB", (8, 8), (90, 90, 90)).save(root / "images" / "a.png")
+    metric = np.full((8, 8), 2.0, dtype=np.float32)
+    np.save(root / "native_depth.npy", metric)
+    depth_rgb = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(
+        torch.from_numpy(metric).unsqueeze(0).unsqueeze(0)
+    )[0]
+    Image.fromarray((depth_rgb.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)).save(
+        root / "targets" / "a.png"
+    )
     prompt = "Generate a metric depth visualization of this image."
     manifest = root / "pairs.jsonl"
     manifest.write_text(
@@ -84,6 +91,7 @@ def test_metric_depth_rows_train_as_depth_with_the_row_prompt(tmp_path):
                 "task": "metric_depth",
                 "input": "images/a.png",
                 "target": "targets/a.png",
+                "metric_depth": "native_depth.npy",
                 "split": "train",
                 "prompt": prompt,
             }
@@ -205,6 +213,7 @@ def test_cube_edge_train_rows_get_a_named_colormap_prompt(tmp_path):
     tgt_dir.mkdir()
     Image.new("RGB", (32, 32), (90, 90, 90)).save(img_dir / "a.png")
     depth_rgb = DepthRGBMapper(colormap="cube_edge").depth_to_rgb(torch.full((1, 1, 32, 32), 2.0))[0]
+    np.save(tmp_path / "native_depth.npy", np.full((32, 32), 2.0, dtype=np.float32))
     Image.fromarray((depth_rgb.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)).save(
         tgt_dir / "d.png"
     )
@@ -215,6 +224,7 @@ def test_cube_edge_train_rows_get_a_named_colormap_prompt(tmp_path):
                 "task": "depth",
                 "input": "images/a.png",
                 "target": "targets/d.png",
+                "metric_depth": "native_depth.npy",
                 "split": "train",
                 "prompt": "Generate a metric depth visualization of this image.",
             }

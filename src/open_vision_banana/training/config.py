@@ -95,6 +95,7 @@ class TrainingConfig:
 
     # ── Loss ───────────────────────────────────────────────────────────
     task_loss_weights: dict[str, float] = field(default_factory=dict)  # empty = 1.0 for every task
+    depth_scale_loss_weight: float = 0.0
     depth_edge_aux_weight: float = 0.0
     depth_edge_aux_gradient_weight: float = 0.25
     depth_edge_aux_edge_weight: float = 2.0
@@ -270,7 +271,7 @@ class TrainingConfig:
             raise ValueError("depth_curve must be metric_power or log_relative")
         if self.depth_log_alpha <= 0:
             raise ValueError("depth_log_alpha must be positive")
-        for name in ("flow_sigma", "depth_edge_aux_weight", "depth_edge_aux_gradient_weight",
+        for name in ("flow_sigma", "depth_scale_loss_weight", "depth_edge_aux_weight", "depth_edge_aux_gradient_weight",
                      "depth_edge_aux_edge_weight", "depth_edge_aux_edge_threshold",
                      "normal_angular_loss_weight"):
             if getattr(self, name) < 0:
@@ -295,15 +296,15 @@ class TrainingConfig:
             raise ValueError("dtype must be float32, float16, or bfloat16")
         if self.quantize not in {None, "4bit", "8bit"}:
             raise ValueError("quantize must be null, 4bit, or 8bit")
-        if self.train_mode not in {"lora", "full"}:
-            raise ValueError("train_mode must be lora or full")
-        if self.train_mode == "full" and self.quantize is not None:
+        if self.tune_mode not in {"lora", "full"}:
+            raise ValueError("tune_mode must be lora or full")
+        if self.tune_mode == "full" and self.quantize is not None:
             raise ValueError(
-                "train_mode full trains the unquantized backbone; set quantize to null"
+                "tune_mode full trains the unquantized backbone; set quantize to null"
             )
-        if self.train_mode == "full" and self.resume and self.resume_weights_only:
+        if self.tune_mode == "full" and self.resume and self.resume_weights_only:
             raise ValueError(
-                "train_mode full resumes its own sharded state only (no resume_weights_only)"
+                "tune_mode full resumes its own sharded state only (no resume_weights_only)"
             )
         if self.scheduler not in {"cosine", "cosine_restarts", "polynomial", "constant", "one_cycle"}:
             raise ValueError(
@@ -442,7 +443,7 @@ _YAML_SECTIONS = {
     "flow": {"img2img_flow": "img2img_flow", "sigma": "flow_sigma",
              "logit_normal_timesteps": "logit_normal", "shift": "flow_shift", "min_snr": "min_snr",
              "min_snr_gamma": "min_snr_gamma", "cfg_dropout_rate": "cfg_dropout_rate"},
-    "loss": {name: name for name in ("task_loss_weights", "depth_edge_aux_weight",
+    "loss": {name: name for name in ("task_loss_weights", "depth_scale_loss_weight", "depth_edge_aux_weight",
              "depth_edge_aux_gradient_weight", "depth_edge_aux_edge_weight", "depth_edge_aux_edge_threshold",
              "depth_edge_aux_sigma_floor", "normal_angular_loss_weight")},
     "checkpoint": {name: name for name in ("output_dir", "save_every", "eval_every", "log_every",

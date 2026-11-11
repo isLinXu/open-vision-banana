@@ -1,0 +1,59 @@
+{
+  "expected_removed_referring": 49048,
+  "components": {
+    "baseline": {
+      "manifest": "../../data/qwen_main_depth_reasoning/pairs.jsonl",
+      "root": "../../data/qwen_main_depth_reasoning",
+      "sha256": "a7100a9ac0f43e72b647f7cd4f36d417175a44a683549ef98e083927f2e93806",
+      "expected_train": 212801
+    },
+    "old_hypersim": {
+      "manifest": "../../data/portable-training-views-v1/hypersim/pairs.jsonl",
+      "root": "../../data/portable-training-views-v1/hypersim",
+      "sha256": "84a2f412d2617acbb30f53bd5520c51654c9f1565109ad01681e6021e9127a9f",
+      "expected_train": 13267
+    },
+    "full_res": {
+      "manifest": "../../data/res_binary_v1/training.jsonl",
+      "root": "../../data/res_binary_v1",
+      "sha256": "786f30bb64bed54fd57b35fe5a719967fe738c9592c8b6a08003cf2215a6cf15",
+      "expected_train": 270195
+    },
+    "llmseg": {
+      "manifest": "../../data/llmseg_coco_full/training.jsonl",
+      "root": "../../data/llmseg_coco_full",
+      "sha256": "1d07e0902c032d56c9b92626447732ac63851da53fbf291e147227d38ab946a8",
+      "expected_train": 13498
+    },
+    "rea2seg": {
+      "manifest": "../../data/portable-training-views-v1/rea2seg-filtered.jsonl",
+      "root": "../../data/portable-training-views-v1",
+      "sha256": "f36e07c46f2dbea00960f26f00b3f94b292d7cde72bde365e4a843f4c4105d3b",
+      "expected_train": 11812
+    },
+    "clean_depth": {
+      "manifest": "../../data/portable-training-views-v1/clean-depth.jsonl",
+      "root": "../../data/portable-training-views-v1",
+      "sha256": "6512c9a34710ce4a42db5257b996007b2d83763581e9792f9263a41d3909895a",
+      "expected_train": 17540
+    },
+    "lingbot": {
+      "manifest": "../../data/lingbot-depth-v1/pairs.jsonl",
+      "root": "../../data/lingbot-depth-v1",
+      "sha256": "2a277c9dc0c7523ad434d59407e40b7693b85de4d53558538acf4596f4548b8f",
+      "expected_train": 50000
+    },
+    "coconut": {
+      "manifest": "../../data/coconut-b-v1/pairs.jsonl",
+      "root": "../../data/coconut-b-v1",
+      "sha256": "50113aa1d64cfee558419f90150a861286f91794248670603c682f6e9792750f",
+      "expected_train": 301431
+    },
+    "indoor": {
+      "manifest": "../../data/indoor-observed98-v1/pairs.jsonl",
+      "root": "../../data/indoor-observed98-v1",
+      "sha256": "aac7a7897f98a945ff58ea0251c8344a93cc0feb0c526c61727c147f7e23bba8",
+      "expected_train": 292153
+    }
+  }
+}

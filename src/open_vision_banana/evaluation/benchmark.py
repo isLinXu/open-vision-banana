@@ -72,6 +72,8 @@ class DepthAccumulator:
         pred: torch.Tensor,
         gt: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
+        *,
+        scale_ratios: list[float | None] | None = None,
     ) -> None:
         pred = pred.squeeze(1).float()
         gt = gt.squeeze(1).float()
@@ -96,7 +98,7 @@ class DepthAccumulator:
             self.image_abs_rel_sum += torch.mean((p_i - g_i).abs() / g_i).item()
             self.image_rmse_sum += torch.sqrt(torch.mean((p_i - g_i).square())).item()
             self.image_delta1_sum += (torch.maximum(p_i / g_i, g_i / p_i) < 1.25).float().mean().item()
-        aligned, stable = median_scale_align(pred, gt, mask)
+        aligned, stable = median_scale_align(pred, gt, mask, scale_ratios=scale_ratios)
         if stable.dim() == 0:
             stable = stable.view(1)
         pixel_stable = stable.view(-1, *([1] * (mask.dim() - 1))).expand_as(mask) & mask

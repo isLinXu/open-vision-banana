@@ -269,6 +269,7 @@ class VisionEvaluator:
         invert_depth: bool = False,
         report_relative_luminance: bool = False,
         depth_oracle_colormaps: list[str] | None = None,
+        depth_scale_ratios: list[float | None] | None = None,
         referring_encoding: str | None = None,
         referring_target_color: tuple[int, int, int] = (255, 255, 255),
         referring_threshold: float | None = None,
@@ -319,6 +320,8 @@ class VisionEvaluator:
             Dictionary of metric name → value (averaged over all batches).
         """
         self.model.eval()
+        if depth_scale_ratios is not None and (task != "depth" or depth_curve != PAPER_DEPTH_CURVE):
+            raise ValueError("Depth scale ratios require metric_power depth evaluation")
         # raw sums of the depth / semantic / referring accumulator, for merging benchmark shards
         self.last_accumulator_states: dict[str, Any] | None = None
         all_metrics: dict[str, Any] = {}
@@ -419,6 +422,8 @@ class VisionEvaluator:
                     ) from exc
                 skipped = int(image.shape[0]) if image.dim() == 4 else 1
                 skipped_samples += skipped
+                if task == "depth" and depth_scale_ratios is not None:
+                    depth_scale_ratios.extend([None] * skipped)
                 logger.warning("Skipping batch %d (%d sample(s)): %s", batch_idx, skipped, exc)
                 continue
 
@@ -455,7 +460,9 @@ class VisionEvaluator:
                     dataset_name or "", pred_depth, gt_depth, valid_mask
                 )
                 if depth_accumulator is not None:
-                    depth_accumulator.update(pred_depth, gt_depth, valid_mask)
+                    depth_accumulator.update(
+                        pred_depth, gt_depth, valid_mask, scale_ratios=depth_scale_ratios
+                    )
                 if oracle_accumulator is not None:
                     oracle_depth, oracle_names = oracle_depth_decode(
                         pred_rgb, oracle_mappers, invert=invert_depth

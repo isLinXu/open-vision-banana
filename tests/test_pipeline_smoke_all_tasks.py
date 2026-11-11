@@ -172,6 +172,14 @@ def test_all_six_tasks_flow_from_downloaded_layouts_to_batches(tmp_path: Path):
     # 1. preparation scripts, one per source, exactly as docs/DATASETS.md lists them
     assert prepare_hypersim(raw / "hypersim", prepared / "hypersim", tasks=("depth", "normal", "semantic", "instance")) == 2
     assert prepare_tartanair(raw / "tartanair", prepared / "tartanair", resolution=RES) == 2
+    # The legacy exporter omits native evidence. Bind this synthetic fixture
+    # explicitly to its unchanged source arrays before merge and admission.
+    tartan_manifest = prepared / "tartanair" / "pairs.jsonl"
+    tartan_rows = [json.loads(line) for line in tartan_manifest.read_text().splitlines()]
+    native_depths = sorted((raw / "tartanair").rglob("*_left_depth.npy"))
+    for row, native_depth in zip(tartan_rows, native_depths, strict=True):
+        row["metric_depth"] = str(native_depth.resolve())
+    tartan_manifest.write_text("".join(json.dumps(row) + "\n" for row in tartan_rows))
     inst = build_instance_manifest(
         coco_instances, coco_images, prepared / "instance_coco" / "targets", prepared / "instance_coco" / "instance.jsonl",
         data_root=prepared / "instance_coco", exclude_image_ids=[refer_root / "refcocog" / "refs(umd).p"],
