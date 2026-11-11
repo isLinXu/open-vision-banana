@@ -299,6 +299,26 @@ def test_preflight_cli_does_not_require_model_name(tmp_path: Path, monkeypatch) 
     assert output.is_file()
 
 
+def test_every_args_attribute_is_a_parser_option(monkeypatch) -> None:
+    # A merge once dropped --referring-prompt-version while main() kept reading it, so every real
+    # evaluation failed with AttributeError right after the model loaded (preflight never gets there).
+    import ast
+
+    import scripts.evaluate_paper_benchmarks as module
+
+    tree = ast.parse(Path(module.__file__).read_text())
+    used = {
+        node.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "args"
+    }
+    monkeypatch.setattr(sys, "argv", ["evaluate_paper_benchmarks.py", "--output-json", "out.json"])
+    args = module.parse_args()
+
+    assert used - set(vars(args)) == set()
+    assert args.referring_prompt_version == "query_v2"
+
+
 def test_write_sft_gate_rejected_on_preflight(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         sys,
