@@ -96,6 +96,8 @@ RefCOCOg 严格 UMD val，不回退到 google split；COCO polygon/RLE 用 pycoc
 
 ReasonSeg 这里展开344条原始 query；LISA 和 Vision Banana 的具体 query 选择/重写策略需分别匹配。没有运行 Gemini rewrite。因此“标注处理与 LISA 一致”不代表与论文整套 ReasonSeg 实验完全相同。
 
+更早的 `01e3d486630db36145a857273f318c2417d62f6b` 加载器按图计200条，并对 `text` 列表使用 `str(...)` 生成 query；这些历史分数不是344条集合的简单前200条，也不等于新加载器的 `query_mode=first`。精确复现需固定旧代码并核对实际 prompt。报告可保留跨 query 协议比较，但必须保留样本数和协议差异。
+
 ## 验收与共享
 
 验收实际样本数、零 skipped/failed、指标有限、GT 原生尺寸、实际输出画布、权重谱系、SHA、prompt、query/annotation 模式；分片区间无遗漏/重复且 metadata 一致。报告保留原始精度、单位与有效像素，不因为 query 或合理有效域不同自动否定比较，但必须展示这些差异。
