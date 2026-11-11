@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""MPS 多视觉任务 gate —— 对齐 Vision Banana 论文的多任务统一范式.
+"""MPS multi-vision-task gate: follows the unified multi-task setup of the Vision Banana paper.
 
-论文核心主张（对齐开源替代）:
-  - 单一模型通过 prompt 切换处理多视觉任务（depth/normal/instance/referring/keypoint）
-  - 视觉任务 RGB 化：depth→viridis, normal→RGB映射, segmentation→彩色区域
-  - 混合训练：~90% generation + ~10% vision（论文未公布精确比例）
-  - 轻量微调：LoRA（不破坏基座生成能力）
+Core claims of the paper (with open-source substitutes):
+  - one model handles several vision tasks, switched by prompt (depth/normal/instance/referring/keypoint)
+  - vision tasks rendered as RGB: depth→viridis, normal→RGB mapping, segmentation→colored regions
+  - mixed training: ~90% generation + ~10% vision (the paper gives no exact ratio)
+  - light fine-tuning: LoRA (keeps the base model's generation ability)
 
-开源替代方案（已验证 source conditioning 可行）:
-  - 基座: SSD-1B (distilled SDXL)
-  - 条件: IP2P source conditioning（8ch conv_in）
-  - 训练: 多任务混合 + generation 保真
-  - 推理: img2img + task prompt → RGB 可视化
+Open-source substitute (source conditioning already shown to work):
+  - base: SSD-1B (distilled SDXL)
+  - conditioning: IP2P source conditioning (8ch conv_in)
+  - training: multi-task mix + generation fidelity
+  - inference: img2img + task prompt → RGB visualization
 
-MPS 约束:
-  - 256px 分辨率（内存）
-  - batch_size=1（内存）
-  - fp32（MPS 稳定）
-  - 总样本数限 8 per task（gate 规模）
+MPS constraints:
+  - 256px resolution (memory)
+  - batch_size=1 (memory)
+  - fp32 (stable on MPS)
+  - at most 8 samples per task (gate scale)
 
-用法:
+Usage:
     PYTHONPATH=src python scripts/mps_multitask_gate.py
 """
 from __future__ import annotations
@@ -61,23 +61,23 @@ DATA_ROOT = os.environ.get(
     "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3",
 )
 TASKS = os.environ.get("VB_TASKS", "depth,normal,instance,referring,keypoint").split(",")
-VISION_PER_TASK = int(os.environ.get("VB_VISION_PER_TASK", "8"))  # 每任务训练样本数
-GEN_SAMPLES = int(os.environ.get("VB_GEN_SAMPLES", "32"))  # 生成样本数
+VISION_PER_TASK = int(os.environ.get("VB_VISION_PER_TASK", "8"))  # training samples per task
+GEN_SAMPLES = int(os.environ.get("VB_GEN_SAMPLES", "32"))  # generation samples
 STEPS = int(os.environ.get("VB_STEPS", "2000"))
 RES = int(os.environ.get("VB_RES", "256"))
 BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
-# 论文: vision data 比例很低（未公布精确值）
-# 提高 ratio 让模型更多接触 vision 样本
+# paper: the vision data ratio is very low (no exact value given)
+# a higher ratio exposes the model to more vision samples
 VISION_RATIO = float(os.environ.get("VB_VISION_RATIO", "0.30"))
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "mps_multitask_gate")))
 OUT.mkdir(parents=True, exist_ok=True)
 
 DTYPE = torch.float32  # MPS safe
 
-# 任务 prompt 默认值（若数据文件缺失时使用）
+# default task prompts (used when a data file is missing)
 TASK_DEFAULT_PROMPTS = {
     "depth": "Generate a depth map of this image. Use a power-transform color encoding where R,G,B encode metric depth values.",
     "normal": "Generate a surface normal map of this image. R=(1-x)/2*255, G=(1+y)/2*255, B=(1+z)/2*255, where x,y,z are the normalized normal vectors.",
@@ -115,7 +115,7 @@ def main() -> None:
     print(f"[cfg] steps={STEPS}  res={RES}  batch={BATCH}  lr={LR}  rank={RANK}  alpha={ALPHA}")
     print(f"[cfg] vision_ratio={VISION_RATIO}  out={OUT}")
 
-    # 1) 加载多任务数据集 ──────────────────────────────────────────────
+    # 1) load the multi-task datasets ──────────────────────────────────
     task_datasets = {}
     task_loaders = {}
     total_vision = 0
@@ -124,7 +124,7 @@ def main() -> None:
         print(f"[data] loading {task}...")
         ds = _load_task_dataset(task, VISION_PER_TASK, RES)
         task_datasets[task] = ds
-        # 取前 VISION_PER_TASK 个样本
+        # take the first VISION_PER_TASK samples
         subset = torch.utils.data.Subset(ds, list(range(VISION_PER_TASK)))
         task_loaders[task] = torch.utils.data.DataLoader(
             subset, batch_size=BATCH, shuffle=True, num_workers=0,
@@ -133,7 +133,7 @@ def main() -> None:
         total_vision += VISION_PER_TASK
         print(f"[data] {task}: {len(ds)} total, using {VISION_PER_TASK}")
 
-    # 加载 generation 数据（t2i 混合 — target 就是 image 本身）
+    # load the generation data (t2i mix: the target is the image itself)
     gen_path = Path(DATA_ROOT) / "generation"
     gen_images = sorted((gen_path / "images").glob("*.jpg"))[:GEN_SAMPLES]
     gen_prompts = {}
@@ -142,7 +142,7 @@ def main() -> None:
         if p.exists():
             gen_prompts[img_p.stem] = p.read_text().strip()
 
-    # 手动构造 generation batch（不走 VisionTaskDataset）
+    # build the generation batches by hand (not through VisionTaskDataset)
     class GenDataset(torch.utils.data.Dataset):
         def __init__(self, images, prompts, resolution):
             self.images = images
@@ -169,12 +169,12 @@ def main() -> None:
     print(f"[data] generation: {len(gen_images)} images loaded")
     print(f"[data] total vision={total_vision} + gen={len(gen_images)} = {total_vision + len(gen_images)}")
 
-    # 2) 加载生成模型 + source conditioning ───────────────────────────
+    # 2) load the generation model + source conditioning ───────────────
     t0 = time.time()
     gen = BaseGenerator(MODEL_ID, device=device, dtype=DTYPE)
     print(f"[model] family={gen.model_config.family}  loaded in {time.time()-t0:.1f}s")
 
-    # 获取目标色图统计（用于标定）—— 用 depth 任务作为参考
+    # target colormap statistics (for calibration), using the depth task as reference
     depth_ds = task_datasets["depth"]
     stat_idx = list(range(0, min(8, len(depth_ds)), 1))
     tgts = torch.stack([depth_ds[i]["target_rgb"] for i in stat_idx])
@@ -216,7 +216,7 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 4) 训练循环 — 多任务混合 ─────────────────────────────────────────
+    # 4) training loop: multi-task mix ─────────────────────────────────
     print(f"\n[train] multi-task gate: {STEPS} steps")
     print(f"[train] vision_ratio={VISION_RATIO} (paper: very low)")
 
@@ -230,10 +230,10 @@ def main() -> None:
     while step < STEPS:
         step += 1
 
-        # 按比例选择任务
+        # pick the task by ratio
         is_vision = torch.rand(1).item() < VISION_RATIO
         if is_vision:
-            # 随机选一个视觉任务
+            # pick a random vision task
             task = TASKS[torch.randint(0, len(TASKS), (1,)).item()]
             loader_iter = task_iters[task]
             try:
@@ -241,15 +241,15 @@ def main() -> None:
             except StopIteration:
                 task_iters[task] = iter(task_loaders[task])
                 batch = next(task_iters[task])
-            # vision 模式: source conditioning (image + prompt → target)
+            # vision mode: source conditioning (image + prompt → target)
         else:
-            # generation 模式: t2i (text → image)
+            # generation mode: t2i (text → image)
             try:
                 batch = next(gen_iter)
             except StopIteration:
                 gen_iter = iter(gen_loader)
                 batch = next(gen_iter)
-            # generation 模式: 清除 image 字段让 tuner 走 t2i
+            # generation mode: clear the image field so the tuner takes t2i
             batch["image"] = None
             task = "generation"
 
@@ -271,7 +271,7 @@ def main() -> None:
                   f"avg30={recent:.4f}  lr={sched.get_last_lr()[0]:.2e}  "
                   f"task={task}  mode={'vis' if is_vision else 'gen'}  "
                   f"({(time.time()-t_train)/step:.2f}s/step)", flush=True)
-        # 每 500 步存中间 checkpoint
+        # save an intermediate checkpoint every 500 steps
         if step % 500 == 0:
             mid_ckpt = OUT / f"lora_step{step}"
             mid_ckpt.mkdir(parents=True, exist_ok=True)
@@ -290,7 +290,7 @@ def main() -> None:
     print(f"\n[train] avg(first 1/3)={avg_first:.4f}  avg(last 1/3)={avg_last:.4f}  "
           f"({'DECREASING' if avg_last < avg_first else 'NOT decreasing'})")
 
-    # 保存 checkpoint
+    # save the checkpoint
     ckpt_dir = OUT / "lora_final"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     tuner.peft_model.save_pretrained(str(ckpt_dir))
@@ -299,7 +299,7 @@ def main() -> None:
     write_source_conditioning_config(ckpt_dir, tuner._source_conditioning_config())
     print(f"[ckpt] saved → {ckpt_dir}")
 
-    # 5) 推理评估 — 每任务 2 样本 ──────────────────────────────────────
+    # 5) inference evaluation: 2 samples per task ─────────────────────
     print("\n[eval] inference on each task (2 samples)...")
     gen.source_conditioning_config = tuner._source_conditioning_config()
     mapper = DepthRGBMapper(colormap="viridis")
@@ -327,7 +327,7 @@ def main() -> None:
         )
         pred_rgb = out[0].clamp(0, 1).cpu()
 
-        # 三联图
+        # triptych
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(
@@ -366,7 +366,7 @@ def main() -> None:
         }
         print(f"  → avg rgb_mae={avg_mae:.4f}  avg pearson={avg_pearson:.4f}")
 
-    # 汇总
+    # summary
     overall_mae = sum(r["avg_rgb_mae"] for r in all_results.values()) / len(all_results)
     overall_pearson = sum(
         r["avg_pearson"] for r in all_results.values() if not math.isnan(r["avg_pearson"])
@@ -377,7 +377,7 @@ def main() -> None:
     print(f"[gate] {'PASSED' if gate_passed else 'NOT PASSED'}  "
           f"(target: rgb_mae<0.20, pearson>0.6)")
 
-    # 保存结果
+    # save the results
     (OUT / "gate_result.json").write_text(json.dumps({
         "model": MODEL_ID, "device": device, "dtype": str(DTYPE),
         "tasks": TASKS, "vision_per_task": VISION_PER_TASK, "gen_samples": GEN_SAMPLES,

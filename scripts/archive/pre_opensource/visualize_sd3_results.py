@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SD3-Medium LoRA 推理可视化脚本
+"""SD3-Medium LoRA inference visualization script
 
 SD3 uses StableDiffusion3Pipeline with native img2img support via
 StableDiffusion3Img2ImgPipeline. Unlike Z-Image, SD3:

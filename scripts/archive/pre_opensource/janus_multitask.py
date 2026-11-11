@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Janus-1.3B 多任务 open-vision-banana 训练.
+"""Janus-1.3B multi-task open-vision-banana training.
 
-任务：depth/normal/instance/referring/keypoint + generation
-混合比例：~10% vision + 90% generation（对齐论文低比例）
+Tasks: depth/normal/instance/referring/keypoint + generation
+Mixing ratio: ~10% vision + 90% generation (matches the paper's low ratio)
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_multitask.py
 """
 from __future__ import annotations
@@ -90,7 +90,7 @@ def main() -> None:
     print(f"[cfg] steps={STEPS}  res={RES}  batch={BATCH}  lr={LR}  rank={RANK}  alpha={ALPHA}")
     print(f"[cfg] vision_ratio={VISION_RATIO}  out={OUT}")
 
-    # 1) 加载多任务数据集 ──────────────────────────────────────────────
+    # 1) load the multi-task datasets ──────────────────────────────────
     task_datasets = {}
     task_loaders = {}
     total_vision = 0
@@ -107,7 +107,7 @@ def main() -> None:
         total_vision += VISION_PER_TASK
         print(f"[data] {task}: {len(ds)} total, using {VISION_PER_TASK}")
 
-    # 加载 generation 数据
+    # load the generation data
     gen_path = Path(DATA_ROOT) / "generation"
     gen_images = sorted((gen_path / "images").glob("*.jpg"))[:GEN_SAMPLES]
     gen_prompts = {}
@@ -142,7 +142,7 @@ def main() -> None:
     print(f"[data] generation: {len(gen_images)} images loaded")
     print(f"[data] total vision={total_vision} + gen={len(gen_images)} = {total_vision + len(gen_images)}")
 
-    # 2) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 2) load Janus-1.3B ───────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -172,7 +172,7 @@ def main() -> None:
     n_total_p = sum(p.numel() for p in peft_model.parameters())
     print(f"[lora] trainable = {n_train:,}  ({100*n_train/n_total_p:.2f}%)")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -195,7 +195,7 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 5) 训练循环 ─────────────────────────────────────────────────────
+    # 5) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus multitask: {STEPS} steps")
     print(f"[train] vision_ratio={VISION_RATIO}")
 
@@ -209,7 +209,7 @@ def main() -> None:
     while step < STEPS:
         step += 1
 
-        # 按比例选择任务
+        # pick the task by ratio
         is_vision = torch.rand(1).item() < VISION_RATIO
         if is_vision:
             task = TASKS[torch.randint(0, len(TASKS), (1,)).item()]
@@ -230,25 +230,25 @@ def main() -> None:
 
         opt.zero_grad(set_to_none=True)
 
-        # 取 batch（batch_size=1 简化）
+        # take a batch (batch_size=1 for simplicity)
         image = batch["image"][0:1].to(device, DTYPE) if batch["image"] is not None else None
         target_rgb = batch["target_rgb"][0:1].to(device, DTYPE)  # [0, 1]
         prompt = batch["prompt"][0] if isinstance(batch["prompt"], list) else batch["prompt"]
 
-        # 1. 图像理解路径
+        # 1. image understanding path
         if image is not None:
             pixel_values = image.unsqueeze(1)
         else:
-            # generation 模式：没有输入图像，用零填充
+            # generation mode: no input image, pad with zeros
             pixel_values = torch.zeros(1, 1, 3, RES, RES, device=device, dtype=DTYPE)
 
-        # 2. 目标图像 → VQ tokens
+        # 2. target image → VQ tokens
         with torch.no_grad():
             target_for_vq = target_rgb * 2 - 1
             quant, emb_loss, info = model.gen_vision_model.encode(target_for_vq)
             target_tokens = info[2]  # [576]
 
-        # 3. 构造输入 embeds
+        # 3. build the input embeds
         prompt_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         prompt_len = prompt_ids.shape[1]
         seq_len = prompt_len + IMAGE_TOKEN_NUM
@@ -267,18 +267,18 @@ def main() -> None:
             images_emb_mask=images_emb_mask,
         )
 
-        # 4. 前向传播
+        # 4. forward pass
         outputs = model.language_model.model(
             inputs_embeds=input_embeds,
             output_hidden_states=True,
         )
         hidden_states = outputs.last_hidden_state
 
-        # 5. 生成图像 token logits
+        # 5. image token logits for generation
         gen_hidden = hidden_states[:, prompt_len:, :]
         gen_logits = model.gen_head(gen_hidden)
 
-        # 6. 损失
+        # 6. loss
         target_tokens_batch = target_tokens.unsqueeze(0)
         loss = F.cross_entropy(
             gen_logits.reshape(-1, gen_logits.shape[-1]),
@@ -312,7 +312,7 @@ def main() -> None:
     print(f"\n[train] completed {len(losses)} steps")
     print(f"[train] avg loss = {sum(losses)/len(losses):.4f}")
 
-    # 保存 checkpoint
+    # save the checkpoint
     ckpt_dir = OUT / "lora_final"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(ckpt_dir))

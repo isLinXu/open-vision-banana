@@ -1,6 +1,6 @@
-# Phase 3b: 高容量 LoRA 深度训练
-# rank=256 (vs Phase 2 的 rank=64)
-# 更多参数 = 更强的速度场学习能力
+# Phase 3b: high-capacity LoRA depth training
+# rank=256 (vs rank=64 in Phase 2)
+# more parameters = more capacity to learn the velocity field
 # ================================
 
 model:
@@ -14,10 +14,10 @@ lora:
   target_modules:
     - "to_k"
     - "to_v"
-  dropout: 0.01              # 加入 dropout 防过拟合
+  dropout: 0.01              # dropout against overfitting
 
 optimizer:
-  lr: 5.0e-5                 # 更低 LR 配合高 rank
+  lr: 5.0e-5                 # lower LR for the higher rank
   weight_decay: 0.01
   scheduler: "cosine"
   warmup_steps: 50

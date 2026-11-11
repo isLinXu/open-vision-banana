@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Janus-1.3B continuous RGB v5 — Conv2D Decoder + Vision Fine-tuning.
 
-v3 问题：LLM hidden states 丢失空间信息 → 预测模糊
-v4 问题：Vision features + MLP 没有足够空间建模能力 → 更模糊
-v5 方案：
-  1. 将 SigLIP features reshape 为 2D (24×24×1024) 保留空间结构
-  2. 用 Conv2D + PixelShuffle 做 16× 上采样到 384×384×3
-  3. 解冻 SigLIP 最后 4 层，让 vision features 适配任务
-  4. 使用 BatchNorm（MPS 兼容）+ 合理初始化
+v3 problem: LLM hidden states lose spatial information → blurry predictions
+v4 problem: vision features + MLP lack spatial modelling capacity → even blurrier
+v5 approach:
+  1. Reshape the SigLIP features to 2D (24×24×1024) to keep the spatial structure
+  2. Upsample 16× to 384×384×3 with Conv2D + PixelShuffle
+  3. Unfreeze the last 4 SigLIP layers so the vision features adapt to the task
+  4. Use BatchNorm (MPS compatible) + sensible initialization
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v5.py
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ VAL_EVERY = int(os.environ.get("VB_VAL_EVERY", "50"))
 GRAD_CLIP = float(os.environ.get("VB_GRAD_CLIP", "1.0"))
 AUGMENT_FLIP = os.environ.get("VB_AUGMENT_FLIP", "1") == "1"
 
-# v5: 解冻 vision model 最后 N 层
+# v5: unfreeze the last N layers of the vision model
 UNFREEZE_VISION_BLOCKS = int(os.environ.get("VB_UNFREEZE_BLOCKS", "4"))
 
 RESUME_CKPT = os.environ.get("VB_RESUME", "")
@@ -84,9 +84,9 @@ TASK_PROMPTS = {
 
 
 class ConvRGBDecoder(nn.Module):
-    """Conv2D decoder：SigLIP features (24×24×1024) → RGB (384×384×3).
+    """Conv2D decoder: SigLIP features (24×24×1024) → RGB (384×384×3).
 
-    使用 PixelShuffle 做上采样，保持空间连续性。
+    Upsamples with PixelShuffle to keep spatial continuity.
     """
 
     def __init__(self, feat_dim: int = 1024, grid_size: int = 24, target_size: int = 384, dropout: float = 0.1):
@@ -132,7 +132,7 @@ class ConvRGBDecoder(nn.Module):
         # Final 1×1 conv → 3 channels
         self.head = nn.Conv2d(32, 3, 1)
 
-        # 初始化
+        # initialization
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.xavier_normal_(m.weight, gain=0.5)
@@ -172,17 +172,17 @@ def _augment_flip(image: torch.Tensor, target_rgb: torch.Tensor) -> tuple[torch.
 
 
 def _unfreeze_vision_blocks(vision_model, n_blocks: int):
-    """解冻 vision model 最后 N 个 transformer block."""
-    # 先全部冻结
+    """Unfreeze the last N transformer blocks of the vision model."""
+    # freeze everything first
     vision_model.requires_grad_(False)
 
-    # 找到 transformer blocks
+    # find the transformer blocks
     if hasattr(vision_model, "vision_tower"):
         tower = vision_model.vision_tower
     else:
         tower = vision_model
 
-    # SigLIP ViT: blocks 在 tower.blocks 里
+    # SigLIP ViT: the blocks live in tower.blocks
     if hasattr(tower, "blocks"):
         blocks = tower.blocks
         total = len(blocks)
@@ -208,7 +208,7 @@ def main() -> None:
     print(f"[cfg] augment_flip={AUGMENT_FLIP}  unfreeze_blocks={UNFREEZE_VISION_BLOCKS}")
     print(f"[cfg] out={OUT}")
 
-    # 1) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 1) load Janus-1.3B ───────────────────────────────────────────────
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
                     janus_vlm.GenVisionConfig, janus_vlm.GenAlignerConfig,
@@ -230,7 +230,7 @@ def main() -> None:
     model = model.to(device)
     print(f"[model] loaded in {time.time()-t0:.1f}s")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     all_train_datasets = []
     all_val_datasets = []
 
@@ -280,13 +280,13 @@ def main() -> None:
     n_lora = sum(p.numel() for p in peft_model.parameters() if p.requires_grad)
     print(f"[lora] trainable = {n_lora:,}")
 
-    # 冻结 LLM（v5 不用 LLM forward）
+    # freeze the LLM (v5 does not use the LLM forward)
     peft_model.requires_grad_(False)
 
-    # 4) 解冻 vision model 末端 ──────────────────────────────────────
+    # 4) unfreeze the end of the vision model ──────────────────────────
     _unfreeze_vision_blocks(model.vision_model, UNFREEZE_VISION_BLOCKS)
 
-    # 冻结其他部分
+    # freeze the other parts
     model.aligner.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.gen_aligner.requires_grad_(False)
@@ -299,13 +299,13 @@ def main() -> None:
     n_decoder = sum(p.numel() for p in decoder.parameters())
     print(f"[decoder] ConvRGBDecoder params={n_decoder:,}")
 
-    # 6) Trainable params 汇总 ───────────────────────────────────────
+    # 6) trainable params summary ──────────────────────────────────────
     trainable_params = [p for p in model.vision_model.parameters() if p.requires_grad] + \
                        list(decoder.parameters())
     n_trainable = sum(p.numel() for p in trainable_params)
     print(f"[total] trainable params = {n_trainable:,}")
 
-    # 7) Optimizer（分组学习率）──────────────────────────────────────
+    # 7) optimizer (grouped learning rates) ────────────────────────────
     vision_params = [p for p in model.vision_model.parameters() if p.requires_grad]
     decoder_params = list(decoder.parameters())
 
@@ -323,14 +323,14 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 8) 前向传播 ────────────────────────────────────────────────────
+    # 8) forward pass ──────────────────────────────────────────────────
     def _forward(image: torch.Tensor, task: str) -> torch.Tensor:
         """image: [1, 3, 384, 384] → pred_rgb: [1, 3, 384, 384]."""
         vis_features = model.vision_model(image)  # [1, 576, 1024]
         pred_rgb = decoder(vis_features)          # [1, 3, 384, 384]
         return pred_rgb
 
-    # 9) 验证 ────────────────────────────────────────────────────────
+    # 9) validation ────────────────────────────────────────────────────
     @torch.no_grad()
     def run_validation() -> float:
         decoder.eval()
@@ -346,7 +346,7 @@ def main() -> None:
         model.vision_model.train()
         return sum(val_losses) / len(val_losses) if val_losses else float("inf")
 
-    # 10) 训练循环 ───────────────────────────────────────────────────
+    # 10) training loop ────────────────────────────────────────────────
     print(f"\n[train] Janus continuous RGB v5: {STEPS} steps")
     print(f"[train] Conv2D Decoder + Vision fine-tuning (last {UNFREEZE_VISION_BLOCKS} blocks)")
 
@@ -405,7 +405,7 @@ def main() -> None:
                 best_ckpt = OUT / "ckpt_best"
                 best_ckpt.mkdir(parents=True, exist_ok=True)
                 torch.save(decoder.state_dict(), best_ckpt / "decoder.pt")
-                # 保存 vision model 的末端层权重
+                # save the weights of the vision model's last layers
                 vision_state = {}
                 for name, p in model.vision_model.named_parameters():
                     if p.requires_grad:
@@ -438,7 +438,7 @@ def main() -> None:
     if not losses:
         raise RuntimeError("No finite training steps")
 
-    # 11) 训练总结 ──────────────────────────────────────────────────
+    # 11) training summary ─────────────────────────────────────────────
     k = max(1, len(losses) // 3)
     avg_first = sum(losses[:k]) / k
     avg_last = sum(losses[-k:]) / k
@@ -473,7 +473,7 @@ def main() -> None:
         }, f, indent=2)
     print(f"[history] saved → {history_out}")
 
-    # 12) 推理评估 ──────────────────────────────────────────────────
+    # 12) inference evaluation ─────────────────────────────────────────
     print("\n[eval] inference on held-out samples...")
     decoder.eval()
     model.vision_model.eval()

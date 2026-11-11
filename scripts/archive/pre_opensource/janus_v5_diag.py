@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Janus v5 checkpoint 诊断评估 — 多样本 + 统计分析 + v3/v4/v5 对比."""
+"""Janus v5 checkpoint diagnostic evaluation: multiple samples + statistics + v3/v4/v5 comparison."""
 from __future__ import annotations
 
 import json
@@ -34,7 +34,7 @@ N_EVAL = 10
 
 
 class ConvRGBDecoder(nn.Module):
-    """与 v5 训练一致."""
+    """Same as the v5 training."""
 
     def __init__(self, feat_dim=1024, grid_size=24, target_size=384, dropout=0.0):
         super().__init__()
@@ -83,7 +83,7 @@ def main():
     device = _resolve_device()
     print(f"[cfg] device={device}  ckpt={CKPT}  n_eval={N_EVAL}")
 
-    # 1) 加载模型
+    # 1) load the model
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
                     janus_vlm.GenVisionConfig, janus_vlm.GenAlignerConfig,
@@ -102,28 +102,28 @@ def main():
     model = model.to(device)
     model.eval()
 
-    # 2) 加载 fine-tuned vision tail weights
+    # 2) load the fine-tuned vision tail weights
     vision_tail_path = Path(CKPT) / "vision_tail.pt"
     if vision_tail_path.exists():
         vision_state = torch.load(vision_tail_path, map_location="cpu", weights_only=True)
         missing, unexpected = model.vision_model.load_state_dict(vision_state, strict=False)
         print(f"[vision_tail] loaded {len(vision_state)} tensors, missing={len(missing)}, unexpected={len(unexpected)}")
 
-    # 3) 加载 ConvRGBDecoder
+    # 3) load the ConvRGBDecoder
     decoder = ConvRGBDecoder(1024, grid_size=24, target_size=RES, dropout=0.0).to(device, DTYPE)
     decoder_path = Path(CKPT) / "decoder.pt"
     decoder.load_state_dict(torch.load(decoder_path, map_location=device, weights_only=True))
     decoder.eval()
     print(f"[decoder] loaded, params={sum(p.numel() for p in decoder.parameters()):,}")
 
-    # 4) 加载验证集
+    # 4) load the validation set
     ds = VisionTaskDataset(data_path=str(Path(DATA_ROOT) / "depth"), resolution=RES, task="depth")
     n_total = len(ds)
     n_train = 500
     val_indices = list(range(n_train, min(n_train + N_EVAL, n_total)))
     print(f"[data] total={n_total}, eval indices={val_indices[0]}-{val_indices[-1]}")
 
-    # 5) 推理 + 诊断
+    # 5) inference + diagnostics
     all_metrics = []
     OUT = PROJECT_ROOT / "output" / "janus_continuous_rgb_v5" / "diag"
     OUT.mkdir(parents=True, exist_ok=True)
@@ -182,7 +182,7 @@ def main():
         print(f"  pred: mean={pred_mean:.4f} std={pred_std:.4f} range=[{pred_min:.4f}, {pred_max:.4f}]")
         print(f"  tgt:  mean={tgt_mean:.4f} std={tgt_std:.4f}")
 
-        # 保存面板图
+        # save the panel figure
         pil_in = Image.fromarray(
             (inp_tensor.permute(1, 2, 0).clamp(-1, 1) * 0.5 + 0.5).mul(255).byte().numpy()
         )
@@ -202,7 +202,7 @@ def main():
             (diff_vis.permute(1, 2, 0).mul(255).byte().numpy())
         ).resize((RES, RES)).save(OUT / f"diag_depth_{idx:04d}_diff.png")
 
-    # 6) 汇总
+    # 6) summary
     print("\n" + "=" * 60)
     print("V5 DIAGNOSTIC SUMMARY")
     print("=" * 60)
@@ -223,7 +223,7 @@ def main():
     print(f"\npred_mean across samples: min={min(pred_means):.4f} max={max(pred_means):.4f}")
     print(f"pred_std across samples:  min={min(pred_stds):.4f} max={max(pred_stds):.4f}")
 
-    # 7) v3 vs v4 vs v5 对比
+    # 7) v3 vs v4 vs v5 comparison
     print("\n" + "=" * 60)
     print("V3 vs V4 vs V5 COMPARISON")
     print("=" * 60)

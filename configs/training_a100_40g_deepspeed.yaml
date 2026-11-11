@@ -15,7 +15,7 @@
 # ── Base Model ────────────────────────────────────────────────────────
 model:
   name: "black-forest-labs/FLUX.1-schnell"
-  dtype: "bfloat16"          # A100 原生 BF16 Tensor Core, 无需 loss scaling
+  dtype: "bfloat16"          # native A100 BF16 Tensor Cores, no loss scaling needed
 
 # ── LoRA (rsLoRA) ────────────────────────────────────────────────────
 lora:
@@ -50,9 +50,9 @@ logging:
 # ── Training ─────────────────────────────────────────────────────────
 training:
   epochs: 10
-  # 有效全局 batch_size = micro_bs (2) * GPUs (8) * grad_accum (4) = 64
+  # effective global batch_size = micro_bs (2) * GPUs (8) * grad_accum (4) = 64
   gradient_accumulation_steps: 4
-  use_amp: true              # torch.cuda.amp 与 DeepSpeed BF16 互补
+  use_amp: true              # torch.cuda.amp complements DeepSpeed BF16
   use_ema: true
   ema_decay: 0.9999
   ema_warmup_steps: 2000
@@ -69,8 +69,8 @@ data:
   vision_ratio: 0.1          # 10% vision, 90% generation preservation
   generation_ratio: 0.9
   resolution: 512
-  batch_size: 2              # per-GPU micro batch (A100 40GB 安全值)
-  num_workers: 8             # A100 建议 2-4 workers/GPU
+  batch_size: 2              # per-GPU micro batch (safe value for A100 40GB)
+  num_workers: 8             # 2-4 workers per GPU recommended on A100
   augmentation: true
   val_split: 0.1
   generation_path: null      # e.g. "/shared/data/vb_generation_50k"

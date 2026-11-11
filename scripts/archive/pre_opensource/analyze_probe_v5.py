@@ -274,10 +274,10 @@ def generate_html_report(v5: dict, v4: dict, dashboard_path: Path) -> Path:
 </head>
 <body>
 <div class="container">
-<h1>SSD-1B Probe V5 训练综合分析报告</h1>
-<p style="color:#666;">生成时间：2026-07-30 | 版本：V5 Enhanced</p>
+<h1>SSD-1B Probe V5 training analysis report</h1>
+<p style="color:#666;">Generated: 2026-07-30 | Version: V5 Enhanced</p>
 
-<h2>核心指标对比</h2>
+<h2>Key metrics</h2>
 <div>
   <div class="metric-card green">
     <div class="metric-value">{v5_b.get('mae', 0):.5f}</div>
@@ -289,28 +289,28 @@ def generate_html_report(v5: dict, v4: dict, dashboard_path: Path) -> Path:
   </div>
   <div class="metric-card {'green' if mae_improvement > 0 else 'red'}">
     <div class="metric-value">{'↑' if mae_improvement > 0 else '↓'} {abs(mae_improvement):.1f}%</div>
-    <div class="metric-label">MAE 改善幅度</div>
+    <div class="metric-label">MAE improvement</div>
   </div>
   <div class="metric-card {'green' if pearson_improvement > 0 else 'red'}">
     <div class="metric-value">{'↑' if pearson_improvement > 0 else '↓'} {abs(pearson_improvement):.2f}pp</div>
-    <div class="metric-label">Pearson 改善幅度</div>
+    <div class="metric-label">Pearson improvement</div>
   </div>
 </div>
 
-<h2>V5 新增优化</h2>
+<h2>New in V5</h2>
 <ul class="feature-list">
-  <li><span class="tag new">NEW</span> <strong>SSIM 损失</strong> — 结构相似性损失捕获空间结构信息，直接应对 V4 发现的"边缘模糊"问题</li>
-  <li><span class="tag new">NEW</span> <strong>边缘感知损失</strong> — Sobel 算子计算边缘权重图，物体边界处误差权重提升至 5×</li>
-  <li><span class="tag new">NEW</span> <strong>Skip-Connection Decoder</strong> — 冻结特征在多个解码阶段注入，保留细粒度空间细节</li>
-  <li><span class="tag optimized">OPT</span> <strong>Early Stopping</strong> — patience=30，自动停止训练避免过拟合，节省训练时间</li>
-  <li><span class="tag optimized">OPT</span> <strong>EMA 权重</strong> — 指数移动平均（decay=0.999）平滑推理，提升泛化</li>
-  <li><span class="tag optimized">OPT</span> <strong>增强数据增强</strong> — 水平翻转 + 垂直翻转 + 亮度抖动（0.1 强度）</li>
+  <li><span class="tag new">NEW</span> <strong>SSIM loss</strong>: the structural similarity loss captures spatial structure, directly addressing the "blurry edges" problem found in V4</li>
+  <li><span class="tag new">NEW</span> <strong>Edge-aware loss</strong>: a Sobel edge weight map raises the error weight at object boundaries to 5×</li>
+  <li><span class="tag new">NEW</span> <strong>Skip-Connection Decoder</strong>: frozen features are injected at several decoding stages to keep fine spatial detail</li>
+  <li><span class="tag optimized">OPT</span> <strong>Early Stopping</strong>: patience=30 stops training automatically to avoid overfitting and save time</li>
+  <li><span class="tag optimized">OPT</span> <strong>EMA weights</strong>: exponential moving average (decay=0.999) smooths inference and improves generalization</li>
+  <li><span class="tag optimized">OPT</span> <strong>Stronger augmentation</strong>: horizontal flip + vertical flip + brightness jitter (strength 0.1)</li>
 </ul>
 
-<h2>详细指标对比</h2>
+<h2>Detailed metrics</h2>
 <table>
   <thead>
-    <tr><th>指标</th><th>V4 (300ep)</th><th>V5 (Enhanced)</th><th>差异</th><th>评估</th></tr>
+    <tr><th>Metric</th><th>V4 (300ep)</th><th>V5 (Enhanced)</th><th>Difference</th><th>Assessment</th></tr>
   </thead>
   <tbody>
     <tr>
@@ -318,88 +318,88 @@ def generate_html_report(v5: dict, v4: dict, dashboard_path: Path) -> Path:
       <td>{v4_b.get('mae', 0):.5f}</td>
       <td>{v5_b.get('mae', 0):.5f}</td>
       <td>{(v5_b.get('mae', 0) - v4_b.get('mae', 0)):+.5f}</td>
-      <td class="{'improvement' if v5_b.get('mae', 1) < v4_b.get('mae', 1) else 'regression'}">{'✓ 改善' if v5_b.get('mae', 1) < v4_b.get('mae', 1) else '✗ 退化'}</td>
+      <td class="{'improvement' if v5_b.get('mae', 1) < v4_b.get('mae', 1) else 'regression'}">{'✓ better' if v5_b.get('mae', 1) < v4_b.get('mae', 1) else '✗ worse'}</td>
     </tr>
     <tr>
       <td>Best Val RMSE ↓</td>
       <td>{v4_b.get('rmse', 0):.5f}</td>
       <td>{v5_b.get('rmse', 0):.5f}</td>
       <td>{(v5_b.get('rmse', 0) - v4_b.get('rmse', 0)):+.5f}</td>
-      <td class="{'improvement' if v5_b.get('rmse', 1) < v4_b.get('rmse', 1) else 'regression'}">{'✓ 改善' if v5_b.get('rmse', 1) < v4_b.get('rmse', 1) else '✗ 退化'}</td>
+      <td class="{'improvement' if v5_b.get('rmse', 1) < v4_b.get('rmse', 1) else 'regression'}">{'✓ better' if v5_b.get('rmse', 1) < v4_b.get('rmse', 1) else '✗ worse'}</td>
     </tr>
     <tr>
       <td>Best Val Pearson ↑</td>
       <td>{v4_b.get('pearson', 0):.5f}</td>
       <td>{v5_b.get('pearson', 0):.5f}</td>
       <td>{(v5_b.get('pearson', 0) - v4_b.get('pearson', 0)):+.5f}</td>
-      <td class="{'improvement' if v5_b.get('pearson', 0) > v4_b.get('pearson', 0) else 'regression'}">{'✓ 改善' if v5_b.get('pearson', 0) > v4_b.get('pearson', 0) else '✗ 退化'}</td>
+      <td class="{'improvement' if v5_b.get('pearson', 0) > v4_b.get('pearson', 0) else 'regression'}">{'✓ better' if v5_b.get('pearson', 0) > v4_b.get('pearson', 0) else '✗ worse'}</td>
     </tr>
     <tr>
       <td>Best Val Spearman ↑</td>
       <td>{v4_b.get('spearman', 0):.5f}</td>
       <td>{v5_b.get('spearman', 0):.5f}</td>
       <td>{(v5_b.get('spearman', 0) - v4_b.get('spearman', 0)):+.5f}</td>
-      <td class="{'improvement' if v5_b.get('spearman', 0) > v4_b.get('spearman', 0) else 'regression'}">{'✓ 改善' if v5_b.get('spearman', 0) > v4_b.get('spearman', 0) else '✗ 退化'}</td>
+      <td class="{'improvement' if v5_b.get('spearman', 0) > v4_b.get('spearman', 0) else 'regression'}">{'✓ better' if v5_b.get('spearman', 0) > v4_b.get('spearman', 0) else '✗ worse'}</td>
     </tr>
     <tr>
       <td>Best Epoch</td>
       <td>{v4.get('best_epoch', '?')}</td>
       <td>{v5.get('best_epoch', '?')}</td>
       <td></td>
-      <td>{'提前收敛' if v5.get('best_epoch', 999) < v4.get('best_epoch', 0) else '更晚收敛'}</td>
+      <td>{'converged earlier' if v5.get('best_epoch', 999) < v4.get('best_epoch', 0) else 'converged later'}</td>
     </tr>
     <tr>
       <td>Early Stopped</td>
-      <td>No (固定 300ep)</td>
+      <td>No (fixed 300ep)</td>
       <td>{'Yes' if v5.get('early_stopped', False) else 'No'}</td>
       <td></td>
-      <td>{'节省训练时间' if v5.get('early_stopped', False) else '训练满全量'}</td>
+      <td>{'saved training time' if v5.get('early_stopped', False) else 'trained the full schedule'}</td>
     </tr>
     <tr>
-      <td>Train MAE (过拟合指标)</td>
+      <td>Train MAE (overfitting indicator)</td>
       <td>{v4_train.get('mae', 0):.5f}</td>
       <td>{v5_train.get('mae', 0):.5f}</td>
       <td>{(v5_train.get('mae', 0) - v4_train.get('mae', 0)):+.5f}</td>
-      <td>{'gap 缩小' if abs(v5_train.get('mae', 0) - v5_b.get('mae', 0)) < abs(v4_train.get('mae', 0) - v4_b.get('mae', 0)) else 'gap 未改善'}</td>
+      <td>{'gap narrowed' if abs(v5_train.get('mae', 0) - v5_b.get('mae', 0)) < abs(v4_train.get('mae', 0) - v4_b.get('mae', 0)) else 'gap not improved'}</td>
     </tr>
     <tr>
       <td>Train-Val MAE Gap</td>
       <td>{abs(v4_train.get('mae', 0) - v4_b.get('mae', 0)):.5f}</td>
       <td>{abs(v5_train.get('mae', 0) - v5_b.get('mae', 0)):.5f}</td>
       <td></td>
-      <td class="{'improvement' if abs(v5_train.get('mae', 0) - v5_b.get('mae', 0)) < abs(v4_train.get('mae', 0) - v4_b.get('mae', 0)) else 'regression'}">{'过拟合减轻' if abs(v5_train.get('mae', 0) - v5_b.get('mae', 0)) < abs(v4_train.get('mae', 0) - v4_b.get('mae', 0)) else '未改善'}</td>
+      <td class="{'improvement' if abs(v5_train.get('mae', 0) - v5_b.get('mae', 0)) < abs(v4_train.get('mae', 0) - v4_b.get('mae', 0)) else 'regression'}">{'less overfitting' if abs(v5_train.get('mae', 0) - v5_b.get('mae', 0)) < abs(v4_train.get('mae', 0) - v4_b.get('mae', 0)) else 'not improved'}</td>
     </tr>
     <tr>
-      <td>训练参数量</td>
+      <td>Trainable parameters</td>
       <td>{v4.get('trainable_parameters', 0) / 1e6:.2f}M</td>
       <td>{v5.get('trainable_parameters', 0) / 1e6:.2f}M</td>
       <td>{(v5.get('trainable_parameters', 0) - v4.get('trainable_parameters', 0)) / 1e6:+.2f}M</td>
-      <td>Skip decoder 增加容量</td>
+      <td>Skip decoder adds capacity</td>
     </tr>
     <tr>
-      <td>运行时间</td>
+      <td>Runtime</td>
       <td>{v4.get('runtime_seconds', 0) / 60:.1f} min</td>
       <td>{v5.get('runtime_seconds', 0) / 60:.1f} min</td>
       <td>{(v5.get('runtime_seconds', 0) - v4.get('runtime_seconds', 0)) / 60:+.1f} min</td>
-      <td>{'更高效' if v5.get('runtime_seconds', 0) < v4.get('runtime_seconds', 0) else '耗时增加'}</td>
+      <td>{'more efficient' if v5.get('runtime_seconds', 0) < v4.get('runtime_seconds', 0) else 'took longer'}</td>
     </tr>
   </tbody>
 </table>
 
-<h2>训练仪表盘</h2>
-{"<img class='dashboard' src='data:image/png;base64," + dashboard_b64 + "' alt='Training Dashboard' />" if dashboard_b64 else "<p>仪表盘将在训练完成后生成</p>"}
+<h2>Training dashboard</h2>
+{"<img class='dashboard' src='data:image/png;base64," + dashboard_b64 + "' alt='Training Dashboard' />" if dashboard_b64 else "<p>The dashboard is generated after training finishes</p>"}
 
-<h2>下一步优化方向</h2>
+<h2>Next optimization directions</h2>
 <table>
   <thead>
-    <tr><th>优先级</th><th>方向</th><th>预期收益</th><th>风险</th></tr>
+    <tr><th>Priority</th><th>Direction</th><th>Expected gain</th><th>Risk</th></tr>
   </thead>
   <tbody>
-    <tr><td><span class="tag optimized">P2</span></td><td>多 timestep 特征融合</td><td>MAE -5~15%</td><td>高 — 需重新提取特征</td></tr>
-    <tr><td><span class="tag optimized">P2</span></td><td>解冻 UNet 层（端到端微调）</td><td>MAE -10~20%</td><td>高 — 显著增加计算量</td></tr>
-    <tr><td><span class="tag optimized">P3</span></td><td>多分辨率融合（HRNet 风格）</td><td>MAE -5~10%（细节）</td><td>中</td></tr>
-    <tr><td><span class="tag optimized">P3</span></td><td>对抗训练（GAN 辅助）</td><td>感知质量提升</td><td>高 — 训练不稳定</td></tr>
-    <tr><td><span class="tag optimized">P3</span></td><td>更大数据集（数据采集）</td><td>全面提升</td><td>低 — 需人工标注</td></tr>
+    <tr><td><span class="tag optimized">P2</span></td><td>Multi-timestep feature fusion</td><td>MAE -5~15%</td><td>high: features must be re-extracted</td></tr>
+    <tr><td><span class="tag optimized">P2</span></td><td>Unfreeze UNet layers (end-to-end fine-tuning)</td><td>MAE -10~20%</td><td>high: much more compute</td></tr>
+    <tr><td><span class="tag optimized">P3</span></td><td>Multi-resolution fusion (HRNet style)</td><td>MAE -5~10% (detail)</td><td>medium</td></tr>
+    <tr><td><span class="tag optimized">P3</span></td><td>Adversarial training (GAN-assisted)</td><td>better perceptual quality</td><td>high: unstable training</td></tr>
+    <tr><td><span class="tag optimized">P3</span></td><td>Larger dataset (data collection)</td><td>across-the-board gain</td><td>low: needs manual labeling</td></tr>
   </tbody>
 </table>
 

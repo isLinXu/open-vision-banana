@@ -1,14 +1,14 @@
-# FLUX.1-schnell 本地权重训练配置
+# FLUX.1-schnell training config with local weights
 # ================================
-# 使用本地下载的 FLUX.1-schnell 权重进行 LoRA 指令微调
-# 目标设备: Apple M3 Max (128GB unified memory, MPS)
+# LoRA instruction tuning on locally downloaded FLUX.1-schnell weights
+# Target device: Apple M3 Max (128GB unified memory, MPS)
 
-# 基础模型 — 本地路径
+# Base model: local path
 model:
   name: "black-forest-labs/FLUX.1-schnell"
   dtype: "bfloat16"
 
-# LoRA 配置 (rsLoRA scaling)
+# LoRA config (rsLoRA scaling)
 lora:
   rank: 64
   alpha: 128
@@ -18,7 +18,7 @@ lora:
     - "to_v"
   dropout: 0.0
 
-# 优化器
+# Optimizer
 optimizer:
   lr: 5.0e-5
   weight_decay: 0.01
@@ -26,10 +26,10 @@ optimizer:
   warmup_steps: 100
   max_grad_norm: 1.0
 
-# 输出
+# Output
 output_dir: "output/checkpoints_flux_local"
 
-# 日志 (MPS 上使用本地 TensorBoard)
+# Logging (local TensorBoard on MPS)
 logging:
   wandb_enabled: false
   wandb_project: "open-vision-banana-flux-local"
@@ -38,10 +38,10 @@ logging:
   tensorboard_dir: "output/runs_flux_local"
   run_name: "flux_local_depth"
 
-# 训练参数 (MPS 128GB 优化)
+# Training parameters (tuned for 128GB MPS)
 training:
   epochs: 3
-  gradient_accumulation_steps: 4       # 有效 batch_size = 1 * 4 = 4
+  gradient_accumulation_steps: 4       # effective batch_size = 1 * 4 = 4
   use_amp: false                       # MPS autocast causes dtype mismatch; all inputs already bfloat16
   use_ema: true
   ema_decay: 0.9999
@@ -54,25 +54,25 @@ training:
   early_stopping_patience: null
   early_stopping_min_delta: 0.0
 
-# 数据 (MPS 优化)
+# Data (tuned for MPS)
 data:
   vision_ratio: 0.1                    # 10% vision, 90% generation
   generation_ratio: 0.9
   resolution: 512
-  batch_size: 1                        # MPS 保守, FLUX 12B 模型
-  num_workers: 0                       # MPS 必须设为 0
+  batch_size: 1                        # conservative on MPS, FLUX 12B model
+  num_workers: 0                       # must be 0 on MPS
   augmentation: true
-  val_split: 0.1                       # 10% 验证集
+  val_split: 0.1                       # 10% validation set
   generation_path: "data/vb_generation_5k"
 
-  # 训练任务数据
+  # training task data
   tasks:
     depth_estimation:
       datasets:
         - name: "vb_depth_pseudo_5k"
           split: "train"
 
-# 深度 RGB 映射参数 (from paper)
+# Depth RGB mapping parameters (from paper)
 depth_mapping:
   lam: -3.0
   c: 3.333

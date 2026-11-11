@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-SN-VC-50M JSONL → 训练管线格式转换脚本
+SN-VC-50M JSONL → training pipeline format conversion script
 
-将 SN-VC-50M 的 JSONL 标注转换为 VisionTaskDataset 兼容格式：
+Converts the SN-VC-50M JSONL annotations into a VisionTaskDataset-compatible format:
   data/vb_snvc_train/
     depth/
       images/    ← RGB inputs
@@ -18,13 +18,13 @@ SN-VC-50M JSONL → 训练管线格式转换脚本
       targets/   ← structure maps (bbox/point overlays)
       prompts.jsonl
 
-策略：
-- 只使用本地已有图片的 JSONL 条目
-- COCO depth/normal 目标图: 用 Depth-Anything 生成伪标签
-- Cityscapes 分割: 从 parquet 提取的图片 + JSONL 标注
-- RefCOCOg: COCO 2014 图片 (已有) + JSONL 标注
-- GroceryStore: 从 GitHub clone 的图片 + JSONL 标注
-- Hypersim: 8 个场景的图片 + JSONL 标注 (子集)
+Strategy:
+- Use only JSONL entries whose images exist locally
+- COCO depth/normal targets: pseudo-labels from Depth-Anything
+- Cityscapes segmentation: images extracted from parquet + JSONL annotations
+- RefCOCOg: COCO 2014 images (already present) + JSONL annotations
+- GroceryStore: images cloned from GitHub + JSONL annotations
+- Hypersim: images of 8 scenes + JSONL annotations (subset)
 """
 
 from __future__ import annotations

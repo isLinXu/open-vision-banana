@@ -1,43 +1,43 @@
 #!/usr/bin/env python3
-"""一键下载 Vision Banana 支持的全部 base model 权重。
+"""One-shot download of every base model weight Vision Banana supports.
 
-基于 model_registry 注册表，自动下载所有支持的 diffusion model 权重到本地缓存。
-支持 HuggingFace + ModelScope 双源下载，自动镜像加速。
+Downloads every supported diffusion model in the model_registry into the local cache.
+Supports both HuggingFace and ModelScope sources, with automatic mirror acceleration.
 
-模型清单
+Models
 ==========
-Core Models (论文核心):
-  - Z-Image 6B (Tongyi-MAI/Z-Image)       — 当前主模型
-  - FLUX.1-schnell (black-forest-labs)     — 论文原始基准
-  - SSD-1B (segmind)                       — 轻量验证模型
-  - SD 1.5 (runwayml)                      — 经典基准
+Core Models (paper core):
+  - Z-Image 6B (Tongyi-MAI/Z-Image)       : current main model
+  - FLUX.1-schnell (black-forest-labs)     : the paper's original baseline
+  - SSD-1B (segmind)                       : lightweight validation model
+  - SD 1.5 (runwayml)                      : classic baseline
 
-Extended Models (扩展支持):
+Extended Models (extended support):
   - SD 2.1, SDXL, SDXL-Turbo, SD3
   - Qwen-Image, SANA 600M/1600M, Lumina-2.0
   - Chroma1-HD, FLUX.2-dev, CogView4-6B
   - AuraFlow, PixArt, Kolors, HunyuanDiT, Kandinsky 3
 
 Usage:
-    # 列出所有可用模型
+    # list every available model
     python scripts/download_all_models.py --list
 
-    # 下载全部模型（需要大量磁盘空间 ~500GB+）
+    # download every model (needs a lot of disk, ~500GB+)
     python scripts/download_all_models.py
 
-    # 只下载核心模型（Z-Image + FLUX + SSD-1B + SD15）
+    # core models only (Z-Image + FLUX + SSD-1B + SD15)
     python scripts/download_all_models.py --core
 
-    # 下载指定模型
+    # download specific models
     python scripts/download_all_models.py --models z-image flux-schnell
 
-    # 指定缓存目录
+    # custom cache directory
     python scripts/download_all_models.py --core --cache-dir /data/models
 
-    # 按磁盘预算筛选
+    # filter by disk budget
     python scripts/download_all_models.py --list --max-disk 50
 
-    # 使用 ModelScope（国内推荐）
+    # use ModelScope (recommended in mainland China)
     python scripts/download_all_models.py --core --source modelscope
 
     # Dry-run
@@ -84,7 +84,7 @@ class ModelSpec:
 
 MODELS: list[ModelSpec] = [
     # ════════════════════════════════════════════════════════════════════
-    # CORE MODELS (论文核心)
+    # CORE MODELS (paper core)
     # ════════════════════════════════════════════════════════════════════
 
     ModelSpec(
@@ -482,26 +482,26 @@ def run_download(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="一键下载 Vision Banana 全部 base model 权重",
+        description="One-shot download of every Vision Banana base model weight",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # 列出所有模型
+    # list every model
     python scripts/download_all_models.py --list
 
-    # 下载核心模型（Z-Image + FLUX + SSD-1B + SD15, ~52GB）
+    # core models (Z-Image + FLUX + SSD-1B + SD15, ~52GB)
     python scripts/download_all_models.py --core
 
-    # 只下载 Z-Image
+    # Z-Image only
     python scripts/download_all_models.py --models z-image
 
-    # 使用 ModelScope（国内推荐）
+    # use ModelScope (recommended in mainland China)
     python scripts/download_all_models.py --core --source modelscope
 
-    # 指定缓存目录
+    # custom cache directory
     python scripts/download_all_models.py --core --cache-dir /data/models
 
-    # 按磁盘预算筛选
+    # filter by disk budget
     python scripts/download_all_models.py --list --max-disk 50
 
     # Dry-run

@@ -4,17 +4,17 @@
 This avoids download timeouts during training startup.
 
 Usage:
-    # 使用已登录的 HuggingFace CLI token（推荐）
+    # use the logged-in HuggingFace CLI token (recommended)
     python scripts/download_flux_model.py
 
-    # 通过环境变量传入 token
+    # pass the token through an environment variable
     HF_TOKEN=hf_xxx python scripts/download_flux_model.py
 """
 import os
 import sys
 from pathlib import Path
 
-# 优先从环境变量读取 token，否则尝试读取 HuggingFace CLI 登录缓存的 token
+# read the token from the environment first, otherwise try the HuggingFace CLI login cache
 token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
 if not token:
     token_path = Path.home() / ".cache" / "huggingface" / "token"

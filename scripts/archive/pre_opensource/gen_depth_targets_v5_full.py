@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""为 v5_full depth 图像批量生成 depth targets（伪标签）。
+"""Batch-generate depth targets (pseudo-labels) for the v5_full depth images.
 
-使用 Depth-Anything-V2-Small-hf (transformers pipeline)。
-Fallback: Marigold (diffusers)。
+Uses Depth-Anything-V2-Small-hf (transformers pipeline).
+Fallback: Marigold (diffusers).
 
-输出: targets/depth/ 下与 images/depth/ 同名的 .png depth colormap 图。
+Output: .png depth colormap images under targets/depth/ with the same names as images/depth/.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ logger = logging.getLogger("depth_gen_v5")
 DATA_ROOT = Path("/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full")
 DEPTH_IMG_DIR = DATA_ROOT / "images" / "depth"
 DEPTH_TGT_DIR = DATA_ROOT / "targets" / "depth"
-RESOLUTION = 256  # MAR-VB 默认 img_size=256
+RESOLUTION = 256  # MAR-VB default img_size=256
 
 
 def load_depth_anything():

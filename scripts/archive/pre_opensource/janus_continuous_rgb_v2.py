@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Janus-1.3B continuous RGB v2 —— 更多训练数据 + 正则化.
+"""Janus-1.3B continuous RGB v2: more training data + regularization.
 
-改进：
-- 更多训练数据（100+ 样本）
-- 正则化：dropout、weight decay、early stopping
-- 验证集监控，防止过拟合
+Improvements:
+- More training data (100+ samples)
+- Regularization: dropout, weight decay, early stopping
+- Validation monitoring against overfitting
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v2.py
 """
 from __future__ import annotations
@@ -42,8 +42,8 @@ DATA_DIR = os.environ.get(
     "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3/depth",
 )
 STEPS = int(os.environ.get("VB_STEPS", "1000"))
-NSAMPLES = int(os.environ.get("VB_NSAMPLES", "100"))  # 更多训练数据
-VAL_SAMPLES = int(os.environ.get("VB_VAL_SAMPLES", "10"))  # 验证集
+NSAMPLES = int(os.environ.get("VB_NSAMPLES", "100"))  # more training data
+VAL_SAMPLES = int(os.environ.get("VB_VAL_SAMPLES", "10"))  # validation set
 RES = int(os.environ.get("VB_RES", "384"))
 BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
@@ -62,7 +62,7 @@ IMAGE_TOKEN_NUM = 576
 
 
 class RGBHead(nn.Module):
-    """RGB 预测头：LLM hidden states → RGB 值（带 dropout）."""
+    """RGB prediction head: LLM hidden states → RGB values (with dropout)."""
 
     def __init__(self, hidden_dim: int, image_token_num: int, image_size: int, dropout: float = 0.1):
         super().__init__()
@@ -102,7 +102,7 @@ def main() -> None:
     print(f"[cfg] lr={LR}  rank={RANK}  alpha={ALPHA}  dropout={DROPOUT}  wd={WEIGHT_DECAY}")
     print(f"[cfg] patience={PATIENCE}  val_every={VAL_EVERY}  out={OUT}")
 
-    # 1) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 1) load Janus-1.3B ───────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -118,14 +118,14 @@ def main() -> None:
     print(f"[model] type={type(model).__name__}")
     print(f"[model] params={sum(p.numel() for p in model.parameters()):,}")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} depth samples @ {RES}px")
     if n_total < NSAMPLES + VAL_SAMPLES:
         raise RuntimeError(f"Need {NSAMPLES + VAL_SAMPLES} samples, have {n_total}")
 
-    # 训练集和验证集
+    # training and validation sets
     train_idx = list(range(NSAMPLES))
     val_idx = list(range(NSAMPLES, NSAMPLES + VAL_SAMPLES))
     train_subset = torch.utils.data.Subset(ds, train_idx)
@@ -154,7 +154,7 @@ def main() -> None:
     n_total_p = sum(p.numel() for p in peft_model.parameters())
     print(f"[lora] trainable = {n_train:,}  ({100*n_train/n_total_p:.2f}%)")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -162,7 +162,7 @@ def main() -> None:
     model.gen_head.requires_grad_(False)
     model.gen_embed.requires_grad_(False)
 
-    # 4) RGB Head（带 dropout）─────────────────────────────────────────
+    # 4) RGB Head (with dropout) ────────────────────────────────────────
     hidden_dim = model.config.language_config.hidden_size
     rgb_head = RGBHead(hidden_dim, IMAGE_TOKEN_NUM, RES, dropout=DROPOUT).to(device, DTYPE)
     rgb_head_params = sum(p.numel() for p in rgb_head.parameters())
@@ -184,7 +184,7 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 6) 验证函数 ─────────────────────────────────────────────────────
+    # 6) validation function ───────────────────────────────────────────
     @torch.no_grad()
     def run_validation() -> float:
         peft_model.eval()
@@ -223,7 +223,7 @@ def main() -> None:
         rgb_head.train()
         return sum(val_losses) / len(val_losses)
 
-    # 7) 训练循环 ─────────────────────────────────────────────────────
+    # 7) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus continuous RGB v2: {STEPS} steps")
     print(f"[train] prompt: {VISION_PROMPT[:80]}...")
 
@@ -288,14 +288,14 @@ def main() -> None:
                   f"avg30={recent:.4f}  lr={sched.get_last_lr()[0]:.2e}  "
                   f"({(time.time()-t_train)/step:.2f}s/step)", flush=True)
 
-        # 验证
+        # validation
         if step % VAL_EVERY == 0:
             val_loss = run_validation()
             val_losses.append(val_loss)
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 patience_counter = 0
-                # 保存最佳 checkpoint
+                # save the best checkpoint
                 best_ckpt = OUT / "ckpt_best"
                 best_ckpt.mkdir(parents=True, exist_ok=True)
                 peft_model.save_pretrained(str(best_ckpt / "lora"))
@@ -320,14 +320,14 @@ def main() -> None:
     print(f"\n[train] avg(first 1/3)={avg_first:.4f}  avg(last 1/3)={avg_last:.4f}  "
           f"({'DECREASING' if avg_last < avg_first else 'NOT decreasing'})")
 
-    # 保存最终 checkpoint
+    # save the final checkpoint
     final_ckpt = OUT / "ckpt_final"
     final_ckpt.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(final_ckpt / "lora"))
     torch.save(rgb_head.state_dict(), final_ckpt / "rgb_head.pt")
     print(f"[ckpt] saved → {final_ckpt}")
 
-    # 8) 推理评估 ─────────────────────────────────────────────────────
+    # 8) inference evaluation ──────────────────────────────────────────
     print("\n[eval] inference on training samples...")
     mapper = DepthRGBMapper(colormap="viridis")
     results = []

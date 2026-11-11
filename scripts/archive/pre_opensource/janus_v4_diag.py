@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Janus v4 checkpoint 诊断评估 — 多样本 + 统计分析."""
+"""Janus v4 checkpoint diagnostic evaluation: multiple samples + statistics."""
 from __future__ import annotations
 
 import json
@@ -34,7 +34,7 @@ N_EVAL = 10
 
 
 class RGBHead(nn.Module):
-    """与 v4 训练一致：手动归一化 + sigmoid."""
+    """Same as the v4 training: manual normalization + sigmoid."""
 
     def __init__(self, input_dim, image_token_num, image_size, dropout=0.0):
         super().__init__()
@@ -81,7 +81,7 @@ def main():
     device = _resolve_device()
     print(f"[cfg] device={device}  ckpt={CKPT}  n_eval={N_EVAL}")
 
-    # 1) 加载模型
+    # 1) load the model
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
                     janus_vlm.GenVisionConfig, janus_vlm.GenAlignerConfig,
@@ -100,7 +100,7 @@ def main():
     model = model.to(device)
     model.eval()
 
-    # 2) 加载 LoRA
+    # 2) load the LoRA
     from peft import PeftModel
     adapter_dir = Path(CKPT) / "lora"
     if adapter_dir.exists():
@@ -108,7 +108,7 @@ def main():
         model.language_model.eval()
         print(f"[lora] loaded from {adapter_dir}")
 
-    # 3) 加载 RGB Head（v4: input_dim=1024, vision features）
+    # 3) load the RGB head (v4: input_dim=1024, vision features)
     vision_dim = 1024
     rgb_head = RGBHead(vision_dim, IMAGE_TOKEN_NUM, RES, dropout=0.0).to(device, DTYPE)
     rgb_head_path = Path(CKPT) / "rgb_head.pt"
@@ -116,7 +116,7 @@ def main():
     rgb_head.eval()
     print(f"[rgb_head] loaded, input_dim={vision_dim}, params={sum(p.numel() for p in rgb_head.parameters()):,}")
 
-    # 4) 加载验证集
+    # 4) load the validation set
     ds = VisionTaskDataset(data_path=str(Path(DATA_ROOT) / "depth"), resolution=RES, task="depth")
     n_total = len(ds)
     n_train = 500
@@ -127,7 +127,7 @@ def main():
     p_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
     p_len = p_ids.shape[1]
 
-    # 5) 推理 + 诊断
+    # 5) inference + diagnostics
     all_metrics = []
     OUT = PROJECT_ROOT / "output" / "janus_continuous_rgb_v4" / "diag"
     OUT.mkdir(parents=True, exist_ok=True)
@@ -138,12 +138,12 @@ def main():
         tgt_rgb = sample["target_rgb"]
 
         with torch.no_grad():
-            # v4: 使用 vision features
+            # v4: use the vision features
             pixel_values = inp_tensor.unsqueeze(0).to(device, DTYPE)  # [1, 3, 384, 384]
             vis_features = model.vision_model(pixel_values)  # [1, 576, 1024]
             pred_rgb = rgb_head(vis_features).squeeze(0).clamp(0, 1).cpu()
 
-        # 指标
+        # metrics
         rgb_mae = (pred_rgb.float() - tgt_rgb.float()).abs().mean().item()
         rgb_mse = ((pred_rgb.float() - tgt_rgb.float()) ** 2).mean().item()
         psnr = 10 * math.log10(1.0 / max(rgb_mse, 1e-10))
@@ -193,7 +193,7 @@ def main():
         print(f"  tgt:  mean={tgt_mean:.4f} std={tgt_std:.4f}")
         print(f"  quadrant_err={[f'{e:.4f}' for e in quadrant_diff]}")
 
-        # 保存面板图
+        # save the panel figure
         pil_in = Image.fromarray(
             (inp_tensor.permute(1, 2, 0).clamp(-1, 1) * 0.5 + 0.5).mul(255).byte().numpy()
         )
@@ -213,7 +213,7 @@ def main():
             (diff_vis.permute(1, 2, 0).mul(255).byte().numpy())
         ).resize((RES, RES)).save(OUT / f"diag_depth_{idx:04d}_diff.png")
 
-    # 6) 汇总
+    # 6) summary
     print("\n" + "=" * 60)
     print("V4 DIAGNOSTIC SUMMARY")
     print("=" * 60)
@@ -235,11 +235,11 @@ def main():
     print(f"pred_std across samples:  min={min(pred_stds):.4f} max={max(pred_stds):.4f}")
 
     if avg_pred_std < 0.05:
-        print("\n[WARN] 预测几乎退化为常量！")
+        print("\n[WARN] The prediction has almost collapsed to a constant!")
     if max(pred_means) - min(pred_means) < 0.05:
-        print("\n[WARN] 不同样本的预测均值几乎相同！")
+        print("\n[WARN] The mean prediction is almost the same for every sample!")
 
-    # v3 vs v4 对比
+    # v3 vs v4 comparison
     print("\n" + "=" * 60)
     print("V3 vs V4 COMPARISON")
     print("=" * 60)

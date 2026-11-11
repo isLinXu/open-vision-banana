@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-为 COCO 图片生成伪深度目标图（替换灰度占位符）。
+Generate pseudo depth target images for COCO images (replacing the grayscale placeholders).
 
-使用 Depth-Anything-V2-Small-hf（通过 transformers pipeline）。
-如果模型不可用，回退到 Marigold（通过 diffusers）。
+Uses Depth-Anything-V2-Small-hf (through the transformers pipeline).
+Falls back to Marigold (through diffusers) if that model is unavailable.
 
-将 data/vb_snvc_train/depth/targets/ 中的灰度占位符替换为真实深度图。
+Replaces the grayscale placeholders in data/vb_snvc_train/depth/targets/ with real depth maps.
 """
 
 from __future__ import annotations

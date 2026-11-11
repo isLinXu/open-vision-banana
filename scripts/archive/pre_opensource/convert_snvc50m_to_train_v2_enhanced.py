@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-SN-VC-50M JSONL → 训练管线格式转换脚本 V2（增强版）
+SN-VC-50M JSONL → training pipeline format conversion script V2 (enhanced)
 
-在 V1 基础上扩充支持新下载的 JSONL 标注文件，覆盖更多任务族和子数据集。
+Extends V1 to the newly downloaded JSONL annotation files, covering more task families and sub-datasets.
 
-新增支持:
-  - Dense Geometric Prediction: COCO normal (伪标签), scannetpp normal
+New support:
+  - Dense Geometric Prediction: COCO normal (pseudo-labels), scannetpp normal
   - Segmentation: LoveDA, KITTI, StreetHazards, ZeroWaste, TTPLA, 51World, IDDAv3, VIPSeg, Trashcan
   - Structure View: FSC147 (bbox/visual), APTv2, BDD100K, EgoObjects, FAIR1M, DOTAv2, NuImages
   - Multiview: scannetv2 recon

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# generate-icons.sh — 使用用户提供的 Logo PNG 生成全套图标
-# 支持 macOS (icns), Windows (ico), Linux (png)
+# generate-icons.sh: generate the full icon set from the user-provided logo PNG
+# Supports macOS (icns), Windows (ico), Linux (png)
 
 set -euo pipefail
 
@@ -11,7 +11,7 @@ if [ ! -f "$LOGO_PNG" ]; then
     exit 1
 fi
 
-# 创建图标输出目录
+# Create the icon output directory
 ICON_DIR="desktop/icons"
 mkdir -p "$ICON_DIR"
 
@@ -19,7 +19,7 @@ mkdir -p "$ICON_DIR"
 if command -v iconutil &>/dev/null; then
     iconutil -c icns -o "$ICON_DIR/icon.icns" "$ICON_DIR/icon.iconset"
 else
-    # 回退：使用 sips (macOS 自带) + ImageMagick (可选)
+    # Fallback: use sips (built into macOS) + ImageMagick (optional)
     sips -s format icns "$LOGO_PNG" --out "$ICON_DIR/icon.icns" 2>/dev/null || \
     convert "$LOGO_PNG" -resize 256x256 "$ICON_DIR/icon.png" 2>/dev/null || \
     python3 -c "

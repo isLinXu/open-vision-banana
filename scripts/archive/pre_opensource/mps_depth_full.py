@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""MPS depth 完整复现 —— open-vision-banana 的核心任务.
+"""MPS depth full reproduction: the core open-vision-banana task.
 
-目标：
-- 全量 depth 数据（2296 样本）
-- 充分训练（3000-5000 步）
+Goals:
+- Full depth data (2296 samples)
+- Enough training (3000-5000 steps)
 - source conditioning + LoRA
-- 标准 benchmark 评估（held-out）
-- 与 frozen depth probe 对比
-- 生成保真验证（可选）
+- Standard benchmark evaluation (held-out)
+- Comparison with a frozen depth probe
+- Generation fidelity check (optional)
 
-MPS 约束：
-- 256px 分辨率（内存）
-- batch_size=1（内存）
-- fp32（MPS 稳定）
-- 预计 ~60-90 分钟
+MPS constraints:
+- 256px resolution (memory)
+- batch_size=1 (memory)
+- fp32 (stable on MPS)
+- expected ~60-90 minutes
 
-用法:
+Usage:
     PYTHONPATH=src python scripts/mps_depth_full.py
 """
 from __future__ import annotations
@@ -63,9 +63,9 @@ BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
-# 论文：vision data 比例很低，用少量样本即可
-NSAMPLES = int(os.environ.get("VB_NSAMPLES", "100000"))  # 全量
-# Held-out 评估集（不与训练重叠）
+# paper: the vision data ratio is very low, so few samples suffice
+NSAMPLES = int(os.environ.get("VB_NSAMPLES", "100000"))  # everything
+# held-out evaluation set (no overlap with training)
 HOLDOUT = [int(x) for x in os.environ.get(
     "VB_HOLDOUT", "120,500,900,1300,1700,2100").split(",") if x.strip()]
 VAL_IDXS = [int(x) for x in os.environ.get(
@@ -97,7 +97,7 @@ def main() -> None:
     print(f"[cfg] nsamples={NSAMPLES}  holdout={HOLDOUT}  val={VAL_IDXS}")
     print(f"[cfg] val_every={VAL_EVERY}  patience={VAL_PATIENCE}  out={OUT}")
 
-    # 1) 数据集 ───────────────────────────────────────────────────────
+    # 1) dataset ───────────────────────────────────────────────────────
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} depth samples @ {RES}px")
@@ -115,12 +115,12 @@ def main() -> None:
     )
     print(f"[data] train={len(train_idx)}  holdout={sorted(hold)}  val={sorted(val_idx_set)}")
 
-    # 2) 模型 + source conditioning ────────────────────────────────────
+    # 2) model + source conditioning ───────────────────────────────────
     t0 = time.time()
     gen = BaseGenerator(MODEL_ID, device=device, dtype=DTYPE)
     print(f"[model] family={gen.model_config.family}  loaded in {time.time()-t0:.1f}s")
 
-    # 目标色图统计（用于标定）
+    # target colormap statistics (for calibration)
     stat_idx = list(range(0, min(400, n_total), max(1, n_total // 400)))
     tgts = torch.stack([ds[i]["target_rgb"] for i in stat_idx])
     ch_mean = tuple(float(x) for x in tgts.mean(dim=(0, 2, 3)))
@@ -160,7 +160,7 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 4) 验证函数 ─────────────────────────────────────────────────────
+    # 4) validation function ───────────────────────────────────────────
     gen.source_conditioning_config = tuner._source_conditioning_config()
     mapper = DepthRGBMapper(colormap="viridis")
 
@@ -206,7 +206,7 @@ def main() -> None:
         write_source_conditioning_config(d, tuner._source_conditioning_config())
         return d
 
-    # 5) 训练循环 ─────────────────────────────────────────────────────
+    # 5) training loop ─────────────────────────────────────────────────
     print(f"\n[train] depth full: {STEPS} steps (val every {VAL_EVERY}, patience {VAL_PATIENCE})")
 
     losses: list[float] = []
@@ -267,7 +267,7 @@ def main() -> None:
     final = save_ckpt("final")
     print(f"[ckpt] final → {final}")
 
-    # 6) 完整 benchmark ────────────────────────────────────────────────
+    # 6) full benchmark ────────────────────────────────────────────────
     print("\n[bench] full held-out benchmark...")
     gen.source_conditioning_config = tuner._source_conditioning_config()
 
@@ -291,7 +291,7 @@ def main() -> None:
         m = evaluate_depth(pred_d.reshape(1, 1, *pred_d.shape),
                            gt_d.reshape(1, 1, *gt_d.shape))
 
-        # 保存可视化
+        # save the visualization
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(
@@ -321,7 +321,7 @@ def main() -> None:
 
     print(f"\n[bench] avg δ1={avg_d1:.4f}  avg AbsRel={avg_absrel:.4f}  avg RMSE={avg_rmse:.4f}")
 
-    # 保存结果
+    # save the results
     (OUT / "benchmark_result.json").write_text(json.dumps({
         "model": MODEL_ID, "device": device, "dtype": str(DTYPE),
         "steps": STEPS, "res": RES, "rank": RANK, "alpha": ALPHA,

@@ -1,4 +1,4 @@
-# Open-Vision-Banana -- Sana_1600M_512px 三任务训练 (depth+normal+seg)
+# Open-Vision-Banana -- Sana_1600M_512px three-task training (depth+normal+seg)
 # Uses Sana-1600M (1.6B params) with same dataset as Sana-600M 3-task training
 
 model:

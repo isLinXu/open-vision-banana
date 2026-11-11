@@ -1,16 +1,16 @@
-# FLUX.1-dev 十三任务训练配置 (Vision Banana 复现 · 全覆盖 + 合成低层视觉)
+# FLUX.1-dev thirteen-task training config (Vision Banana reproduction: full coverage plus synthetic low-level vision)
 # =====================================================================
-# 模型: FLUX.1-dev (12B transformer, 4-bit NF4 量化)
-# 数据: SNVC-50M v5_full 十三任务 manifest (RGB 参数化)
-#   高层: depth + normal + semantic seg + object detection + keypoint +
+# Model: FLUX.1-dev (12B transformer, 4-bit NF4 quantization)
+# Data: SNVC-50M v5_full thirteen-task manifest (RGB parameterization)
+#   High-level: depth + normal + semantic seg + object detection + keypoint +
 #         referring seg + edge + depth_edge + instance seg
-#   低层: colorization + super_resolution + deblurring + inpainting
-#   targets 由 scripts/gen_detpoint_refer_targets.py 生成
-#     (坐标渲染 / Canny 派生 / GT labelmap / 连通域异色 / 确定性退化合成)
-#   合并校验由 scripts/merge_multitask_manifest.py 完成 (仅保留文件存在的行)
-# 覆盖: README 10 任务中除 optical flow 外全部 (flow 缺数据集 GT);
-#       另加 4 个从真实照片确定性合成的低层 I2I 恢复任务
-# 目标: RTX 4090 24GB 单卡 LoRA 微调, 30000 steps, 同步 W&B
+#   Low-level: colorization + super_resolution + deblurring + inpainting
+#   targets are produced by scripts/gen_detpoint_refer_targets.py
+#     (coordinate rendering / Canny-derived / GT labelmap / distinct colors per connected component / deterministic degradation synthesis)
+#   merged and checked by scripts/merge_multitask_manifest.py (keeps only rows whose files exist)
+# Coverage: every README task except optical flow (no dataset GT for flow);
+#       plus 4 low-level I2I restoration tasks synthesized deterministically from real photos
+# Target: single RTX 4090 24GB LoRA fine-tuning, 30000 steps, synced to W&B
 
 model:
   name: "flux-dev"
@@ -89,7 +89,7 @@ checkpoint:
   save_every: 1000
   eval_every: 500
   log_every: 25
-  # warm-start 从 8 任务 checkpoint-2000 的 LoRA 续训 (任务集 8->13, LoRA 结构不变)
+  # warm-start: continue the LoRA from the 8-task checkpoint-2000 (task set 8->13, same LoRA structure)
   resume: "output/flux_8task_multitask_30k/checkpoint-2000/lora.pt"
   resume_weights_only: false
 

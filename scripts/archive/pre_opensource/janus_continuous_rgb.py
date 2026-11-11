@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Janus-1.3B continuous RGB 输出 —— 直接生成 RGB，不用 VQ tokens.
+"""Janus-1.3B continuous RGB output: generate RGB directly, without VQ tokens.
 
-改进：
-- 替换 gen_head → RGB head（直接预测 RGB 值）
-- MSE loss 替代 CrossEntropy
-- 无 VQ encode/decode，直接输出 RGB
-- 更接近论文 NBP 的连续生成
+Improvements:
+- Replace gen_head with an RGB head (predicts RGB values directly)
+- MSE loss instead of CrossEntropy
+- No VQ encode/decode, RGB is output directly
+- Closer to the paper's continuous NBP generation
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb.py
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ IMAGE_TOKEN_NUM = 576  # 24x24
 
 
 class RGBHead(nn.Module):
-    """RGB 预测头：LLM hidden states → RGB 值."""
+    """RGB prediction head: LLM hidden states → RGB values."""
 
     def __init__(self, hidden_dim: int, image_token_num: int, image_size: int):
         super().__init__()
@@ -104,7 +104,7 @@ def main() -> None:
     print(f"[cfg] steps={STEPS}  nsamples={NSAMPLES}  res={RES}  batch={BATCH}")
     print(f"[cfg] lr={LR}  rank={RANK}  alpha={ALPHA}  out={OUT}")
 
-    # 1) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 1) load Janus-1.3B ───────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -120,7 +120,7 @@ def main() -> None:
     print(f"[model] type={type(model).__name__}")
     print(f"[model] params={sum(p.numel() for p in model.parameters()):,}")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} depth samples @ {RES}px")
@@ -147,7 +147,7 @@ def main() -> None:
     n_total_p = sum(p.numel() for p in peft_model.parameters())
     print(f"[lora] trainable = {n_train:,}  ({100*n_train/n_total_p:.2f}%)")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -155,7 +155,7 @@ def main() -> None:
     model.gen_head.requires_grad_(False)
     model.gen_embed.requires_grad_(False)
 
-    # 4) RGB Head（新增）───────────────────────────────────────────────
+    # 4) RGB Head (new) ────────────────────────────────────────────────
     hidden_dim = model.config.language_config.hidden_size
     rgb_head = RGBHead(hidden_dim, IMAGE_TOKEN_NUM, RES).to(device, DTYPE)
     rgb_head_params = sum(p.numel() for p in rgb_head.parameters())
@@ -177,11 +177,11 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 6) 训练循环 ─────────────────────────────────────────────────────
+    # 6) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus continuous RGB: {STEPS} steps")
     print(f"[train] prompt: {VISION_PROMPT[:80]}...")
 
-    # 预编码 prompt
+    # pre-encode the prompt
     prompt_ids = tokenizer(VISION_PROMPT, return_tensors="pt").input_ids.to(device)
     prompt_len = prompt_ids.shape[1]
 
@@ -198,14 +198,14 @@ def main() -> None:
 
         opt.zero_grad(set_to_none=True)
 
-        # 取 batch（batch_size=1 简化）
+        # take a batch (batch_size=1 for simplicity)
         image = batch["image"][0:1].to(device, DTYPE)  # [-1, 1]
         target_rgb = batch["target_rgb"][0:1].to(device, DTYPE)  # [0, 1]
 
-        # 1. 图像理解路径
+        # 1. image understanding path
         pixel_values = image.unsqueeze(1)
 
-        # 2. 构造输入 embeds
+        # 2. build the input embeds
         seq_len = prompt_len + IMAGE_TOKEN_NUM
         full_input_ids = torch.cat([
             prompt_ids,
@@ -222,18 +222,18 @@ def main() -> None:
             images_emb_mask=images_emb_mask,
         )
 
-        # 3. 前向传播
+        # 3. forward pass
         outputs = model.language_model.model(
             inputs_embeds=input_embeds,
             output_hidden_states=True,
         )
         hidden_states = outputs.last_hidden_state
 
-        # 4. RGB 预测（新增）
+        # 4. RGB prediction (new)
         gen_hidden = hidden_states[:, prompt_len:, :]  # [1, 576, D]
         pred_rgb = rgb_head(gen_hidden)  # [1, 3, RES, RES]
 
-        # 5. MSE loss（连续 RGB）
+        # 5. MSE loss (continuous RGB)
         loss = F.mse_loss(pred_rgb, target_rgb)
 
         if not torch.isfinite(loss).all():
@@ -266,14 +266,14 @@ def main() -> None:
     print(f"\n[train] avg(first 1/3)={avg_first:.4f}  avg(last 1/3)={avg_last:.4f}  "
           f"({'DECREASING' if avg_last < avg_first else 'NOT decreasing'})")
 
-    # 保存 checkpoint
+    # save the checkpoint
     ckpt_dir = OUT / "ckpt_final"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(ckpt_dir / "lora"))
     torch.save(rgb_head.state_dict(), ckpt_dir / "rgb_head.pt")
     print(f"[ckpt] saved → {ckpt_dir}")
 
-    # 7) 推理评估 ─────────────────────────────────────────────────────
+    # 7) inference evaluation ──────────────────────────────────────────
     print("\n[eval] inference on training samples...")
     mapper = DepthRGBMapper(colormap="viridis")
     results = []
@@ -288,7 +288,7 @@ def main() -> None:
             .mul(255).byte().numpy()
         )
 
-        # 推理
+        # inference
         pixel_values = inp_tensor.unsqueeze(0).unsqueeze(0).to(device, DTYPE)
         seq_len = prompt_len + IMAGE_TOKEN_NUM
         full_input_ids = torch.cat([
@@ -312,7 +312,7 @@ def main() -> None:
         gen_hidden = hidden_states[:, prompt_len:, :]
         pred_rgb = rgb_head(gen_hidden).squeeze(0).clamp(0, 1).cpu()
 
-        # 三联图
+        # triptych
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(

@@ -97,12 +97,12 @@ class TestDepthRGBMapper:
     # ── Regression guards (added v0.5.0, validation-driven analysis) ──────
 
     def test_spectral_colormap_no_self_intersection(self):
-        """谱色图 3D 轨迹必须不自交。
+        """The spectral colormap's 3D trajectory must not self-intersect.
 
-        ``rgb_to_normalized`` 依赖于谱色图曲线在 RGB 立方体中不自交这一
-        隐含前提来保证单射性。若有人调整 ``SPECTRAL_KEYPOINTS`` 引入自交，
-        会静默破坏可逆性。本测试通过 normalized→rgb→normalized 的密集
-        roundtrip 来守护该前提。
+        ``rgb_to_normalized`` relies on the implicit assumption that the spectral curve does not
+        self-intersect inside the RGB cube to stay injective. If someone edits ``SPECTRAL_KEYPOINTS``
+        and introduces a self-intersection, invertibility breaks silently. This test guards that
+        assumption with a dense normalized -> rgb -> normalized roundtrip.
         """
         n = torch.linspace(0.0, 1.0, 2000).view(1, 1, 1, -1)
         rgb = self.mapper.normalized_to_rgb(n)
@@ -114,10 +114,10 @@ class TestDepthRGBMapper:
         )
 
     def test_depth_roundtrip_within_valid_domain_quantized(self):
-        """有效域 [1, 50]m 内,含 8-bit 量化的 roundtrip AbsRel < 0.5%。
+        """Within the valid range [1, 50] m, the roundtrip AbsRel with 8-bit quantization is < 0.5%.
 
-        扩散模型实际输出 uint8 RGB,因此真实端到端精度由"量化+逆映射"
-        联合决定。本测试守护该现实精度。
+        The diffusion model actually outputs uint8 RGB, so the real end-to-end accuracy is set by
+        quantization plus the inverse mapping together. This test guards that realistic accuracy.
         """
         torch.manual_seed(0)
         depth = torch.rand(1, 1, 64, 64) * 49.0 + 1.0  # [1, 50]m
@@ -128,9 +128,9 @@ class TestDepthRGBMapper:
         assert abs_rel < 0.005, f"Quantized depth AbsRel too high: {abs_rel:.4f}"
 
     def test_depth_roundtrip_degrades_gracefully_far(self):
-        """超出有效域 (>200m) 时精度衰减但不应 NaN/inf。
+        """Beyond the valid range (>200 m) accuracy degrades but must not become NaN/inf.
 
-        记录失稳行为,确保未来的有效域裁剪改动不会引入数值崩溃。
+        Records the unstable behaviour so future valid-range clipping changes cannot introduce a numeric blow-up.
         """
         depth = torch.tensor([[[[300.0, 500.0, 1000.0]]]])
         recovered = self.mapper.rgb_to_depth(self.mapper.depth_to_rgb(depth))
@@ -233,10 +233,10 @@ class TestNormalRGBMapper:
         assert rgb.max() <= 1.0
 
     def test_roundtrip_normal_quantized(self):
-        """含 8-bit 量化的法线 roundtrip 角误差应 < 1°。
+        """The normal roundtrip angular error with 8-bit quantization should be < 1°.
 
-        法线映射是纯线性的,量化误差均匀且极小,是 RGB 参数化最稳健的
-        任务。本测试守护该现实精度(实测 ~0.17°)。
+        The normal mapping is purely linear, so its quantization error is uniform and tiny; it is the most
+        robust task under the RGB parameterization. This test guards that realistic accuracy (measured ~0.17°).
         """
         torch.manual_seed(1)
         normals = torch.randn(1, 3, 64, 64)

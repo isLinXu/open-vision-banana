@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Janus-1.3B depth-only 完整复现 —— 标准 benchmark + 生成保真.
+"""Janus-1.3B depth-only full reproduction: standard benchmark + generation fidelity.
 
-1. 标准 depth benchmark（NYU-style metrics）
-2. 生成保真验证（text-to-image generation）
-3. 与 frozen depth probe 对比
+1. Standard depth benchmark (NYU-style metrics)
+2. Generation fidelity check (text-to-image generation)
+3. Comparison with a frozen depth probe
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_depth_complete.py
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ def main() -> None:
     if not CKPT_DIR or not Path(CKPT_DIR).exists():
         raise RuntimeError(f"Checkpoint not found: {CKPT_DIR}")
 
-    # 1) 加载模型 ───────────────────────────────────────────────────────
+    # 1) load the model ────────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -76,7 +76,7 @@ def main() -> None:
     model = model.to(device)
     print(f"[model] loaded")
 
-    # 加载 RGB head
+    # load the RGB head
     rgb_head_path = Path(CKPT_DIR) / "rgb_head.pt"
     if rgb_head_path.exists():
         from janus_continuous_rgb import RGBHead
@@ -87,7 +87,7 @@ def main() -> None:
         rgb_head = None
         print(f"[ckpt] no RGB head found, using VQ decode")
 
-    # 2) 标准 depth benchmark ──────────────────────────────────────────
+    # 2) standard depth benchmark ──────────────────────────────────────
     print("\n[bench] standard depth benchmark...")
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
@@ -106,7 +106,7 @@ def main() -> None:
             .mul(255).byte().numpy()
         )
 
-        # 推理
+        # inference
         pixel_values = inp_tensor.unsqueeze(0).unsqueeze(0).to(device, DTYPE)
         prompt_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         prompt_len = prompt_ids.shape[1]
@@ -131,7 +131,7 @@ def main() -> None:
         hidden_states = outputs.last_hidden_state
         gen_hidden = hidden_states[:, prompt_len:, :]
 
-        # 生成 RGB
+        # generate RGB
         if rgb_head is not None:
             pred_rgb = rgb_head(gen_hidden).squeeze(0).clamp(0, 1).cpu()
         else:
@@ -146,7 +146,7 @@ def main() -> None:
         pred_d = mapper.rgb_to_depth(pred_rgb.unsqueeze(0)).squeeze().clamp(0, 15).float()
         gt_d = mapper.rgb_to_depth(tgt_rgb.unsqueeze(0)).squeeze().clamp(0, 15).float()
 
-        # 保存可视化
+        # save the visualization
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(
@@ -157,7 +157,7 @@ def main() -> None:
         ).resize((RES, RES)), (RES * 2, 0))
         panel.save(OUT / f"bench_{sample_idx:04d}.png")
 
-        # 标准指标
+        # standard metrics
         m = evaluate_depth(pred_d.reshape(1, 1, *pred_d.shape),
                            gt_d.reshape(1, 1, *gt_d.shape))
         rgb_mae = (pred_rgb.float() - tgt_rgb.float()).abs().mean().item()
@@ -184,7 +184,7 @@ def main() -> None:
     print(f"\n[bench] avg δ1={avg_d1:.4f}  avg AbsRel={avg_absrel:.4f}  "
           f"avg RMSE={avg_rmse:.4f}  avg rgb_mae={avg_rgb_mae:.4f}")
 
-    # 3) 生成保真验证 ────────────────────────────────────────────────────
+    # 3) generation fidelity check ─────────────────────────────────────
     print("\n[gen] generation preservation test...")
     test_prompts = [
         "A beautiful sunset over the ocean",
@@ -195,7 +195,7 @@ def main() -> None:
     gen_results = []
     for prompt in test_prompts:
         print(f"  prompt: {prompt[:50]}...")
-        # 简化：用 t2i 模式生成
+        # simplified: generate in t2i mode
         prompt_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         prompt_len = prompt_ids.shape[1]
         seq_len = prompt_len + IMAGE_TOKEN_NUM
@@ -235,7 +235,7 @@ def main() -> None:
 
     print(f"  generated {len(gen_results)} images")
 
-    # 保存结果
+    # save the results
     (OUT / "complete_result.json").write_text(json.dumps({
         "model": MODEL_ID, "ckpt": CKPT_DIR, "device": device,
         "res": RES, "holdout": sorted(HOLDOUT),

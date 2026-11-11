@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
-"""Janus-1.3B continuous RGB v3 —— 大幅扩充数据 + 强化正则化.
+"""Janus-1.3B continuous RGB v3: much more data + stronger regularization.
 
-基于 v2 改进：
-- 更多训练数据：500 train + 50 val（v2 仅 100+10）
-- 多任务混合：depth + normal + instance（可选）
-- 强化正则化：
-  · LoRA dropout（lora_dropout 参数）
+Improvements over v2:
+- More training data: 500 train + 50 val (v2 had only 100+10)
+- Multi-task mix: depth + normal + instance (optional)
+- Stronger regularization:
+  · LoRA dropout (the lora_dropout parameter)
   · RGB Head dropout
-  · weight decay（AdamW）
-  · early stopping（patience 可配）
+  · weight decay (AdamW)
+  · early stopping (configurable patience)
   · gradient clipping
-  · 数据增强（水平翻转）
-- 可选 warm-start 从 v2 checkpoint
-- 完整训练历史 JSON 输出
+  · data augmentation (horizontal flip)
+- Optional warm-start from a v2 checkpoint
+- Full training history as JSON
 
-用法:
-    # 单任务 depth（默认）
+Usage:
+    # single-task depth (default)
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v3.py
 
-    # 多任务 depth+normal+instance
+    # multi-task depth+normal+instance
     VB_TASKS=depth,normal,instance VB_N_PER_TASK=200 \
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v3.py
 
-    # 从 v2 checkpoint 热启动
+    # warm start from a v2 checkpoint
     VB_RESUME=output/janus_continuous_rgb_v2/ckpt_best \
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v3.py
 """
@@ -59,28 +59,28 @@ DATA_ROOT = os.environ.get(
     "/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v3",
 )
 
-# 任务配置：depth / depth,normal,instance / depth,normal,instance,referring,keypoint
+# task config: depth / depth,normal,instance / depth,normal,instance,referring,keypoint
 TASKS = os.environ.get("VB_TASKS", "depth").split(",")
-N_PER_TASK = int(os.environ.get("VB_N_PER_TASK", "500"))       # 每任务训练样本数
-VAL_PER_TASK = int(os.environ.get("VB_VAL_PER_TASK", "50"))    # 每任务验证样本数
+N_PER_TASK = int(os.environ.get("VB_N_PER_TASK", "500"))       # training samples per task
+VAL_PER_TASK = int(os.environ.get("VB_VAL_PER_TASK", "50"))    # validation samples per task
 
 STEPS = int(os.environ.get("VB_STEPS", "2000"))
 RES = int(os.environ.get("VB_RES", "384"))
 BATCH = int(os.environ.get("VB_BATCH", "1"))
-LR = float(os.environ.get("VB_LR", "5e-5"))         # 更大数据量 → 更低 LR
+LR = float(os.environ.get("VB_LR", "5e-5"))         # more data → lower LR
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
 
-# ── 正则化参数 ──────────────────────────────────────────────────────────
+# ── Regularization parameters ───────────────────────────────────────────
 DROPOUT = float(os.environ.get("VB_DROPOUT", "0.15"))            # RGB Head dropout
 LORA_DROPOUT = float(os.environ.get("VB_LORA_DROPOUT", "0.05"))  # LoRA dropout
 WEIGHT_DECAY = float(os.environ.get("VB_WEIGHT_DECAY", "0.02"))  # AdamW weight decay
 PATIENCE = int(os.environ.get("VB_PATIENCE", "15"))              # early stopping patience
-VAL_EVERY = int(os.environ.get("VB_VAL_EVERY", "50"))            # 验证频率
-GRAD_CLIP = float(os.environ.get("VB_GRAD_CLIP", "1.0"))        # 梯度裁剪
-AUGMENT_FLIP = os.environ.get("VB_AUGMENT_FLIP", "1") == "1"    # 水平翻转增强
+VAL_EVERY = int(os.environ.get("VB_VAL_EVERY", "50"))            # validation frequency
+GRAD_CLIP = float(os.environ.get("VB_GRAD_CLIP", "1.0"))        # gradient clipping
+AUGMENT_FLIP = os.environ.get("VB_AUGMENT_FLIP", "1") == "1"    # horizontal flip augmentation
 
-# 可选 warm-start
+# optional warm-start
 RESUME_CKPT = os.environ.get("VB_RESUME", "")
 
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "janus_continuous_rgb_v3")))
@@ -99,7 +99,7 @@ TASK_PROMPTS = {
 
 
 class RGBHead(nn.Module):
-    """RGB 预测头：LLM hidden states → RGB 值（带 dropout 正则化）."""
+    """RGB prediction head: LLM hidden states → RGB values (with dropout regularization)."""
 
     def __init__(self, hidden_dim: int, image_token_num: int, image_size: int, dropout: float = 0.15):
         super().__init__()
@@ -107,7 +107,7 @@ class RGBHead(nn.Module):
         self.image_size = image_size
         self.patch_size = image_size // int(math.sqrt(image_token_num))
 
-        # 两层 MLP + dropout 增强正则化
+        # two-layer MLP + dropout for stronger regularization
         self.proj = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -135,7 +135,7 @@ def _resolve_device() -> str:
 
 
 def _augment_flip(image: torch.Tensor, target_rgb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """水平翻转数据增强（50% 概率）."""
+    """Horizontal flip augmentation (50% probability)."""
     if torch.rand(1).item() < 0.5:
         return image.flip(-1), target_rgb.flip(-1)
     return image, target_rgb
@@ -154,7 +154,7 @@ def main() -> None:
     print(f"[cfg] augment_flip={AUGMENT_FLIP}  resume={RESUME_CKPT or 'none'}")
     print(f"[cfg] out={OUT}")
 
-    # 1) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 1) load Janus-1.3B ───────────────────────────────────────────────
     # Patch Janus config classes for Python 3.10+ dataclass compatibility
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
@@ -179,7 +179,7 @@ def main() -> None:
     print(f"[model] type={type(model).__name__}")
     print(f"[model] params={sum(p.numel() for p in model.parameters()):,}")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     all_train_datasets = []
     all_val_datasets = []
 
@@ -217,7 +217,7 @@ def main() -> None:
     )
     print(f"[data] combined train={len(train_combined)}  val={len(val_combined)}")
 
-    # 3) LoRA on language_model（带 dropout 正则化）─────────────────────
+    # 3) LoRA on language_model (with dropout regularization) ──────────
     from peft import LoraConfig, get_peft_model
 
     lora_config = LoraConfig(
@@ -233,7 +233,7 @@ def main() -> None:
     print(f"[lora] trainable = {n_train:,}  ({100*n_train/n_total_p:.2f}%)")
     print(f"[lora] dropout = {LORA_DROPOUT}")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -241,13 +241,13 @@ def main() -> None:
     model.gen_head.requires_grad_(False)
     model.gen_embed.requires_grad_(False)
 
-    # 4) RGB Head（带 dropout 正则化）───────────────────────────────────
+    # 4) RGB Head (with dropout regularization) ────────────────────────
     hidden_dim = model.config.language_config.hidden_size
     rgb_head = RGBHead(hidden_dim, IMAGE_TOKEN_NUM, RES, dropout=DROPOUT).to(device, DTYPE)
     rgb_head_params = sum(p.numel() for p in rgb_head.parameters())
     print(f"[rgb_head] params={rgb_head_params:,}  dropout={DROPOUT}")
 
-    # 5) 可选 warm-start ──────────────────────────────────────────────
+    # 5) optional warm-start ───────────────────────────────────────────
     start_step = 0
     if RESUME_CKPT and Path(RESUME_CKPT).exists():
         print(f"[resume] loading from {RESUME_CKPT}")
@@ -263,7 +263,7 @@ def main() -> None:
             print(f"[resume] RGB head loaded")
         print(f"[resume] warm-start complete")
 
-    # 6) Optimizer（weight decay 正则化）────────────────────────────────
+    # 6) optimizer (weight decay regularization) ───────────────────────
     trainable_params = (
         [p for p in peft_model.parameters() if p.requires_grad] +
         list(rgb_head.parameters())
@@ -275,7 +275,7 @@ def main() -> None:
     )
 
     def lr_lambda(step: int) -> float:
-        warmup = max(1, STEPS // 20)  # 更长的 warmup
+        warmup = max(1, STEPS // 20)  # longer warmup
         if step < warmup:
             return (step + 1) / warmup
         progress = (step - warmup) / max(1, STEPS - warmup)
@@ -283,7 +283,7 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 7) 验证函数 ─────────────────────────────────────────────────────
+    # 7) validation function ───────────────────────────────────────────
     prompt_ids_cache: dict[str, torch.Tensor] = {}
 
     def _get_prompt_ids(prompt: str) -> torch.Tensor:
@@ -334,7 +334,7 @@ def main() -> None:
         rgb_head.train()
         return sum(val_losses) / len(val_losses) if val_losses else float("inf")
 
-    # 8) 训练循环 ─────────────────────────────────────────────────────
+    # 8) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus continuous RGB v3: {STEPS} steps")
     print(f"[train] {len(TASKS)} task(s): {TASKS}")
 
@@ -359,7 +359,7 @@ def main() -> None:
         task = batch.get("task", ["depth"])[0] if isinstance(batch.get("task"), list) else batch.get("task", "depth")
         prompt = TASK_PROMPTS.get(task, TASK_PROMPTS["depth"])
 
-        # 数据增强
+        # data augmentation
         if AUGMENT_FLIP:
             image, target_rgb = _augment_flip(image, target_rgb)
 
@@ -406,7 +406,7 @@ def main() -> None:
                   f"task={task}  "
                   f"({(time.time()-t_train)/step:.2f}s/step)", flush=True)
 
-        # 验证 + early stopping
+        # validation + early stopping
         if step % VAL_EVERY == 0:
             val_loss = run_validation()
             record = {
@@ -422,12 +422,12 @@ def main() -> None:
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 patience_counter = 0
-                # 保存最佳 checkpoint
+                # save the best checkpoint
                 best_ckpt = OUT / "ckpt_best"
                 best_ckpt.mkdir(parents=True, exist_ok=True)
                 peft_model.save_pretrained(str(best_ckpt / "lora"))
                 torch.save(rgb_head.state_dict(), best_ckpt / "rgb_head.pt")
-                # 保存训练配置以供恢复
+                # save the training config for resuming
                 config_snapshot = {
                     "model_id": MODEL_ID,
                     "tasks": TASKS,
@@ -457,21 +457,21 @@ def main() -> None:
     if not losses:
         raise RuntimeError("No finite training steps")
 
-    # 9) 训练总结 ─────────────────────────────────────────────────────
+    # 9) training summary ──────────────────────────────────────────────
     k = max(1, len(losses) // 3)
     avg_first = sum(losses[:k]) / k
     avg_last = sum(losses[-k:]) / k
     print(f"\n[train] avg(first 1/3)={avg_first:.4f}  avg(last 1/3)={avg_last:.4f}  "
           f"({'DECREASING ✓' if avg_last < avg_first else 'NOT decreasing ✗'})")
 
-    # 保存最终 checkpoint
+    # save the final checkpoint
     final_ckpt = OUT / "ckpt_final"
     final_ckpt.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(final_ckpt / "lora"))
     torch.save(rgb_head.state_dict(), final_ckpt / "rgb_head.pt")
     print(f"[ckpt] saved → {final_ckpt}")
 
-    # 保存训练历史
+    # save the training history
     history_out = OUT / "training_history.json"
     with open(history_out, "w") as f:
         json.dump({
@@ -499,11 +499,11 @@ def main() -> None:
         }, f, indent=2)
     print(f"[history] saved → {history_out}")
 
-    # 10) 推理评估 ────────────────────────────────────────────────────
+    # 10) inference evaluation ─────────────────────────────────────────
     print("\n[eval] inference on held-out samples...")
     mapper = DepthRGBMapper(colormap="viridis")
 
-    # 使用验证集样本评估
+    # evaluate on validation set samples
     results = []
     n_eval = min(len(val_combined), 5)
 
@@ -557,7 +557,7 @@ def main() -> None:
         rgb_mae = (pred_rgb.float() - tgt_rgb.float()).abs().mean().item()
         return {"idx": sample_idx, "task": task, "rgb_mae": rgb_mae}
 
-    # 对每个任务的验证集做评估
+    # evaluate the validation set of each task
     for task_i, task in enumerate(TASKS):
         if task_i < len(all_val_datasets):
             for i in range(min(2, len(all_val_datasets[task_i]))):

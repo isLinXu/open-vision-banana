@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Segmentation 数据集图像下载脚本
+Segmentation dataset image download script
 
-从 HuggingFace mirror 逐文件下载 SNVC50M JSONL 引用的缺失 segmentation 源图像。
-不使用 huggingface_hub Python API (OOM) 和 hf download CLI (不稳定)。
-只用 curl 逐文件下载。
+Downloads, file by file from the HuggingFace mirror, the missing segmentation source images referenced by the SNVC50M JSONL.
+Avoids the huggingface_hub Python API (OOM) and the hf download CLI (unstable).
+Uses only per-file curl downloads.
 
-策略:
-  1. 读取 JSONL 获取所需文件列表
-  2. 用 HF API (urllib) 获取仓库文件列表
-  3. 逐文件用 curl 下载
-  4. 已有文件跳过 (size > 100 bytes)
-  5. repo 不存在或无法访问则跳过
+Strategy:
+  1. Read the JSONL to get the list of required files
+  2. Get the repo file list with the HF API (urllib)
+  3. Download each file with curl
+  4. Skip files that already exist (size > 100 bytes)
+  5. Skip repos that do not exist or are not accessible
 
 Usage:
   python scripts/download_seg_datasets.py

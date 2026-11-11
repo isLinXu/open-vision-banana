@@ -1,7 +1,7 @@
 # ================================
-# Phase 2: Depth Gate 过拟合实验
-# 仅用 depth 数据 (2181 samples) 训练
-# 目标: 验证 FLUX.1+LoRA 能学会 image→depth RGB 映射
+# Phase 2: depth gate overfit experiment
+# Trains on depth data only (2181 samples)
+# Goal: check that FLUX.1+LoRA can learn the image→depth RGB mapping
 # ================================
 
 model:
@@ -18,7 +18,7 @@ lora:
   dropout: 0.0
 
 optimizer:
-  lr: 1.0e-4           # 稍高 LR 加速过拟合
+  lr: 1.0e-4           # slightly higher LR to overfit faster
   weight_decay: 0.01
   scheduler: "cosine"
   warmup_steps: 50
@@ -34,9 +34,9 @@ logging:
 
 training:
   epochs: 1
-  gradient_accumulation_steps: 1    # 不做梯度累积，加速实验
+  gradient_accumulation_steps: 1    # no gradient accumulation, faster experiment
   use_amp: true
-  use_ema: false                    # 过拟合实验不需要 EMA
+  use_ema: false                    # the overfit experiment needs no EMA
   save_every: 100
   eval_every: 9999
   max_keep: 5
@@ -46,12 +46,12 @@ training:
   early_stopping_min_delta: 0.0
 
 data:
-  vision_ratio: 1.0                 # 100% 视觉数据
+  vision_ratio: 1.0                 # 100% vision data
   resolution: 512
   batch_size: 1
   num_workers: 0
   augmentation: true
-  val_split: 0.05                   # 5% 验证
+  val_split: 0.05                   # 5% validation
 
 depth_mapping:
   lam: -3.0

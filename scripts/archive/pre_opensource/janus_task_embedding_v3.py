@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Janus-1.3B task embedding v3 —— 全量 v3 数据 + 三路划分 + 诚实 held-out 评估.
+"""Janus-1.3B task embedding v3: full v3 data + three-way split + honest held-out evaluation.
 
-相对 v2 的改进：
-1. 全量数据：论文 5 任务（depth/normal/segmentation/instance/referring）全部样本
-2. 三路划分：train / val（早停）/ test（最终诚实评估，训练与早停均不可见）
-3. 任务采样按训练集大小加权，缓解小样本任务欠训
-4. held-out 真实指标：depth δ1/AbsRel（colormap 解码）、normal 平均角误差、
-   离散任务非黑像素 IoU/F1、全部任务 rgb_mae
+Improvements over v2:
+1. Full data: every sample of the paper's 5 tasks (depth/normal/segmentation/instance/referring)
+2. Three-way split: train / val (early stopping) / test (final honest evaluation, unseen by training and early stopping)
+3. Task sampling weighted by training set size, so small tasks are not undertrained
+4. Real held-out metrics: depth δ1/AbsRel (colormap decode), normal mean angular error,
+   non-black-pixel IoU/F1 for the discrete tasks, rgb_mae for every task
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_task_embedding_v3.py
-    VB_SMOKE=1 ...  # 20 步冒烟
+    VB_SMOKE=1 ...  # 20-step smoke run
 """
 from __future__ import annotations
 
@@ -177,7 +177,7 @@ def main() -> None:
     print(f"[cfg] nonblack_weight={NONBLACK_WEIGHT}  "
           f"color_match_weight={COLOR_MATCH_WEIGHT}  out={OUT}")
 
-    # 保存配置
+    # save the config
     (OUT / "config.json").write_text(json.dumps({
         "model": MODEL_ID, "data_root": DATA_ROOT, "tasks": TASKS,
         "steps": STEPS, "lr": LR, "rank": RANK, "alpha": ALPHA,
@@ -188,8 +188,8 @@ def main() -> None:
         "color_match_weight": COLOR_MATCH_WEIGHT, "smoke": SMOKE,
     }, indent=2))
 
-    # 1) 数据集：三路划分 ─────────────────────────────────────────────
-    # 索引布局（按数据集顺序）：[0, n_test) = test，其后 val，其余 train
+    # 1) dataset: three-way split ─────────────────────────────────────
+    # index layout (in dataset order): [0, n_test) = test, then val, the rest train
     task_datasets, task_loaders, task_splits = {}, {}, {}
     task_to_id = {task: i for i, task in enumerate(TASKS)}
 
@@ -220,14 +220,14 @@ def main() -> None:
         print(f"[data] {task}: total={n}  train={len(train_idx)}  "
               f"val={len(val_idx)}  test={len(test_idx)}")
 
-    # 任务采样权重 ∝ 训练集大小
+    # task sampling weight ∝ training set size
     task_weights = torch.tensor(
         [task_splits[t]["train"] for t in TASKS], dtype=torch.float32)
     task_weights = task_weights / task_weights.sum()
     print(f"[data] task sampling weights: "
           f"{ {t: round(float(w), 4) for t, w in zip(TASKS, task_weights)} }")
 
-    # 2) 模型 ─────────────────────────────────────────────────────────
+    # 2) model ─────────────────────────────────────────────────────────
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from janus.models.modeling_vlm import MultiModalityConfig, MultiModalityCausalLM
     AutoConfig.register("multi_modality", MultiModalityConfig)
@@ -282,7 +282,7 @@ def main() -> None:
         prompt_ids_map[task] = tokenizer(
             TASK_PROMPTS[task], return_tensors="pt").input_ids.to(device)
 
-    # 6) 前向 / 验证 ─────────────────────────────────────────────────
+    # 6) forward / validation ──────────────────────────────────────────
     def forward_step(task: str, image: torch.Tensor,
                      target_rgb: torch.Tensor) -> torch.Tensor:
         task_id = torch.tensor([task_to_id[task]], device=device)
@@ -332,7 +332,7 @@ def main() -> None:
         task_embedding.train()
         return sum(val_losses) / max(len(val_losses), 1)
 
-    # 7) 训练循环 ─────────────────────────────────────────────────────
+    # 7) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus task embedding v3 (full data): {STEPS} steps")
     losses: list[float] = []
     best_val_loss = float("inf")
@@ -393,14 +393,14 @@ def main() -> None:
 
     train_minutes = (time.time() - t_train) / 60
 
-    # 保存最终 checkpoint
+    # save the final checkpoint
     final_ckpt = OUT / "ckpt_final"
     final_ckpt.mkdir(parents=True, exist_ok=True)
     peft_model.save_pretrained(str(final_ckpt / "lora"))
     torch.save(rgb_head.state_dict(), final_ckpt / "rgb_head.pt")
     torch.save(task_embedding.state_dict(), final_ckpt / "task_embedding.pt")
 
-    # 8) 加载最佳 checkpoint 做 held-out 诚实评估 ─────────────────────
+    # 8) load the best checkpoint for the honest held-out evaluation ───
     print("\n[eval] loading best ckpt for held-out test evaluation...")
     from peft import PeftModel
     peft_model = PeftModel.from_pretrained(
@@ -468,7 +468,7 @@ def main() -> None:
                 ious.append(m["iou"])
                 f1s.append(m["f1"])
 
-            # depth：colormap 解码 → 真实 δ1/AbsRel（子采样控制耗时）
+            # depth: colormap decode → real δ1/AbsRel (subsampled to bound the time)
             if task == "depth" and i < DEPTH_EVAL_N:
                 pred_d = depth_mapper.rgb_to_depth(
                     pred_rgb.unsqueeze(0).to(device)).cpu()
@@ -481,7 +481,7 @@ def main() -> None:
                           f"min={tgt_d.min():.2f}  max={tgt_d.max():.2f}  "
                           f"mean={tgt_d.mean():.2f}")
 
-            # normal：解码 → 平均角误差（度）
+            # normal: decode → mean angular error (degrees)
             if task == "normal":
                 pred_n = normal_mapper.rgb_to_normal(pred_rgb.unsqueeze(0))
                 tgt_n = normal_mapper.rgb_to_normal(tgt_rgb.unsqueeze(0))
@@ -489,7 +489,7 @@ def main() -> None:
                 ang = torch.acos(cos.clamp(-1, 1)).mean().item() * 180 / math.pi
                 normal_angles.append(ang)
 
-            # 前 3 个样本存 panel
+            # save a panel for the first 3 samples
             if i < 3:
                 s = task_datasets[task][idx]
                 pil_in = Image.fromarray(

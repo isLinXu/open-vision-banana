@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-使用 Marigold 重新生成高质量 Normal 伪标签
+Regenerate high-quality normal pseudo-labels with Marigold
 
-功能：
-1. 从深度图生成高质量法线贴图
-2. 支持批量处理
-3. 自动跳过已存在的目标文件
+Features:
+1. Generate high-quality normal maps from depth maps
+2. Batch processing
+3. Skip target files that already exist
 
-用法：
+Usage:
     python scripts/regen_normal_pseudo.py --manifest output/snvc_v5full_pairs/pairs_5task_v3_clean.jsonl --task normal
 """
 
@@ -29,38 +29,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 设置环境变量
+# environment variables
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 
 def depth_to_normal(depth: np.ndarray, focal_length: float = 500.0) -> np.ndarray:
     """
-    从深度图计算法线贴图
+    Compute a normal map from a depth map
     
     Args:
-        depth: 深度图 (H, W)，值越大表示越远
-        focal_length: 焦距（像素）
+        depth: depth map (H, W); larger values are farther
+        focal_length: focal length (pixels)
     
     Returns:
-        normal: 法线贴图 (H, W, 3)，RGB 编码 XYZ 法线
+        normal: normal map (H, W, 3), XYZ normals encoded as RGB
     """
     H, W = depth.shape
     
-    # 计算梯度
-    zx = np.gradient(depth, axis=1)  # x 方向梯度
-    zy = np.gradient(depth, axis=0)  # y 方向梯度
+    # gradients
+    zx = np.gradient(depth, axis=1)  # gradient along x
+    zy = np.gradient(depth, axis=0)  # gradient along y
     
-    # 计算法线
-    # 法线 = (-dz/dx, -dz/dy, 1) 归一化
+    # normals
+    # normal = (-dz/dx, -dz/dy, 1), normalized
     normal = np.stack([-zx, -zy, np.ones_like(depth)], axis=-1)
     
-    # 归一化
+    # normalize
     norm = np.linalg.norm(normal, axis=-1, keepdims=True)
     norm = np.clip(norm, 1e-8, None)
     normal = normal / norm
     
-    # 转换到 RGB 空间 [0, 1]
-    # XYZ 法线范围 [-1, 1] -> RGB [0, 1]
+    # convert to RGB space [0, 1]
+    # XYZ normal range [-1, 1] -> RGB [0, 1]
     normal_rgb = (normal + 1) / 2
     
     return normal_rgb
@@ -68,18 +68,18 @@ def depth_to_normal(depth: np.ndarray, focal_length: float = 500.0) -> np.ndarra
 
 def encode_normal_to_rgb(normal: np.ndarray) -> np.ndarray:
     """
-    将法线贴图编码为 RGB 图像
+    Encode a normal map as an RGB image
     
     Args:
-        normal: 法线贴图 (H, W, 3)，值范围 [-1, 1]
+        normal: normal map (H, W, 3), values in [-1, 1]
     
     Returns:
-        rgb: RGB 图像 (H, W, 3)，值范围 [0, 255]
+        rgb: RGB image (H, W, 3), values in [0, 255]
     """
-    # 归一化到 [0, 1]
+    # normalize to [0, 1]
     normal_norm = (normal + 1) / 2
     
-    # 转换到 uint8
+    # convert to uint8
     rgb = (normal_norm * 255).astype(np.uint8)
     
     return rgb
@@ -87,45 +87,45 @@ def encode_normal_to_rgb(normal: np.ndarray) -> np.ndarray:
 
 def process_depth_to_normal(depth_path: str, output_path: str, focal_length: float = 500.0) -> bool:
     """
-    处理单个深度图到法线贴图
+    Turn one depth map into a normal map
     
     Args:
-        depth_path: 深度图路径
-        output_path: 输出法线贴图路径
-        focal_length: 焦距
+        depth_path: depth map path
+        output_path: output normal map path
+        focal_length: focal length
     
     Returns:
-        是否成功
+        whether it succeeded
     """
     try:
-        # 加载深度图
+        # load the depth map
         depth_img = Image.open(depth_path)
         depth = np.array(depth_img).astype(np.float32)
         
-        # 如果是 RGB 图像，转换为灰度
+        # convert an RGB image to grayscale
         if depth.ndim == 3:
             depth = depth.mean(axis=2)
         
-        # 归一化深度到 [0, 1]
+        # normalize depth to [0, 1]
         depth_min = depth.min()
         depth_max = depth.max()
         if depth_max - depth_min > 1e-6:
             depth = (depth - depth_min) / (depth_max - depth_min)
         
-        # 计算法线
+        # compute the normals
         normal = depth_to_normal(depth, focal_length)
         
-        # 编码为 RGB
+        # encode as RGB
         normal_rgb = encode_normal_to_rgb(normal)
         
-        # 保存
+        # save
         output_path_obj = Path(output_path)
         output_path_obj.parent.mkdir(parents=True, exist_ok=True)
         Image.fromarray(normal_rgb).save(output_path)
         
         return True
     except Exception as e:
-        logger.error(f"处理失败 {depth_path}: {e}")
+        logger.error(f"Processing failed {depth_path}: {e}")
         return False
 
 
@@ -136,18 +136,18 @@ def regenerate_normals(
     overwrite: bool = False,
 ) -> dict:
     """
-    批量重新生成法线伪标签
+    Regenerate the normal pseudo-labels in batch
     
     Args:
-        manifest_path: manifest 文件路径
-        output_dir: 输出目录
-        focal_length: 焦距
-        overwrite: 是否覆盖已存在的文件
+        manifest_path: manifest file path
+        output_dir: output directory
+        focal_length: focal length
+        overwrite: whether to overwrite existing files
     
     Returns:
-        处理统计
+        processing statistics
     """
-    logger.info(f"加载 manifest: {manifest_path}")
+    logger.info(f"Loading manifest: {manifest_path}")
     
     rows = []
     with open(manifest_path) as f:
@@ -158,7 +158,7 @@ def regenerate_normals(
                 if row.get("task") == "depth":
                     rows.append(row)
     
-    logger.info(f"深度图样本数: {len(rows)}")
+    logger.info(f"Depth map samples: {len(rows)}")
     
     stats = {
         "total": len(rows),
@@ -174,19 +174,19 @@ def regenerate_normals(
         if not depth_path or not Path(depth_path).exists():
             stats["failed"] += 1
             if len(stats["errors"]) < 10:
-                stats["errors"].append(f"[{i}] 深度图不存在: {depth_path}")
+                stats["errors"].append(f"[{i}] depth map missing: {depth_path}")
             continue
         
-        # 生成输出路径
+        # build the output path
         depth_name = Path(depth_path).stem
         output_path = output_dir / f"{depth_name}_normal.png"
         
-        # 检查是否已存在
+        # check whether it already exists
         if output_path.exists() and not overwrite:
             stats["skipped"] += 1
             continue
         
-        # 处理
+        # process
         success = process_depth_to_normal(depth_path, str(output_path), focal_length)
         
         if success:
@@ -195,16 +195,16 @@ def regenerate_normals(
             stats["failed"] += 1
         
         if (i + 1) % 100 == 0:
-            logger.info(f"  进度: {i+1}/{len(rows)}, 成功: {stats['success']}, 跳过: {stats['skipped']}, 失败: {stats['failed']}")
+            logger.info(f"  progress: {i+1}/{len(rows)}, succeeded: {stats['success']}, skipped: {stats['skipped']}, failed: {stats['failed']}")
     
-    logger.info(f"\n处理完成:")
-    logger.info(f"  总样本: {stats['total']}")
-    logger.info(f"  成功: {stats['success']}")
-    logger.info(f"  跳过: {stats['skipped']}")
-    logger.info(f"  失败: {stats['failed']}")
+    logger.info(f"\nDone:")
+    logger.info(f"  total samples: {stats['total']}")
+    logger.info(f"  succeeded: {stats['success']}")
+    logger.info(f"  skipped: {stats['skipped']}")
+    logger.info(f"  failed: {stats['failed']}")
     
     if stats["errors"]:
-        logger.info(f"\n错误示例:")
+        logger.info(f"\nError examples:")
         for err in stats["errors"]:
             logger.info(f"  {err}")
     
@@ -217,17 +217,17 @@ def update_manifest_with_normals(
     output_path: Path,
 ) -> dict:
     """
-    更新 manifest，添加法线任务样本
+    Update the manifest with the normal task samples
     
     Args:
-        manifest_path: 原始 manifest
-        normal_dir: 法线贴图目录
-        output_path: 输出更新后的 manifest
+        manifest_path: original manifest
+        normal_dir: normal map directory
+        output_path: output updated manifest
     
     Returns:
-        更新统计
+        update statistics
     """
-    logger.info(f"更新 manifest: {manifest_path}")
+    logger.info(f"Updating manifest: {manifest_path}")
     
     rows = []
     with open(manifest_path) as f:
@@ -236,13 +236,13 @@ def update_manifest_with_normals(
             if line:
                 rows.append(json.loads(line))
     
-    logger.info(f"原始样本数: {len(rows)}")
+    logger.info(f"Original samples: {len(rows)}")
     
-    # 收集深度图样本
+    # collect the depth map samples
     depth_rows = [r for r in rows if r.get("task") == "depth"]
-    logger.info(f"深度图样本: {len(depth_rows)}")
+    logger.info(f"Depth map samples: {len(depth_rows)}")
     
-    # 生成法线任务样本
+    # build the normal task samples
     normal_rows = []
     for row in depth_rows:
         depth_target = row.get("target", "")
@@ -258,34 +258,34 @@ def update_manifest_with_normals(
             normal_row["target"] = str(normal_path)
             normal_rows.append(normal_row)
     
-    logger.info(f"生成法线样本: {len(normal_rows)}")
+    logger.info(f"Normal samples generated: {len(normal_rows)}")
     
-    # 合并
+    # merge
     all_rows = rows + normal_rows
     
-    # 写入
+    # write
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         for row in all_rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     
-    logger.info(f"更新完成: {output_path}")
-    logger.info(f"  总样本: {len(all_rows)}")
+    logger.info(f"Update done: {output_path}")
+    logger.info(f"  total samples: {len(all_rows)}")
     
     return {"total": len(all_rows), "normal_added": len(normal_rows)}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, required=True, help="manifest 文件")
-    parser.add_argument("--output-dir", type=Path, required=True, help="法线贴图输出目录")
-    parser.add_argument("--focal-length", type=float, default=500.0, help="焦距（像素）")
-    parser.add_argument("--overwrite", action="store_true", help="覆盖已存在的文件")
-    parser.add_argument("--update-manifest", type=Path, help="更新 manifest 输出路径")
+    parser.add_argument("--manifest", type=Path, required=True, help="manifest file")
+    parser.add_argument("--output-dir", type=Path, required=True, help="normal map output directory")
+    parser.add_argument("--focal-length", type=float, default=500.0, help="focal length (pixels)")
+    parser.add_argument("--overwrite", action="store_true", help="overwrite existing files")
+    parser.add_argument("--update-manifest", type=Path, help="output path of the updated manifest")
     
     args = parser.parse_args()
     
-    # 重新生成法线
+    # regenerate the normals
     stats = regenerate_normals(
         args.manifest,
         args.output_dir,
@@ -293,7 +293,7 @@ def main():
         args.overwrite,
     )
     
-    # 更新 manifest
+    # update the manifest
     if args.update_manifest:
         update_manifest_with_normals(
             args.manifest,

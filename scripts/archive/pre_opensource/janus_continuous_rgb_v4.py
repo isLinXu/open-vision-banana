@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Janus-1.3B continuous RGB v4 —— 使用 Vision Features 替代 LLM Hidden States.
+"""Janus-1.3B continuous RGB v4: vision features instead of LLM hidden states.
 
-v3 诊断结论：
-  - LLM hidden states 空间信息丢失 → 预测退化为模糊平均（std=0.12 vs target 0.18）
-  - Vision model (SigLIP) 输出 [1, 576, 1024] 保留完整 24×24 空间结构
+v3 diagnosis:
+  - LLM hidden states lose spatial information → predictions collapse to a blurry average (std=0.12 vs target 0.18)
+  - The vision model (SigLIP) outputs [1, 576, 1024], keeping the full 24×24 spatial structure
 
-v4 改进：
-  1. RGB Head 输入源：vision model features（保留空间）而非 LLM hidden states
-  2. 可选融合 LLM hidden states（语义信息）
-  3. 更强的 RGB Head（3 层 MLP + skip connection）
-  4. 从 v3 best checkpoint warm-start RGB Head（如果维度兼容）
+v4 improvements:
+  1. RGB head input: vision model features (spatial) instead of LLM hidden states
+  2. Optional fusion with LLM hidden states (semantic information)
+  3. A stronger RGB head (3-layer MLP + skip connection)
+  4. Warm-start the RGB head from the v3 best checkpoint (if the dimensions are compatible)
 
-用法:
+Usage:
     PYTHONPATH=src:/tmp/Janus python scripts/janus_continuous_rgb_v4.py
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ LR = float(os.environ.get("VB_LR", "3e-5"))
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
 
-# ── 正则化参数 ──────────────────────────────────────────────────────────
+# ── Regularization parameters ───────────────────────────────────────────
 DROPOUT = float(os.environ.get("VB_DROPOUT", "0.15"))
 LORA_DROPOUT = float(os.environ.get("VB_LORA_DROPOUT", "0.05"))
 WEIGHT_DECAY = float(os.environ.get("VB_WEIGHT_DECAY", "0.02"))
@@ -67,10 +67,10 @@ VAL_EVERY = int(os.environ.get("VB_VAL_EVERY", "50"))
 GRAD_CLIP = float(os.environ.get("VB_GRAD_CLIP", "1.0"))
 AUGMENT_FLIP = os.environ.get("VB_AUGMENT_FLIP", "1") == "1"
 
-# ── v4 特有：特征源选择 ────────────────────────────────────────────────
-# "vision" = 仅用 vision features（推荐）
-# "llm"    = 仅用 LLM hidden states（v3 方式）
-# "both"   = 拼接两者
+# ── v4 only: feature source ─────────────────────────────────────────────
+# "vision" = vision features only (recommended)
+# "llm"    = LLM hidden states only (the v3 way)
+# "both"   = concatenate the two
 FEATURE_SRC = os.environ.get("VB_FEATURE_SRC", "vision")
 
 RESUME_CKPT = os.environ.get("VB_RESUME", "")
@@ -91,9 +91,9 @@ TASK_PROMPTS = {
 
 
 class RGBHead(nn.Module):
-    """RGB 预测头：vision features → RGB.
+    """RGB prediction head: vision features → RGB.
 
-    使用手动归一化替代 LayerNorm 避免 MPS NaN 问题。
+    Uses manual normalization instead of LayerNorm to avoid the MPS NaN issue.
     """
 
     def __init__(self, input_dim: int, image_token_num: int, image_size: int, dropout: float = 0.15):
@@ -104,7 +104,7 @@ class RGBHead(nn.Module):
         out_dim = self.patch_size * self.patch_size * 3
         mid_dim = min(input_dim, 512)
 
-        # 手动归一化 buffer（避免 LayerNorm 在 MPS 上的 NaN 问题）
+        # manual normalization buffers (avoid the LayerNorm NaN issue on MPS)
         self.register_buffer("running_mean", torch.zeros(input_dim))
         self.register_buffer("running_var", torch.ones(input_dim))
 
@@ -114,7 +114,7 @@ class RGBHead(nn.Module):
             nn.GELU(),
             nn.Linear(mid_dim, out_dim),
         )
-        # 小权重初始化
+        # small-weight initialization
         for m in self.proj.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight, gain=0.1)
@@ -123,7 +123,7 @@ class RGBHead(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         b = hidden_states.shape[0]
-        # 手动归一化：用 running stats 归一化
+        # manual normalization with running stats
         if self.training:
             mean = hidden_states.detach().mean(dim=(0, 1), keepdim=False)
             var = hidden_states.detach().var(dim=(0, 1), keepdim=False, unbiased=False)
@@ -152,7 +152,7 @@ def _resolve_device() -> str:
 
 
 def _augment_flip(image: torch.Tensor, target_rgb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """水平翻转数据增强（50% 概率）."""
+    """Horizontal flip augmentation (50% probability)."""
     if torch.rand(1).item() < 0.5:
         return image.flip(-1), target_rgb.flip(-1)
     return image, target_rgb
@@ -172,7 +172,7 @@ def main() -> None:
     print(f"[cfg] resume={RESUME_CKPT or 'none'}")
     print(f"[cfg] out={OUT}")
 
-    # 1) 加载 Janus-1.3B ───────────────────────────────────────────────
+    # 1) load Janus-1.3B ───────────────────────────────────────────────
     import janus.models.modeling_vlm as janus_vlm
     for cfg_cls in [janus_vlm.VisionConfig, janus_vlm.AlignerConfig,
                     janus_vlm.GenVisionConfig, janus_vlm.GenAlignerConfig,
@@ -196,7 +196,7 @@ def main() -> None:
     print(f"[model] type={type(model).__name__}")
     print(f"[model] params={sum(p.numel() for p in model.parameters()):,}")
 
-    # 2) 数据集 ───────────────────────────────────────────────────────
+    # 2) dataset ───────────────────────────────────────────────────────
     all_train_datasets = []
     all_val_datasets = []
 
@@ -249,7 +249,7 @@ def main() -> None:
     n_total_p = sum(p.numel() for p in peft_model.parameters())
     print(f"[lora] trainable = {n_train:,}  ({100*n_train/n_total_p:.2f}%)")
 
-    # 冻结 vision 和 generation 部分
+    # freeze the vision and generation parts
     model.vision_model.requires_grad_(False)
     model.gen_vision_model.requires_grad_(False)
     model.aligner.requires_grad_(False)
@@ -257,7 +257,7 @@ def main() -> None:
     model.gen_head.requires_grad_(False)
     model.gen_embed.requires_grad_(False)
 
-    # 4) RGB Head — 根据 feature_src 决定输入维度 ─────────────────────
+    # 4) RGB head: input dimension depends on feature_src ──────────────
     vision_dim = 1024   # SigLIP output dim
     hidden_dim = model.config.language_config.hidden_size  # 2048
 
@@ -275,7 +275,7 @@ def main() -> None:
     print(f"[rgb_head] input_dim={rgb_input_dim}  params={rgb_head_params:,}  dropout={DROPOUT}")
     print(f"[rgb_head] feature_src={FEATURE_SRC}")
 
-    # 5) 可选 warm-start ──────────────────────────────────────────────
+    # 5) optional warm-start ───────────────────────────────────────────
     start_step = 0
     if RESUME_CKPT and Path(RESUME_CKPT).exists():
         print(f"[resume] loading from {RESUME_CKPT}")
@@ -285,7 +285,7 @@ def main() -> None:
             adapter_state = load_peft_weights(str(adapter_dir), device=device)
             set_peft_model_state_dict(peft_model, adapter_state)
             print(f"[resume] LoRA weights loaded")
-        # RGB Head 维度不同，不能直接加载 v3 的权重
+        # the RGB head dimensions differ, so the v3 weights cannot be loaded directly
         print(f"[resume] RGB head not loaded (dimension mismatch with v3)")
 
     # 6) Optimizer ─────────────────────────────────────────────────
@@ -308,7 +308,7 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 7) 前向传播函数 — 根据 feature_src 提取特征 ────────────────────
+    # 7) forward function: extract features according to feature_src ───
     prompt_ids_cache: dict[str, torch.Tensor] = {}
 
     def _get_prompt_ids(prompt: str) -> torch.Tensor:
@@ -317,7 +317,7 @@ def main() -> None:
         return prompt_ids_cache[prompt]
 
     def _forward(image: torch.Tensor, task: str) -> tuple[torch.Tensor, torch.Tensor]:
-        """统一前向传播，返回 (pred_rgb, loss_target)."""
+        """Shared forward pass, returns (pred_rgb, loss_target)."""
         prompt = TASK_PROMPTS.get(task, TASK_PROMPTS["depth"])
         p_ids = _get_prompt_ids(prompt)
         p_len = p_ids.shape[1]
@@ -332,7 +332,7 @@ def main() -> None:
         images_seq_mask[0, p_len:] = True
         images_emb_mask = torch.ones(1, 1, IMAGE_TOKEN_NUM, dtype=torch.bool, device=device)
 
-        # Vision features（始终计算）
+        # vision features (always computed)
         with torch.no_grad():
             vis_features = model.vision_model(pixel_values.squeeze(1))  # [1, 576, 1024]
 
@@ -371,7 +371,7 @@ def main() -> None:
         pred_rgb = rgb_head(features)
         return pred_rgb
 
-    # 8) 验证函数 ─────────────────────────────────────────────────────
+    # 8) validation function ───────────────────────────────────────────
     @torch.no_grad()
     def run_validation() -> float:
         peft_model.eval()
@@ -390,7 +390,7 @@ def main() -> None:
         rgb_head.train()
         return sum(val_losses) / len(val_losses) if val_losses else float("inf")
 
-    # 9) 训练循环 ─────────────────────────────────────────────────────
+    # 9) training loop ─────────────────────────────────────────────────
     print(f"\n[train] Janus continuous RGB v4: {STEPS} steps")
     print(f"[train] feature_src={FEATURE_SRC}")
 
@@ -485,7 +485,7 @@ def main() -> None:
     if not losses:
         raise RuntimeError("No finite training steps")
 
-    # 10) 训练总结 ─────────────────────────────────────────────────────
+    # 10) training summary ─────────────────────────────────────────────
     k = max(1, len(losses) // 3)
     avg_first = sum(losses[:k]) / k
     avg_last = sum(losses[-k:]) / k
@@ -526,7 +526,7 @@ def main() -> None:
         }, f, indent=2)
     print(f"[history] saved → {history_out}")
 
-    # 11) 推理评估 ────────────────────────────────────────────────────
+    # 11) inference evaluation ─────────────────────────────────────────
     print("\n[eval] inference on held-out samples...")
 
     results = []

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Paper-style depth gate: pure prompt-driven, no source conditioning.
 
-训练方式对齐 Vision Banana 论文核心主张：
-- 不扩 conv_in，不加额外条件通道
-- 对感知任务：扩散模型通过 prompt 理解输入图内容，生成对应深度色图
-- 对生成任务：标准 text-to-image，保证生成能力不退
-- 混合比例：视觉任务 ~10%，生成数据 ~90%
+Training follows the core claim of the Vision Banana paper:
+- no widened conv_in, no extra condition channels
+- perception tasks: the diffusion model understands the input image through the prompt and generates the matching depth colormap
+- generation tasks: standard text-to-image, so the generation ability does not regress
+- mixing ratio: ~10% vision tasks, ~90% generation data
 
-推理方式（img2img / SDEdit）：
-- 对输入照片加噪声，用 vision prompt 引导去噪方向
+Inference (img2img / SDEdit):
+- add noise to the input photo and steer the denoising with the vision prompt
 
-用法:
+Usage:
     PYTHONPATH=src python scripts/paper_style_gate.py
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ BATCH = int(os.environ.get("VB_BATCH", "1"))
 LR = float(os.environ.get("VB_LR", "1e-4"))
 RANK = int(os.environ.get("VB_RANK", "64"))
 ALPHA = int(os.environ.get("VB_ALPHA", "128"))
-# 论文说 vision data 比例很低，但未公布精确值；这里用 10% 作为起点
+# the paper says the vision data ratio is very low but gives no exact value; 10% is used as a starting point here
 VISION_RATIO = float(os.environ.get("VB_VISION_RATIO", "0.10"))
 OUT = Path(os.environ.get("VB_OUT", str(PROJECT_ROOT / "output" / "paper_style_gate")))
 OUT.mkdir(parents=True, exist_ok=True)
@@ -84,7 +84,7 @@ def _resolve_device() -> str:
 def main() -> None:
     torch.manual_seed(42)
     device = _resolve_device()
-    # MPS 上 bf16 不稳定，SSD-1B 足够小 → fp32
+    # bf16 is unstable on MPS, SSD-1B is small enough → fp32
     dtype = torch.float32 if device == "mps" else torch.bfloat16
 
     print(f"[cfg] model={MODEL_ID}  device={device}  dtype={dtype}")
@@ -92,14 +92,14 @@ def main() -> None:
     print(f"[cfg] lr={LR}  rank={RANK}  alpha={ALPHA}  vision_ratio={VISION_RATIO}")
     print(f"[cfg] out={OUT}")
 
-    # 1) 加载数据 ───────────────────────────────────────────────────────
+    # 1) load the data ─────────────────────────────────────────────────
     ds = VisionTaskDataset(data_path=DATA_DIR, resolution=RES, task="depth")
     n_total = len(ds)
     print(f"[data] loaded {n_total} depth samples @ {RES}px")
     if n_total < NSAMPLES:
         raise RuntimeError(f"Need {NSAMPLES} samples, have {n_total}")
 
-    # 用简单索引子集（不去 split — gate 只看能不能过拟合）
+    # a simple index subset (no split: the gate only checks whether it can overfit)
     subset = torch.utils.data.Subset(ds, list(range(NSAMPLES)))
     loader = torch.utils.data.DataLoader(
         subset, batch_size=BATCH, shuffle=True, num_workers=0,
@@ -107,20 +107,20 @@ def main() -> None:
     )
     print(f"[data] vision subset = {len(subset)}")
 
-    # 2) 加载生成模型 ──────────────────────────────────────────────────
+    # 2) load the generation model ─────────────────────────────────────
     t0 = time.time()
     gen = BaseGenerator(MODEL_ID, device=device, dtype=dtype)
     print(f"[model] family={gen.model_config.family}  loaded in {time.time()-t0:.1f}s")
 
-    # 3) 创建 tuner — 不加 source conditioning ─────────────────────────
+    # 3) create the tuner without source conditioning ─────────────────
     tuner = InstructionTuner(
         model=gen,
         task="depth",
         lora_rank=RANK, lora_alpha=ALPHA, lr=LR, use_rslora=True,
         use_ema=False, use_gradient_checkpointing=False, use_min_snr=True,
         use_img2img_flow=False, cfg_dropout_rate=0.1,
-        use_source_conditioning=False,  # 关键：不扩 conv_in
-        allow_sdedit=True,               # 新：允许 SDEdit 风格训练
+        use_source_conditioning=False,  # key: do not widen conv_in
+        allow_sdedit=True,               # new: allow SDEdit-style training
         source_target_colormap="viridis",
         source_target_channel_mean=(0.0, 0.0, 0.0),
         source_target_channel_std=(1.0, 1.0, 1.0),
@@ -147,18 +147,18 @@ def main() -> None:
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    # 5) 训练循环 ─────────────────────────────────────────────────────
-    # 双模式交替：
-    #   A (t2i-depth): 噪声深度色图 z0 → 学"深度色图长什么样"
-    #   B (img2img-photo): 噪声输入照片 → 学"用 vision prompt 去噪"关联
-    # 推理时 img2img(strength=0.85) = B 的去噪能力 + A 的域知识 → 深度色图
+    # 5) training loop ─────────────────────────────────────────────────
+    # two alternating modes:
+    #   A (t2i-depth): noisy depth colormap z0 → learn what a depth colormap looks like
+    #   B (img2img-photo): noisy input photo → learn to denoise with the vision prompt
+    # at inference img2img(strength=0.85) = B's denoising + A's domain knowledge → depth colormap
     print(f"\n[train] paper-style: {STEPS} steps, dual-mode (t2i-depth 50% + img2img-photo 50%)")
     print(f"[train] prompt: {VISION_PROMPT[:80]}...")
 
     losses: list[float] = []
     it = iter(loader)
     t_train = time.time()
-    image_backup: dict | None = None  # 保存原始 image tensor 用于切换模式
+    image_backup: dict | None = None  # keeps the original image tensor for switching modes
 
     for step in range(1, STEPS + 1):
         try:
@@ -169,14 +169,14 @@ def main() -> None:
 
         opt.zero_grad(set_to_none=True)
 
-        # 双模式交替：偶数步=t2i-depth(噪声目标)，奇数步=img2img(噪声照片)
+        # alternate the two modes: even steps = t2i-depth (noisy target), odd steps = img2img (noisy photo)
         use_t2i = (step % 2 == 0)
         if use_t2i:
-            # Mode A: 保存 image 然后清空 → tuner 走 t2i，噪声 depth_rgb 做 z0
+            # Mode A: save the image, then clear it → the tuner takes t2i with the noisy depth_rgb as z0
             image_backup = {"image": batch.get("image")}
             batch["image"] = None
         else:
-            # Mode B: 恢复 image → tuner 走 img2img，噪声输入照片
+            # Mode B: restore the image → the tuner takes img2img on the noisy input photo
             if image_backup is not None and image_backup.get("image") is not None:
                 batch["image"] = image_backup["image"]
 
@@ -196,14 +196,14 @@ def main() -> None:
                   f"avg30={recent:.4f}  lr={sched.get_last_lr()[0]:.2e}  "
                   f"mode={'t2i-depth' if use_t2i else 'img2img-photo'}  "
                   f"({(time.time()-t_train)/step:.2f}s/step)", flush=True)
-        # 每 150 步存一次 checkpoint
+        # save a checkpoint every 150 steps
         if step % 150 == 0:
             mid_ckpt = OUT / f"lora_step{step}"
             mid_ckpt.mkdir(parents=True, exist_ok=True)
             tuner.peft_model.save_pretrained(str(mid_ckpt))
             print(f"[ckpt] mid-training save → {mid_ckpt}", flush=True)
 
-    # ── 训练完成，保存 checkpoint ────────────────────────────────────
+    # ── training done, save the checkpoint ───────────────────────────
     if not losses:
         raise RuntimeError("No finite training steps")
 
@@ -218,7 +218,7 @@ def main() -> None:
     tuner.peft_model.save_pretrained(str(ckpt_dir))
     print(f"[ckpt] saved → {ckpt_dir}")
 
-    # 6) 推理评估 — SDEdit img2img ──────────────────────────────────
+    # 6) inference evaluation: SDEdit img2img ──────────────────────────
     print("\n[eval] SDEdit img2img inference on training samples...")
     mapper = DepthRGBMapper(colormap="viridis")
     results = []
@@ -232,7 +232,7 @@ def main() -> None:
             (inp_tensor.permute(1, 2, 0).clamp(-1, 1) * 0.5 + 0.5)
             .mul(255).byte().numpy()
         )
-        # SDEdit: 从 input 加噪起步，用 vision prompt 引导去噪
+        # SDEdit: start from the noised input and steer the denoising with the vision prompt
         out = gen.generate(
             prompt=VISION_PROMPT,
             image=pil_in,
@@ -242,7 +242,7 @@ def main() -> None:
             seed=42 + sample_idx,
         )
         pred_rgb = out[0].clamp(0, 1).cpu()
-        # 保存三联图
+        # save the triptych
         panel = Image.new("RGB", (RES * 3, RES))
         panel.paste(pil_in.resize((RES, RES)), (0, 0))
         panel.paste(Image.fromarray(
@@ -253,9 +253,9 @@ def main() -> None:
         ).resize((RES, RES)), (RES * 2, 0))
         panel.save(OUT / f"panel_{sample_idx:02d}.png")
 
-        # 计算 RGB MAE（像素空间，不依赖色图解码）
+        # RGB MAE (pixel space, independent of the colormap decode)
         rgb_mae = (pred_rgb.float() - tgt_rgb.float()).abs().mean().item()
-        # 相对深度评估
+        # relative depth evaluation
         depth_metrics = evaluate_relative_depth_rgb(
             pred_rgb.unsqueeze(0), tgt_rgb.unsqueeze(0), colormap="viridis"
         )
@@ -266,7 +266,7 @@ def main() -> None:
             "pearson": depth_metrics.get("pearson", float("nan")),
         }
 
-    for idx in range(min(NSAMPLES, 2)):  # 仅评 2 样本以节约内存
+    for idx in range(min(NSAMPLES, 2)):  # evaluate only 2 samples to save memory
         r = sdedit_infer(idx)
         results.append(r)
         print(f"[eval] idx={idx:>3}  rgb_mae={r['rgb_mae']:.4f}  "
@@ -279,7 +279,7 @@ def main() -> None:
     print(f"[gate] {'PASSED' if gate_passed else 'NOT PASSED'}  "
           f"(target: rgb_mae<0.15, pearson>0.7)")
 
-    # 保存
+    # save
     (OUT / "gate_result.json").write_text(json.dumps({
         "model": MODEL_ID, "device": device, "dtype": str(dtype),
         "steps": STEPS, "nsamples": NSAMPLES, "res": RES,
