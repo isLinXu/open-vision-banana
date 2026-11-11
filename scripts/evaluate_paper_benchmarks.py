@@ -56,6 +56,7 @@ from open_vision_banana.evaluation.results_io import write_metrics_csv, write_re
 from open_vision_banana.evaluation.shards import SHARDABLE_BENCHMARKS, shard_range  # noqa: E402
 from open_vision_banana.inference.checkpoint import read_training_prompts  # noqa: E402
 from open_vision_banana.inference.checkpoint import read_task_prompt_stats  # noqa: E402
+from open_vision_banana.referring_contract import REFERRING_PROMPT_VERSIONS  # noqa: E402
 from open_vision_banana.task_prompts import SEMANTIC_SEGMENTATION_PROMPT  # noqa: E402
 
 ADE150_SEMANTIC_MARKERS = (
@@ -194,6 +195,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reasonseg-query-mode", choices=("all", "first"), default="all",
         help="ReasonSeg: score every query (default), or only the first for historical comparisons.",
+    )
+    parser.add_argument(
+        "--referring-prompt-version", choices=REFERRING_PROMPT_VERSIONS, default="query_v2",
+        help="Referring query prompt version (docs/referring_query_prompts.md).",
     )
     parser.add_argument("--saco-root", type=Path, default=None)
     parser.add_argument(
