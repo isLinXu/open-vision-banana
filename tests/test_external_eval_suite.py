@@ -37,6 +37,9 @@ def test_reject_incomplete_or_nonfinite_result(tmp_path):
     path.write_text(json.dumps(dict(benchmarks={"referring/reasonseg": record})))
     with pytest.raises(ValueError, match="Dataset changed"):
         suite.validate(path, "reasonseg", 1, fingerprint="other")
+    record["decoded_metrics"]["annotation_variants"] = {
+        key: dict(samples=1, gIoU=.5, valid_pixels=3) for key in ("legacy_union", "lisa_v1")
+    }
     metadata = dict(reasonseg_annotation_mode="lisa_v1",
                     resolution_verification=dict(raw_pipeline_output=[512, 512], every_prediction_checked=True),
                     referring_prompt_verification=dict(version="query_v2", every_prediction_checked=True))

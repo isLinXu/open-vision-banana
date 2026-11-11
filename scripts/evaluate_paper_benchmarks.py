@@ -193,6 +193,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--refcocog-root", type=Path, default=None)
     parser.add_argument("--reasonseg-root", type=Path, default=None)
     parser.add_argument(
+        "--reasonseg-annotation-variants", action=argparse.BooleanOptionalAction, default=True,
+        help="Score legacy_union and lisa_v1 from each identical prediction (default); no extra model inference.",
+    )
+    parser.add_argument(
         "--reasonseg-annotation-mode", choices=("legacy_union", "lisa_v1"),
         default="legacy_union",
         help="Use lisa_v1 for official ignore/flag polygon handling; legacy_union reproduces historical runs.",
@@ -521,6 +525,7 @@ def preflight_jobs(
     optional: Container[tuple[str, str]] = frozenset(),
     reasonseg_query_mode: str = "all",
     reasonseg_annotation_mode: str = "legacy_union",
+    reasonseg_annotation_variants: bool = True,
 ) -> dict[str, Any]:
     """Check requested benchmark adapters before allocating model resources.
 
@@ -549,7 +554,8 @@ def preflight_jobs(
                     split=dataset_split,
                     resolution=resolution,
                     **BENCHMARK_DATASET_KWARGS.get(dataset_key, {}),
-                    **({"query_mode": reasonseg_query_mode, "annotation_mode": reasonseg_annotation_mode}
+                    **({"query_mode": reasonseg_query_mode, "annotation_mode": reasonseg_annotation_mode,
+                        "report_annotation_variants": reasonseg_annotation_variants}
                        if dataset_key == "reasonseg" else {}),
                 )
                 record["samples"] = len(dataset)
@@ -594,6 +600,7 @@ def main() -> int:
         jobs, split=args.split, resolution=args.resolution, optional=optional_normal_jobs(args),
         reasonseg_query_mode=args.reasonseg_query_mode,
         reasonseg_annotation_mode=args.reasonseg_annotation_mode,
+        reasonseg_annotation_variants=args.reasonseg_annotation_variants,
     )
     skipped = {(record["benchmark"], record["dataset"]): record for record in preflight["skipped"]}
     for (benchmark, name), record in skipped.items():
@@ -612,6 +619,7 @@ def main() -> int:
             "batch_size": args.batch_size,
             "reasonseg_query_mode": args.reasonseg_query_mode,
             "reasonseg_annotation_mode": args.reasonseg_annotation_mode,
+            "reasonseg_annotation_variants": ["legacy_union", "lisa_v1"] if args.reasonseg_annotation_variants else [],
             "reasonseg_protocol": f"{args.reasonseg_query_mode}_queries_v1/{args.reasonseg_annotation_mode}",
             "num_inference_steps": args.num_inference_steps,
             "strength": args.strength,
@@ -733,6 +741,7 @@ def main() -> int:
         if dataset_key == "reasonseg":
             dataset_kwargs["query_mode"] = args.reasonseg_query_mode
             dataset_kwargs["annotation_mode"] = args.reasonseg_annotation_mode
+            dataset_kwargs["report_annotation_variants"] = args.reasonseg_annotation_variants
         dataset = build_dataset(
             dataset_key,
             str(root),
@@ -835,8 +844,8 @@ def main() -> int:
         logger.info("%s: %s", key, metrics)
 
     write_results(args.output_json, results)
-    if args.output_csv is not None:
-        write_metrics_csv(args.output_csv, results)
+    # A normal evaluation always exports all diagnostics, not just headline JSON.
+    write_metrics_csv(args.output_csv or args.output_json.with_suffix(".csv"), results)
     if args.write_sft_gate is not None:
         from open_vision_banana.training.post_training import sft_gate_from_eval, write_sft_gate
 

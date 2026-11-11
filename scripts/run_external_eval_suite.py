@@ -45,7 +45,8 @@ def command(config, model, dataset, output):
             "--resolution", str(config.get("resolution", 512)), "--native-resolution",
             "--num-inference-steps", "50", "--guidance-scale", "4", "--strength", "0.85",
             "--seed", "42", "--depth-colormap", "cube_edge", "--depth-curve", "metric_power",
-            "--reasonseg-query-mode", "all", "--reasonseg-annotation-mode", config["reasonseg_annotation_mode"],
+            "--reasonseg-query-mode", "all", "--reasonseg-annotation-variants",
+            "--reasonseg-annotation-mode", config["reasonseg_annotation_mode"],
             "--referring-prompt-version", "query_v2", "--output-json", str(output)]
     if model.get("lora_path"):
         args += ["--lora-path", model["lora_path"]]
@@ -68,6 +69,12 @@ def validate(path, dataset, count, *, fingerprint=None, config=None):
         raise ValueError(f"Incomplete or invalid metrics: {path}")
     if dataset in {"reasonseg", "refcocog"} and metrics["samples"] != count:
         raise ValueError(f"Missing referring predictions: {path}")
+    if dataset == "reasonseg" and config is not None:
+        variants = metrics.get("annotation_variants", {})
+        if set(variants) != {"legacy_union", "lisa_v1"} or any(
+            v.get("samples") != count or not v.get("valid_pixels") for v in variants.values()
+        ):
+            raise ValueError(f"Missing ReasonSeg annotation diagnostics: {path}")
     if fingerprint is not None and record["dataset_fingerprint"] != fingerprint:
         raise ValueError(f"Dataset changed after preflight: {path}")
     if config is not None:
@@ -181,6 +188,9 @@ def main():
             env = os.environ.copy()
             env.update(CUDA_VISIBLE_DEVICES=uuid, OPEN_VISION_BANANA_MODEL_PATH=model["base_path"], OMP_NUM_THREADS="8")
             run_process(command(config, model, dataset, path) + extra, env, path.with_suffix(".log"))
+            result = json.loads(path.read_text())
+            result["metadata"]["external_run_identity"] = {**model, "model": model["name"]}
+            path.write_text(json.dumps(result, indent=2, allow_nan=False))
             validate(path, dataset, count, fingerprint=fingerprints[dataset], config=config)
         finally:
             available.put(uuid)
@@ -199,6 +209,10 @@ def main():
                                  "--output-json", str(full), "--output-csv", str(directory / "full.csv")],
                                 os.environ.copy(), directory / "merge.log")
                     validate(full, dataset, SPECS[dataset][2], fingerprint=fingerprints[dataset], config=config)
+            if phase:
+                run_process([sys.executable, str(SOURCE / "scripts/export_external_eval_comparison.py"),
+                             "--run-root", str(args.output), "--output", str(args.output / "comparison")],
+                            os.environ.copy(), args.output / "comparison-export.log")
     print("All selected benchmark groups verified")
 
 

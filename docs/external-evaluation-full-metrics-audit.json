@@ -1,0 +1,24 @@
+{
+  "scope": "Default complete six-benchmark metrics and independent comparison columns",
+  "cpu_tests_passed": 145,
+  "cpu_tests_failed": 0,
+  "new_regression_file": "tests/test_full_external_metrics.py",
+  "reasonseg_default_variants": ["legacy_union", "lisa_v1"],
+  "reasonseg_primary_example_mode": "legacy_union",
+  "reasonseg_inference_calls_per_query": 1,
+  "reasonseg_native_and_canvas_paths_tested": true,
+  "empty_shard_and_variant_mismatch_tested": true,
+  "nested_csv_and_missing_class_export_tested": true,
+  "missing_historical_diagnostics_never_reconstructed": true,
+  "default_suite_outputs": [
+    "full.json and full.csv per benchmark",
+    "comparison/comparison.json",
+    "comparison/comparison.csv",
+    "comparison/comparison.html"
+  ],
+  "comparison_groups": ["raw", "per_image", "aligned", "ReasonSeg_lisa_v1"],
+  "headline_metric_formulas_changed": false,
+  "current_dashboard_changes_in_this_update": false,
+  "published_hf_snapshot_updated": false,
+  "new_gpu_evaluation_started": false
+}

@@ -31,16 +31,24 @@ def write_results(path: Path, results: dict[str, Any]) -> None:
 
 
 def write_metrics_csv(path: Path, results: dict[str, Any]) -> None:
-    """One ``benchmark, dataset, metric, value`` row per numeric decoded metric."""
+    """All numeric diagnostics, including nested protocol variants and per-class lists."""
+    def flatten(value, prefix=""):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                yield from flatten(child, f"{prefix}.{key}" if prefix else str(key))
+        elif isinstance(value, (list, tuple)):
+            for index, child in enumerate(value):
+                yield from flatten(child, f"{prefix}.{index}")
+        elif isinstance(value, (int, float)) or value is None:
+            yield prefix, value
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["benchmark", "dataset", "metric", "value"])
         for key, record in results["benchmarks"].items():
             benchmark, dataset = key.split("/", 1)
-            for metric, value in (record.get("decoded_metrics") or {}).items():
-                if isinstance(value, int | float):
-                    writer.writerow([benchmark, dataset, metric, value])
+            for metric, value in flatten(record.get("decoded_metrics") or {}):
+                writer.writerow([benchmark, dataset, metric, json_safe(value)])
 
 
 __all__ = ["json_safe", "sidecar", "write_metrics_csv", "write_results"]

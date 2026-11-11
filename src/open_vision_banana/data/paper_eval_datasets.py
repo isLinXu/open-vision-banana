@@ -84,6 +84,7 @@ class ReasonSegDataset(BaseVisionDataset):
         native_gt=False,
         query_mode="all",
         annotation_mode="legacy_union",
+        report_annotation_variants=False,
         **kwargs,
     ) -> None:
         self.native_gt = bool(native_gt)
@@ -93,6 +94,7 @@ class ReasonSegDataset(BaseVisionDataset):
         if annotation_mode not in {"legacy_union", "lisa_v1"}:
             raise ValueError("Unknown ReasonSeg annotation_mode")
         self.annotation_mode = annotation_mode
+        self.report_annotation_variants = bool(report_annotation_variants)
         super().__init__(root_dir, split, resolution, **kwargs)
 
     def _scan(self) -> None:
@@ -153,6 +155,7 @@ class ReasonSegDataset(BaseVisionDataset):
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
         expression, native = self._expression_and_mask(sample)
+        primary_labels = native
         valid_native = native != 255 if native is not None else None
         if native is not None:
             native = (native == 1).astype(np.uint8)
@@ -193,23 +196,42 @@ class ReasonSegDataset(BaseVisionDataset):
             )[0, 0].bool()
             if self.native_gt:
                 item["valid_mask_native"] = valid_tensor
+        if self.report_annotation_variants:
+            variants = {}
+            for mode in ("legacy_union", "lisa_v1"):
+                labels = primary_labels if mode == self.annotation_mode else self._expression_and_mask(sample, mode)[1]
+                if labels is None:
+                    with Image.open(sample["image"]) as source:
+                        labels = np.zeros((source.height, source.width), dtype=np.uint8)
+                foreground = torch.from_numpy(np.ascontiguousarray(labels == 1))
+                valid = torch.from_numpy(np.ascontiguousarray(labels != 255))
+                variant = {}
+                for key, tensor in (("gt_mask", foreground), ("valid_mask", valid)):
+                    variant[key] = torch.nn.functional.interpolate(
+                        tensor.float()[None, None], size=(self.resolution, self.resolution),
+                        mode="nearest",
+                    )[0, 0].bool()
+                    if self.native_gt:
+                        variant[key + "_native"] = tensor
+                variants[mode] = variant
+            item["reasonseg_annotation_variants"] = variants
         return item
 
-    def _expression_and_mask(self, sample: dict) -> tuple[str, np.ndarray | None]:
+    def _expression_and_mask(self, sample: dict, annotation_mode=None) -> tuple[str, np.ndarray | None]:
         if sample.get("annotation") is not None:
             payload = sample["row"]
             expression = sample["expression"]
-            native = self._mask_from_shapes(payload.get("shapes") or [], sample["image"])
+            native = self._mask_from_shapes(payload.get("shapes") or [], sample["image"], annotation_mode)
             return expression, native
         row = sample.get("row") or {}
-        return str(sample.get("expression") or ""), self._mask_from_row(row, sample["image"])
+        return str(sample.get("expression") or ""), self._mask_from_row(row, sample["image"], annotation_mode)
 
-    def _mask_from_shapes(self, shapes: list, image_path: Path) -> np.ndarray | None:
+    def _mask_from_shapes(self, shapes: list, image_path: Path, annotation_mode=None) -> np.ndarray | None:
         if not shapes:
             return None
         with Image.open(image_path) as source:
             width, height = source.size
-        if self.annotation_mode == "lisa_v1":
+        if (annotation_mode or self.annotation_mode) == "lisa_v1":
             return reasonseg_lisa_labels(shapes, height, width)
         mask = np.zeros((height, width), dtype=np.uint8)
         for shape in shapes:
@@ -224,13 +246,13 @@ class ReasonSegDataset(BaseVisionDataset):
             _fill_polygon(mask, pts)
         return mask if mask.any() else None
 
-    def _mask_from_row(self, row: dict, image_path: Path) -> np.ndarray | None:
+    def _mask_from_row(self, row: dict, image_path: Path, annotation_mode=None) -> np.ndarray | None:
         mask_name = row.get("mask") or row.get("target")
         mask_path = _find_image(self.root_dir, mask_name) if mask_name else None
         if mask_path is not None:
             array = np.asarray(Image.open(mask_path).convert("L"))
             return (array > 127).astype(np.uint8)
-        return self._mask_from_shapes(row.get("shapes") or [], image_path)
+        return self._mask_from_shapes(row.get("shapes") or [], image_path, annotation_mode)
 
 
 def reasonseg_lisa_labels(shapes: list, height: int, width: int) -> np.ndarray:

@@ -15,6 +15,7 @@
 | GT 适配 | `src/open_vision_banana/data/{datasets,paper_eval_datasets,benchmark_io}.py` |
 | 解码与指标 | `src/open_vision_banana/core/*mapper.py`、`evaluation/{evaluator,benchmark,referring,depth}.py` |
 | 分片合并 | `scripts/merge_eval_shards.py`、`evaluation/shards.py`：验证连续无重叠区间和相同 metadata，合并原始计数再算指标 |
+| 完整指标分列 | `scripts/export_external_eval_comparison.py`：原始、逐图平均、GT尺度对齐、ReasonSeg lisa_v1 分列；完整 JSON/CSV 和独立 HTML，不修改现有看板 |
 
 | 数据 | 集合/条目 | 原生标签 | 共享形式 |
 |---|---|---|---|
@@ -92,7 +93,7 @@ RefCOCOg 严格 UMD val，不回退到 google split；COCO polygon/RLE 用 pycoc
 
 本次发现并修复 **ReasonSeg ignore/flag 注释误并入前景**：`--reasonseg-annotation-mode lisa_v1` 使用 OpenCV int32 截断、按光栅面积从大到小覆盖、忽略 flag、ignore=255，评分时同时掩掉 GT 和预测中的 ignore 像素。对实际200张 val 图逐张与 [LISA 官方实现](https://github.com/JIA-Lab-research/LISA/blob/main/utils/data_processing.py) 比对，**0差异**；76张图含 ignore，总计17,910,035个原生像素。核验 SHA/结果见输入包 `audit/`。
 
-通用 CLI 和数据类默认仍为 `legacy_union`，以兼容历史；示例 suite 显式选择 `lisa_v1`。两种模式的 metadata 不同，不能合并分片。历史分数不自动重写。已有结果未保存原始预测，无法仅凭累计 IoU 还原修正分数。
+通用 CLI 和当前示例 suite 的主口径为 `legacy_union`，数据类保留兼容默认。评测 CLI 默认启用双标注诊断：同一预测同时输出 `annotation_variants.legacy_union` 和 `annotation_variants.lisa_v1`，不重复模型推理。分片在各标注模式内部合并原始计数，再重新计算指标；混入缺失变体的分片会报错。历史分数不自动重写；已有结果未保存原始预测，无法仅凭累计 IoU 还原修正分数。HF 初始数据包是固定发布快照，其旧示例配置不随分支更新。
 
 ReasonSeg 这里展开344条原始 query；LISA 和 Vision Banana 的具体 query 选择/重写策略需分别匹配。没有运行 Gemini rewrite。因此“标注处理与 LISA 一致”不代表与论文整套 ReasonSeg 实验完全相同。
 
@@ -100,8 +101,35 @@ ReasonSeg 这里展开344条原始 query；LISA 和 Vision Banana 的具体 quer
 
 ## 验收与共享
 
+### 默认完整指标与独立列
+
+执行新套件默认取得下表各项，无须额外开启深度诊断；单次评测及 benchmark 分片合并也默认写 JSON 和全量长格式 CSV。CSV 递归保留嵌套指标、标注变体和每类 IoU，未出现类别的 IoU 留空。
+
+| 类别 | 默认字段 | 展示规则 |
+|---|---|---|
+| 深度原始米制 | AbsRel、SqRel、RMSE、RMSE_log、δ1/δ2/δ3 | 原始列，不做GT尺度对齐 |
+| 深度逐图平均 | AbsRel_per_image、RMSE_per_image、delta_1.25_per_image | 逐图等权，单独列 |
+| 深度尺度对齐 | AbsRel_aligned、RMSE_aligned、delta_1.25_aligned | 使用GT中位数尺度，单独列，不替代原始分数 |
+| Cityscapes | mIoU、19类IoU、pixel_accuracy | 保留每类与整体指标 |
+| RefCOCOg / ReasonSeg | cIoU、gIoU/IoU、Precision@0.5、像素Precision/Recall/F-score、samples | 按实际query/prompt解释 |
+| ReasonSeg双标注 | 两种模式各自的上述全部指代指标、valid_pixels | 同一次预测评分；lisa_v1独立列 |
+| 覆盖与溯源 | 样本数、有效像素、aligned_valid_pixels、跳过数、revision、prompt、query模式、数据指纹和来源 | 缺失信息留空或注明未记录 |
+
+每个执行阶段完成后自动生成 `RUN/comparison/comparison.{json,csv,html}`。HTML重点列分组展示，JSON/CSV保留全部数值；不将不同口径合在同一排名。ReasonSeg对照表的 `gIoU/cIoU` 列固定取legacy_union，`ReasonSeg_lisa_v1_gIoU/cIoU`取修正标注；选择主口径的原始值另存`reported_gIoU/cIoU`，原始结果JSON完整保留。旧记录没有lisa_v1时显示“待评测”，不会复制legacy值；没有逐图/对齐指标时不从主指标推算。
+
+双标注不会扩展数据条目：完整一轮仍为7173条，ReasonSeg仍为344条query；只增加标注处理和指标计算，不增加模型前向次数。新代码、配置变化会使旧run plan的内容摘要不同，应使用新的输出目录保留既有结果。
+
+可在已有结果上只运行导出（CPU，无推理，也不改当前看板）：
+
+```bash
+python scripts/export_external_eval_comparison.py --run-root /absolute/run --output /absolute/new-comparison
+python scripts/export_external_eval_comparison.py --records-json /absolute/complete-results.json --output /absolute/new-comparison
+```
+
+`--no-reasonseg-annotation-variants`可显式关闭双标注诊断；默认保留。双评分不复现旧的列表转字符串query，仍是同一组344条原始query和同一prompt。多种子ensemble、GT选优oracle、生成/实例等额外任务属于单独实验，不会因“默认完整指标”被自动启用。新版默认需要`.[evaluation]`中的OpenCV依赖。
+
 验收实际样本数、零 skipped/failed、指标有限、GT 原生尺寸、实际输出画布、权重谱系、SHA、prompt、query/annotation 模式；分片区间无遗漏/重复且 metadata 一致。报告保留原始精度、单位与有效像素，不因为 query 或合理有效域不同自动否定比较，但必须展示这些差异。
 
-本次最终 CPU 回归139项通过，包含恢复、suite 计划、实际 pipeline 审计钩子、ignore mask、深度解码和分片合并测试，详见数据包 `audit/validation.json`。无 GPU 重测，所以不承诺 corrected 模式会提高分数。公开结果快照中尚未完成的 checkpoint 项目仍是进行中，不能当作零分或已完成。
+初版 CPU 回归139项通过，详见数据包 `audit/validation.json`；默认完整指标更新后的相关回归为145项通过，见 [本次核验记录](external-evaluation-full-metrics-audit.json)，覆盖双标注单次推理、native/canvas、空分片、混合口径拒绝及完整导出。无 GPU 重测，所以不承诺 corrected 模式会提高分数。公开结果快照中尚未完成的 checkpoint 项目仍是进行中，不能当作零分或已完成。本次仅更新分支代码与Issue，不修改当前看板或HF固定发布快照。
 
 原始数据来源与许可： [NYUv2](https://cs.nyu.edu/~fergus/datasets/nyu_depth_v2.html)、[ETH3D CC BY-NC-SA4](https://www.eth3d.net/)、[DIODE MIT](https://diode-dataset.org/)、[Cityscapes 禁止转发条款](https://www.cityscapes-dataset.com/license/)、[ReasonSeg/LISA](https://github.com/JIA-Lab-research/LISA#dataset)、[RefCOCOg REFER](https://github.com/lichengunc/refer)、[COCO 使用条款](https://cocodataset.org/#termsofuse)。代码许可和数据许可分别适用；数据包没有覆盖上游权利声明。

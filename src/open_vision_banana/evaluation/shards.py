@@ -102,7 +102,20 @@ def merged_metrics(shard_states: list[dict[str, Any]]) -> dict[str, Any]:
     """Metrics of one benchmark from the ``last_accumulator_states`` of all its shards."""
     main = merge_accumulator_states([states["main"] for states in shard_states])
     if not isinstance(main, DepthAccumulator):
-        return main.compute()
+        report = main.compute()
+        variants = [states.get("annotation_variants", {}) for states in shard_states]
+        if len({tuple(sorted(v)) for v in variants}) > 1:
+            raise ValueError("shards disagree on ReasonSeg annotation variants")
+        if variants[0]:
+            report["annotation_variants"] = {
+                name: {
+                    **merge_accumulator_states([v[name] for v in variants]).compute(),
+                    **({"valid_pixels": sum(v[name]["valid_pixels"] for v in variants)}
+                       if all("valid_pixels" in v[name] for v in variants) else {}),
+                }
+                for name in sorted(variants[0])
+            }
+        return report
     relative_states = [states["relative"] for states in shard_states]
     if len({state is None for state in relative_states}) > 1:
         raise ValueError("shards disagree on the relative-luminance reading")

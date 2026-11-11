@@ -1,6 +1,6 @@
 {
   "resolution": 512,
-  "reasonseg_annotation_mode": "lisa_v1",
+  "reasonseg_annotation_mode": "legacy_union",
   "datasets": ["nyu", "eth3d", "diode", "cityscapes", "reasonseg", "refcocog"],
   "data_roots": {
     "nyu": "/absolute/benchmarks/nyu_h5",
