@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import math
+from functools import partial
 from typing import Any
 
 import torch
@@ -25,6 +26,7 @@ from ..core.depth_mapper import (
     DEFAULT_LOG_ALPHA,
     PAPER_DEPTH_CURVE,
     DepthRGBMapper,
+    _per_sample_positive_median,
 )
 from ..core.flow_mapper import FlowRGBMapper
 from ..core.keypoint_mapper import KeypointRGBMapper
@@ -54,6 +56,28 @@ def decode_depth_rgb(
     if invert:
         normalized = 1.0 - normalized
     return mapper.normalized_to_depth(normalized)
+
+
+# member k of a depth seed ensemble samples batch i with seed + i + k * stride
+DEPTH_ENSEMBLE_SEED_STRIDE = 1000
+
+
+def _midpoint_median(values: torch.Tensor) -> torch.Tensor:
+    """Median over dim 0; the mean of the two middle values for an even count."""
+    ordered = values.sort(dim=0).values
+    count = ordered.shape[0]
+    return 0.5 * (ordered[(count - 1) // 2] + ordered[count // 2])
+
+
+def seed_ensemble_depth(members: list[torch.Tensor]) -> torch.Tensor:
+    """Log-scale median ensemble of [B, 1, H, W] depth maps decoded from different seeds.
+
+    Structure is the pixelwise median of each member divided by its per-image median depth
+    (finite, positive pixels), and the absolute scale is exp(median of the members' log medians).
+    """
+    medians = torch.stack([_per_sample_positive_median(m) for m in members]).clamp(min=1e-8)
+    normalized = torch.stack([m / s for m, s in zip(members, medians, strict=True)])
+    return _midpoint_median(normalized) * _midpoint_median(medians.log()).exp()
 
 
 def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
@@ -270,6 +294,7 @@ class VisionEvaluator:
         report_relative_luminance: bool = False,
         depth_oracle_colormaps: list[str] | None = None,
         depth_scale_ratios: list[float | None] | None = None,
+        depth_seed_ensemble: int = 1,
         referring_encoding: str | None = None,
         referring_target_color: tuple[int, int, int] = (255, 255, 255),
         referring_threshold: float | None = None,
@@ -315,6 +340,11 @@ class VisionEvaluator:
                 best reconstructs its RGB. Diagnostic only — report the chosen
                 colormap histogram and metrics under ``oracle_*`` keys, never as
                 protocol numbers.
+            depth_seed_ensemble: Also score the log-scale median ensemble
+                (``seed_ensemble_depth``) of this many seeds per image under
+                ``seed_ensemble``. Member 0 is the single-seed prediction the
+                main metrics score; member k uses seed + i + k * 1000. A
+                non-finite output from any member skips the whole batch.
 
         Returns:
             Dictionary of metric name → value (averaged over all batches).
@@ -322,6 +352,10 @@ class VisionEvaluator:
         self.model.eval()
         if depth_scale_ratios is not None and (task != "depth" or depth_curve != PAPER_DEPTH_CURVE):
             raise ValueError("Depth scale ratios require metric_power depth evaluation")
+        if depth_seed_ensemble < 1:
+            raise ValueError("depth_seed_ensemble must be at least 1")
+        if depth_seed_ensemble > 1 and (task != "depth" or seed is None):
+            raise ValueError("A depth seed ensemble needs task='depth' and a seed")
         # raw sums of the depth / semantic / referring accumulator, for merging benchmark shards
         self.last_accumulator_states: dict[str, Any] | None = None
         all_metrics: dict[str, Any] = {}
@@ -360,6 +394,7 @@ class VisionEvaluator:
             else {}
         )
         oracle_accumulator = DepthAccumulator() if oracle_mappers else None
+        ensemble_accumulator = DepthAccumulator() if depth_seed_ensemble > 1 else None
         oracle_colormap_hist: dict[str, int] = {}
         normal_mapper = NormalRGBMapper() if task == "normal" else None
         seg_decoder = SegmentationDecoder() if task in ("semantic", "instance") else None
@@ -398,7 +433,8 @@ class VisionEvaluator:
 
             # ── Run model inference ───────────────────────────────────────
             try:
-                pred_rgb = self._run_inference(
+                infer = partial(
+                    self._run_inference,
                     image=image,
                     task=task,
                     class_color_map=class_color_map or batch.get("class_color_map"),
@@ -409,10 +445,14 @@ class VisionEvaluator:
                     expression=_referring_expression(expression, batch.get("expression")),
                     num_inference_steps=num_inference_steps,
                     strength=strength,
-                    seed=None if seed is None else seed + batch_idx,
                     guidance_scale=guidance_scale,
                     **res_kwargs,
                 )
+                pred_rgb = infer(seed=None if seed is None else seed + batch_idx)
+                member_rgbs = [
+                    infer(seed=seed + batch_idx + member * DEPTH_ENSEMBLE_SEED_STRIDE)
+                    for member in range(1, depth_seed_ensemble)
+                ]
             except ValueError as exc:
                 if "NaN or Inf" not in str(exc):
                     raise
@@ -431,6 +471,15 @@ class VisionEvaluator:
             metrics: dict[str, Any]
             if task == "depth":
                 pred_depth = decode_depth_rgb(pred_rgb, depth_mapper, invert=invert_depth)
+                ensemble_depth = None
+                if ensemble_accumulator is not None:
+                    ensemble_depth = seed_ensemble_depth(
+                        [pred_depth]
+                        + [
+                            decode_depth_rgb(rgb, depth_mapper, invert=invert_depth)
+                            for rgb in member_rgbs
+                        ]
+                    )
                 if relative_accumulator is not None:
                     relative_depth = relative_luminance_depth(pred_rgb)
                 gt_depth = batch.get("gt_depth")
@@ -456,6 +505,19 @@ class VisionEvaluator:
                         )
                 if valid_mask is not None:
                     valid_mask = valid_mask.to(self.device)
+                if ensemble_depth is not None:
+                    if ensemble_depth.shape[-2:] != gt_depth.shape[-2:]:
+                        ensemble_depth = torch.nn.functional.interpolate(
+                            ensemble_depth,
+                            size=gt_depth.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False,
+                        )
+                    ensemble_accumulator.update(
+                        *apply_depth_benchmark_protocol(
+                            dataset_name or "", ensemble_depth, gt_depth, valid_mask
+                        )
+                    )
                 pred_depth, gt_depth, valid_mask = apply_depth_benchmark_protocol(
                     dataset_name or "", pred_depth, gt_depth, valid_mask
                 )
@@ -751,6 +813,11 @@ class VisionEvaluator:
             if oracle_accumulator is not None:
                 self.last_accumulator_states["oracle"] = accumulator_state(oracle_accumulator)
                 self.last_accumulator_states["oracle_colormap_hist"] = dict(oracle_colormap_hist)
+            if ensemble_accumulator is not None:
+                self.last_accumulator_states["seed_ensemble"] = accumulator_state(
+                    ensemble_accumulator
+                )
+                self.last_accumulator_states["seed_ensemble_members"] = depth_seed_ensemble
         elif task == "semantic" and semantic_accumulator is not None:
             self.last_accumulator_states = {"main": accumulator_state(semantic_accumulator)}
         elif task == "referring" and referring_accumulator is not None:
@@ -767,6 +834,9 @@ class VisionEvaluator:
                     sorted(oracle_colormap_hist.items(), key=lambda kv: -kv[1])
                 )
                 report["oracle"] = dict(oracle_accumulator.compute())
+            if ensemble_accumulator is not None:
+                report["seed_ensemble"] = dict(ensemble_accumulator.compute())
+                report["seed_ensemble_members"] = depth_seed_ensemble
             return report
         if task == "normal" and normal_accumulator is not None:
             return normal_accumulator.compute()

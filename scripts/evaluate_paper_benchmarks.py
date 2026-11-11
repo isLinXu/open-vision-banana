@@ -277,6 +277,17 @@ def parse_args() -> argparse.Namespace:
         help="Record per-image median(pred)/median(GT) for depth, in dataset order.",
     )
     parser.add_argument(
+        "--depth-seed-ensemble",
+        type=int,
+        default=1,
+        metavar="K",
+        help=(
+            "Also score the log-scale median ensemble of K seeds per depth image under "
+            "decoded_metrics.seed_ensemble (K times the inference). The main metrics stay "
+            "the single-seed reading."
+        ),
+    )
+    parser.add_argument(
         "--relative-luminance",
         action="store_true",
         help="Also score a closer=brighter luminance map after median scale (relative_delta_1.25_aligned).",
@@ -318,7 +329,10 @@ def parse_args() -> argparse.Namespace:
             "raw/aligned δ1.25 decide whether gated depth GRPO is indicated."
         ),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.depth_seed_ensemble < 1:
+        parser.error("--depth-seed-ensemble must be at least 1")
+    return args
 
 
 def resolve_device(value: str | None) -> str:
@@ -668,6 +682,7 @@ def main() -> int:
     )
     results["metadata"]["depth_oracle_colormaps"] = oracle_colormaps
     results["metadata"]["relative_luminance"] = bool(args.relative_luminance)
+    results["metadata"]["depth_seed_ensemble"] = args.depth_seed_ensemble
     results["metadata"]["inference_protocol"] = {
         "num_inference_steps": args.num_inference_steps,
         "guidance_scale": args.guidance_scale,
@@ -782,6 +797,11 @@ def main() -> int:
             report_relative_luminance=args.relative_luminance,
             depth_oracle_colormaps=oracle_colormaps,
             **({"depth_scale_ratios": scale_ratios} if scale_ratios is not None else {}),
+            **(
+                {"depth_seed_ensemble": args.depth_seed_ensemble}
+                if args.depth_seed_ensemble > 1 and benchmark == "depth"
+                else {}
+            ),
         )
         if scale_ratios is not None:
             if len(scale_ratios) != len(selected):
