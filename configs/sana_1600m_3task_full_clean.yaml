@@ -1,4 +1,4 @@
-# Open-Vision-Banana -- Sana_1600M full three-task training (depth+normal+seg)
+# Open-Vision-Banana: Sana_1600M full three-task training (depth+normal+seg)
 # Uses the cleaned manifest (pairs_5task_v3_clean.jsonl)
 # Fixes the task alias mapping: semantic → seg
 

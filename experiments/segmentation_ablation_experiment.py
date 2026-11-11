@@ -487,7 +487,7 @@ def main():
             avg_deltas.append(df1)
         avg_delta = sum(avg_deltas) / len(avg_deltas)
         if avg_delta > 0.02:
-            f.write(f"1. **Adaptive τ beats fixed τ consistently at average noise**, with a mean F1 gain of {avg_delta:.3f}.\n")
+            f.write(f"1. **Adaptive τ beats fixed τ on average across noise levels**, with a mean F1 gain of {avg_delta:.3f}.\n")
         else:
             f.write(f"1. Adaptive and fixed τ differ little (mean ΔF1 = {avg_delta:.3f}); on synthetic data a fixed τ=14 is enough.\n")
         f.write("2. As noise grows, adaptive τ keeps edges better, so its advantage widens in high-noise scenes.\n\n")

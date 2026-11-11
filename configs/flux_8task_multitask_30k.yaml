@@ -6,7 +6,7 @@
 #   referring seg + edge + depth_edge
 #   targets are produced by scripts/gen_detpoint_refer_targets.py (coordinate rendering / Canny-derived / GT labelmap)
 #   merged and checked by scripts/merge_multitask_manifest.py (keeps only rows whose files exist)
-# Coverage: every README task except optical flow / instance seg (no dataset GT for those two)
+# Coverage: all 10 README tasks except optical flow / instance seg (no dataset GT for those two)
 # Target: single RTX 4090 24GB LoRA fine-tuning, 30000 steps, synced to W&B
 
 model:
