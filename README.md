@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-1000+-green.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-2000+-green.svg)](tests/)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.20329-b31b1b.svg)](https://arxiv.org/abs/2604.20329)
 
 *Unofficial open-source implementation of the Vision Banana paradigm (RGB-parameterized vision tasks via image generation). The paper reports SOTA zero-shot transfer; this repo has not yet reproduced those results — see [Status](#benchmarks-from-paper).*
@@ -37,16 +37,16 @@
 
 ## Overview
 
-Vision Banana demonstrates that **state-of-the-art visual understanding can emerge from image generation pretraining**. By instruction-tuning diffusion models on a mixture of their original training data alongside vision task data, we obtain models that achieve strong zero-shot transfer on segmentation, depth estimation, and surface normal estimation — all through the lens of image generation.
+Vision Banana demonstrates that **state-of-the-art visual understanding can emerge from image generation pretraining**. By instruction-tuning an image generator on a mixture of its original training data and vision task data, the paper obtains a model with strong zero-shot transfer on segmentation, depth estimation, and surface normal estimation — all through the lens of image generation. This repository reimplements that recipe on open backbones and public data; its measured results are well below the paper's (see [Benchmarks](#benchmarks-from-paper)).
 
 > **Key insight**: All vision tasks are parameterized as RGB images, enabling seamless integration with generative models while (per the paper) retaining the base model's generation capability. Generation retention has not been measured in this repo.
 
 **Highlights:**
-- 🎨 **Unified RGB paradigm** — All 10 vision tasks encoded as RGB, decoded back to structured outputs
-- 🔧 **Multi-model support** — FLUX.1, SANA, Z-Image, Qwen-Image, Lumina2, Chroma via unified registry
-- 📊 **10 vision tasks** — Segmentation, depth, normal, edge, flow, keypoint, detection, depth-edge
+- 🎨 **Unified RGB paradigm** — Vision tasks encoded as RGB images and decoded back to structured outputs
+- 🔧 **Multi-model registry** — Qwen-Image-2.1, SANA and FLUX.1-dev have been trained end to end; the other registered backbones (Z-Image, Lumina2, Chroma, …) are not verified
+- 📊 **Tasks** — Depth, surface normals and semantic / instance / referring segmentation are trained and evaluated; edge, flow, keypoint, detection and depth-edge have mapper code only
 - ⚡ **Efficient tuning** — rsLoRA trains only 0.5%-1% of parameters
-- 🚀 **Complete pipeline** — Training, inference, evaluation, export, and serving
+- 🚀 **Pipeline** — Data preparation, training, inference and paper-protocol evaluation; the export and serving modules are not verified against the unified trainer
 
 ---
 
@@ -395,10 +395,24 @@ Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb
 
 | Name pattern | Base | What to load |
 |--------------|------|----------------|
+| `ovb-i88_*`, `ovb-ft_*`, `ovb-i97-*`, `ovb-i108-*` | Qwen-Image-2.1 | `checkpoint-*_final`; `metadata.json` records `model_name: qwen-image-2.1` |
 | `ovb-fix_*`, `ovb-best3_*`, `ovb-ctrl_*`, `ovb-main_*` | SANA-1600M | `checkpoint-*_final` (prefer `ema_adapter` when that directory exists) |
 | `ovb-flux*`, `ovb-flux2*`, `ovb-flux3*`, `ovb-flux4*` | FLUX.1-dev | same layout; `metadata.json` records `model_name: flux-dev` |
 
-Task-matched runs:
+Qwen-Image-2.1 runs behind the results table below:
+
+| Row | Repo |
+|-----|------|
+| Parent (step 0) | [`ovb-i88_parent_e2b_final`](https://huggingface.co/khazic/ovb-i88_parent_e2b_final); merged weights at [`gatilin/ovb-e2b_cap10k_s42_10000_merged1`](https://huggingface.co/gatilin/ovb-e2b_cap10k_s42_10000_merged1) |
+| C1 | [`ovb-i88_c1_depth_cube100_20261030_1602`](https://huggingface.co/khazic/ovb-i88_c1_depth_cube100_20261030_1602) |
+| T0 | [`ovb-i88_t0_full_replay10_20261029_2202`](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202) |
+| T1 | [`ovb-i88_t1_no_normal_20261030_1602`](https://huggingface.co/khazic/ovb-i88_t1_no_normal_20261030_1602) |
+| T2 | [`ovb-i88_t2_depth_replay_20261030_0106`](https://huggingface.co/khazic/ovb-i88_t2_depth_replay_20261030_0106) |
+| T3 | [`ovb-i88_t3_seg_replay_20261030_1602`](https://huggingface.co/khazic/ovb-i88_t3_seg_replay_20261030_1602) |
+| I101-h1 | [`ovb-ft_mf_lr5e-6_i101h1_t1_cube_20261105_2213`](https://huggingface.co/khazic/ovb-ft_mf_lr5e-6_i101h1_t1_cube_20261105_2213) |
+| I102-i1 | [`ovb-ft_bl_i102i1_t1_cube_20261105_2213`](https://huggingface.co/khazic/ovb-ft_bl_i102i1_t1_cube_20261105_2213) |
+
+SANA / FLUX task-matched runs:
 
 - Depth: [`ovb-fix_ctrl_depth`](https://huggingface.co/khazic/ovb-fix_ctrl_depth), [`ovb-flux3_ctrl_depth_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_depth_nominsnr_15k)
 - Normals: [`ovb-fix_ctrl_normal`](https://huggingface.co/khazic/ovb-fix_ctrl_normal), [`ovb-flux3_ctrl_normal_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_normal_nominsnr_15k)
@@ -445,14 +459,14 @@ The paper evaluates three axes. This table is the current measured-or-blocked st
 
 | Axis | Benchmark | Paper | This repo | Status |
 |------|-----------|------:|-----------|--------|
-| 2D | RefCOCOg UMD val cIoU | 0.738 | SANA `ovb-fix_seg_plus_gcg` 0.143 (n=4896) | measured |
-| 2D | ReasonSeg val gIoU | 0.793 | — | adapter ready; dataset not on the eval machine. Paper score uses Gemini 2.5 Pro query rewrite |
-| 2D | Cityscapes val mIoU | 0.699 | — | blocked: official `gtFine` is not available. Do not use `cityscapes8` |
+| 2D | RefCOCOg UMD val cIoU | 0.738 | Qwen-Image-2.1 I102-i1 0.547; SANA `ovb-fix_seg_plus_gcg` 0.143 (n=4896) | measured |
+| 2D | ReasonSeg val gIoU | 0.793 | Qwen-Image-2.1 parent 0.328 (n=200) | measured on 200 samples; not directly comparable. Paper score uses Gemini 2.5 Pro query rewrite |
+| 2D | Cityscapes val mIoU | 0.699 | Qwen-Image-2.1 I102-i1 0.368 (n=500) | measured. Do not use `cityscapes8` |
 | 2D | SA-Co/Gold cgF1 | 47.5 | — | adapter ready (query JSONL + pmF1/IL_MCC/cgF1). Dataset not present. Paper score uses Gemini 3.1 Flash-Lite NP filter |
-| 3D depth | NYU δ1 / AbsRel | 0.948 / 0.081 | SANA gray 0.066 / 1.990; SANA metric 0.124 / 1.251; FLUX gray 0.155 / 1.472 | measured, gate fail |
+| 3D depth | NYU δ1 / AbsRel | 0.948 / 0.081 | Qwen-Image-2.1 C1 δ1 0.348; SANA gray 0.066 / 1.990; SANA metric 0.124 / 1.251; FLUX gray 0.155 / 1.472 | measured, gate fail |
 | 3D depth | iBims-1 | 0.934 / 0.078 | SANA gray 0.101; SANA metric 0.179; FLUX gray 0.179 | measured, gate fail |
-| 3D depth | ETH3D | 0.935 / 0.103 | SANA gray 0.186; SANA metric 0.292; FLUX gray 0.163 | measured, gate fail |
-| 3D depth | DIODE-Indoor | 0.917 / 0.108 | SANA gray 0.083; SANA metric 0.184; FLUX gray 0.140 | measured, gate fail |
+| 3D depth | ETH3D | 0.935 / 0.103 | Qwen-Image-2.1 T2 δ1 0.251; SANA gray 0.186; SANA metric 0.292; FLUX gray 0.163 | measured, gate fail |
+| 3D depth | DIODE-Indoor | 0.917 / 0.108 | Qwen-Image-2.1 C1 δ1 0.321; SANA gray 0.083; SANA metric 0.184; FLUX gray 0.140 | measured, gate fail |
 | 3D depth | KITTI | 0.915 / 0.107 | SANA gray 0.264; SANA metric 0.051; FLUX gray 0.095 | measured, gate fail |
 | 3D depth | nuScenes | 0.643 / 0.219 | — | adapter now returns metric `gt_depth` (80 m cap, no paper crop). LiDAR projections not on the eval machine |
 | 3D normal | DIODE-Indoor mean° | 13.818 | SANA 24.96 (gates pass); FLUX 91.09 | measured |
@@ -464,7 +478,23 @@ The paper evaluates three axes. This table is the current measured-or-blocked st
 
 ### Measurements in this repository
 
-These scores use the official splits, native ground-truth resolution, and the pixel-weighted metrics in `scripts/evaluate_paper_benchmarks.py`. They are not Table 1. `delta_1.25_aligned` is a per-image median-scale diagnostic. The depth gate requires metric δ1 at least 0.10 above the best non-oracle trivial baseline and AbsRel no worse than that baseline. Every depth row below failed that gate.
+**Qwen-Image-2.1 (current main line).** Metric depth δ1 without scale alignment, and segmentation metrics, at native ground-truth resolution: NYU n=654, ETH3D n=454, DIODE indoor n=325, Cityscapes n=500, RefCOCOg n=4896, ReasonSeg n=200. Repos for each row are listed under [Checkpoints](#checkpoints).
+
+| Run | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
+|-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
+| Parent (step 0) | 0.134 | 0.122 | 0.109 | 0.342 | 0.498 | **0.328** |
+| C1: depth 75 %, cube-edge only | **0.348** | 0.233 | **0.321** | 0.346 | 0.424 | 0.303 |
+| T0: all tasks + 10 % replay | 0.131 | 0.237 | 0.216 | 0.335 | 0.438 | 0.287 |
+| T1: no normals | 0.149 | 0.192 | 0.180 | 0.337 | 0.467 | 0.271 |
+| T2: depth 75 %, five colormaps | 0.179 | **0.251** | 0.241 | 0.331 | 0.291 | 0.276 |
+| T3: segmentation specialist | 0.050 | 0.032 | 0.143 | 0.264 | 0.519 | 0.304 |
+| I101-h1: full fine-tune, lr 5e-6 | 0.222 | 0.193 | 0.247 | 0.362 | 0.241 | 0.175 |
+| I102-i1: LoRA | 0.099 | 0.195 | 0.115 | **0.368** | **0.547** | 0.321 |
+| Vision Banana (paper) | 0.948 | 0.935 | 0.917 | 0.699 | 0.738 | 0.793 |
+
+No run improves depth and segmentation together, and none beats the parent on every benchmark. The depth gap is mostly absolute scale: with per-image median alignment the best δ1 rises to 0.845 / 0.906 / 0.855 on NYU / ETH3D / DIODE, but aligned δ1 is a diagnostic only and is not comparable to the paper's protocol.
+
+**SANA / FLUX (earlier runs).** These scores use the official splits, native ground-truth resolution, and the pixel-weighted metrics in `scripts/evaluate_paper_benchmarks.py`. They are not Table 1. `delta_1.25_aligned` is a per-image median-scale diagnostic. The depth gate requires metric δ1 at least 0.10 above the best non-oracle trivial baseline and AbsRel no worse than that baseline. Every depth row below failed that gate.
 
 SANA relative depth, [`ovb-fix_ctrl_depth`](https://huggingface.co/khazic/ovb-fix_ctrl_depth) EMA, 20 steps, grayscale with bright=near:
 
@@ -488,7 +518,7 @@ SANA metric depth, local Hypersim cube-edge EMA (`sana_1600m_hypersim_metric_dep
 
 SANA normals, [`ovb-fix_ctrl_normal`](https://huggingface.co/khazic/ovb-fix_ctrl_normal) EMA, DIODE indoor n=325: mean angle 24.96°, median 17.01°. Both normal gates passed. This is not the paper's 13.818°. NYU, ScanNet and VKITTI normal maps are not in the eval tree.
 
-SANA referring, [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg) step-30000 adapter (no EMA), RefCOCOg UMD val n=4896: cIoU 0.143, gIoU 0.158, Precision@0.5 0.089. The paper's cIoU is 0.738. Cityscapes semantic mIoU is not measured: official `gtFine` is not available here.
+SANA referring, [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg) step-30000 adapter (no EMA), RefCOCOg UMD val n=4896: cIoU 0.143, gIoU 0.158, Precision@0.5 0.089. The paper's cIoU is 0.738. Cityscapes semantic mIoU was not measured for the SANA runs.
 
 FLUX.1-dev specialist `ovb-flux3_ctrl_depth_nominsnr_15k`, 20 steps, 4-bit, closer-brighter grayscale:
 
@@ -632,7 +662,7 @@ open-vision-banana/
 │   ├── build_instance_manifest.py / build_res_manifest.py / build_generation_replay_manifest.py
 │   ├── merge_multitask_manifest.py / build_qwen_baseline_manifest.py   # merge + zero-shot audit
 │   └── evaluate_paper_benchmarks.py       # Tables 2-7 protocols
-├── tests/                       # 1500+ tests across 126 files (incl. pipeline smoke + Trainer system tests)
+├── tests/                       # 2000+ tests across 160+ files (incl. pipeline smoke + Trainer system tests)
 ├── docker/                      # CPU/GPU Docker images
 └── notebooks/                   # Colab demo
 ```

@@ -1,18 +1,18 @@
 # Model Card: Vision Banana
 
-**Model Page**: https://github.com/user/open-vision-banana
+**Model Page**: https://github.com/isLinXu/open-vision-banana
 
 ## Model Details
 
 ### Model Description
 
-Open-Vision-Banana is a method-aligned, open implementation of the Vision Banana paradigm. It instruction-tunes FLUX.1-schnell with shared LoRA adapters so that prompts select vision tasks and outputs remain RGB images. FLUX is an open substitute for the paper's closed Nano Banana Pro base; numerical equivalence has not been established.
+Open-Vision-Banana is a method-aligned, open implementation of the Vision Banana paradigm. It instruction-tunes an open image generator (Qwen-Image-2.1 in the current runs; SANA-1600M and FLUX.1-dev in earlier ones) with shared LoRA adapters so that prompts select vision tasks and outputs remain RGB images. These are open substitutes for the paper's closed Nano Banana Pro base; the paper's numbers have not been reproduced.
 
 - **Developed by**: Open Vision Banana Contributors
 - **Model type**: Instruction-tuned diffusion model for vision understanding
 - **Languages**: English (prompts), Visual (outputs)
 - **License**: MIT (project code); base models and datasets follow their own licenses
-- **Base model**: FLUX.1 [schnell] by Black Forest Labs
+- **Base model**: Qwen-Image-2.1 (current runs); SANA-1600M and FLUX.1-dev (earlier runs). Each checkpoint's `metadata.json` records its base
 
 ### Intended Uses
 
@@ -60,22 +60,12 @@ The values below are reported by arXiv:2604.20329v3 for the closed Vision Banana
 
 ### Project Evaluation Status
 
-No checkpoint in this repository currently has a complete, three-seed, five-task
-paper-benchmark plus GenAI-Bench report. The local specialist below is an
-internal relative-depth gate, not a paper Table 1 number.
-
-#### Local specialist (relative depth only)
-
-`registry:sana-depth-relative-v1` →
-`output/sana_depth_gate_full_refine_lr1e5_20260814/checkpoint-3000_best/lora_adapter`
-
-| Checkpoint | n | Pearson r | Spearman r | Rel. MAE | Notes |
-|:-----------|--:|----------:|-----------:|---------:|:------|
-| SANA-600M depth `ckpt-3000_best` | 128 | 0.790 | 0.778 | 0.147 | internal val, 512px, 20 steps |
-| Frozen SSD probe (control) | 115 | 0.771 | 0.757 | 0.130 | 3-seed, not generative |
-
-Metric-depth δ1 / AbsRel are **not** available: v5 targets have no metric scale.
-Multitask shared LoRAs (v01/v02) dilute this Pearson to ≤ 0.30 and are not release candidates.
+No checkpoint in this repository reproduces the paper's benchmark numbers. Measured
+paper-protocol scores for the published Qwen-Image-2.1, SANA and FLUX.1-dev runs, with
+sample counts and repo ids, are in the README section
+[Measurements in this repository](README.md#measurements-in-this-repository).
+The best metric-depth δ1 so far is 0.348 on NYUv2 (paper: 0.948) and the best
+RefCOCOg cIoU is 0.547 (paper: 0.738).
 
 ### Checkpoint Registry
 
@@ -106,10 +96,10 @@ model = VisionBanana.from_pretrained(lora_path="registry:sana-depth-relative-v1"
 
 | Component | Details |
 |:----------|:--------|
-| Base model | FLUX.1 [schnell] (12B params, rectified flow) |
-| Fine-tuning method | One shared LoRA/rsLoRA adapter; baseline rank=64, alpha=128 |
+| Base model | Qwen-Image-2.1, SANA-1600M or FLUX.1-dev, selected by `model_name` |
+| Fine-tuning method | One shared rsLoRA adapter; rank and alpha are recorded per checkpoint |
 | Trainable params | Computed per checkpoint; not assumed from rank alone |
-| Training data mix | Baseline 9:1 generation:vision; project choice, not paper-disclosed |
+| Training data mix | `vision_ratio` per config; project choice, not paper-disclosed |
 | Depth mapping | Cube-edge traversal colormap + power transform (λ=-3, c=10/3) |
 | Normal mapping | Camera-space XYZ → RGB linear mapping |
 | Instance decoding | 5-stage: init → group → prune → boundary → merge |
