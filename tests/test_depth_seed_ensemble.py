@@ -37,6 +37,10 @@ def test_ensemble_takes_the_median_scale_and_the_median_structure():
     assert torch.allclose(seed_ensemble_depth([scaled, scaled]), scaled, rtol=1e-5)
 
 
+def _rgb(seed: int) -> torch.Tensor:
+    return torch.rand(1, 3, 8, 8, generator=torch.Generator().manual_seed(seed))
+
+
 class _SeededModel:
     """predict() returns an RGB drawn from its seed and records the seeds it was asked for."""
 
@@ -51,7 +55,7 @@ class _SeededModel:
         self.seeds.append(seed)
         if seed == self.fail_seed:
             raise ValueError("Generator produced NaN or Inf")
-        return {"rgb_output": torch.rand(1, 3, 8, 8, generator=torch.Generator().manual_seed(seed))}
+        return {"rgb_output": _rgb(seed)}
 
 
 def _batches(count: int) -> list[dict[str, torch.Tensor]]:
@@ -65,21 +69,17 @@ def _batches(count: int) -> list[dict[str, torch.Tensor]]:
     ]
 
 
-def _rgb(seed: int) -> torch.Tensor:
-    return torch.rand(1, 3, 8, 8, generator=torch.Generator().manual_seed(seed))
-
-
 def test_evaluator_scores_the_ensemble_next_to_the_unchanged_single_seed_reading():
     batches = _batches(2)
     single = VisionEvaluator(_SeededModel(), device="cpu").evaluate(batches, task="depth", seed=42)
     model = _SeededModel()
-    ev = VisionEvaluator(model, device="cpu")
-    report = ev.evaluate(batches, task="depth", seed=42, depth_seed_ensemble=3)
+    report = VisionEvaluator(model, device="cpu").evaluate(
+        batches, task="depth", seed=42, depth_seed_ensemble=3
+    )
     stride = DEPTH_ENSEMBLE_SEED_STRIDE
     assert model.seeds == [42, 42 + stride, 42 + 2 * stride, 43, 43 + stride, 43 + 2 * stride]
 
     ensemble = report.pop("seed_ensemble")
-    assert report.pop("seed_ensemble_members") == 3
     assert report == single
 
     mapper = DepthRGBMapper(colormap="cube_edge")
@@ -91,11 +91,13 @@ def test_evaluator_scores_the_ensemble_next_to_the_unchanged_single_seed_reading
     assert ensemble == pytest.approx(expected.compute())
     assert ensemble != pytest.approx(single)
 
-    states = json.loads(json.dumps(ev.last_accumulator_states))
-    assert states["seed_ensemble_members"] == 3
-    rebuilt = merged_metrics([states])
-    assert rebuilt["seed_ensemble"] == pytest.approx(ensemble)
-    assert rebuilt["seed_ensemble_members"] == 3
+    # two shards, each seeded like its block of the unsharded run, merge into the same reading
+    shard_states = []
+    for index, batch in enumerate(batches):
+        shard = VisionEvaluator(_SeededModel(), device="cpu")
+        shard.evaluate([batch], task="depth", seed=42 + index, depth_seed_ensemble=3)
+        shard_states.append(json.loads(json.dumps(shard.last_accumulator_states)))
+    assert merged_metrics(shard_states)["seed_ensemble"] == pytest.approx(ensemble)
 
 
 def test_ensemble_at_native_resolution_is_upsampled_like_the_main_prediction():
@@ -149,10 +151,10 @@ def test_evaluator_rejects_an_ensemble_it_cannot_seed(kwargs, match):
 def test_merge_refuses_shards_that_disagree_on_the_ensemble():
     batches = _batches(2)
     states = []
-    for index, members in enumerate((2, 1)):
+    for index, size in enumerate((2, 1)):
         ev = VisionEvaluator(_SeededModel(), device="cpu")
         ev.evaluate(
-            batches[index : index + 1], task="depth", seed=42 + index, depth_seed_ensemble=members
+            batches[index : index + 1], task="depth", seed=42 + index, depth_seed_ensemble=size
         )
         states.append(ev.last_accumulator_states)
     with pytest.raises(ValueError, match="seed ensemble"):

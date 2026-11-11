@@ -262,7 +262,7 @@ class DepthRGBMapper:
         return depth.clamp(min=0.0)
 
     def _log_relative_to_normalized(self, depth: torch.Tensor) -> torch.Tensor:
-        median = _per_sample_positive_median(depth)
+        median = per_sample_positive_median(depth)
         relative = depth / median.clamp(min=1e-8)
         return (self.log_alpha * torch.log(relative + 1.0)).clamp(0.0, 1.0)
 
@@ -406,7 +406,7 @@ class DepthRGBMapper:
         return self.normalized_to_depth(normalized)
 
 
-def _per_sample_positive_median(depth: torch.Tensor) -> torch.Tensor:
+def per_sample_positive_median(depth: torch.Tensor) -> torch.Tensor:
     """Broadcastable per-sample median of finite, strictly positive depths."""
     if depth.dim() == 0:
         value = depth if torch.isfinite(depth) and float(depth) > 0.0 else depth.new_tensor(1.0)
@@ -446,4 +446,5 @@ __all__ = [
     "DEFAULT_LOG_ALPHA",
     "get_available_colormaps",
     "get_available_depth_curves",
+    "per_sample_positive_median",
 ]

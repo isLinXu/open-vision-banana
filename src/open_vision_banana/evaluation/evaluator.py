@@ -26,7 +26,7 @@ from ..core.depth_mapper import (
     DEFAULT_LOG_ALPHA,
     PAPER_DEPTH_CURVE,
     DepthRGBMapper,
-    _per_sample_positive_median,
+    per_sample_positive_median,
 )
 from ..core.flow_mapper import FlowRGBMapper
 from ..core.keypoint_mapper import KeypointRGBMapper
@@ -75,9 +75,16 @@ def seed_ensemble_depth(members: list[torch.Tensor]) -> torch.Tensor:
     Structure is the pixelwise median of each member divided by its per-image median depth
     (finite, positive pixels), and the absolute scale is exp(median of the members' log medians).
     """
-    medians = torch.stack([_per_sample_positive_median(m) for m in members]).clamp(min=1e-8)
+    medians = torch.stack([per_sample_positive_median(m) for m in members]).clamp(min=1e-8)
     normalized = torch.stack([m / s for m, s in zip(members, medians, strict=True)])
     return _midpoint_median(normalized) * _midpoint_median(medians.log()).exp()
+
+
+def _resize_to(depth: torch.Tensor, size: torch.Size) -> torch.Tensor:
+    """Bilinear resize of [B, C, H, W] maps to ``size`` (H, W); unchanged when it already matches."""
+    if depth.shape[-2:] == size:
+        return depth
+    return torch.nn.functional.interpolate(depth, size=size, mode="bilinear", align_corners=False)
 
 
 def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
@@ -343,8 +350,9 @@ class VisionEvaluator:
             depth_seed_ensemble: Also score the log-scale median ensemble
                 (``seed_ensemble_depth``) of this many seeds per image under
                 ``seed_ensemble``. Member 0 is the single-seed prediction the
-                main metrics score; member k uses seed + i + k * 1000. A
-                non-finite output from any member skips the whole batch.
+                main metrics score; member k samples batch i with seed + i +
+                k * ``DEPTH_ENSEMBLE_SEED_STRIDE``. A non-finite output from
+                any member skips the whole batch.
 
         Returns:
             Dictionary of metric name → value (averaged over all batches).
@@ -471,15 +479,6 @@ class VisionEvaluator:
             metrics: dict[str, Any]
             if task == "depth":
                 pred_depth = decode_depth_rgb(pred_rgb, depth_mapper, invert=invert_depth)
-                ensemble_depth = None
-                if ensemble_accumulator is not None:
-                    ensemble_depth = seed_ensemble_depth(
-                        [pred_depth]
-                        + [
-                            decode_depth_rgb(rgb, depth_mapper, invert=invert_depth)
-                            for rgb in member_rgbs
-                        ]
-                    )
                 if relative_accumulator is not None:
                     relative_depth = relative_luminance_depth(pred_rgb)
                 gt_depth = batch.get("gt_depth")
@@ -496,28 +495,9 @@ class VisionEvaluator:
                         )
                     gt_depth = batch["gt_depth_native"].to(self.device)
                     valid_mask = batch["valid_mask_native"].to(self.device)
-                    if pred_depth.shape[-2:] != gt_depth.shape[-2:]:
-                        pred_depth = torch.nn.functional.interpolate(
-                            pred_depth,
-                            size=gt_depth.shape[-2:],
-                            mode="bilinear",
-                            align_corners=False,
-                        )
+                    pred_depth = _resize_to(pred_depth, gt_depth.shape[-2:])
                 if valid_mask is not None:
                     valid_mask = valid_mask.to(self.device)
-                if ensemble_depth is not None:
-                    if ensemble_depth.shape[-2:] != gt_depth.shape[-2:]:
-                        ensemble_depth = torch.nn.functional.interpolate(
-                            ensemble_depth,
-                            size=gt_depth.shape[-2:],
-                            mode="bilinear",
-                            align_corners=False,
-                        )
-                    ensemble_accumulator.update(
-                        *apply_depth_benchmark_protocol(
-                            dataset_name or "", ensemble_depth, gt_depth, valid_mask
-                        )
-                    )
                 pred_depth, gt_depth, valid_mask = apply_depth_benchmark_protocol(
                     dataset_name or "", pred_depth, gt_depth, valid_mask
                 )
@@ -529,26 +509,26 @@ class VisionEvaluator:
                     oracle_depth, oracle_names = oracle_depth_decode(
                         pred_rgb, oracle_mappers, invert=invert_depth
                     )
-                    if oracle_depth.shape[-2:] != gt_depth.shape[-2:]:
-                        oracle_depth = torch.nn.functional.interpolate(
-                            oracle_depth,
-                            size=gt_depth.shape[-2:],
-                            mode="bilinear",
-                            align_corners=False,
-                        )
+                    oracle_depth = _resize_to(oracle_depth, gt_depth.shape[-2:])
                     oracle_depth, oracle_gt, oracle_mask = apply_depth_benchmark_protocol(
                         dataset_name or "", oracle_depth, gt_depth, valid_mask
                     )
                     oracle_accumulator.update(oracle_depth, oracle_gt, oracle_mask)
                     for name in oracle_names:
                         oracle_colormap_hist[name] = oracle_colormap_hist.get(name, 0) + 1
-                if relative_accumulator is not None:
-                    relative_depth = torch.nn.functional.interpolate(
-                        relative_depth,
-                        size=gt_depth.shape[-2:],
-                        mode="bilinear",
-                        align_corners=False,
+                if ensemble_accumulator is not None:
+                    members = [
+                        decode_depth_rgb(rgb, depth_mapper, invert=invert_depth)
+                        for rgb in (pred_rgb, *member_rgbs)
+                    ]
+                    ensemble_depth = _resize_to(seed_ensemble_depth(members), gt_depth.shape[-2:])
+                    ensemble_accumulator.update(
+                        *apply_depth_benchmark_protocol(
+                            dataset_name or "", ensemble_depth, gt_depth, valid_mask
+                        )
                     )
+                if relative_accumulator is not None:
+                    relative_depth = _resize_to(relative_depth, gt_depth.shape[-2:])
                     relative_depth, relative_gt, relative_mask = apply_depth_benchmark_protocol(
                         dataset_name or "", relative_depth, gt_depth, valid_mask
                     )
@@ -817,7 +797,6 @@ class VisionEvaluator:
                 self.last_accumulator_states["seed_ensemble"] = accumulator_state(
                     ensemble_accumulator
                 )
-                self.last_accumulator_states["seed_ensemble_members"] = depth_seed_ensemble
         elif task == "semantic" and semantic_accumulator is not None:
             self.last_accumulator_states = {"main": accumulator_state(semantic_accumulator)}
         elif task == "referring" and referring_accumulator is not None:
@@ -836,7 +815,6 @@ class VisionEvaluator:
                 report["oracle"] = dict(oracle_accumulator.compute())
             if ensemble_accumulator is not None:
                 report["seed_ensemble"] = dict(ensemble_accumulator.compute())
-                report["seed_ensemble_members"] = depth_seed_ensemble
             return report
         if task == "normal" and normal_accumulator is not None:
             return normal_accumulator.compute()

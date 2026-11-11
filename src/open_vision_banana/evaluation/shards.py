@@ -114,15 +114,12 @@ def merged_metrics(shard_states: list[dict[str, Any]]) -> dict[str, Any]:
         depth_curve=_same(shard_states, "depth_curve"),
         depth_units=_same(shard_states, "depth_units"),
     )
-    members = {states.get("seed_ensemble_members") for states in shard_states}
-    if len(members) > 1:
-        raise ValueError(f"shards disagree on the depth seed ensemble: {sorted(members, key=repr)}")
-    (members,) = members
-    if members is not None:
-        report["seed_ensemble"] = dict(
-            merge_accumulator_states([states["seed_ensemble"] for states in shard_states]).compute()
-        )
-        report["seed_ensemble_members"] = members
+    # the ensemble size itself is run metadata, which the shard merge already checks
+    ensemble_states = [states.get("seed_ensemble") for states in shard_states]
+    if len({state is None for state in ensemble_states}) > 1:
+        raise ValueError("shards disagree on the depth seed ensemble reading")
+    if ensemble_states[0] is not None:
+        report["seed_ensemble"] = dict(merge_accumulator_states(ensemble_states).compute())
     return report
 
 
