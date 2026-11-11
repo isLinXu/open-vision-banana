@@ -2,32 +2,41 @@
 
 # 🍌 Open-Vision-Banana
 
-**Image Generators are Generalist Vision Learners**
+**An open reimplementation of "Image Generators are Generalist Vision Learners"**
+
+*Instruction-tune an open image generator so that depth, surface normals and segmentation all come out as RGB images.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-2000+-green.svg)](tests/)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.20329-b31b1b.svg)](https://arxiv.org/abs/2604.20329)
+[![Checkpoints](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints-yellow.svg)](https://huggingface.co/khazic?search=ovb-)
 
-*Unofficial open-source implementation of the Vision Banana paradigm (RGB-parameterized vision tasks via image generation). The paper reports SOTA zero-shot transfer; this repo has not yet reproduced those results — see [Status](#benchmarks-from-paper).*
+[Results](#results) · [Quick Start](#quick-start) · [Training](#training) · [Checkpoints](#checkpoints) · [Datasets](docs/DATASETS.md) · [Paper alignment](#paper-alignment-statement)
 
 </div>
+
+> [!IMPORTANT]
+> This is an **unofficial, community reimplementation**. It is not affiliated with the paper's authors. The paper reports state-of-the-art zero-shot transfer with a closed base model and in-house data; **this repository has not reproduced those numbers**. Measured scores are in [Results](#results).
 
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [How It Works](#how-it-works)
+- [Results](#results)
 - [Supported Tasks](#supported-tasks)
-- [Architecture](#architecture)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Models](#models)
 - [Training](#training)
 - [Key Algorithms](#key-algorithms)
 - [Checkpoints](#checkpoints)
 - [Paper Alignment Statement](#paper-alignment-statement)
-- [Benchmarks](#benchmarks-from-paper)
+- [Benchmarks (from paper)](#benchmarks-from-paper)
 - [Evaluation & Export](#evaluation--export)
+- [Docker](#docker)
 - [Project Structure](#project-structure)
 - [Roadmap & TODO](#roadmap--todo)
 - [Citation](#citation)
@@ -41,7 +50,8 @@ Vision Banana demonstrates that **state-of-the-art visual understanding can emer
 
 > **Key insight**: All vision tasks are parameterized as RGB images, enabling seamless integration with generative models while (per the paper) retaining the base model's generation capability. Generation retention has not been measured in this repo.
 
-**Highlights:**
+**Highlights**
+
 - 🎨 **Unified RGB paradigm** — Vision tasks encoded as RGB images and decoded back to structured outputs
 - 🔧 **Multi-model registry** — Qwen-Image-2.1, SANA and FLUX.1-dev have been trained end to end; the other registered backbones (Z-Image, Lumina2, Chroma, …) are not verified
 - 📊 **Tasks** — Depth, surface normals and semantic / instance / referring segmentation are trained and evaluated; edge, flow, keypoint, detection and depth-edge have mapper code only
@@ -50,52 +60,119 @@ Vision Banana demonstrates that **state-of-the-art visual understanding can emer
 
 ---
 
+## How It Works
+
+```mermaid
+flowchart LR
+    X["Input image"] --> E1["VAE encoder"]
+    P["Task instruction"] --> T["Text encoder"]
+    Y["RGB-encoded target<br/>(depth · normals · masks)"] --> E2["VAE encoder"]
+    E1 -->|"image context"| D["Diffusion transformer<br/>frozen + rsLoRA"]
+    T -->|"text condition"| D
+    N["Gaussian noise"] --> M(("z_t"))
+    E2 --> M
+    M --> D
+    D -->|"flow-matching loss"| L["LoRA update"]
+    D -.->|"inference: ODE solve + VAE decode"| R["RGB prediction"]
+    R --> DEC["Task decoder"]
+    DEC --> O["Metric depth · normals · masks"]
+```
+
+1. **Every task is an image.** Depth is passed through a power curve and painted along a path on the edges of the RGB cube; normals map linearly to RGB; segmentation classes, instances and referred objects are painted in prompt-specified colors.
+2. **One generator, one adapter.** A pretrained image generator is instruction-tuned with rsLoRA on a mixture of vision-task pairs and its own generation / editing data, using the standard flow-matching loss. The diagram shows the instruction-editing layout used by Qwen-Image-2.1, where the input image is context and the target is generated from noise.
+3. **Decoding has no learned parameters.** The predicted RGB image is inverted back to metric depth, unit normals or masks by the same mapping that produced the training targets.
+
+---
+
+## Results
+
+### Measurements in this repository
+
+Metric depth δ1 without scale alignment, and segmentation metrics, at native ground-truth resolution: NYU n=654, ETH3D n=454, DIODE indoor n=325, Cityscapes n=500, RefCOCOg n=4896, ReasonSeg n=200. Repos for each row are listed under [Checkpoints](#checkpoints).
+
+| Run | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
+|-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
+| Parent (step 0) | 0.134 | 0.122 | 0.109 | 0.342 | 0.498 | **0.328** |
+| C1: depth 75 %, cube-edge only | **0.348** | 0.233 | **0.321** | 0.346 | 0.424 | 0.303 |
+| T0: all tasks + 10 % replay | 0.131 | 0.237 | 0.216 | 0.335 | 0.438 | 0.287 |
+| T1: no normals | 0.149 | 0.192 | 0.180 | 0.337 | 0.467 | 0.271 |
+| T2: depth 75 %, five colormaps | 0.179 | **0.251** | 0.241 | 0.331 | 0.291 | 0.276 |
+| T3: segmentation specialist | 0.050 | 0.032 | 0.143 | 0.264 | 0.519 | 0.304 |
+| I101-h1: full fine-tune, lr 5e-6 | 0.222 | 0.193 | 0.247 | 0.362 | 0.241 | 0.175 |
+| I102-i1: LoRA | 0.099 | 0.195 | 0.115 | **0.368** | **0.547** | 0.321 |
+| Vision Banana (paper) | 0.948 | 0.935 | 0.917 | 0.699 | 0.738 | 0.793 |
+
+No run improves depth and segmentation together, and none beats the parent on every benchmark. The depth gap is mostly absolute scale: with per-image median alignment the best δ1 rises to 0.845 / 0.906 / 0.855 on NYU / ETH3D / DIODE, but aligned δ1 is a diagnostic only and is not comparable to the paper's protocol.
+
+<details>
+<summary><b>Earlier SANA-1600M and FLUX.1-dev runs</b></summary>
+
+These scores use the official splits, native ground-truth resolution, and the pixel-weighted metrics in `scripts/evaluate_paper_benchmarks.py`. They are not Table 1. `delta_1.25_aligned` is a per-image median-scale diagnostic. The depth gate requires metric δ1 at least 0.10 above the best non-oracle trivial baseline and AbsRel no worse than that baseline. Every depth row below failed that gate.
+
+SANA relative depth, [`ovb-fix_ctrl_depth`](https://huggingface.co/khazic/ovb-fix_ctrl_depth) EMA, 20 steps, grayscale with bright=near:
+
+| Dataset | n | δ1 | AbsRel | aligned δ1 |
+|---------|--:|---:|-------:|-----------:|
+| NYU Eigen + 10 m | 654 | 0.066 | 1.990 | 0.427 |
+| DIODE indoor | 325 | 0.083 | 550.1 | 0.322 |
+| KITTI Garg + 80 m | 1000 | 0.264 | 0.436 | 0.471 |
+| ETH3D public DSLR + 80 m | 454 | 0.186 | 1.765 | 0.418 |
+| iBims-1 | 100 | 0.101 | 229.5 | 0.345 |
+
+SANA metric depth, local Hypersim cube-edge EMA (`sana_1600m_hypersim_metric_depth`, step 3000), 20 steps, no luminance invert:
+
+| Dataset | n | δ1 | AbsRel | aligned δ1 |
+|---------|--:|---:|-------:|-----------:|
+| NYU Eigen + 10 m | 654 | 0.124 | 1.251 | 0.323 |
+| DIODE indoor | 325 | 0.184 | 18.62 | 0.494 |
+| KITTI Garg + 80 m | 1000 | 0.051 | 0.773 | 0.241 |
+| ETH3D public DSLR + 80 m | 454 | 0.292 | 0.543 | 0.486 |
+| iBims-1 | 100 | 0.179 | 23.02 | 0.393 |
+
+SANA normals, [`ovb-fix_ctrl_normal`](https://huggingface.co/khazic/ovb-fix_ctrl_normal) EMA, DIODE indoor n=325: mean angle 24.96°, median 17.01°. Both normal gates passed. This is not the paper's 13.818°. NYU, ScanNet and VKITTI normal maps are not in the eval tree.
+
+SANA referring, [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg) step-30000 adapter (no EMA), RefCOCOg UMD val n=4896: cIoU 0.143, gIoU 0.158, Precision@0.5 0.089. The paper's cIoU is 0.738. Cityscapes semantic mIoU was not measured for the SANA runs.
+
+FLUX.1-dev specialist `ovb-flux3_ctrl_depth_nominsnr_15k`, 20 steps, 4-bit, closer-brighter grayscale:
+
+| Dataset | n | δ1 | AbsRel | aligned δ1 |
+|---------|--:|---:|-------:|-----------:|
+| NYU Eigen + 10 m | 654 | 0.155 | 1.472 | 0.202 |
+| DIODE indoor | 325 | 0.140 | 2433 | 0.219 |
+| KITTI Garg + 80 m | 1000 | 0.095 | 0.778 | 0.178 |
+| ETH3D public DSLR + 80 m | 454 | 0.163 | 1.398 | 0.206 |
+| iBims-1 | 100 | 0.179 | 2096 | 0.206 |
+
+FLUX.1-dev specialist `ovb-flux3_ctrl_normal_nominsnr_15k`, DIODE indoor n=325: mean angle 91.09°, median 91.51°. That is chance-level orientation, not the paper's 13.818°.
+
+FLUX.1 Kontext Hypersim metric EMA finished 3000/3000 (`flow_loss=0.1526`). NYU official_test (654, cube-edge, 28 steps) is still running. `ovb-flux3_ctrl_seg_nominsnr_15k` has no Cityscapes `gtFine` here, so semantic mIoU is not measured.
+
+</details>
+
+Paper reference numbers and the per-benchmark status table are in [Benchmarks (from paper)](#benchmarks-from-paper).
+
+---
+
 ## Supported Tasks
 
-| Task | Encoding | Status |
-|------|----------|:------:|
-| Semantic Segmentation | Color mapping: `{"cat": "red", "background": "yellow"}` | ✅ |
-| Instance Segmentation | "Each dog is colored differently" | ✅ |
-| Referring Expression Segmentation | "The man in pink t shirt is rendered solid white" | ✅ |
-| Metric Depth Estimation | Power transform + 7 colormaps (cube-edge, plasma, inferno, viridis, grayscale, rainbow, turbo) | ✅ |
-| Surface Normal Estimation | Direct linear mapping (x,y,z) → (R,G,B) | ✅ |
-| Edge Detection | "Edges are white, background is black" | ✅ |
-| Optical Flow | HSV encoding: direction=hue, magnitude=saturation | ✅ |
-| 2D Keypoint Detection | Colored dots per keypoint type | ✅ |
-| Object Detection | Colored bounding box per class | ✅ |
-| Depth Edge Detection | Depth discontinuity → white edges | ✅ |
+| Task | RGB encoding | Encoder / decoder | Public-data training pipeline |
+|------|--------------|:-----------------:|:---------------------:|
+| Metric Depth Estimation | Power transform + colormap (cube-edge, plasma, inferno, viridis, grayscale, rainbow, turbo) | ✅ | ✅ |
+| Surface Normal Estimation | Direct linear mapping (x,y,z) → (R,G,B) | ✅ | ✅ |
+| Semantic Segmentation | Color mapping: `{"cat": "red", "background": "yellow"}` | ✅ | ✅ |
+| Instance Segmentation | "Each dog is colored differently" | ✅ | ✅ |
+| Referring Expression Segmentation | "The man in pink t shirt is rendered solid white" | ✅ | ✅ |
+| Edge Detection | "Edges are white, background is black" | ✅ | — |
+| Optical Flow | HSV encoding: direction=hue, magnitude=saturation | ✅ | — |
+| 2D Keypoint Detection | Colored dots per keypoint type | ✅ | — |
+| Object Detection | Colored bounding box per class | ✅ | — |
+| Depth Edge Detection | Depth discontinuity → white edges | ✅ | — |
 
 The first five rows are the paper's tasks and have a verified public-data pipeline
 (download → prepare → merge → zero-shot audit → `Trainer`, see
 [`docs/DATASETS.md`](docs/DATASETS.md)) plus a sixth `generation` task for the
 paper's generation-preservation mixing. The remaining rows have RGB encoders /
 decoders and inference wiring but no curated training source in this repository.
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Vision Banana                             │
-│                                                                  │
-│   ┌──────────────┐    ┌─────────────────────────┐    ┌────────┐ │
-│   │ Prompt Builder│───▶│   Diffusion Model       │───▶│  RGB   │ │
-│   │              │    │   (FLUX / SANA / ZImage / │    │ Output │ │
-│   └──────────────┘    │    Qwen-Image / ...)     │    └────────┘ │
-│          │             └─────────────────────────┘        │      │
-│          ▼                       │                        ▼      │
-│    Depth Decoder           Backbone               Segmentation   │
-│                              (Transformer/UNet)      Decoder    │
-│                                                                  │
-│   ┌──────────────────────────────────────────────────────────┐  │
-│   │              Instruction Tuning (rsLoRA)                 │  │
-│   │   LoRA rank=16~64, alpha=32~128, rsLoRA scaling         │  │
-│   │   Data mix: 9:1 vision-to-language                      │  │
-│   │   Params trained: 0.5%-1% of total                      │  │
-│   └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -147,13 +224,10 @@ instances = decoder.decode_instance(rgb)
 ```python
 from open_vision_banana import VisionBanana
 
-# Load model (local path, hf:repo/id, or registry:alias)
-model = VisionBanana.from_pretrained(lora_path="registry:vision-banana")
-
-# Or specify a different base model
+# Load a base model plus a LoRA checkpoint (local path, hf:repo/id, or registry:alias)
 model = VisionBanana.from_pretrained(
     lora_path="path/to/checkpoint",
-    model_name="sana-1600m",  # or "z-image", "qwen-image", etc.
+    model_name="qwen-image-2.1",  # or "sana-1600m", "flux-dev", ...
 )
 
 # 16GB GPU: enable CPU offload
@@ -166,7 +240,38 @@ model = VisionBanana.from_pretrained(
 result = model.predict(image=input_image, task="depth")
 ```
 
-### Supported Base Models
+### CLI Inference
+
+```bash
+# List the registry aliases (the generic `vision-banana*` aliases are placeholders without weights)
+python scripts/download_checkpoint.py --list
+
+# Inference on 16GB GPU
+python scripts/inference.py --image input.jpg --task depth \
+  --lora-path path/to/checkpoint --cpu-offload --vae-slicing
+
+# SANA multi-task visualization on a manifest's val split (input / target / prediction)
+python scripts/infer_sana_512.py \
+  --data-dir /path/to/dataset --pair-manifest /path/to/pairs.jsonl \
+  --checkpoint path/to/checkpoint/lora.pt \
+  --model-name sana-1600m --lora-rank 32 --lora-alpha 64 \
+  --num-inference-steps 20 --output-dir output/infer_sana
+```
+
+---
+
+## Models
+
+Trained end to end with the unified trainer and published on the Hub:
+
+| Model | `model_name` | Notes |
+|-------|--------------|-------|
+| Qwen-Image-2.1 | `qwen-image-2.1` | Current main line; instruction-editing layout |
+| SANA-1600M | `sana-1600m` | Earlier runs; text-to-image backbone |
+| FLUX.1-dev | `flux-dev` | Earlier runs; 4-bit quantized transformer |
+
+<details>
+<summary><b>Other registered base models (not trained end to end here)</b></summary>
 
 | Model | Family | Size | License | VRAM |
 |-------|--------|------|---------|------|
@@ -178,7 +283,10 @@ result = model.predict(image=input_image, task="depth")
 | Lumina2 | lumina2 | ~3B | Apache-2.0 | ~16GB |
 | Chroma | chroma | ~3B | MIT | ~16GB |
 
-### Instruction-editing models
+</details>
+
+<details>
+<summary><b>Instruction-editing models</b></summary>
 
 These checkpoints take a source image plus an instruction. Each one has a training forward that follows that model's official conditioning. The diffusers classes have been executed at tiny width. A full fine-tune of those Hub checkpoints has not been run, except the in-progress FLUX.1 Kontext depth run.
 
@@ -194,23 +302,7 @@ These checkpoints take a source image plus an instruction. Each one has a traini
 
 `hunyuan-image` stays the HunyuanImage 2.1 text-to-image pipeline.
 
-### CLI Inference
-
-```bash
-# Download checkpoint
-python scripts/download_checkpoint.py --alias vision-banana --output-dir checkpoints/
-
-# Inference on 16GB GPU
-python scripts/inference.py --image input.jpg --task depth \
-  --lora-path registry:vision-banana --cpu-offload --vae-slicing
-
-# SANA multi-task visualization on a manifest's val split (input / target / prediction)
-python scripts/infer_sana_512.py \
-  --data-dir /path/to/dataset --pair-manifest /path/to/pairs.jsonl \
-  --checkpoint path/to/checkpoint/lora.pt \
-  --model-name sana-1600m --lora-rank 32 --lora-alpha 64 \
-  --num-inference-steps 20 --output-dir output/infer_sana
-```
+</details>
 
 ---
 
@@ -285,31 +377,6 @@ The framework consists of modular components:
 | `TrainingCallbacks` | `training/callbacks.py` | W&B logging + checkpoint + validation tracking |
 | `Trainer` | `training/trainer.py` | Core training loop assembling all modules |
 
-### Legacy Training Scripts
-
-Model-specific scripts are preserved for reference and backward compatibility:
-
-```bash
-# SANA training (legacy)
-PYTHONPATH=src python scripts/train_sana_512.py \
-  --config configs/sana_1600m_3task.yaml
-
-# FLUX training (legacy)
-PYTHONPATH=src python scripts/train_flux.py \
-  --config configs/flux_3task_full_clean.yaml --wandb
-```
-
-### Hardware-specific Launch
-
-| GPU | VRAM | Launcher |
-|-----|------|----------|
-| H20 | 96GB | `bash scripts/launch_h20_single.sh` |
-| H20 ×8 | 96GB×8 | `bash scripts/launch_h20_ddp.sh` |
-| A100-80GB | 80GB | `bash scripts/launch_training_a100_80g.sh` |
-| A100-40GB | 40GB | `bash scripts/train_a100_40g_deepspeed.sh` |
-| RTX 4090 | 24GB | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
-| MPS (Apple) | Unified | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
-
 ### Data Preparation
 
 One-command fetch of every public source in the paper-aligned recipe (registry:
@@ -335,7 +402,39 @@ python scripts/download_data.py --dataset hypersim-depth --output data/hypersim/
 python scripts/validate_dataset.py --data-path data/hypersim_depth/ --task depth
 ```
 
-### Inference Optimization
+<details>
+<summary><b>Hardware-specific launchers</b></summary>
+
+| GPU | VRAM | Launcher |
+|-----|------|----------|
+| H20 | 96GB | `bash scripts/launch_h20_single.sh` |
+| H20 ×8 | 96GB×8 | `bash scripts/launch_h20_ddp.sh` |
+| A100-80GB | 80GB | `bash scripts/launch_training_a100_80g.sh` |
+| A100-40GB | 40GB | `bash scripts/train_a100_40g_deepspeed.sh` |
+| RTX 4090 | 24GB | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
+| MPS (Apple) | Unified | `PYTHONPATH=src python scripts/train.py --config <yaml>` |
+
+</details>
+
+<details>
+<summary><b>Legacy model-specific training scripts</b></summary>
+
+Model-specific scripts are preserved for reference and backward compatibility:
+
+```bash
+# SANA training (legacy)
+PYTHONPATH=src python scripts/train_sana_512.py \
+  --config configs/sana_1600m_3task.yaml
+
+# FLUX training (legacy)
+PYTHONPATH=src python scripts/train_flux.py \
+  --config configs/flux_3task_full_clean.yaml --wandb
+```
+
+</details>
+
+<details>
+<summary><b>Inference optimization presets</b></summary>
 
 | Preset | Target VRAM | Speed | Quality | Key Options |
 |--------|-------------|:-----:|:-------:|-------------|
@@ -344,6 +443,8 @@ python scripts/validate_dataset.py --data-path data/hypersim_depth/ --task depth
 | `memory` | ~8 GB | ★★ | ★★★ | float16 + sequential offload + INT8 mappers |
 | `quality` | ~40 GB | ★★★ | ★★★★★ | bfloat16 + max-autotune compile |
 | `cpu` | RAM only | ★ | ★★★ | float32 + sequential offload |
+
+</details>
 
 ---
 
@@ -420,9 +521,7 @@ SANA / FLUX task-matched runs:
 
 The `fix_*` depth LoRAs were trained as closer-brighter grayscale. Decode them with `--depth-colormap grayscale --invert-depth`. A separate local SANA-1600M Hypersim run (cube-edge metric metres, not a Hub `ovb-*` repo) is listed separately.
 
-## Project page
-
-Static GitHub Pages site in [`website/`](website/) (results and gallery render from `website/data/*.json`; publish with `bash scripts/publish_site.sh` to the `gh-pages` branch, then enable Pages from that branch).
+---
 
 ## Paper Alignment Statement
 
@@ -439,6 +538,8 @@ Static GitHub Pages site in [`website/`](website/) (results and gallery render f
 
 3. **Closed, not reproducible by any open implementation.** The Nano Banana Pro base model, the in-house 2D annotations and internal 3D renders, and the human pairwise generation study (GenAI-Bench 53.5 % / ImgEdit 47.8 %). This repository substitutes Qwen-Image-2.1 / Qwen-Image-Edit, public data (SNVC, Hypersim, TartanAir, BlendedMVS, COCO, LVIS, Rea2Seg) and an FID/LPIPS proxy that can only show the absence of severe generation degradation. **The paper's benchmark numbers are therefore not a target of this repository and are reported in the next section for reference only.**
 
+---
+
 ## Benchmarks (from paper)
 
 > These are the **paper's** numbers (Nano Banana Pro base, undisclosed in-house data). This repository has **not** reproduced them. Measured scores, gates, and blocked benches are in [`docs/EXPERIMENTAL_RESULTS_2026-10-10.md`](docs/EXPERIMENTAL_RESULTS_2026-10-10.md).
@@ -453,7 +554,8 @@ Static GitHub Pages site in [`website/`](website/) (results and gallery render f
 | Depth | 4-dataset avg (NYU/ETH3D/DIODE/KITTI) | δ1↑ | **0.929** | 0.918 (Depth Anything 3) |
 | Normal | 4-dataset avg | mean°↓ | **18.928** | 19.642 (Lotus-2) |
 
-### Paper capability scorecard (this repository)
+<details>
+<summary><b>Per-benchmark status of this repository</b></summary>
 
 The paper evaluates three axes. This table is the current measured-or-blocked status, not Table 1. Paper numbers stay in the left column only.
 
@@ -476,63 +578,7 @@ The paper evaluates three axes. This table is the current measured-or-blocked st
 
 `--benchmark 2d|3d|generation|all` now groups those jobs. ReasonSeg, SA-Co/Gold, nuScenes, GenAI-Bench, and ImgEdit roots are `--reasonseg-root`, `--saco-root`, `--nuscenes-root`, `--genai-bench-root`, `--imgedit-root`.
 
-### Measurements in this repository
-
-**Qwen-Image-2.1 (current main line).** Metric depth δ1 without scale alignment, and segmentation metrics, at native ground-truth resolution: NYU n=654, ETH3D n=454, DIODE indoor n=325, Cityscapes n=500, RefCOCOg n=4896, ReasonSeg n=200. Repos for each row are listed under [Checkpoints](#checkpoints).
-
-| Run | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
-|-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
-| Parent (step 0) | 0.134 | 0.122 | 0.109 | 0.342 | 0.498 | **0.328** |
-| C1: depth 75 %, cube-edge only | **0.348** | 0.233 | **0.321** | 0.346 | 0.424 | 0.303 |
-| T0: all tasks + 10 % replay | 0.131 | 0.237 | 0.216 | 0.335 | 0.438 | 0.287 |
-| T1: no normals | 0.149 | 0.192 | 0.180 | 0.337 | 0.467 | 0.271 |
-| T2: depth 75 %, five colormaps | 0.179 | **0.251** | 0.241 | 0.331 | 0.291 | 0.276 |
-| T3: segmentation specialist | 0.050 | 0.032 | 0.143 | 0.264 | 0.519 | 0.304 |
-| I101-h1: full fine-tune, lr 5e-6 | 0.222 | 0.193 | 0.247 | 0.362 | 0.241 | 0.175 |
-| I102-i1: LoRA | 0.099 | 0.195 | 0.115 | **0.368** | **0.547** | 0.321 |
-| Vision Banana (paper) | 0.948 | 0.935 | 0.917 | 0.699 | 0.738 | 0.793 |
-
-No run improves depth and segmentation together, and none beats the parent on every benchmark. The depth gap is mostly absolute scale: with per-image median alignment the best δ1 rises to 0.845 / 0.906 / 0.855 on NYU / ETH3D / DIODE, but aligned δ1 is a diagnostic only and is not comparable to the paper's protocol.
-
-**SANA / FLUX (earlier runs).** These scores use the official splits, native ground-truth resolution, and the pixel-weighted metrics in `scripts/evaluate_paper_benchmarks.py`. They are not Table 1. `delta_1.25_aligned` is a per-image median-scale diagnostic. The depth gate requires metric δ1 at least 0.10 above the best non-oracle trivial baseline and AbsRel no worse than that baseline. Every depth row below failed that gate.
-
-SANA relative depth, [`ovb-fix_ctrl_depth`](https://huggingface.co/khazic/ovb-fix_ctrl_depth) EMA, 20 steps, grayscale with bright=near:
-
-| Dataset | n | δ1 | AbsRel | aligned δ1 |
-|---------|--:|---:|-------:|-----------:|
-| NYU Eigen + 10 m | 654 | 0.066 | 1.990 | 0.427 |
-| DIODE indoor | 325 | 0.083 | 550.1 | 0.322 |
-| KITTI Garg + 80 m | 1000 | 0.264 | 0.436 | 0.471 |
-| ETH3D public DSLR + 80 m | 454 | 0.186 | 1.765 | 0.418 |
-| iBims-1 | 100 | 0.101 | 229.5 | 0.345 |
-
-SANA metric depth, local Hypersim cube-edge EMA (`sana_1600m_hypersim_metric_depth`, step 3000), 20 steps, no luminance invert:
-
-| Dataset | n | δ1 | AbsRel | aligned δ1 |
-|---------|--:|---:|-------:|-----------:|
-| NYU Eigen + 10 m | 654 | 0.124 | 1.251 | 0.323 |
-| DIODE indoor | 325 | 0.184 | 18.62 | 0.494 |
-| KITTI Garg + 80 m | 1000 | 0.051 | 0.773 | 0.241 |
-| ETH3D public DSLR + 80 m | 454 | 0.292 | 0.543 | 0.486 |
-| iBims-1 | 100 | 0.179 | 23.02 | 0.393 |
-
-SANA normals, [`ovb-fix_ctrl_normal`](https://huggingface.co/khazic/ovb-fix_ctrl_normal) EMA, DIODE indoor n=325: mean angle 24.96°, median 17.01°. Both normal gates passed. This is not the paper's 13.818°. NYU, ScanNet and VKITTI normal maps are not in the eval tree.
-
-SANA referring, [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg) step-30000 adapter (no EMA), RefCOCOg UMD val n=4896: cIoU 0.143, gIoU 0.158, Precision@0.5 0.089. The paper's cIoU is 0.738. Cityscapes semantic mIoU was not measured for the SANA runs.
-
-FLUX.1-dev specialist `ovb-flux3_ctrl_depth_nominsnr_15k`, 20 steps, 4-bit, closer-brighter grayscale:
-
-| Dataset | n | δ1 | AbsRel | aligned δ1 |
-|---------|--:|---:|-------:|-----------:|
-| NYU Eigen + 10 m | 654 | 0.155 | 1.472 | 0.202 |
-| DIODE indoor | 325 | 0.140 | 2433 | 0.219 |
-| KITTI Garg + 80 m | 1000 | 0.095 | 0.778 | 0.178 |
-| ETH3D public DSLR + 80 m | 454 | 0.163 | 1.398 | 0.206 |
-| iBims-1 | 100 | 0.179 | 2096 | 0.206 |
-
-FLUX.1-dev specialist `ovb-flux3_ctrl_normal_nominsnr_15k`, DIODE indoor n=325: mean angle 91.09°, median 91.51°. That is chance-level orientation, not the paper's 13.818°.
-
-FLUX.1 Kontext Hypersim metric EMA finished 3000/3000 (`flow_loss=0.1526`). NYU official_test (654, cube-edge, 28 steps) is still running. `ovb-flux3_ctrl_seg_nominsnr_15k` has no Cityscapes `gtFine` here, so semantic mIoU is not measured.
+</details>
 
 ---
 
@@ -612,6 +658,9 @@ Interactive Colab demo: [`notebooks/colab_demo.ipynb`](notebooks/colab_demo.ipyn
 
 ## Project Structure
 
+<details>
+<summary><b>Directory layout</b></summary>
+
 ```
 open-vision-banana/
 ├── src/open_vision_banana/
@@ -666,6 +715,10 @@ open-vision-banana/
 ├── docker/                      # CPU/GPU Docker images
 └── notebooks/                   # Colab demo
 ```
+
+</details>
+
+Project page: static GitHub Pages site in [`website/`](website/) (results and gallery render from `website/data/*.json`; publish with `bash scripts/publish_site.sh` to the `gh-pages` branch, then enable Pages from that branch).
 
 ---
 
