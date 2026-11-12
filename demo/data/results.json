@@ -1,0 +1,1889 @@
+{
+ "generated_at": "2026-11-02",
+ "commit": "7a41d27",
+ "source_count": 138,
+ "report_url": null,
+ "inference_protocol": {
+  "num_inference_steps": 50,
+  "guidance_scale": 4.0,
+  "strength": 0.85,
+  "seed": 42,
+  "canvas_resolution": 512,
+  "native_resolution_scoring": true,
+  "note": "Repository choice; the paper states no inference settings. Written into every evaluation JSON's metadata."
+ },
+ "benchmarks": [
+  {
+   "key": "cityscapes",
+   "label": "Cityscapes",
+   "metric": "mIoU",
+   "digits": 1,
+   "paper": 69.9
+  },
+  {
+   "key": "refcocog",
+   "label": "RefCOCOg",
+   "metric": "cIoU",
+   "digits": 1,
+   "paper": 73.8
+  },
+  {
+   "key": "reasonseg",
+   "label": "ReasonSeg",
+   "metric": "gIoU",
+   "digits": 1,
+   "paper": 79.3
+  },
+  {
+   "key": "nyu",
+   "label": "NYUv2",
+   "metric": "δ1",
+   "digits": 3,
+   "paper": 0.948
+  },
+  {
+   "key": "eth3d",
+   "label": "ETH3D",
+   "metric": "δ1",
+   "digits": 3,
+   "paper": 0.935
+  },
+  {
+   "key": "diode",
+   "label": "DIODE-Indoor",
+   "metric": "δ1",
+   "digits": 3,
+   "paper": 0.917
+  }
+ ],
+ "runs": {
+  "base": {
+   "label": "Qwen-Image-2.1, untuned",
+   "recipe": "no adapter; same prompts, decoders and protocol",
+   "repo": "khazic/ovb-ft_step0_base",
+   "eval_dir": "eval_0",
+   "values": {
+    "cityscapes": {
+     "v": 21.4888,
+     "n": 500,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.077,
+     "n": 325,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1193,
+     "n": 454,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 2.5183,
+     "n": 454,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0723,
+     "n": 654,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.7228,
+     "n": 654,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 25.4363,
+     "n": 200,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 37.6196,
+     "n": 4896,
+     "src": "khazic/ovb-ft_step0_base/eval_0/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 0.0,
+    "lpips": 0.0,
+    "n": 200,
+    "src": "khazic/ovb-ft_step0_base/eval_0/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e1_5k": {
+   "label": "E1 @ 5k",
+   "recipe": "six tasks, vision_ratio 0.5, lr 1e-4",
+   "repo": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250",
+   "eval_dir": "eval_5000",
+   "values": {
+    "cityscapes": {
+     "v": 27.2477,
+     "n": 500,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.0661,
+     "n": 325,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.0269,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 4.2056,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1159,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.9017,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 35.3105,
+     "n": 200,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 49.6745,
+     "n": 4896,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_5000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e1_10k": {
+   "label": "E1 @ 10k",
+   "recipe": "six tasks, vision_ratio 0.5, lr 1e-4",
+   "repo": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 33.0746,
+     "n": 500,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.0654,
+     "n": 325,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.0397,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 2.847,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0425,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.5832,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 26.586,
+     "n": 200,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 33.7059,
+     "n": 4896,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e1_15k": {
+   "label": "E1 @ 15k",
+   "recipe": "six tasks, vision_ratio 0.5, lr 1e-4",
+   "repo": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250",
+   "eval_dir": "eval_15000",
+   "values": {
+    "cityscapes": {
+     "v": 29.3848,
+     "n": 500,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.141,
+     "n": 325,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.0912,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.8183,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.164,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.2558,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 30.132,
+     "n": 200,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 40.9454,
+     "n": 4896,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_15000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e1_30k": {
+   "label": "E1 @ 30k",
+   "recipe": "six tasks, vision_ratio 0.5, lr 1e-4",
+   "repo": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250",
+   "eval_dir": "eval_30000",
+   "values": {
+    "cityscapes": {
+     "v": 32.6803,
+     "n": 500,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.0862,
+     "n": 325,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1278,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.5794,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0456,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 2.2374,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 29.6647,
+     "n": 200,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 42.2701,
+     "n": 4896,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e1_30k_s43": {
+   "label": "E1 @ 30k, inference seed 43",
+   "recipe": "same checkpoint",
+   "repo": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250",
+   "eval_dir": "eval_30000_seed43",
+   "values": {
+    "cityscapes": {
+     "v": 31.7078,
+     "n": 500,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.0866,
+     "n": 325,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1135,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.6242,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0474,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 2.2349,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 30.216,
+     "n": 200,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 42.7464,
+     "n": 4896,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_seed43/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    43,
+    512
+   ]
+  },
+  "e1_30k_cfg0": {
+   "label": "E1 @ 30k, CFG 0",
+   "recipe": "same checkpoint",
+   "repo": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250",
+   "eval_dir": "eval_30000_nocfg",
+   "values": {
+    "cityscapes": {
+     "v": 25.5122,
+     "n": 500,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.0901,
+     "n": 325,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1272,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.6285,
+     "n": 454,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0731,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 2.0531,
+     "n": 654,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 28.7391,
+     "n": 200,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 37.8282,
+     "n": 4896,
+     "src": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250/eval_30000_nocfg/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    0.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e2b": {
+   "label": "E2b @ 10k",
+   "recipe": "E1 recipe on ¼ of the vision rows (cap 10k per task)",
+   "repo": "khazic/ovb-e2b_cap10k_s42_20261026_1016",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 34.1945,
+     "n": 500,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1087,
+     "n": 325,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1225,
+     "n": 454,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 4.9087,
+     "n": 454,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1344,
+     "n": 654,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.4682,
+     "n": 654,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 32.8133,
+     "n": 200,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 49.808,
+     "n": 4896,
+     "src": "khazic/ovb-e2b_cap10k_s42_20261026_1016/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e2_02_s42": {
+   "label": "vision_ratio 0.2, seed 42",
+   "recipe": "E1 recipe, 10k steps",
+   "repo": "khazic/ovb-e2_vr02_s42_20261026_1708",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 24.8416,
+     "n": 500,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.0828,
+     "n": 325,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1749,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.6984,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1196,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.7576,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 30.0407,
+     "n": 200,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 37.6474,
+     "n": 4896,
+     "src": "khazic/ovb-e2_vr02_s42_20261026_1708/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e2_02_s43": {
+   "label": "vision_ratio 0.2, seed 43",
+   "recipe": "E1 recipe, 10k steps",
+   "repo": "khazic/ovb-e2_vr02_s43_20261026_1841",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 23.6988,
+     "n": 500,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1273,
+     "n": 325,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.0403,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 3.5231,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1138,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.5438,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 14.8573,
+     "n": 200,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 23.4158,
+     "n": 4896,
+     "src": "khazic/ovb-e2_vr02_s43_20261026_1841/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e2_08_s42": {
+   "label": "vision_ratio 0.8, seed 42",
+   "recipe": "E1 recipe, 10k steps",
+   "repo": "khazic/ovb-e2_vr08_s42_20261026_1837",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 29.5671,
+     "n": 500,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.0597,
+     "n": 325,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1418,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.8678,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0521,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 2.2708,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 28.9557,
+     "n": 200,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 38.4218,
+     "n": 4896,
+     "src": "khazic/ovb-e2_vr08_s42_20261026_1837/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "e2_08_s43": {
+   "label": "vision_ratio 0.8, seed 43",
+   "recipe": "E1 recipe, 10k steps",
+   "repo": "khazic/ovb-e2_vr08_s43_20261026_2148",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 34.7612,
+     "n": 500,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1107,
+     "n": 325,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1282,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.2629,
+     "n": 454,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1045,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.6292,
+     "n": 654,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 28.1147,
+     "n": 200,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 47.5267,
+     "n": 4896,
+     "src": "khazic/ovb-e2_vr08_s43_20261026_2148/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": null,
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "parent": {
+   "label": "Parent (E2b final), step 0",
+   "recipe": "shared start of #88 / #91",
+   "repo": "khazic/ovb-i88_parent_e2b_final",
+   "eval_dir": "eval_0",
+   "values": {
+    "cityscapes": {
+     "v": 35.2549,
+     "n": 500,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1153,
+     "n": 325,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1292,
+     "n": 454,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 5.0248,
+     "n": 454,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1402,
+     "n": 654,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.4551,
+     "n": 654,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 32.9502,
+     "n": 200,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 49.9271,
+     "n": 4896,
+     "src": "khazic/ovb-i88_parent_e2b_final/eval_0/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.662,
+    "lpips": 0.456,
+    "n": 200,
+    "src": "khazic/ovb-i88_parent_e2b_final/eval_0/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "t0": {
+   "label": "T0 · all six tasks",
+   "recipe": "replay 10%, five vision tasks 18% each",
+   "repo": "khazic/ovb-i88_t0_full_replay10_20261029_2202",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 33.4871,
+     "n": 500,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.2155,
+     "n": 325,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.237,
+     "n": 454,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 0.6339,
+     "n": 454,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1306,
+     "n": 654,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.1206,
+     "n": 654,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 28.6969,
+     "n": 200,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 43.78,
+     "n": 4896,
+     "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.244,
+    "lpips": 0.468,
+    "n": 200,
+    "src": "khazic/ovb-i88_t0_full_replay10_20261029_2202/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "t1": {
+   "label": "T1 · no normals",
+   "recipe": "replay 10%, four vision tasks 22.5% each",
+   "repo": "khazic/ovb-i88_t1_no_normal_20261030_1602",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 33.652,
+     "n": 500,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1803,
+     "n": 325,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1923,
+     "n": 454,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.1673,
+     "n": 454,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1488,
+     "n": 654,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.2038,
+     "n": 654,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 27.1026,
+     "n": 200,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 46.7354,
+     "n": 4896,
+     "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.72,
+    "lpips": 0.481,
+    "n": 200,
+    "src": "khazic/ovb-i88_t1_no_normal_20261030_1602/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "t2": {
+   "label": "T2 · depth only",
+   "recipe": "depth 75% (five colormaps), replay 25%",
+   "repo": "khazic/ovb-i88_t2_depth_replay_resume_20261030",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 33.1144,
+     "n": 500,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.2405,
+     "n": 325,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.251,
+     "n": 454,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 0.9235,
+     "n": 454,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1791,
+     "n": 654,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.1782,
+     "n": 654,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 27.5525,
+     "n": 200,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 29.0658,
+     "n": 4896,
+     "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.363,
+    "lpips": 0.466,
+    "n": 200,
+    "src": "khazic/ovb-i88_t2_depth_replay_resume_20261030/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "c1": {
+   "label": "C1 · depth only, cube-edge",
+   "recipe": "as T2, cube-edge colormap only",
+   "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 34.5523,
+     "n": 500,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.3205,
+     "n": 325,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.2329,
+     "n": 454,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 0.5788,
+     "n": 454,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.3483,
+     "n": 654,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 0.5846,
+     "n": 654,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 30.2876,
+     "n": 200,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 42.3867,
+     "n": 4896,
+     "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.589,
+    "lpips": 0.457,
+    "n": 200,
+    "src": "khazic/ovb-i88_c1_depth_cube100_20261030_1602/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "t3": {
+   "label": "T3 · segmentation only",
+   "recipe": "semantic / instance / referring / replay 25% each",
+   "repo": "khazic/ovb-i88_t3_seg_replay_20261030_1602",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 26.376,
+     "n": 500,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1435,
+     "n": 325,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.0318,
+     "n": 454,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 3.4001,
+     "n": 454,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0505,
+     "n": 654,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.1949,
+     "n": 654,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 30.438,
+     "n": 200,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 51.9336,
+     "n": 4896,
+     "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 5.135,
+    "lpips": 0.581,
+    "n": 200,
+    "src": "khazic/ovb-i88_t3_seg_replay_20261030_1602/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "bl": {
+   "label": "Base + LoRA",
+   "recipe": "fresh rsLoRA r32 on the untuned base",
+   "repo": "khazic/ovb-ft_bl_t1_cube_20261031_2014",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 36.886,
+     "n": 500,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1273,
+     "n": 325,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.1595,
+     "n": 454,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 2.1899,
+     "n": 454,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.0799,
+     "n": 654,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.8483,
+     "n": 654,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 36.6029,
+     "n": 200,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 52.9247,
+     "n": 4896,
+     "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.375,
+    "lpips": 0.377,
+    "n": 200,
+    "src": "khazic/ovb-ft_bl_t1_cube_20261031_2014/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "bf": {
+   "label": "Base + full fine-tune",
+   "recipe": "all DiT parameters, lr 3e-5",
+   "repo": "khazic/ovb-ft_bf_t1_cube_20261031_2155",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 30.78,
+     "n": 500,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.1631,
+     "n": 325,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.2655,
+     "n": 454,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.2943,
+     "n": 454,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1454,
+     "n": 654,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.4934,
+     "n": 654,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 27.0972,
+     "n": 200,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 32.0078,
+     "n": 4896,
+     "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 6.179,
+    "lpips": 0.635,
+    "n": 200,
+    "src": "khazic/ovb-ft_bf_t1_cube_20261031_2155/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "merged": {
+   "label": "Parent merged, step 0",
+   "recipe": "E2b adapter merged into the base",
+   "repo": "khazic/ovb-ft_step0_merged",
+   "eval_dir": "eval_0",
+   "values": {
+    "cityscapes": {
+     "v": 35.1506,
+     "n": 500,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.115,
+     "n": 325,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.129,
+     "n": 454,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 5.1127,
+     "n": 454,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1414,
+     "n": 654,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.453,
+     "n": 654,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 32.5454,
+     "n": 200,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 49.9146,
+     "n": 4896,
+     "src": "khazic/ovb-ft_step0_merged/eval_0/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.629,
+    "lpips": 0.455,
+    "n": 200,
+    "src": "khazic/ovb-ft_step0_merged/eval_0/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "ml": {
+   "label": "Parent + LoRA",
+   "recipe": "continue the E2b adapter",
+   "repo": "khazic/ovb-ft_ml_t1_cube_20261031_2016",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 35.4316,
+     "n": 500,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.2458,
+     "n": 325,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.227,
+     "n": 454,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 0.9792,
+     "n": 454,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.1686,
+     "n": 654,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.1157,
+     "n": 654,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 30.3596,
+     "n": 200,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 48.9255,
+     "n": 4896,
+     "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 1.681,
+    "lpips": 0.467,
+    "n": 200,
+    "src": "khazic/ovb-ft_ml_t1_cube_20261031_2016/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  },
+  "mf": {
+   "label": "Parent + full fine-tune",
+   "recipe": "all DiT parameters of the merged model, lr 3e-5",
+   "repo": "khazic/ovb-ft_mf_t1_cube_20261031_2207",
+   "eval_dir": "eval_10000",
+   "values": {
+    "cityscapes": {
+     "v": 23.5215,
+     "n": 500,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_cityscapes.json"
+    },
+    "diode": {
+     "v": 0.2159,
+     "n": 325,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_diode.json"
+    },
+    "eth3d": {
+     "v": 0.2085,
+     "n": 454,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_eth3d.json"
+    },
+    "eth3d_absrel": {
+     "v": 1.0178,
+     "n": 454,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_eth3d.json"
+    },
+    "nyu": {
+     "v": 0.2088,
+     "n": 654,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_nyu.json"
+    },
+    "nyu_absrel": {
+     "v": 1.1107,
+     "n": 654,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_nyu.json"
+    },
+    "reasonseg": {
+     "v": 20.9795,
+     "n": 200,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_reasonseg.json"
+    },
+    "refcocog": {
+     "v": 30.2963,
+     "n": 4896,
+     "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/eval_refcocog.json"
+    }
+   },
+   "gen": {
+    "fid_proxy": 5.413,
+    "lpips": 0.652,
+    "n": 200,
+    "src": "khazic/ovb-ft_mf_t1_cube_20261031_2207/eval_10000/gen.json"
+   },
+   "protocol": [
+    50,
+    4.0,
+    0.85,
+    42,
+    512
+   ]
+  }
+ },
+ "protocol_variants": [
+  "e1_30k_cfg0",
+  "e1_30k_s43"
+ ],
+ "audit": {
+  "checkable": 58,
+  "identical": 49,
+  "partial": 6,
+  "missing": 3,
+  "errors": 0,
+  "src": "docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md"
+ },
+ "headline": {
+  "base": "base",
+  "ours": "e2b"
+ },
+ "recipe": {
+  "repo": "khazic/ovb-e1_qwen21_paper_aligned_20261025_0250",
+  "model_name": "qwen-image-2.1",
+  "lora_rank": 32,
+  "lora_alpha": 64,
+  "lr": 0.0001,
+  "steps": 30000,
+  "resolution": 512,
+  "batch_size": 1,
+  "grad_accum": 4,
+  "vision_ratio": 0.5,
+  "tasks": [
+   "depth",
+   "normal",
+   "semantic",
+   "instance",
+   "referring",
+   "generation"
+  ],
+  "depth_colormaps": [
+   "cube_edge",
+   "plasma",
+   "inferno",
+   "viridis",
+   "grayscale"
+  ],
+  "train_rows": {
+   "depth": 38661,
+   "generation": 16492,
+   "instance": 39153,
+   "metric_depth": 8924,
+   "normal": 8680,
+   "referring": 33009,
+   "semantic": 39420
+  },
+  "train_rows_total": 184339,
+  "cap_per_task": 40000
+ },
+ "curve": {
+  "runs": [
+   "e1_5k",
+   "e1_10k",
+   "e1_15k",
+   "e1_30k"
+  ],
+  "steps": [
+   5000,
+   10000,
+   15000,
+   30000
+  ],
+  "compare": "e2b",
+  "keys": [
+   "cityscapes",
+   "refcocog",
+   "nyu",
+   "eth3d"
+  ]
+ },
+ "ablations": [
+  {
+   "id": "i88",
+   "title": "What the task mix does",
+   "issue": "#88",
+   "note": "Each run continues the E2b parent for 10k steps (lr 3e-5, rsLoRA r32).",
+   "rows": [
+    "parent",
+    "t0",
+    "t1",
+    "t2",
+    "c1",
+    "t3"
+   ]
+  },
+  {
+   "id": "i91",
+   "title": "LoRA or full fine-tuning",
+   "issue": "#91",
+   "note": "Four depth / semantic / instance / referring / replay runs, cube-edge depth, 10k steps, from the untuned base or from the merged E2b parent.",
+   "rows": [
+    "base",
+    "bl",
+    "bf",
+    "merged",
+    "ml",
+    "mf"
+   ]
+  },
+  {
+   "id": "e2",
+   "title": "How much generation replay",
+   "issue": "#53",
+   "note": "E1 recipe for 10k steps with two training seeds each; E1 @ 10k is the 0.5 point.",
+   "rows": [
+    "e2_02_s42",
+    "e2_02_s43",
+    "e1_10k",
+    "e2_08_s42",
+    "e2_08_s43"
+   ]
+  }
+ ],
+ "findings": {
+  "unlock": "Against the untuned base under the same prompts and decoders, the E2b adapter raises Cityscapes mIoU 21.5 → 34.2 and RefCOCOg cIoU 37.6 → 49.8; the cube-edge depth run C1 raises NYU δ1 0.072 → 0.348.",
+  "quarter": "E2b (¼ of the vision rows) at 10k: Cityscapes 34.2 vs 33.1, RefCOCOg 49.8 vs 33.7, NYU δ1 0.134 vs 0.043 for E1 at the same step.",
+  "longer": "RefCOCOg cIoU of the six-task run by step: 49.7 at 5k, 33.7 at 10k, 40.9 at 15k, 42.3 at 30k; Cityscapes stays between 27.2 and 33.1.",
+  "noise": "Same checkpoint, inference seed 42 vs 43: ≤ 1.0 points on 2D, ≤ 0.014 δ1 on depth; re-evaluating the same E2b checkpoint moved Cityscapes by 1.1. Two training seeds at vision_ratio 0.2 differ by 14.2 RefCOCOg points — most ablation gaps below that are not separable from seed noise.",
+  "cube": "Fixing the depth target to the cube-edge colormap (C1) gives the best metric depth so far: NYU δ1 0.140 → 0.348, AbsRel 1.455 → 0.585; T2 with five colormaps reaches 0.179.",
+  "seg": "No task mix moved Cityscapes above the parent's 35.3; the segmentation-only mix T3 is the lowest at 26.4.",
+  "full": "Full fine-tuning at lr 3e-5 cut RefCOCOg cIoU 49.9 → 30.3 and moved generation away from the base (FID-proxy 1.63 → 5.41); continuing the LoRA kept it at 1.68.",
+  "fresh": "A fresh rsLoRA trained for 10k steps on the untuned base gave the highest 2D scores of any run: Cityscapes 36.9, RefCOCOg 52.9, ReasonSeg 36.6 — but metric depth stayed near the base (NYU δ1 0.080)."
+ },
+ "status": [
+  {
+   "id": "E-0",
+   "title": "Untuned base control",
+   "state": "measured",
+   "detail": "Run as the step-0 control of #91 (ovb-ft_step0_base), full splits.",
+   "issue": "#50"
+  },
+  {
+   "id": "E0",
+   "title": "Real-data pipeline smoke",
+   "state": "done",
+   "detail": "500 steps; data and run gates published.",
+   "issue": "#51"
+  },
+  {
+   "id": "E1",
+   "title": "Six-task main run, 30k steps",
+   "state": "measured",
+   "detail": "Evaluated at 5k / 10k / 15k / 30k, plus seed 43 and CFG 0. Normals, SA-Co/Gold and the generation proxy not yet scored.",
+   "issue": "#52"
+  },
+  {
+   "id": "E2",
+   "title": "vision_ratio 0.2 / 0.8 × 2 seeds",
+   "state": "measured",
+   "detail": "Four runs at 10k. Training-seed spread exceeds most differences; no generation proxy yet.",
+   "issue": "#53"
+  },
+  {
+   "id": "E2b",
+   "title": "Quarter vision data",
+   "state": "measured",
+   "detail": "Matched or beat E1 @ 10k; became the shared parent checkpoint.",
+   "issue": "#53"
+  },
+  {
+   "id": "#88",
+   "title": "Task composition and fixed depth encoding",
+   "state": "measured",
+   "detail": "T0–T3 and C1 from the E2b parent, 10k steps each.",
+   "issue": "#88"
+  },
+  {
+   "id": "#91",
+   "title": "Full fine-tune vs LoRA",
+   "state": "running",
+   "detail": "Four arms measured; full-parameter learning-rate scan (5e-6 to 2e-5) and the LoRA rank sweep pending.",
+   "issue": "#91"
+  },
+  {
+   "id": "R1",
+   "title": "Public checkpoint",
+   "state": "running",
+   "detail": "E2b merged into Qwen-Image-2.1 is uploading to gatilin/ovb-e2b_cap10k_s42_10000_merged1; transformer shards not yet on the Hub.",
+   "issue": "#60"
+  },
+  {
+   "id": "E3",
+   "title": "Appendix A decoder readings",
+   "state": "planned",
+   "detail": "Needs cached instance predictions (#81).",
+   "issue": "#54"
+  },
+  {
+   "id": "E5",
+   "title": "Qualitative figures",
+   "state": "planned",
+   "detail": "Produces the Qwen-Image-2.1 gallery.",
+   "issue": "#58"
+  },
+  {
+   "id": "E6",
+   "title": "Prompt-style and colour-remap robustness",
+   "state": "planned",
+   "detail": "Needs evaluation-time style flags (#82).",
+   "issue": "#59"
+  },
+  {
+   "id": "E4",
+   "title": "Continue on re-cleaned data",
+   "state": "planned",
+   "detail": "Waits for a second data tier.",
+   "issue": "#55"
+  }
+ ],
+ "tables": [
+  {
+   "title": "2D understanding (paper Tables 2, 4, 5)",
+   "note": "ReasonSeg uses the original queries; the paper rewrites them with Gemini 2.5 Pro, so this column is diagnostic.",
+   "columns": [
+    {
+     "key": "cityscapes_miou",
+     "label": "Cityscapes mIoU ↑",
+     "digits": 1
+    },
+    {
+     "key": "refcocog_ciou",
+     "label": "RefCOCOg cIoU ↑",
+     "digits": 1
+    },
+    {
+     "key": "reasonseg_giou",
+     "label": "ReasonSeg gIoU ↑",
+     "digits": 1
+    }
+   ],
+   "rows": [
+    {
+     "label": "Qwen-Image-2.1, untuned",
+     "kind": "base",
+     "run": "base",
+     "values": {
+      "cityscapes_miou": 21.4888,
+      "reasonseg_giou": 25.4363,
+      "refcocog_ciou": 37.6196
+     }
+    },
+    {
+     "label": "E1 @ 30k",
+     "kind": "ours",
+     "run": "e1_30k",
+     "values": {
+      "cityscapes_miou": 32.6803,
+      "reasonseg_giou": 29.6647,
+      "refcocog_ciou": 42.2701
+     }
+    },
+    {
+     "label": "E2b @ 10k",
+     "kind": "ours",
+     "run": "e2b",
+     "values": {
+      "cityscapes_miou": 34.1945,
+      "reasonseg_giou": 32.8133,
+      "refcocog_ciou": 49.808
+     }
+    },
+    {
+     "label": "C1 · depth only, cube-edge",
+     "kind": "ours",
+     "run": "c1",
+     "values": {
+      "cityscapes_miou": 34.5523,
+      "reasonseg_giou": 30.2876,
+      "refcocog_ciou": 42.3867
+     }
+    },
+    {
+     "label": "Parent + LoRA",
+     "kind": "ours",
+     "run": "ml",
+     "values": {
+      "cityscapes_miou": 35.4316,
+      "reasonseg_giou": 30.3596,
+      "refcocog_ciou": 48.9255
+     }
+    },
+    {
+     "label": "Base + LoRA",
+     "kind": "ours",
+     "run": "bl",
+     "values": {
+      "cityscapes_miou": 36.886,
+      "reasonseg_giou": 36.6029,
+      "refcocog_ciou": 52.9247
+     }
+    },
+    {
+     "label": "SAM 3 (+ Gemini 2.5 Pro for referring)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cityscapes_miou": 65.2,
+      "refcocog_ciou": 73.4,
+      "reasonseg_giou": 77.0
+     }
+    },
+    {
+     "label": "Vision Banana (paper)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cityscapes_miou": 69.9,
+      "refcocog_ciou": 73.8,
+      "reasonseg_giou": 79.3
+     }
+    }
+   ]
+  },
+  {
+   "title": "Metric depth (paper Table 6)",
+   "note": "No scale alignment, no camera intrinsics. DIODE AbsRel is omitted: near-zero ground-truth pixels make it unbounded for every run.",
+   "columns": [
+    {
+     "key": "nyu_d1",
+     "label": "NYUv2 δ1 ↑",
+     "digits": 3
+    },
+    {
+     "key": "nyu_absrel",
+     "label": "NYUv2 AbsRel ↓",
+     "digits": 3
+    },
+    {
+     "key": "eth3d_d1",
+     "label": "ETH3D δ1 ↑",
+     "digits": 3
+    },
+    {
+     "key": "eth3d_absrel",
+     "label": "ETH3D AbsRel ↓",
+     "digits": 3
+    },
+    {
+     "key": "diode_d1",
+     "label": "DIODE-Indoor δ1 ↑",
+     "digits": 3
+    }
+   ],
+   "rows": [
+    {
+     "label": "Qwen-Image-2.1, untuned",
+     "kind": "base",
+     "run": "base",
+     "values": {
+      "diode_d1": 0.077,
+      "eth3d_d1": 0.1193,
+      "eth3d_absrel": 2.5183,
+      "nyu_d1": 0.0723,
+      "nyu_absrel": 1.7228
+     }
+    },
+    {
+     "label": "E1 @ 30k",
+     "kind": "ours",
+     "run": "e1_30k",
+     "values": {
+      "diode_d1": 0.0862,
+      "eth3d_d1": 0.1278,
+      "eth3d_absrel": 1.5794,
+      "nyu_d1": 0.0456,
+      "nyu_absrel": 2.2374
+     }
+    },
+    {
+     "label": "E2b @ 10k",
+     "kind": "ours",
+     "run": "e2b",
+     "values": {
+      "diode_d1": 0.1087,
+      "eth3d_d1": 0.1225,
+      "eth3d_absrel": 4.9087,
+      "nyu_d1": 0.1344,
+      "nyu_absrel": 1.4682
+     }
+    },
+    {
+     "label": "C1 · depth only, cube-edge",
+     "kind": "ours",
+     "run": "c1",
+     "values": {
+      "diode_d1": 0.3205,
+      "eth3d_d1": 0.2329,
+      "eth3d_absrel": 0.5788,
+      "nyu_d1": 0.3483,
+      "nyu_absrel": 0.5846
+     }
+    },
+    {
+     "label": "Parent + LoRA",
+     "kind": "ours",
+     "run": "ml",
+     "values": {
+      "diode_d1": 0.2458,
+      "eth3d_d1": 0.227,
+      "eth3d_absrel": 0.9792,
+      "nyu_d1": 0.1686,
+      "nyu_absrel": 1.1157
+     }
+    },
+    {
+     "label": "Base + LoRA",
+     "kind": "ours",
+     "run": "bl",
+     "values": {
+      "diode_d1": 0.1273,
+      "eth3d_d1": 0.1595,
+      "eth3d_absrel": 2.1899,
+      "nyu_d1": 0.0799,
+      "nyu_absrel": 1.8483
+     }
+    },
+    {
+     "label": "Depth Anything 3",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "nyu_d1": 0.963,
+      "eth3d_d1": 0.917,
+      "diode_d1": 0.838
+     }
+    },
+    {
+     "label": "Vision Banana (paper)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "nyu_d1": 0.948,
+      "nyu_absrel": 0.081,
+      "eth3d_d1": 0.935,
+      "eth3d_absrel": 0.103,
+      "diode_d1": 0.917
+     }
+    }
+   ]
+  },
+  {
+   "title": "Instance segmentation — SA-Co/Gold (paper Table 3)",
+   "note": "Not measured yet: the SA-Co/Gold images are not on the evaluation machine, and the paper's IL_MCC needs a Gemini presence filter.",
+   "columns": [
+    {
+     "key": "cgf1",
+     "label": "cgF1 ↑",
+     "digits": 1
+    }
+   ],
+   "rows": [
+    {
+     "label": "Open-Vision-Banana",
+     "kind": "ours",
+     "values": {}
+    },
+    {
+     "label": "OWLv2",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cgf1": 24.6
+     }
+    },
+    {
+     "label": "Vision Banana (paper)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cgf1": 47.5
+     }
+    }
+   ]
+  }
+ ]
+}
