@@ -692,7 +692,20 @@ class VisionEvaluator:
                         suffix = "_native" if native_resolution else ""
                         variant_gt = variant["gt_mask" + suffix].to(self.device).bool()
                         variant_valid = variant["valid_mask" + suffix].to(self.device).bool()
-                        accumulator.update(pred_mask, variant_gt, valid_mask=variant_valid)
+                        # The primary GT falls back to a canvas-size empty mask when a query's
+                        # legacy mask is empty, while variants always carry the native image size,
+                        # so the prediction is resized per variant exactly as for the primary GT.
+                        variant_pred = pred_mask
+                        if variant_pred.shape[-2:] != variant_gt.shape[-2:]:
+                            variant_pred = (
+                                torch.nn.functional.interpolate(
+                                    variant_pred.unsqueeze(1).float(),
+                                    size=variant_gt.shape[-2:],
+                                    mode="nearest",
+                                ).squeeze(1)
+                                > 0.5
+                            )
+                        accumulator.update(variant_pred, variant_gt, valid_mask=variant_valid)
                         reasonseg_variant_valid_pixels[name] += int(variant_valid.sum().item())
 
             elif task == "edge":
