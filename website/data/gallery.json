@@ -1,1 +1,220 @@
-{"semantic": [], "instance": [], "referring": [], "depth": [], "normal": []}
+{
+ "semantic": [
+  {
+   "row": 0,
+   "input": "assets/samples/semantic/0_input.jpg",
+   "target": "assets/samples/semantic/0_target.jpg",
+   "output": "assets/samples/semantic/0_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 1,
+   "input": "assets/samples/semantic/1_input.jpg",
+   "target": "assets/samples/semantic/1_target.jpg",
+   "output": "assets/samples/semantic/1_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 2,
+   "input": "assets/samples/semantic/2_input.jpg",
+   "target": "assets/samples/semantic/2_target.jpg",
+   "output": "assets/samples/semantic/2_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 3,
+   "input": "assets/samples/semantic/3_input.jpg",
+   "target": "assets/samples/semantic/3_target.jpg",
+   "output": "assets/samples/semantic/3_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 4,
+   "input": "assets/samples/semantic/4_input.jpg",
+   "target": "assets/samples/semantic/4_target.jpg",
+   "output": "assets/samples/semantic/4_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 5,
+   "input": "assets/samples/semantic/5_input.jpg",
+   "target": "assets/samples/semantic/5_target.jpg",
+   "output": "assets/samples/semantic/5_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  }
+ ],
+ "instance": [],
+ "referring": [],
+ "depth": [
+  {
+   "row": 0,
+   "input": "assets/samples/depth/0_input.jpg",
+   "target": "assets/samples/depth/0_target.jpg",
+   "output": "assets/samples/depth/0_output.jpg",
+   "pearson_r": 0.995,
+   "inverted": false,
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 1,
+   "input": "assets/samples/depth/1_input.jpg",
+   "target": "assets/samples/depth/1_target.jpg",
+   "output": "assets/samples/depth/1_output.jpg",
+   "pearson_r": -0.973,
+   "inverted": true,
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 2,
+   "input": "assets/samples/depth/2_input.jpg",
+   "target": "assets/samples/depth/2_target.jpg",
+   "output": "assets/samples/depth/2_output.jpg",
+   "pearson_r": 0.964,
+   "inverted": false,
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 3,
+   "input": "assets/samples/depth/3_input.jpg",
+   "target": "assets/samples/depth/3_target.jpg",
+   "output": "assets/samples/depth/3_output.jpg",
+   "pearson_r": -0.971,
+   "inverted": true,
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 4,
+   "input": "assets/samples/depth/4_input.jpg",
+   "target": "assets/samples/depth/4_target.jpg",
+   "output": "assets/samples/depth/4_output.jpg",
+   "pearson_r": 0.971,
+   "inverted": false,
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 5,
+   "input": "assets/samples/depth/5_input.jpg",
+   "target": "assets/samples/depth/5_target.jpg",
+   "output": "assets/samples/depth/5_output.jpg",
+   "pearson_r": -0.985,
+   "inverted": true,
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  }
+ ],
+ "normal": [
+  {
+   "row": 0,
+   "input": "assets/samples/normal/0_input.jpg",
+   "target": "assets/samples/normal/0_target.jpg",
+   "output": "assets/samples/normal/0_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 1,
+   "input": "assets/samples/normal/1_input.jpg",
+   "target": "assets/samples/normal/1_target.jpg",
+   "output": "assets/samples/normal/1_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 2,
+   "input": "assets/samples/normal/2_input.jpg",
+   "target": "assets/samples/normal/2_target.jpg",
+   "output": "assets/samples/normal/2_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 3,
+   "input": "assets/samples/normal/3_input.jpg",
+   "target": "assets/samples/normal/3_target.jpg",
+   "output": "assets/samples/normal/3_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 4,
+   "input": "assets/samples/normal/4_input.jpg",
+   "target": "assets/samples/normal/4_target.jpg",
+   "output": "assets/samples/normal/4_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  },
+  {
+   "row": 5,
+   "input": "assets/samples/normal/5_input.jpg",
+   "target": "assets/samples/normal/5_target.jpg",
+   "output": "assets/samples/normal/5_output.jpg",
+   "prompt": null,
+   "checkpoint": "khazic/ovb-fix_best3_rank64_60k \u00b7 EMA \u00b7 step 60k",
+   "backbone": "SANA-1600M",
+   "seed": null,
+   "split": "held-out rows of the training manifest"
+  }
+ ]
+}

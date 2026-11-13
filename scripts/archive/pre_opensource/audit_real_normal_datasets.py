@@ -23,8 +23,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 
-DEFAULT_DIODE_ROOT = Path("/Users/gatilin/MyWork/datasets/diode_eval/data/diode-normal-256")
-DEFAULT_HYPERSIM_ROOT = Path("/Users/gatilin/MyWork/datasets/hypersim")
+DEFAULT_DIODE_ROOT = Path("data/raw/diode_eval/data/diode-normal-256")
+DEFAULT_HYPERSIM_ROOT = Path("data/raw/hypersim")
 NORMAL_LENGTH_TOLERANCE = 0.12
 
 

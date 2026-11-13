@@ -134,7 +134,7 @@ scripts/train.py.main
 
 `tiny_model.py` 是紧凑 U-Net 风格共享模型，以任务 embedding 调制预测。V2 引入 FiLM 和任务头，V4 文件主要提供改进损失，V5 进一步调整 FiLM、输出激活和任务头。它们不依赖扩散骨干，checkpoint 和接口不能跨版本混用。
 
-历史路线文档中的“当前最佳”仅针对其写作日期，本 Wiki 不重新宣称历史性能；参见[路线边界](../ROUTE_BOUNDARIES.md)。
+历史路线文档中的“当前最佳”仅针对其写作日期，本 Wiki 不重新宣称历史性能。
 
 ## 6. 横切设计
 

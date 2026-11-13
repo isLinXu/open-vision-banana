@@ -28,9 +28,9 @@ from collections import defaultdict
 # ============================================================
 # Configuration
 # ============================================================
-DATASETS_ROOT = Path("/Users/gatilin/MyWork/datasets")
+DATASETS_ROOT = Path("data/raw")
 SNVC50M_DIR = DATASETS_ROOT / "snvc50m"
-V5_ROOT = Path("/Users/gatilin/PycharmProjects/open-vision-banana/data/vb_snvc_train_v5_full")
+V5_ROOT = Path("data/vb_snvc_train_v5_full")
 
 # ============================================================
 # Dataset-specific path resolvers

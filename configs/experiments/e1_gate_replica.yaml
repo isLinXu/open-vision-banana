@@ -4,7 +4,7 @@
 # replicate the key settings of the successful standalone gate 1:1, to test the single-variable
 # hypothesis that the negative capacity-ladder result came from too low a rank or resolution.
 #
-# Background evidence (docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md §1):
+# Background evidence (archived internal analysis doc):
 #   - capacity_8x200 (rank 8, 128px): train r = -0.087, failed to overfit
 #   - standalone gate (rank 64, 4-step schedule): single-sample r = 0.8154
 #

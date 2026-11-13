@@ -1,7 +1,7 @@
 # Open-Vision-Banana 实验结果（2026-10-10）
 
 论文：[Image Generators are Generalist Vision Learners](https://arxiv.org/abs/2604.20329)（arXiv 2604.20329v3）。  
-评测机：`gpu4090-1`，部署树 `/comp_robot/home/xu.lin/workspaces/ovb-paper-eval-20261009/`。  
+评测机：单卡 RTX 4090。  
 指标 JSON：`output/eval/`。
 
 **这不是 Table 1 复现。** 论文数字只出现在「论文」列，用来对照。本仓库用开源基座 + 公开 LoRA + 项目自定闸门，没有 Nano Banana Pro，也没有论文未公开的训练数据。
@@ -230,7 +230,7 @@ SANA 24.96° 过闸。FLUX 91.09° 和 `axis_up` 一个量级。
 | 生成 | GenAI-Bench / ImgEdit | 评测集已在评测机。论文指标是人类 pairwise，不是 CLIP/FID |
 | 统一模型 | 共享 checkpoint 五任务 | 没有同一权重的 2D+3D+生成结果 |
 
-远程有 RefCOCOg（`/comp_robot/home/xu.lin/data/paper_benchmarks/refcocog`）。FLUX 分割 LoRA 的 UMD val 已测，cIoU 0.098。
+评测机上有 RefCOCOg。FLUX 分割 LoRA 的 UMD val 已测，cIoU 0.098。
 
 ---
 

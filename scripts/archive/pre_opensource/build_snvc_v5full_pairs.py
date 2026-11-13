@@ -21,7 +21,7 @@ RGB frame (``image[i]``) with its black-background edge map (``depth[i]`` in
 
 Usage:
     python scripts/build_snvc_v5full_pairs.py \
-        --root /media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full \
+        --root data/raw/open-vision-banana-snvc-train-full \
         --output output/snvc_v5full_pairs/pairs.jsonl
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-DEFAULT_ROOT = Path("/media/linxu/thinkHub/datasets/open-vision-banana-snvc-train-full")
+DEFAULT_ROOT = Path("data/raw/open-vision-banana-snvc-train-full")
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 

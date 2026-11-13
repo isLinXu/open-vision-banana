@@ -320,3 +320,18 @@ PIDray/
 
 # Local development tools (not source)
 .tools/
+
+# Local AI-assistant / editor tool directories (not source)
+.agents/
+.codebuddy/
+.devin/
+.hermes/
+.kiro/
+.trae/
+.windsurf/
+.workbuddy-ai/
+.zcode/
+.claude/skills/lark-*/
+/skills/
+skills-lock.json
+draft_*_folder/

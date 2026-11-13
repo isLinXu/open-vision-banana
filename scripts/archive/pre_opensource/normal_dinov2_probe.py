@@ -26,7 +26,7 @@ from segmentation_dinov2_probe import DINO_FEATURE_DIM, DINO_PATCH_SIZE, LocalDI
 from segmentation_resnet18_probe import load_input, select_device, set_seed
 
 
-DEFAULT_DIODE_ROOT = Path("/Users/gatilin/MyWork/datasets/diode_eval/data/diode-normal-256")
+DEFAULT_DIODE_ROOT = Path("data/raw/diode_eval/data/diode-normal-256")
 
 
 def parse_args() -> argparse.Namespace:

@@ -9,6 +9,10 @@ The interactive showcase for Open-Vision-Banana, plus the full results page.
 - `data/results.json`, `data/gallery.json` — the numbers and the sample list both pages render from.
 - `assets/samples/` — real model outputs (SANA-1600M adapter, held-out images).
 
+The sample inputs are held-out rows from the public datasets used for training and evaluation
+(see `docs/DATASETS.md` for the source list and their licenses). They are bundled for
+demonstration only; please follow each dataset's license terms if you reuse them.
+
 The pages load `data/*.json` with `fetch()`, so open them through a local server rather than from disk:
 
 ```bash

@@ -16,7 +16,7 @@ The branch logic (replicated below, keep in sync with tuner.py):
         noisy = (1-t)*target + t*noise
         velocity = target - noise
 
-Running this test on CPU proves the mechanism; see docs/MINIMAL_REPRODUCTION_PLAN_DEPTH.md.
+Running this test on CPU proves the mechanism without needing a GPU backbone.
 """
 
 import torch

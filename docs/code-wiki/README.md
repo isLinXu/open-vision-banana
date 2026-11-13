@@ -46,7 +46,6 @@
 
 - [项目 README](../../README.md) 与 [包元数据](../../pyproject.toml)。
 - [快速开始](../quick-start.md)、[论文复现快速入口](../PAPER_REPRODUCTION_QUICKSTART.md)。
-- [历史路线边界](../ROUTE_BOUNDARIES.md)、[架构决策记录](../adr/)。
 - [近期实验记录](../EXPERIMENTAL_RESULTS_2026-10-10.md)、[消融基线](../ABLATION_BASELINE.md)。
 
 Wiki 只解释实现；实验启动按仓库根目录的 [`exp_setting.md`](../../exp_setting.md)。

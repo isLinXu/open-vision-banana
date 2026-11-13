@@ -9,7 +9,7 @@
 
 **Paper**: "Image Generators are Generalist Vision Learners" (arXiv: 2604.20329)
 **Authors**: Valentin Gabeur et al.
-**PDF**: `paper/Image Generators are Generalist Vision Learners.pdf`
+**PDF**: https://arxiv.org/pdf/2604.20329
 
 ### Core Thesis
 The paper demonstrates that **instruction-tuning a pre-trained image generator** on a mixture of its original training data + vision task data (parameterized as RGB images) yields a model that, per the paper, achieves SOTA zero-shot transfer on segmentation, depth, and normal estimation while retaining its generation capability (human win rates 53.5% GenAI-Bench / 47.8% ImgEdit vs NBP; the "90%+" figure is a project shorthand, not a number from the paper).
@@ -60,7 +60,7 @@ The paper demonstrates that **instruction-tuning a pre-trained image generator**
 conda activate llama  # Python 3.10+, torch 2.7.1+cu128
 
 # Install project
-cd /media/linxu/thinkHub/Thinking-face/open-vision-banana
+cd open-vision-banana
 pip install -e ".[all]"
 
 # Required env vars
@@ -71,7 +71,7 @@ export WANDB_API_KEY=<your-key>  # Only for W&B logging
 ### Key Paths
 | Item | Path |
 |---|---|
-| Project root | the repository checkout (examples below use `/media/linxu/thinkHub/Thinking-face/open-vision-banana`; substitute your own) |
+| Project root | the repository checkout |
 | Source code | `src/open_vision_banana/` |
 | Dataset registry | `configs/datasets/sources.tsv` (one line per source; `scripts/download_datasets.sh` reads it) |
 | Raw downloads / prepared data | `data/raw/` (default `DATA_ROOT`) / `data/prep/`, `data/merged/`, `data/qwen_baseline/` |
@@ -80,7 +80,7 @@ export WANDB_API_KEY=<your-key>  # Only for W&B logging
 | Training output | `output/<run_name>/` |
 | Scripts | `scripts/` |
 | Tests | `tests/` |
-| Paper PDF | `paper/Image Generators are Generalist Vision Learners.pdf` |
+| Paper PDF | https://arxiv.org/pdf/2604.20329 (not redistributed in this repository) |
 
 ---
 
