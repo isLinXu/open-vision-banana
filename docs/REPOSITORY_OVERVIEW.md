@@ -140,7 +140,7 @@ CI 工作流位于 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，�
 4. **Docker 开发目标需核对。** `docker/docker-compose.yml` 使用 `target: dev`，但需要确认 [`docker/Dockerfile`](../docker/Dockerfile) 是否声明了对应的多阶段构建目标。
 5. **依赖来源存在漂移风险。** `requirements.txt` 与 `pyproject.toml` 并非完全一致；源码使用的依赖应统一纳入明确的安装入口。
 6. **配置注释可能滞后。** `configs/training_config.yaml` 对 `tasks` 的说明需要与 `scripts/train.py` 当前读取 `cfg.data.tasks` 的行为重新核对。
-7. **论文复现仍有边界。** [`docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md`](./OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md) 记录了 benchmark、metric depth、normal target 和 semantic segmentation 等待补齐或校准的事项。内部相对深度指标不能直接当作论文中的 δ1 / AbsRel。
+7. **论文复现仍有边界。** benchmark、metric depth、normal target 和 semantic segmentation 等仍有待补齐或校准的事项；内部相对深度指标不能直接当作论文中的 δ1 / AbsRel。
 
 ## 8. 建议的后续核验顺序
 
@@ -155,6 +155,5 @@ CI 工作流位于 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)，�
 
 - [`docs/quick-start.md`](./quick-start.md)：快速开始
 - [`docs/PAPER_REPRODUCTION_QUICKSTART.md`](./PAPER_REPRODUCTION_QUICKSTART.md)：论文复现快速入口
-- [`docs/OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md`](./OPEN_VISION_BANANA_DEEP_ANALYSIS_v130.md)：深度分析与复现缺口
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md)：贡献与质量检查约定
 - [`docker/README.md`](../docker/README.md)：容器化说明
