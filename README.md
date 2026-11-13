@@ -500,18 +500,7 @@ Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb
 | `ovb-fix_*`, `ovb-best3_*`, `ovb-ctrl_*`, `ovb-main_*` | SANA-1600M | `checkpoint-*_final` (prefer `ema_adapter` when that directory exists) |
 | `ovb-flux*`, `ovb-flux2*`, `ovb-flux3*`, `ovb-flux4*` | FLUX.1-dev | same layout; `metadata.json` records `model_name: flux-dev` |
 
-Qwen-Image-2.1 runs behind the results table below:
-
-| Row | Repo |
-|-----|------|
-| Parent (step 0) | [`ovb-i88_parent_e2b_final`](https://huggingface.co/khazic/ovb-i88_parent_e2b_final); merged weights at [`gatilin/ovb-e2b_cap10k_s42_10000_merged1`](https://huggingface.co/gatilin/ovb-e2b_cap10k_s42_10000_merged1) |
-| C1 | [`ovb-i88_c1_depth_cube100_20261030_1602`](https://huggingface.co/khazic/ovb-i88_c1_depth_cube100_20261030_1602) |
-| T0 | [`ovb-i88_t0_full_replay10_20261029_2202`](https://huggingface.co/khazic/ovb-i88_t0_full_replay10_20261029_2202) |
-| T1 | [`ovb-i88_t1_no_normal_20261030_1602`](https://huggingface.co/khazic/ovb-i88_t1_no_normal_20261030_1602) |
-| T2 | [`ovb-i88_t2_depth_replay_20261030_0106`](https://huggingface.co/khazic/ovb-i88_t2_depth_replay_20261030_0106) |
-| T3 | [`ovb-i88_t3_seg_replay_20261030_1602`](https://huggingface.co/khazic/ovb-i88_t3_seg_replay_20261030_1602) |
-| I101-h1 | [`ovb-ft_mf_lr5e-6_i101h1_t1_cube_20261105_2213`](https://huggingface.co/khazic/ovb-ft_mf_lr5e-6_i101h1_t1_cube_20261105_2213) |
-| I102-i1 | [`ovb-ft_bl_i102i1_t1_cube_20261105_2213`](https://huggingface.co/khazic/ovb-ft_bl_i102i1_t1_cube_20261105_2213) |
+The Qwen-Image-2.1 checkpoints behind the results table below are published under `khazic/ovb-i88_*` and `khazic/ovb-ft_*` (the naming table above maps the prefixes to backbones). Exact run names and per-run metrics are also rendered from the evaluation JSONs in [`demo/`](demo/) and [`website/`](website/).
 
 SANA / FLUX task-matched runs:
 
