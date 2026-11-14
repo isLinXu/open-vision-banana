@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "saved_dtype": "bfloat16",
+  "arithmetic": "float32",
+  "saved_parent_semantics": true,
+  "tensors_per_model": 297,
+  "exact_roundtrip_checks": {
+    "Fusion-CK128-90-10-Q0M0-50-50": 297,
+    "Fusion-CK128-90-10-Q0M0-75-25": 297,
+    "Fusion-CK128-75-25-Q0M0-50-50": 297,
+    "Fusion-CK128-75-25-Q0M0-75-25": 297
+  },
+  "bytes_per_model": 14230249472,
+  "updated_at": "2026-11-07T16:02:09.025480+00:00"
+}

@@ -1,0 +1,276 @@
+{
+  "metadata": {
+    "evaluation_mode": "decoded_task_metrics",
+    "model_name": "qwen-image-2.1",
+    "lora_path": "/data/runs/ovb_i108/output/i108-b-lr1e-5-r64-2x8-s42_20261109r3/checkpoint-80000_best",
+    "cpu_offload": false,
+    "quantize": null,
+    "device": "cuda",
+    "dtype": "bfloat16",
+    "resolution": 512,
+    "batch_size": 1,
+    "reasonseg_query_mode": "all",
+    "reasonseg_annotation_mode": "legacy_union",
+    "reasonseg_annotation_variants": [
+      "legacy_union",
+      "lisa_v1"
+    ],
+    "reasonseg_protocol": "all_queries_v1/legacy_union",
+    "num_inference_steps": 50,
+    "strength": 0.85,
+    "seed": 42,
+    "skipped_benchmarks": [],
+    "python": "3.11.13",
+    "torch": "2.7.1+cu126",
+    "capability": "depth",
+    "paper_capabilities": {
+      "2d": {
+        "cityscapes": {
+          "benchmark": "semantic",
+          "dataset": "cityscapes",
+          "split": "val",
+          "metric": "mIoU",
+          "paper": 0.699,
+          "note": "Cityscapes val, 19-class legend including absent classes"
+        },
+        "refcocog": {
+          "benchmark": "referring",
+          "dataset": "refcocog",
+          "split": "val",
+          "metric": "cIoU",
+          "paper": 0.738,
+          "note": "RefCOCOg UMD val"
+        },
+        "reasonseg": {
+          "benchmark": "referring",
+          "dataset": "reasonseg",
+          "split": "val",
+          "metric": "gIoU",
+          "paper": 0.793,
+          "note": "ReasonSeg val; paper rewrites queries with Gemini 2.5 Pro"
+        },
+        "saco": {
+          "benchmark": "instance",
+          "dataset": "saco",
+          "split": "val",
+          "metric": "cgF1",
+          "paper": 47.5,
+          "note": "SA-Co/Gold; paper filters NPs with Gemini 3.1 Flash-Lite"
+        }
+      },
+      "3d": {
+        "nyu": {
+          "benchmark": "depth",
+          "dataset": "nyu",
+          "metric": "delta_1.25",
+          "paper": 0.948,
+          "paper_absrel": 0.081
+        },
+        "ibims": {
+          "benchmark": "depth",
+          "dataset": "ibims",
+          "metric": "delta_1.25",
+          "paper": 0.934,
+          "paper_absrel": 0.078
+        },
+        "eth3d": {
+          "benchmark": "depth",
+          "dataset": "eth3d",
+          "metric": "delta_1.25",
+          "paper": 0.935,
+          "paper_absrel": 0.103
+        },
+        "diode": {
+          "benchmark": "depth",
+          "dataset": "diode",
+          "metric": "delta_1.25",
+          "paper": 0.917,
+          "paper_absrel": 0.108,
+          "note": "DIODE-Indoor"
+        },
+        "kitti": {
+          "benchmark": "depth",
+          "dataset": "kitti",
+          "metric": "delta_1.25",
+          "paper": 0.915,
+          "paper_absrel": 0.107
+        },
+        "nuscenes": {
+          "benchmark": "depth",
+          "dataset": "nuscenes",
+          "metric": "delta_1.25",
+          "paper": 0.643,
+          "paper_absrel": 0.219,
+          "note": "80 m cap; paper does not disclose a crop"
+        }
+      },
+      "generation": {
+        "genai_bench": {
+          "benchmark": "generation",
+          "dataset": "genai_bench",
+          "metric": "human_win_rate",
+          "paper": 0.535,
+          "note": "GenAI-Bench T2I human pairwise; CLIP/FID are proxies only"
+        },
+        "imgedit": {
+          "benchmark": "generation",
+          "dataset": "imgedit",
+          "metric": "human_win_rate",
+          "paper": 0.478,
+          "note": "ImgEdit human pairwise; not a reconstruction score"
+        }
+      }
+    },
+    "depth_colormap": "cube_edge",
+    "depth_curve": "metric_power",
+    "depth_log_alpha": 0.4,
+    "invert_depth": false,
+    "instance_decoding": {
+      "color_tolerance": 14.0,
+      "min_area_fraction": 0.0002,
+      "erosion_threshold": 0.1,
+      "bbox_expansion_factor": 5.0,
+      "grouping_mode": "seed",
+      "adaptive_color_tolerance": false,
+      "seed_merge_rule": "pixel_only",
+      "spatial_merge_area_basis": "bbox"
+    },
+    "referring_prompt_version": "query_v2",
+    "reasonseg_expression_selection": "all",
+    "depth_prompt": null,
+    "depth_oracle_colormaps": null,
+    "relative_luminance": false,
+    "depth_seed_ensemble": 1,
+    "inference_protocol": {
+      "num_inference_steps": 50,
+      "guidance_scale": 4.0,
+      "strength": 0.85,
+      "seed": 42,
+      "canvas_resolution": 512,
+      "native_resolution_scoring": true,
+      "note": "The paper does not state inference settings; these are the repository values for this run (exp_setting.md E1.3). num_inference_steps=1 is a smoke setting and must not be reported as a result."
+    },
+    "protocol": {
+      "depth": "decoded RGB to metric depth with curve=metric_power (paper Eq.1); log_relative is an opt-in relative ablation and must not be cited as paper AbsRel; GT validity/crop masks plus historical finite-positive prediction filtering after any clipping (not fixed-GT support); NYU Eigen crop + 10m cap / KITTI Garg crop + 80m cap / ETH3D 80m cap / nuScenes 80m cap (no paper crop) when those datasets are named; DIODE has no cap; AbsRel_aligned/delta_1.25_aligned are per-image median-scale diagnostics, not paper protocol; *_per_image keys are means of per-image metrics (headline keys are pixel-weighted); crop/cap/aggregation are conventions, not paper-disclosed",
+      "normal": "decoded RGB to unit camera-space normals; valid pixels are finite, non-zero GT (plus DIODE mask when present); mean_angle_deg_per_image is the mean of per-image means; NYU/ScanNet require community normal maps; VKITTI2 ships no normals, so VirtualKITTINormalDataset derives them from its centimetre depth + intrinsic.txt in the paper frame (used only to build GT, never as model input); DIODE is indoors",
+      "semantic": "decoded RGB to class labels; Cityscapes labelIds mapped to trainIds; global confusion matrix; official gtFine only, never cityscapes8; with --native-resolution the canvas is decoded first and the label map nearest-upsampled to the 2048x1024 GT (interpolating RGB would blend boundary colours into phantom classes)",
+      "referring": "RefCOCOg requires refs(umd).p with no protocol fallback and validates images, expressions, and nonempty native COCO polygon/RLE masks using pycocotools; ReasonSeg val uses LISA JSON-next-to-image; annotation mode is explicit: legacy_union preserves historical labels, lisa_v1 skips flag and excludes ignore=255 with official area-ordered OpenCV rasterization; one sample per expression, ReasonSeg expands all queries by default (first is an explicit historical option); gIoU/IoU is the equal-weight mean over queries, cIoU is summed intersection / summed union over queries; no image-level averaging; paper ReasonSeg gIoU includes a Gemini 2.5 Pro rewrite that this command does not run unless rewritten_text is already in the JSON",
+      "instance": "SA-Co/Gold query JSONL when present, else color/instance pairs; cgF1 = 100 * pmF1 * IL_MCC; paper IL_MCC uses Gemini 3.1 Flash-Lite presence filtering, which this command does not invent",
+      "generation": "paper GenAI-Bench / ImgEdit numbers are human pairwise win rates; this command only scores an optional CLIP/FID proxy when images exist and never writes those proxies into the paper win-rate column",
+      "aggregation": "task-specific global accumulators over the selected dataset; referring gIoU is query-weighted and cIoU is cumulative intersection / union, not batch mean"
+    },
+    "resolution_verification": {
+      "raw_pipeline_output": [
+        512,
+        512
+      ],
+      "every_prediction_checked": true
+    },
+    "external_run_identity": {
+      "name": "B-080000-best",
+      "step": 80000,
+      "arm": "B",
+      "base_path": "/data/models/Fusion-C1-KQ0r128-60-40-9d5b9b8",
+      "base_repo": "Melo111/Fusion-C1-KQ0r128-60-40",
+      "base_revision": "9d5b9b8ede04d7d9f4a4ff8a6a75a4b734ab1b4d",
+      "lora_path": "/data/runs/ovb_i108/output/i108-b-lr1e-5-r64-2x8-s42_20261109r3/checkpoint-80000_best",
+      "adapter_repo": "khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3",
+      "adapter_path": "ckpt/checkpoint-80000_best",
+      "weight_source": "ema",
+      "val_loss": 0.031254182841730656,
+      "weight_files": [
+        {
+          "path": "/data/runs/ovb_i108/output/i108-b-lr1e-5-r64-2x8-s42_20261109r3/checkpoint-80000_best/lora_adapter/adapter_model.safetensors",
+          "sha256": "79bcb38fbe7113d455857371c1ff40a2d2e8b21d66050cd47657c810eb60b683"
+        },
+        {
+          "path": "/data/runs/ovb_i108/output/i108-b-lr1e-5-r64-2x8-s42_20261109r3/checkpoint-80000_best/lora_adapter/adapter_config.json",
+          "sha256": "863ab7ff7e259fb0614313447bd67a49392f0658828797614b7a790a1bd34988"
+        },
+        {
+          "path": "/data/runs/ovb_i108/output/i108-b-lr1e-5-r64-2x8-s42_20261109r3/checkpoint-80000_best/metadata.json",
+          "sha256": "c1ae8ff45577a209af29d6a5ef8b03bc18ca06143dd3f1510b27fe68d60d19dd"
+        }
+      ],
+      "model": "B-080000-best"
+    }
+  },
+  "preflight": {
+    "ok": true,
+    "jobs": [
+      {
+        "benchmark": "depth",
+        "dataset": "nyu",
+        "dataset_key": "nyu_depth",
+        "root": "/dev/shm/i120_views/nyu",
+        "split": "test",
+        "ok": true,
+        "samples": 654,
+        "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1"
+      }
+    ],
+    "skipped": []
+  },
+  "benchmarks": {
+    "depth/nyu": {
+      "capability": "3d",
+      "dataset_key": "nyu_depth",
+      "root": "/dev/shm/i120_views/nyu",
+      "split": "test",
+      "native_resolution": true,
+      "dataset_kwargs": {},
+      "samples": 654,
+      "source_samples": 654,
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "paper_reference": {
+        "benchmark": "depth",
+        "dataset": "nyu",
+        "metric": "delta_1.25",
+        "paper": 0.948,
+        "paper_absrel": 0.081
+      },
+      "decoded_metrics": {
+        "AbsRel": 0.2984911404567084,
+        "SqRel": 0.5273159561720718,
+        "RMSE": 1.35220014292391,
+        "RMSE_log": 0.6875483236690353,
+        "delta_1.25": 0.38404042373507097,
+        "delta_1.25^2": 0.731696133734107,
+        "delta_1.25^3": 0.9015792576560279,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.29849113014723183,
+        "RMSE_per_image": 1.0358271256704397,
+        "delta_1.25_per_image": 0.38404040981430726,
+        "images": 654,
+        "AbsRel_aligned": 0.09978509167171336,
+        "delta_1.25_aligned": 0.9238267846118505,
+        "RMSE_aligned": 1.1139044914003096,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "merged_shards": {
+        "count": 4,
+        "blocks": [
+          [
+            0,
+            164
+          ],
+          [
+            164,
+            328
+          ],
+          [
+            328,
+            492
+          ],
+          [
+            492,
+            654
+          ]
+        ]
+      }
+    }
+  }
+}

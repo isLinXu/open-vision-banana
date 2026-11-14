@@ -1,0 +1,825 @@
+{
+  "revision": "88f43c92048111bd25b4483e0117494937acb27f",
+  "files": [
+    {
+      "path": "A-010000-best/core/A-010000-best/cityscapes/full.json",
+      "sha256": "2b03cb47feb8e2646adc634bbbb96b8c3a4785460a4c06c3573e746f5d00bc74"
+    },
+    {
+      "path": "A-010000-best/core/A-010000-best/diode/full.json",
+      "sha256": "387c8d38df1775426f7d5e14c1a53146e2bb4a9864ab6d891fea78212cd47dbe"
+    },
+    {
+      "path": "A-010000-best/core/A-010000-best/eth3d/full.json",
+      "sha256": "0bb8ed496ed3f498fd8e329aaee8c00942991bfdfed429ea9f2775a2296f0f28"
+    },
+    {
+      "path": "A-010000-best/core/A-010000-best/nyu/full.json",
+      "sha256": "dac33d8ab2310f09f4383d168afdf56401b73284bb42272b71a8cf24e604b5b6"
+    },
+    {
+      "path": "A-010000-best/core/A-010000-best/reasonseg/full.json",
+      "sha256": "d6cb14d23ab5df76ae74a98b6e1d94473d7b1a205825b9552bf319ec26e152ed"
+    },
+    {
+      "path": "A-030000-best/core/A-030000-best/cityscapes/full.json",
+      "sha256": "caa1805f4478517760de71b24a0055c1b7145f2b64556757c988f3d948e02745"
+    },
+    {
+      "path": "A-030000-best/core/A-030000-best/diode/full.json",
+      "sha256": "068b460c771eef412b16c0fc7f77d6fd9ba965bc607480b7121a6c7bb9d58c18"
+    },
+    {
+      "path": "A-030000-best/core/A-030000-best/eth3d/full.json",
+      "sha256": "52d55bddf7483b0ee3b5383e2d53e3d429266f466a7b1b0b55bd4fefdbc00ae4"
+    },
+    {
+      "path": "A-030000-best/core/A-030000-best/nyu/full.json",
+      "sha256": "8685d62a26cab46e16c6676058c9ceee275a9a717975e0b060082c0c728f3af1"
+    },
+    {
+      "path": "A-030000-best/core/A-030000-best/reasonseg/full.json",
+      "sha256": "477915b5fd4fc8a5d291c769483c19f164d5310da7068c0dee144c7bd11c56b8"
+    },
+    {
+      "path": "A-040000-best/core/A-040000-best/cityscapes/full.json",
+      "sha256": "f8da3b1a6be0cb69491c368ad164a74de02e44b0ffa701175ce9c5cebb064d72"
+    },
+    {
+      "path": "A-040000-best/core/A-040000-best/diode/full.json",
+      "sha256": "191e8284f58388d5fd67c16aa048621092a1112e62c36463d4bae52e1361f3ed"
+    },
+    {
+      "path": "A-040000-best/core/A-040000-best/eth3d/full.json",
+      "sha256": "a226d9954dbe47d7c08f2d34f9b878d43306f2850defcc02f5f9e424a1b496cb"
+    },
+    {
+      "path": "A-040000-best/core/A-040000-best/nyu/full.json",
+      "sha256": "a906d32016d38fbd4c52248478e288e777bde0674bd0f55fe724a59e7f686cf5"
+    },
+    {
+      "path": "A-040000-best/core/A-040000-best/reasonseg/full.json",
+      "sha256": "14b9a76abbae4005265c7becc25f68bbb05aed55a9f86a31cac59e56751e72bf"
+    },
+    {
+      "path": "A-050000-best/core/A-050000-best/cityscapes/full.json",
+      "sha256": "7dc266dfc689109108c987c9e76d7d49f7703340553105a05d810b6e6e9978c6"
+    },
+    {
+      "path": "A-050000-best/core/A-050000-best/diode/full.json",
+      "sha256": "5ed63dd37b61f6fc42dc3e7eab7a53e6e2ef2f45fa43e48b71dea904559c35d7"
+    },
+    {
+      "path": "A-050000-best/core/A-050000-best/eth3d/full.json",
+      "sha256": "dea36ed4ad9c68bffdb9646d989b7108440d1fd45b499c25e50c6e43a407d0fe"
+    },
+    {
+      "path": "A-050000-best/core/A-050000-best/nyu/full.json",
+      "sha256": "306e69411c8c60a16959029e0a6141ca1f08e603910a6861348800590004e026"
+    },
+    {
+      "path": "A-050000-best/core/A-050000-best/reasonseg/full.json",
+      "sha256": "87068ce2eee1630980b4c9b55216ae78e2cac9261f9937238ded6b373c5e02b2"
+    },
+    {
+      "path": "A-060000-best/core/A-060000-best/cityscapes/full.json",
+      "sha256": "7cd3beb13918648135ecdebdb6aaaa6b6065927f20f9198dd6c3844bfe7b36b6"
+    },
+    {
+      "path": "A-060000-best/core/A-060000-best/diode/full.json",
+      "sha256": "9157d469ba27284afa2a10063a8e895b22dcb3802c0eff9e7e99c1e166879562"
+    },
+    {
+      "path": "A-060000-best/core/A-060000-best/eth3d/full.json",
+      "sha256": "7169779d07c8615fff04a22fc433e0e1073fa27a03b58520e4ba7e6bf06b4b5f"
+    },
+    {
+      "path": "A-060000-best/core/A-060000-best/nyu/full.json",
+      "sha256": "39a1be7503b9de29822be39af04e81ea38bcc5d8d301d77c9813061b7c72ca59"
+    },
+    {
+      "path": "A-060000-best/core/A-060000-best/reasonseg/full.json",
+      "sha256": "06c5c083d9a9aaff7fc88b93190533544cde77fe8494b3515a9b77cd15b77bc5"
+    },
+    {
+      "path": "A-062500-best/core/A-062500-best/cityscapes/full.json",
+      "sha256": "47349e0a73c8597855ca2378c92839f12da3ade6af9a1e1c82171cfdfba3f37b"
+    },
+    {
+      "path": "A-062500-best/core/A-062500-best/diode/full.json",
+      "sha256": "1833bd5d6ff8f0bc6e1668828d0cc8d69b9ff75b9846f477405322ec860e3928"
+    },
+    {
+      "path": "A-062500-best/core/A-062500-best/eth3d/full.json",
+      "sha256": "5c25734e2c1d42a0f33a3a96e9d54e4fe841a86f2654676d952ead08ac9f2a50"
+    },
+    {
+      "path": "A-062500-best/core/A-062500-best/nyu/full.json",
+      "sha256": "42cffea6302a4bb696d9123c45a4992328b5e97a1a92cbd27efb8a7b114b6fa6"
+    },
+    {
+      "path": "A-062500-best/core/A-062500-best/reasonseg/full.json",
+      "sha256": "1b329d6d569e13b79fa879ce72a1a5e5e1c3a71274f52288d5563a9ce31969f1"
+    },
+    {
+      "path": "A-065000-best/core/A-065000-best/cityscapes/full.json",
+      "sha256": "6b6a173fab1effaf375e6d5b6843cc7a72cb9b7e061de7004a7f323b557414db"
+    },
+    {
+      "path": "A-065000-best/core/A-065000-best/diode/full.json",
+      "sha256": "9a41a829063f79ba8728643ff07ed0157d8185b4315380f59609d94faab1d0f4"
+    },
+    {
+      "path": "A-065000-best/core/A-065000-best/eth3d/full.json",
+      "sha256": "f88b9fadf833f0c34b5c88824fc3798ecf13c5a05a2e1aa803f511ac1f9c7ea6"
+    },
+    {
+      "path": "A-065000-best/core/A-065000-best/nyu/full.json",
+      "sha256": "c3abde13b609a81371dc0090d935a841045969956e72c4daf60154d2b8897e54"
+    },
+    {
+      "path": "A-065000-best/core/A-065000-best/reasonseg/full.json",
+      "sha256": "5a81b7e3c14ba7a90495b6f091036a06b89cb5588406533f2c7f559501dc0c1c"
+    },
+    {
+      "path": "A-067500-best/core/A-067500-best/cityscapes/full.json",
+      "sha256": "0136a0ba09e3feeb5244e35f453c980adbddc089f99bc3a29f99f19ed04b5af4"
+    },
+    {
+      "path": "A-067500-best/core/A-067500-best/diode/full.json",
+      "sha256": "e41d3710f27b7b5a45f77e36be39a2cd7a062d03d8113f6a5ba2ed655c795425"
+    },
+    {
+      "path": "A-067500-best/core/A-067500-best/eth3d/full.json",
+      "sha256": "d636f3d0ba00a6d53a714896dc797a9577f0391459eb9859b012659f79360abb"
+    },
+    {
+      "path": "A-067500-best/core/A-067500-best/nyu/full.json",
+      "sha256": "1b1b0828c2875bf375a1259bdbbb72f7a54feb9f4282c47ca2d0342a87424608"
+    },
+    {
+      "path": "A-067500-best/core/A-067500-best/reasonseg/full.json",
+      "sha256": "43e78d6393de0ee2ccfbb4defc4f052b4b81af6f40536e30cf227cfe79d884d4"
+    },
+    {
+      "path": "A-070000-best/core/A-070000-best/cityscapes/full.json",
+      "sha256": "1aff63c9cddef0a3394de4aa8dfc9bdfed9c25f459031784b1e1f70cd1ee277c"
+    },
+    {
+      "path": "A-070000-best/core/A-070000-best/diode/full.json",
+      "sha256": "aa78a4466e803f4ee4aba818e6c0f6f72de4cf48de5cb5c90d409e49667c469d"
+    },
+    {
+      "path": "A-070000-best/core/A-070000-best/eth3d/full.json",
+      "sha256": "5d1a41f32e4bcf8b50e3ccec76b761fde9a43a21e642387471b2e1cf2aca10ee"
+    },
+    {
+      "path": "A-070000-best/core/A-070000-best/nyu/full.json",
+      "sha256": "7c95d57585b52dca7cd42cbae1a0bf62d39f2632fd9766e26c550ee187cb203f"
+    },
+    {
+      "path": "A-070000-best/core/A-070000-best/reasonseg/full.json",
+      "sha256": "83fcf868c260598312e8b65119a5cdf2a56a94fa0d7eb26b3cf8e66e782ae3fa"
+    },
+    {
+      "path": "A-072500-best/core/A-072500-best/cityscapes/full.json",
+      "sha256": "305b119d68c62cfea4130eaa17f0e51457663939cddd038807435bb8f07237f1"
+    },
+    {
+      "path": "A-072500-best/core/A-072500-best/diode/full.json",
+      "sha256": "3ec4c121bf4463aa9d7ff4fc5b27ae337452391244254cf088529b9be9a8894a"
+    },
+    {
+      "path": "A-072500-best/core/A-072500-best/eth3d/full.json",
+      "sha256": "1dba8bc6334041456d067e8e2983954db9803701bb91a2d3bcebf8378ba7e6d6"
+    },
+    {
+      "path": "A-072500-best/core/A-072500-best/nyu/full.json",
+      "sha256": "6e761f490c54c9b1a2623fc5b076d73db7c7922277b4cc48e4d77dc5c6cc069d"
+    },
+    {
+      "path": "A-072500-best/core/A-072500-best/reasonseg/full.json",
+      "sha256": "0071babf8f6eee087591e3f47f9bae38a95badacabaae0eb3eb4df7b30cf4df4"
+    },
+    {
+      "path": "A-075000-best/core/A-075000-best/cityscapes/full.json",
+      "sha256": "9027eb8daac767367b59919865b7e39b5d67ab3efec39c9e4a577bdffdc4e01a"
+    },
+    {
+      "path": "A-075000-best/core/A-075000-best/diode/full.json",
+      "sha256": "3ec47adb3a383a13b73a1fbd408826be3ebd4f6ded5a5467083ab1a3ae7d4cb9"
+    },
+    {
+      "path": "A-075000-best/core/A-075000-best/eth3d/full.json",
+      "sha256": "51aff71e0a790a3d1ca01bd847ffa21a72809a958006f4efc24e91f5e449d10b"
+    },
+    {
+      "path": "A-075000-best/core/A-075000-best/nyu/full.json",
+      "sha256": "aa394ade0a09de419cd20e9764b7b9436df15ed9660e1973c4ecd9d8522f854e"
+    },
+    {
+      "path": "A-075000-best/core/A-075000-best/reasonseg/full.json",
+      "sha256": "686e95a71e71c344d013727b47588d68748c3938bb7ac5933cdd2f41717be2ee"
+    },
+    {
+      "path": "A-077500-best/core/A-077500-best/cityscapes/full.json",
+      "sha256": "ad62a91341c436ae581069f9ff9d1a1668fc9de721194446a208bca377305839"
+    },
+    {
+      "path": "A-077500-best/core/A-077500-best/diode/full.json",
+      "sha256": "abb5175eea56f0c4ef1b35c4e1afdc38d594db3a6637f072691a3d97a1fe776b"
+    },
+    {
+      "path": "A-077500-best/core/A-077500-best/eth3d/full.json",
+      "sha256": "93e741c1f89ea720bc7b7f7c19d4a330653064d534673920e71f035cd16a97e0"
+    },
+    {
+      "path": "A-077500-best/core/A-077500-best/nyu/full.json",
+      "sha256": "899d45529c02701a2fee1da438334b584c8c4dc161c720997a4b18eeaac19216"
+    },
+    {
+      "path": "A-077500-best/core/A-077500-best/reasonseg/full.json",
+      "sha256": "49f5b2281f0c0f2d0e4cbda6310bb1792f55acae534dea2d2ab3545061c4357d"
+    },
+    {
+      "path": "A-080000-best/core/A-080000-best/cityscapes/full.json",
+      "sha256": "f214a51142061fb892308838d18768b79399fba5a4815526ccd969ab46ad634f"
+    },
+    {
+      "path": "A-080000-best/core/A-080000-best/diode/full.json",
+      "sha256": "09f2d764ab00718591da99bda3ea5d6e462f409495269ec4dd266af1995fe930"
+    },
+    {
+      "path": "A-080000-best/core/A-080000-best/eth3d/full.json",
+      "sha256": "9bdddb42c0d1f36a32ed2c6b1fa1b96aa98c7ff8d5f86bd8832f7b3b97f4f146"
+    },
+    {
+      "path": "A-080000-best/core/A-080000-best/nyu/full.json",
+      "sha256": "eea2b2b12720061de2eebba15556850d3455603e977bc1f2fa83a136cff713a9"
+    },
+    {
+      "path": "A-080000-best/core/A-080000-best/reasonseg/full.json",
+      "sha256": "ca92682b97944d8047896e6e82ff6acf06712e0f891af1ff262d46d59aca2e47"
+    },
+    {
+      "path": "A-082500-best/core/A-082500-best/cityscapes/full.json",
+      "sha256": "a7afefceda7b7544368781625f4d28f2bcc0eac5543e11d6449f2115461ebe54"
+    },
+    {
+      "path": "A-082500-best/core/A-082500-best/diode/full.json",
+      "sha256": "ab61648b08bc95970a428dc14fd23b609d9c1e5ac21c4f856a98db00a64fa4c7"
+    },
+    {
+      "path": "A-082500-best/core/A-082500-best/eth3d/full.json",
+      "sha256": "8866f60387f085986c619e624d831ce21f4d65a50115474cc95a3df5d7c5c3c0"
+    },
+    {
+      "path": "A-082500-best/core/A-082500-best/nyu/full.json",
+      "sha256": "7c8011d3d8b2dba7c556576f1693bf3ac3fd39d275aefb9fb956d2ad8d95ba1c"
+    },
+    {
+      "path": "A-082500-best/core/A-082500-best/reasonseg/full.json",
+      "sha256": "86f4b824decb5359beaf4d124a4797d84189b8ef52a063e24d930af84ad4290e"
+    },
+    {
+      "path": "A-085000-best/core/A-085000-best/cityscapes/full.json",
+      "sha256": "7892f54a2bdbddd7f7c4f5ef6b0b6dba4bae0eeb48fb2be36e87ee8c13b47792"
+    },
+    {
+      "path": "A-085000-best/core/A-085000-best/diode/full.json",
+      "sha256": "f3bf5e54f73a152a1d8cb947a2c58940f78f8ad10211f3c837acbe815f080086"
+    },
+    {
+      "path": "A-085000-best/core/A-085000-best/eth3d/full.json",
+      "sha256": "ba0b4edfad75b818ab3c6a2ee690abe01d91563d69681111176d94df3ac36b2f"
+    },
+    {
+      "path": "A-085000-best/core/A-085000-best/nyu/full.json",
+      "sha256": "1b6b837ff5d072c49d47f44500ba0decdbdc4f1e18ec7d512f65e07fa29843e9"
+    },
+    {
+      "path": "A-085000-best/core/A-085000-best/reasonseg/full.json",
+      "sha256": "a191d39f563fae732b6f5fccc72d365ddf7708837b73db9027826fefdb4ac27d"
+    },
+    {
+      "path": "A-087500-best/core/A-087500-best/cityscapes/full.json",
+      "sha256": "0f1980669a2e1aab802f10ea8c77237365adca8f71f0390b010af8d21b377005"
+    },
+    {
+      "path": "A-087500-best/core/A-087500-best/diode/full.json",
+      "sha256": "433678e103f0273293594f5d23d5e8c28641a5014d2d82ecba2286c74cc0887c"
+    },
+    {
+      "path": "A-087500-best/core/A-087500-best/eth3d/full.json",
+      "sha256": "caea96cdf12cfcec0aaf0e3dd8d7fdda66f8fef441f3a170eda1c42242fdb085"
+    },
+    {
+      "path": "A-087500-best/core/A-087500-best/nyu/full.json",
+      "sha256": "f266e87c2b5ae8e7cb38fdd71b23eb77b078e2cec45ba1ce84ca3c80d653c382"
+    },
+    {
+      "path": "A-087500-best/core/A-087500-best/reasonseg/full.json",
+      "sha256": "d5550189e4a259a894df19bd61ab014f9267a113e5413641cb61f2d3053ef2dd"
+    },
+    {
+      "path": "A-090000-best/core/A-090000-best/cityscapes/full.json",
+      "sha256": "0b3448273bb87360273bc070c961aec1bf354dbc910e0e1e5e014ba484865984"
+    },
+    {
+      "path": "A-090000-best/core/A-090000-best/diode/full.json",
+      "sha256": "c3d7a446d8e10ed7533fb063f2df937913614bfa3a6875ec790239bdaea5b2e9"
+    },
+    {
+      "path": "A-090000-best/core/A-090000-best/eth3d/full.json",
+      "sha256": "3af4c01fd3e5d500fccca91d0ce156be3bd73f42c04355693f2ef94cb46fc191"
+    },
+    {
+      "path": "A-090000-best/core/A-090000-best/nyu/full.json",
+      "sha256": "a9980a5ab9214757b01f87ceb6520f945417d1bfa0c46deb9b3d85e1aa4faf3f"
+    },
+    {
+      "path": "A-090000-best/core/A-090000-best/reasonseg/full.json",
+      "sha256": "45116ae00c48a312aa5292b5831cb78e1342f738a4920166e6a54d0158bc27a9"
+    },
+    {
+      "path": "A-092500-best/core/A-092500-best/cityscapes/full.json",
+      "sha256": "b5c76c5dac6bd798bba241907b34ee81521795b6e2b3c0596a53f3a81a3fcf69"
+    },
+    {
+      "path": "A-092500-best/core/A-092500-best/diode/full.json",
+      "sha256": "ac3d5605691b38ee81b5b6de2a218983bdfc34d2112ed42170606ebf1bac203f"
+    },
+    {
+      "path": "A-092500-best/core/A-092500-best/eth3d/full.json",
+      "sha256": "1d8405861deeb87c1c93e5cde7f27fefeb331b9db9e706368cf315570bb45339"
+    },
+    {
+      "path": "A-092500-best/core/A-092500-best/nyu/full.json",
+      "sha256": "e142a397a936b5b11ce0fee1fae2535560ceb09918882a90e073521970971936"
+    },
+    {
+      "path": "A-092500-best/core/A-092500-best/reasonseg/full.json",
+      "sha256": "a45e558c95b93bea0c6ef8eaf3e36d4055ede08d97f2caed1adaa4c162e21d86"
+    },
+    {
+      "path": "A-095000-best/core/A-095000-best/cityscapes/full.json",
+      "sha256": "d3edcba931206c0eb7ea76d76d980edfbbbabc5a7323996f66d5443f9ea034e5"
+    },
+    {
+      "path": "A-095000-best/core/A-095000-best/diode/full.json",
+      "sha256": "0307dbd091a218dbff00286914f4b46ad47537cf95bf67fa8ebde0bcceaed95d"
+    },
+    {
+      "path": "A-095000-best/core/A-095000-best/eth3d/full.json",
+      "sha256": "ab0569592991437877321750d575295320eda081125b7e743e495b8be978fce4"
+    },
+    {
+      "path": "A-095000-best/core/A-095000-best/nyu/full.json",
+      "sha256": "148dd2f137947c712b1cffbf94540e4055ce28bedf2979791ea3112f89f8a749"
+    },
+    {
+      "path": "A-095000-best/core/A-095000-best/reasonseg/full.json",
+      "sha256": "d2676eb5278dba6024baa6544d2a32c0294a77a3f872c49c8faf36dae79d9d10"
+    },
+    {
+      "path": "A-097500-best/core/A-097500-best/cityscapes/full.json",
+      "sha256": "c6947ec15a144119af3eb3b14bd0d93e95a93dc312fa37370e4b56ac22f777e9"
+    },
+    {
+      "path": "A-097500-best/core/A-097500-best/diode/full.json",
+      "sha256": "e4cdeaed0f6dd7571df8a8aa93163cafc56b6f232b7ba7c1d131019bdc5a7827"
+    },
+    {
+      "path": "A-097500-best/core/A-097500-best/eth3d/full.json",
+      "sha256": "4ab6f03eebdf16cceb7e9a12a4ae5641b32a0ba33d622a3eebb049c9b5201c7e"
+    },
+    {
+      "path": "A-097500-best/core/A-097500-best/nyu/full.json",
+      "sha256": "ce8be4d33335aeb440303d606c9796187571a2466e22df93de9fcd0be40b2403"
+    },
+    {
+      "path": "A-097500-best/core/A-097500-best/reasonseg/full.json",
+      "sha256": "0f382fa5c5d36425ada624724e9fa826d4b06d3ffbbf07165ab9a9865c19c04e"
+    },
+    {
+      "path": "A-100000-best/core/A-100000-best/cityscapes/full.json",
+      "sha256": "123a5825c4886a9e8d3e0e12b4491eafd813bb548a6a9cf3b6a0b8a7122c57ae"
+    },
+    {
+      "path": "A-100000-best/core/A-100000-best/diode/full.json",
+      "sha256": "b57fb97259e05d6f42681285f1c12514faa24f47d77be683cf8ba09bf41bfbf3"
+    },
+    {
+      "path": "A-100000-best/core/A-100000-best/eth3d/full.json",
+      "sha256": "45161d53ffaee3b61fee95179d4e8078c4b285d16c66285824dfc4a1dabbc7f5"
+    },
+    {
+      "path": "A-100000-best/core/A-100000-best/nyu/full.json",
+      "sha256": "817ffcf41e0d7dbb5cacd9c159d09c234e8aa354bf0706f3b338092d5af611b1"
+    },
+    {
+      "path": "A-100000-best/core/A-100000-best/reasonseg/full.json",
+      "sha256": "ef9bba2ad382c90775d1e8e920f37e7b2b18d66add243013561fadedfa830e71"
+    },
+    {
+      "path": "A-100000-final/core/A-100000-final/cityscapes/full.json",
+      "sha256": "25dffc66b722d3551f6cea97b896f7c185d3e2039159f0d74925f2e4cc7e016c"
+    },
+    {
+      "path": "A-100000-final/core/A-100000-final/diode/full.json",
+      "sha256": "3215d893f41697dca56031760922dac5d63d4d2f304d54594d26b810f58cf291"
+    },
+    {
+      "path": "A-100000-final/core/A-100000-final/eth3d/full.json",
+      "sha256": "9b5b5276b3847f945e5154746a3bbc273860afdbf3c25b471a0dab8313203450"
+    },
+    {
+      "path": "A-100000-final/core/A-100000-final/nyu/full.json",
+      "sha256": "82fb3b769cf6b1e967279f42648ac71213a4ea79f8e85c2a83969a9c098c6478"
+    },
+    {
+      "path": "A-100000-final/core/A-100000-final/reasonseg/full.json",
+      "sha256": "54bef2ad884278d46ddbc551f94c558b78532807d81e2d705d7eb36f1988a77d"
+    },
+    {
+      "path": "B-010000-best/core/B-010000-best/cityscapes/full.json",
+      "sha256": "d2f86b51a469ae6704788336c8e33365d63c36fb4a02fc4afd8603249f176482"
+    },
+    {
+      "path": "B-010000-best/core/B-010000-best/diode/full.json",
+      "sha256": "11a4288e4cafaa6eed1869475c3d1279baa2663589da7969daa6f5143913eede"
+    },
+    {
+      "path": "B-010000-best/core/B-010000-best/eth3d/full.json",
+      "sha256": "9ec23cfdcb70d01477710493d345997b452730aed71f3a9e336d97a7cf74832c"
+    },
+    {
+      "path": "B-010000-best/core/B-010000-best/nyu/full.json",
+      "sha256": "223165a6584a86cbd3e0db815f969d449c45df4259a2b9920a272f0129ab5e9a"
+    },
+    {
+      "path": "B-010000-best/core/B-010000-best/reasonseg/full.json",
+      "sha256": "94f7d1da0a43bcabc65ce4a86e0f13c47ea41ffe4a0c00b1495aee12e657623d"
+    },
+    {
+      "path": "B-020000-best/core/B-020000-best/cityscapes/full.json",
+      "sha256": "6a4a3b3ef94fc066087cda507bb538bd6ae776d9ac89b22ae72777abed6e070e"
+    },
+    {
+      "path": "B-020000-best/core/B-020000-best/diode/full.json",
+      "sha256": "1ae1b6c3c27e8801d61ee26d7cc716dd784096e6815315831921eff977306ba9"
+    },
+    {
+      "path": "B-020000-best/core/B-020000-best/eth3d/full.json",
+      "sha256": "d4d61fc9c7e407add4353ad34a2c3afbeaa06b36650da96638649572555a4cd0"
+    },
+    {
+      "path": "B-020000-best/core/B-020000-best/nyu/full.json",
+      "sha256": "a47bb2889bd545be13e789e44ce69c1c465c1a5e25da1a324f3e798c6ebe7798"
+    },
+    {
+      "path": "B-020000-best/core/B-020000-best/reasonseg/full.json",
+      "sha256": "c51204c72ae0d2b87392dcc52b267e3b9b660be21f607f5a7ebbe9c64fb50bf7"
+    },
+    {
+      "path": "B-030000-best/core/B-030000-best/cityscapes/full.json",
+      "sha256": "92a14f9f2fda1c4d1dd7feb7ab4abda6927c353de2816465e455dd79fcc85855"
+    },
+    {
+      "path": "B-030000-best/core/B-030000-best/diode/full.json",
+      "sha256": "95973f676c468d0cc328309abf2ae0a3df66cd4112a277be9a6b7a8bf0b33dfb"
+    },
+    {
+      "path": "B-030000-best/core/B-030000-best/eth3d/full.json",
+      "sha256": "b0c3524608c420088c9368118fe81d6df3a62ce81638212d65c0578543218224"
+    },
+    {
+      "path": "B-030000-best/core/B-030000-best/nyu/full.json",
+      "sha256": "6f52f9c16f4982180b9a67d9ab951c30260e6e6731b604f02dd8bc87644a8196"
+    },
+    {
+      "path": "B-030000-best/core/B-030000-best/reasonseg/full.json",
+      "sha256": "dc0989e45c07e14bdab466a9fa594e2a1f4a586e2c8ab46fd208b111ce542200"
+    },
+    {
+      "path": "B-040000-best/core/B-040000-best/cityscapes/full.json",
+      "sha256": "f401f3a6649bf2cac0c080a55cec0e23ed613935e5ed02e47748e88e728062a5"
+    },
+    {
+      "path": "B-040000-best/core/B-040000-best/diode/full.json",
+      "sha256": "901ffbb304f95e66d605d270acc8134538cf5290734439175513442626e17093"
+    },
+    {
+      "path": "B-040000-best/core/B-040000-best/eth3d/full.json",
+      "sha256": "cf80e72b4f6aadf56b49eeb94a69d3c963f7732eef2389c796b7ae32967b1c73"
+    },
+    {
+      "path": "B-040000-best/core/B-040000-best/nyu/full.json",
+      "sha256": "a876c7b5444c6c2b62f7cccad512ec1c4b988155a41eaf82dae4e28af3933b87"
+    },
+    {
+      "path": "B-040000-best/core/B-040000-best/reasonseg/full.json",
+      "sha256": "7360298a81463c77fcef54d7815c31244143163ef29848dce2792dff6f638765"
+    },
+    {
+      "path": "B-050000-best/core/B-050000-best/cityscapes/full.json",
+      "sha256": "c07bb1e060c75c93a6b0bd5a281c97d05fc43dbedfdb429069a343004aab3835"
+    },
+    {
+      "path": "B-050000-best/core/B-050000-best/diode/full.json",
+      "sha256": "1b402353ba65dad23b41a4328eb6f0bce9b96f1a23c51ce3168a24f934431cd1"
+    },
+    {
+      "path": "B-050000-best/core/B-050000-best/eth3d/full.json",
+      "sha256": "ce7024b3884c68e665fae204ba3d39a6d3cb4a0a606505e91eab7e3487538b1e"
+    },
+    {
+      "path": "B-050000-best/core/B-050000-best/nyu/full.json",
+      "sha256": "ca615d7f15292b9d744c67b906a9e49891d82b3a58412a8f4b97fc33ee96b69d"
+    },
+    {
+      "path": "B-050000-best/core/B-050000-best/reasonseg/full.json",
+      "sha256": "090c8d04aad8b4fa3a6788e8fc1f662219a6295d7ebbb000e74b7894ad25c5ed"
+    },
+    {
+      "path": "B-057500-best/core/B-057500-best/cityscapes/full.json",
+      "sha256": "78b31d7cefd0cf36578a03301744be8068b6e679360f3eb93c90e040231363a5"
+    },
+    {
+      "path": "B-057500-best/core/B-057500-best/diode/full.json",
+      "sha256": "17b489bb0bb9da6c9d33d485e0719aaa4b718be53c00fcb58993fb7c4edff80e"
+    },
+    {
+      "path": "B-057500-best/core/B-057500-best/eth3d/full.json",
+      "sha256": "aee55ed2adcabac2db2c3c598661ae9c7531bc2ce6fc1d6311b18da5885ffe10"
+    },
+    {
+      "path": "B-057500-best/core/B-057500-best/nyu/full.json",
+      "sha256": "c3f8d51a757611cbb3e91d9bc16e88b7df270b4aeb5c64006ee5f949284382f9"
+    },
+    {
+      "path": "B-057500-best/core/B-057500-best/reasonseg/full.json",
+      "sha256": "72f5e242c750e56c4ac4bdef5e5d825a689df7ffd54d40774bf05570732fd467"
+    },
+    {
+      "path": "B-060000-best/core/B-060000-best/cityscapes/full.json",
+      "sha256": "3ac35833c40d4947af0821840f13ac8266a99aa9d3fd1ec25cc342f927114cd5"
+    },
+    {
+      "path": "B-060000-best/core/B-060000-best/diode/full.json",
+      "sha256": "efaa5a19a4a94e34c5177d61d46da4a500c1c7d7ac710324222e904f416b37b9"
+    },
+    {
+      "path": "B-060000-best/core/B-060000-best/eth3d/full.json",
+      "sha256": "ed706df2a355874eec0b56e5eba20e9d4da2a985e0d41179cca308ee06fb22b0"
+    },
+    {
+      "path": "B-060000-best/core/B-060000-best/nyu/full.json",
+      "sha256": "0f57f5b16bbeacc7ac64349fa6a14409caa4b4460810c84a628ee23b6b3f06fd"
+    },
+    {
+      "path": "B-060000-best/core/B-060000-best/reasonseg/full.json",
+      "sha256": "c035d35fb11a06480f63b58f3fb2bd22c33ba4db2a6ef245e4a72a21dc3da5e2"
+    },
+    {
+      "path": "B-065000-best/core/B-065000-best/cityscapes/full.json",
+      "sha256": "ac81041db51f1368aad3df6310ba59ab5ce2567abb2e7e4f9f00abf6024ea527"
+    },
+    {
+      "path": "B-065000-best/core/B-065000-best/diode/full.json",
+      "sha256": "a509ebf64d949e316f7f93fe21deb40a47c68aa3745368e49e38435f626f1c43"
+    },
+    {
+      "path": "B-065000-best/core/B-065000-best/eth3d/full.json",
+      "sha256": "78fa8cbb70b5b1384e92db4df2bb77569e053eefd48900c7dc27420a49d4ee84"
+    },
+    {
+      "path": "B-065000-best/core/B-065000-best/nyu/full.json",
+      "sha256": "bd178d62468925b20eea44c04190c0889e06b4a84f7710b3964f9d7a090cd8ea"
+    },
+    {
+      "path": "B-065000-best/core/B-065000-best/reasonseg/full.json",
+      "sha256": "b858e4720e12b5be13739445ddfdc9c0ec36b65e20357f97efdc0685fe30ff72"
+    },
+    {
+      "path": "B-067500-best/core/B-067500-best/cityscapes/full.json",
+      "sha256": "c404aeb4d87f6ac82bccd19eb016bd6b8d579b63d67b3ad336d24e35fffa722b"
+    },
+    {
+      "path": "B-067500-best/core/B-067500-best/diode/full.json",
+      "sha256": "67f9f98fffcb8ef6bbd305c075bc9e31a51494817a582d07d45260da9faa221e"
+    },
+    {
+      "path": "B-067500-best/core/B-067500-best/eth3d/full.json",
+      "sha256": "ac4b80f21bf643242d4c6c6e41dc41465a8a81a4a1789be4018be7f09f3b8af5"
+    },
+    {
+      "path": "B-067500-best/core/B-067500-best/nyu/full.json",
+      "sha256": "9d27dad130fc5f28a978e85c027ede967d9660456adde9a4450364eabcb8aaa9"
+    },
+    {
+      "path": "B-067500-best/core/B-067500-best/reasonseg/full.json",
+      "sha256": "64441fbd0b36b5188121aceb6099b6806672a215b4ff3109688e4c5bf674c8bd"
+    },
+    {
+      "path": "B-070000-best/core/B-070000-best/cityscapes/full.json",
+      "sha256": "8685b4db02e04028e3eb0a43d5f2785bb475910c7a27a154054430bf1edd92dc"
+    },
+    {
+      "path": "B-070000-best/core/B-070000-best/diode/full.json",
+      "sha256": "b35efef735367d18758c136f371600970994537e5843c9da13ab06f01c4caba8"
+    },
+    {
+      "path": "B-070000-best/core/B-070000-best/eth3d/full.json",
+      "sha256": "f3cfe9a4e245639f6aa49c7edd41bc5d05972e15f2f27bd3b533e56f57860180"
+    },
+    {
+      "path": "B-070000-best/core/B-070000-best/nyu/full.json",
+      "sha256": "4ee62243927b8c1edb06019d85e31164948508727e856b89e947be864ba0ce1a"
+    },
+    {
+      "path": "B-070000-best/core/B-070000-best/reasonseg/full.json",
+      "sha256": "611feadc6e0196a52feeeb49e9c075e8c086a10166ebafa81830424dcc9aa258"
+    },
+    {
+      "path": "B-075000-best/core/B-075000-best/cityscapes/full.json",
+      "sha256": "11b08e78b792e2e8aacc9aa767a0c6fa5cc4350e46b8f56d3db7dc659a49b90d"
+    },
+    {
+      "path": "B-075000-best/core/B-075000-best/diode/full.json",
+      "sha256": "834639a344b0f17f88625dee383fff89a7e16bab651c2d3c2b13a89c87cf6f40"
+    },
+    {
+      "path": "B-075000-best/core/B-075000-best/eth3d/full.json",
+      "sha256": "05c37e375fe85786d63f99b924c5053da0682407f4b8aa13168444bfc033a0d5"
+    },
+    {
+      "path": "B-075000-best/core/B-075000-best/nyu/full.json",
+      "sha256": "69469b3de3dfcac39f69f1138fae4ba7b05d920dc7c63971b1a26a2a9eac5c69"
+    },
+    {
+      "path": "B-075000-best/core/B-075000-best/reasonseg/full.json",
+      "sha256": "29c08beaa9609b3a9c57602420772486129d3b1d930bc2e1cc391a239cc7f841"
+    },
+    {
+      "path": "B-080000-best/core/B-080000-best/cityscapes/full.json",
+      "sha256": "e47c6a0a1bb867895eafc259775f912ee02db97d74c5c9f9ada8f1e1b52e7f3d"
+    },
+    {
+      "path": "B-080000-best/core/B-080000-best/diode/full.json",
+      "sha256": "53020774ef5a5f674998ec6d75373ef52a33cb8b5f7ededdbb10720d0dea7334"
+    },
+    {
+      "path": "B-080000-best/core/B-080000-best/eth3d/full.json",
+      "sha256": "62d50ea986727fc40f5cbf4228fddd5da612fd44db98c328b3f459aecfc13cfb"
+    },
+    {
+      "path": "B-080000-best/core/B-080000-best/nyu/full.json",
+      "sha256": "b9b7b2c9fc86ce0a019cdcdc597eae52e30d66fd299eb9f9470c5b9b6eda424c"
+    },
+    {
+      "path": "B-080000-best/core/B-080000-best/reasonseg/full.json",
+      "sha256": "c98de8f1a16adfbed675e5c6e3a2b33d4f019d795c3ed2eab922cc447346560f"
+    },
+    {
+      "path": "B-085000-best/core/B-085000-best/cityscapes/full.json",
+      "sha256": "45c13054a2582684670339636de79325dfb4b3d967a606d207a1fb4e5322e533"
+    },
+    {
+      "path": "B-085000-best/core/B-085000-best/diode/full.json",
+      "sha256": "e1e25ba3f36fa55c10a2d4384eedaac5d654d34679d9e811a2a7c9d63132759c"
+    },
+    {
+      "path": "B-085000-best/core/B-085000-best/eth3d/full.json",
+      "sha256": "6c5f3ddd99fe644825a60601db0766b3d8a3f9f805bb5980aa31667c62d924df"
+    },
+    {
+      "path": "B-085000-best/core/B-085000-best/nyu/full.json",
+      "sha256": "afead4edc3fb97e9de3abd502cdb0f05df551a2c77b9f424fd84480060bb90a1"
+    },
+    {
+      "path": "B-085000-best/core/B-085000-best/reasonseg/full.json",
+      "sha256": "bdc20677f0d227b83a1f4915bb6ad6155c8e67eb8aba28dfa0463049c416db63"
+    },
+    {
+      "path": "B-087500-best/core/B-087500-best/cityscapes/full.json",
+      "sha256": "38a33cb8fae72294b1a96b819484b34aef670ac7a2208944a42c15697b90e365"
+    },
+    {
+      "path": "B-087500-best/core/B-087500-best/diode/full.json",
+      "sha256": "b6e2830fa43f174036a4664d41fea8f446649f1645ec1abae2db0bf94c7cd944"
+    },
+    {
+      "path": "B-087500-best/core/B-087500-best/eth3d/full.json",
+      "sha256": "658fff56f87fb6cffdea77476b8104cb15d2b80f74e24036f23edf61fc15e404"
+    },
+    {
+      "path": "B-087500-best/core/B-087500-best/nyu/full.json",
+      "sha256": "ebeabca7896576883bfb2b24b276c4565d3615c950df72793b09a4aff38457e5"
+    },
+    {
+      "path": "B-087500-best/core/B-087500-best/reasonseg/full.json",
+      "sha256": "270a6722585e4e56c9999f1d9f242a284009884458163d61006590d4a47ec04c"
+    },
+    {
+      "path": "B-092500-best/core/B-092500-best/cityscapes/full.json",
+      "sha256": "2e4a6f1284f338afc29d2a0a1c5aa24b10895263c8b4a7b8d73190678f6ec64d"
+    },
+    {
+      "path": "B-092500-best/core/B-092500-best/diode/full.json",
+      "sha256": "049d0b5d2f5ea51be4e91cc0658ca4f9f918e068781f8e46529c9e2e18b91ec7"
+    },
+    {
+      "path": "B-092500-best/core/B-092500-best/eth3d/full.json",
+      "sha256": "b7bf20e229a817859a2516580e2b93f1492ad75b49e8aa2071fc8f27ffbdb9d1"
+    },
+    {
+      "path": "B-092500-best/core/B-092500-best/nyu/full.json",
+      "sha256": "1adddacc82325cbba5473024475e5794ca86977d55cfa54573a4c2c051e08174"
+    },
+    {
+      "path": "B-092500-best/core/B-092500-best/reasonseg/full.json",
+      "sha256": "a739b72cbfae806626413432e4a912bbdc902a40c9bb8322a050b58fc8e61a31"
+    },
+    {
+      "path": "B-095000-best/core/B-095000-best/cityscapes/full.json",
+      "sha256": "ae463b957b0c2567f2336dadb0144cad0492c96f46c6900e73340d34bf969aa7"
+    },
+    {
+      "path": "B-095000-best/core/B-095000-best/diode/full.json",
+      "sha256": "193de338de36500aac4a24a381b1c6d761251417ffbcbdd94c67759e1fd3771c"
+    },
+    {
+      "path": "B-095000-best/core/B-095000-best/eth3d/full.json",
+      "sha256": "49ce1757c5a21990bc26093c7f7fcc7cb56c833ab973da2e9b8366c8c596b5da"
+    },
+    {
+      "path": "B-095000-best/core/B-095000-best/nyu/full.json",
+      "sha256": "677dbdd264676096b7e3c182371893e06962e115cd25821cd9fb6877b73eca6a"
+    },
+    {
+      "path": "B-095000-best/core/B-095000-best/reasonseg/full.json",
+      "sha256": "9210835141220462a8069b0303ccde0121fff5e4f18ae9cf763a4fa7e812a77e"
+    },
+    {
+      "path": "B-100000-best/core/B-100000-best/cityscapes/full.json",
+      "sha256": "cfc44ba53ed6b281983b12e7ed801602dd1dabfb7f20f83c3cf4eae825fea308"
+    },
+    {
+      "path": "B-100000-best/core/B-100000-best/diode/full.json",
+      "sha256": "c6967e0defe12c1d39ed6e41591a926ee6b02dd6b7560369d218e66b63122e31"
+    },
+    {
+      "path": "B-100000-best/core/B-100000-best/eth3d/full.json",
+      "sha256": "3b24ffa4cab6dc09cd394b7808ed68e388509ef9b5308f05bebc2874c91a95f4"
+    },
+    {
+      "path": "B-100000-best/core/B-100000-best/nyu/full.json",
+      "sha256": "29f519c9151b4d4aadbc8ee4df2752a5bd0f9259b24cea391da934572130e8ac"
+    },
+    {
+      "path": "B-100000-best/core/B-100000-best/reasonseg/full.json",
+      "sha256": "3e92943537488097c58031e61ce201ed1436f521d3532f1b2d5dd2e8bdb25360"
+    },
+    {
+      "path": "B-100000-final/core/B-100000-final/cityscapes/full.json",
+      "sha256": "522ff43badbdd6469548443ff052ce127ad7cb04c06eb784387e33fb89dd60b4"
+    },
+    {
+      "path": "B-100000-final/core/B-100000-final/diode/full.json",
+      "sha256": "067f811c63e6d11f540f38b7110423e2c571c1f3f8b12011e8a537b777d1d9fa"
+    },
+    {
+      "path": "B-100000-final/core/B-100000-final/eth3d/full.json",
+      "sha256": "d77de63e3efffe6021dadb9395d9dd0169f99e28aebaf6277870267fd3210aac"
+    },
+    {
+      "path": "B-100000-final/core/B-100000-final/nyu/full.json",
+      "sha256": "121b968ac7364fcb1f43c4b9a00f351e48d34d8ae8d3303b7d586f5953eccca9"
+    },
+    {
+      "path": "B-100000-final/core/B-100000-final/reasonseg/full.json",
+      "sha256": "84b5929b82937aa01df23abb74ea116706ea309990616fef40c6427c0fc4bc06"
+    },
+    {
+      "path": "base-000000/core/base-000000/cityscapes/full.json",
+      "sha256": "0080a5863dd49e835c29e648f8efbdba832ac504321879b36ba74aa8011424eb"
+    },
+    {
+      "path": "base-000000/core/base-000000/diode/full.json",
+      "sha256": "e1e1997c79a22c2606bf52b2a4ec2810e161c0a102355d361093cb9133305176"
+    },
+    {
+      "path": "base-000000/core/base-000000/eth3d/full.json",
+      "sha256": "31ce0d4d381b06a7c287cde0153565da290e87844a1bfbcaf467027d9b4f3996"
+    },
+    {
+      "path": "base-000000/core/base-000000/nyu/full.json",
+      "sha256": "9da67c9bc136fdcdf7fe897fcefc6cb72d83cea18d5e9186a17a2991ab0ebd56"
+    },
+    {
+      "path": "base-000000/core/base-000000/reasonseg/full.json",
+      "sha256": "64c5a8bb7faf3ac13dc25f4c870845ce84186c58ca455d30d5786144a544d588"
+    }
+  ]
+}

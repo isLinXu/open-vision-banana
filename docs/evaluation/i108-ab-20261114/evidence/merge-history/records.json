@@ -1,0 +1,4756 @@
+{
+  "source": "E:\\Open-vision-banana\\output\\ovb-dev-selected-external-20261105\\exports\\complete-results.json",
+  "source_sha256": "3b5aecdd2e96e0ea1de23b31be07b021db20f85f84ee9694884f63c0ed8bffe1",
+  "generated_at": "2026-11-14T22:56:47+08:00",
+  "records": [
+    {
+      "id": "C1_retest:10000:512:cityscapes",
+      "model": "C1_retest",
+      "step": 10000,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+      "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.3449547588825226,
+        "pixel_accuracy": 0.7519180477505072,
+        "per_class_iou": [
+          0.9413355588912964,
+          0.7101505994796753,
+          0.6807674765586853,
+          0.08809474855661392,
+          0.23748639225959778,
+          0.22538986802101135,
+          0.13263237476348877,
+          0.3163093030452728,
+          0.3183608651161194,
+          0.03265583887696266,
+          0.8121742606163025,
+          0.5297476053237915,
+          0.10576071590185165,
+          0.7737139463424683,
+          0.3483886420726776,
+          0.18069744110107422,
+          0.0002079444529954344,
+          0.0935976430773735,
+          0.02666972577571869
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "reference_dashboard_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-i97-comparison-20261103\\external-results\\results\\C1_retest\\cityscapes\\full.json",
+          "sha256": "7aff80ed1943dffa32664a391f6b0cf98822cf84abe6c94be453641210a43b87",
+          "original_identity": {
+            "model": "C1_retest",
+            "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+            "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+            "step": 10000,
+            "weight_type": "continued_lora_on_official_base",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128:0:512:cityscapes",
+      "model": "Fusion-C1-KQ0r128",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+      "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.37909695506095886,
+        "pixel_accuracy": 0.7459127773376879,
+        "per_class_iou": [
+          0.9660910367965698,
+          0.7357954382896423,
+          0.8150402903556824,
+          0.2204870581626892,
+          0.2705845534801483,
+          0.2608250081539154,
+          0.18540580570697784,
+          0.3808554708957672,
+          0.0453638918697834,
+          0.02249070256948471,
+          0.8425905108451843,
+          0.4908048212528229,
+          0.05796046555042267,
+          0.8173207640647888,
+          0.34569573402404785,
+          0.5219373106956482,
+          0.000321249826811254,
+          0.18901388347148895,
+          0.034257449209690094
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\cityscapes\\full.json",
+          "sha256": "9d2240c017d1d93b485d6dbf31e622a57ed7e344b3258c026b8a56b12ccfd367",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\cityscapes\\full.json",
+          "sha256": "0da8879271b7be9279447bb4ccdb35a5ceea99243b46d05cb7c67137edd7a35d",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-60-40:0:512:cityscapes",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+      "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.38700196146965027,
+        "pixel_accuracy": 0.7587402264470591,
+        "per_class_iou": [
+          0.9637894034385681,
+          0.7379270792007446,
+          0.8097568154335022,
+          0.21446816623210907,
+          0.26892152428627014,
+          0.2652820348739624,
+          0.20828618109226227,
+          0.378674179315567,
+          0.1258239597082138,
+          0.025927888229489326,
+          0.855005145072937,
+          0.5354741215705872,
+          0.05968842655420303,
+          0.8005169630050659,
+          0.3618578314781189,
+          0.5281690955162048,
+          0.00010302275040885434,
+          0.17440281808376312,
+          0.03896278142929077
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\cityscapes\\full.json",
+          "sha256": "c58cc3f181938ab827beeface7f6db72a9c80a1c297a1693a74c4153f5333de6",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-60-40",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+            "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-75-25:0:512:cityscapes",
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+      "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.37824541330337524,
+        "pixel_accuracy": 0.7618398716931432,
+        "per_class_iou": [
+          0.9569799304008484,
+          0.7269700169563293,
+          0.7821126580238342,
+          0.16035275161266327,
+          0.24612084031105042,
+          0.2591888904571533,
+          0.20214438438415527,
+          0.37141165137290955,
+          0.20200422406196594,
+          0.029375795274972916,
+          0.8487830758094788,
+          0.5420833826065063,
+          0.05551028996706009,
+          0.7933799624443054,
+          0.4089237153530121,
+          0.42561376094818115,
+          0.00017521652625873685,
+          0.13932989537715912,
+          0.03620225563645363
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-75-25\\cityscapes\\full.json",
+          "sha256": "e87c6dba28d5a44f0a75503573ccbe62ce33edf7707089b3031a4641ce388426",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-75-25",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+            "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-90-10:0:512:cityscapes",
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+      "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.35764098167419434,
+        "pixel_accuracy": 0.755441047601386,
+        "per_class_iou": [
+          0.9455379843711853,
+          0.7141861915588379,
+          0.7165033221244812,
+          0.10721246898174286,
+          0.23736856877803802,
+          0.245634064078331,
+          0.15054354071617126,
+          0.34704285860061646,
+          0.27654069662094116,
+          0.03242506459355354,
+          0.8319087624549866,
+          0.530959963798523,
+          0.07372521609067917,
+          0.7837146520614624,
+          0.37755829095840454,
+          0.27323025465011597,
+          0.00016313782543875277,
+          0.11926499754190445,
+          0.03165803104639053
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-90-10\\cityscapes\\full.json",
+          "sha256": "17ad69fb7d132fab4e9caa1643dac2b1cd6e9ccfcfb5b3f53ab440a843619581",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-90-10",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+            "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-75-25-Q0M0-75-25:0:512:cityscapes",
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+      "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.37086451053619385,
+        "pixel_accuracy": 0.7513677425973905,
+        "per_class_iou": [
+          0.9606173634529114,
+          0.7354106903076172,
+          0.8073500990867615,
+          0.20055857300758362,
+          0.2528226673603058,
+          0.26715192198753357,
+          0.19348540902137756,
+          0.39828065037727356,
+          0.11030766367912292,
+          0.02717246674001217,
+          0.8215160369873047,
+          0.4906123876571655,
+          0.05946584790945053,
+          0.7932315468788147,
+          0.3199453353881836,
+          0.3451157510280609,
+          8.508199243806303e-05,
+          0.2090156227350235,
+          0.05428142845630646
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-75-25-Q0M0-75-25\\cityscapes\\full.json",
+          "sha256": "867b93d71a85e778e2840f2ebc48cc232271699450a8efbf8dfb06642d23f36b",
+          "original_identity": {
+            "model": "Fusion-CK128-75-25-Q0M0-75-25",
+            "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+            "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-90-10-Q0M0-50-50:0:512:cityscapes",
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+      "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.35681265592575073,
+        "pixel_accuracy": 0.7403635239027334,
+        "per_class_iou": [
+          0.9616482853889465,
+          0.7480112314224243,
+          0.8146853446960449,
+          0.21097472310066223,
+          0.26690173149108887,
+          0.2735966444015503,
+          0.1633991301059723,
+          0.4227254390716553,
+          0.04788382723927498,
+          0.02515300177037716,
+          0.7964888215065002,
+          0.4124085009098053,
+          0.06015588715672493,
+          0.7886664271354675,
+          0.27995386719703674,
+          0.2423522025346756,
+          1.3136770576238632e-05,
+          0.2010200470685959,
+          0.06340211629867554
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-90-10-Q0M0-50-50\\cityscapes\\full.json",
+          "sha256": "090c410fe0814fb83c8af63ce776311ae4acfd904a3c8196d92f569d75201611",
+          "original_identity": {
+            "model": "Fusion-CK128-90-10-Q0M0-50-50",
+            "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+            "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M0:0:512:cityscapes",
+      "model": "Fusion-CK128-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M0",
+      "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.372650682926178,
+        "pixel_accuracy": 0.7429169816880322,
+        "per_class_iou": [
+          0.9673196077346802,
+          0.7475463151931763,
+          0.8195083141326904,
+          0.22810283303260803,
+          0.28510263562202454,
+          0.2742553949356079,
+          0.12809692323207855,
+          0.42448148131370544,
+          0.02601511962711811,
+          0.02311977744102478,
+          0.8424669504165649,
+          0.3454262614250183,
+          0.09134334325790405,
+          0.8161956071853638,
+          0.31759536266326904,
+          0.5265345573425293,
+          0.003221001010388136,
+          0.19246262311935425,
+          0.021568795666098595
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M0\\cityscapes\\full.json",
+          "sha256": "a1c6de6dc5aa23d473d6391c3e4dcdd5944576245e42ec8a6103614143aece1c",
+          "original_identity": {
+            "model": "Fusion-CK128-M0",
+            "repo": "local-weight-fusion/Fusion-CK128-M0",
+            "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M1:0:512:cityscapes",
+      "model": "Fusion-CK128-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M1",
+      "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.36554473638534546,
+        "pixel_accuracy": 0.7441958392182428,
+        "per_class_iou": [
+          0.9670230746269226,
+          0.7395797371864319,
+          0.8491066098213196,
+          0.33533117175102234,
+          0.28841960430145264,
+          0.24907249212265015,
+          0.11514130234718323,
+          0.3894188702106476,
+          0.012886229902505875,
+          0.02054271474480629,
+          0.802401065826416,
+          0.3055885434150696,
+          0.07247108221054077,
+          0.8175368309020996,
+          0.26158350706100464,
+          0.5196593999862671,
+          0.0003371247148606926,
+          0.197824165225029,
+          0.0014269179664552212
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M1\\cityscapes\\full.json",
+          "sha256": "b44dd8b671f45352a787b40993b19dbdc1e3e6cecb8df53a566462f03d84b226",
+          "original_identity": {
+            "model": "Fusion-CK128-M1",
+            "repo": "local-weight-fusion/Fusion-CK128-M1",
+            "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M0:0:512:cityscapes",
+      "model": "Fusion-Q0-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M0",
+      "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.3373442590236664,
+        "pixel_accuracy": 0.767728381101376,
+        "per_class_iou": [
+          0.9634698629379272,
+          0.7623742818832397,
+          0.834843635559082,
+          0.25760695338249207,
+          0.26737967133522034,
+          0.24120277166366577,
+          0.0966133251786232,
+          0.42870524525642395,
+          0.18664030730724335,
+          0.028646502643823624,
+          0.8114185333251953,
+          0.15602043271064758,
+          0.07857775688171387,
+          0.796021044254303,
+          0.22492530941963196,
+          0.09375680238008499,
+          7.491515134461224e-05,
+          0.14204996824264526,
+          0.039213813841342926
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M0\\cityscapes\\full.json",
+          "sha256": "bc56a6f3b4de1c631a2f0fe4fc8b12197515386415ddf87e5c74444a24285969",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M0\\cityscapes\\full.json",
+          "sha256": "78f8c85b914c78b4186454ad193ece296a9fd1b65f549cc9d53f99117d175325",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M1:0:512:cityscapes",
+      "model": "Fusion-Q0-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M1",
+      "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.33364447951316833,
+        "pixel_accuracy": 0.7444736089721306,
+        "per_class_iou": [
+          0.969596803188324,
+          0.758152961730957,
+          0.847815752029419,
+          0.30855971574783325,
+          0.291136234998703,
+          0.23266148567199707,
+          0.09578333795070648,
+          0.4252263605594635,
+          0.033675651997327805,
+          0.02292688377201557,
+          0.8250953555107117,
+          0.16575118899345398,
+          0.09048599004745483,
+          0.7850016951560974,
+          0.19459234178066254,
+          0.12825560569763184,
+          1.961198722710833e-05,
+          0.1399407684803009,
+          0.02456669881939888
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M1\\cityscapes\\full.json",
+          "sha256": "6c755e8e90420f34f0c8d97c045bbc3bdbc901b671872ecac469fafc8273aadd",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M1\\cityscapes\\full.json",
+          "sha256": "622d7fe8ef71fd006ab79b6dcfa3f37b4055e641d00a4957bd7fc46b4a02a214",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "K-Q0-r128:20000:512:cityscapes",
+      "model": "K-Q0-r128",
+      "step": 20000,
+      "resolution": 512,
+      "dataset": "cityscapes",
+      "task": "semantic",
+      "samples": 500,
+      "status": "completed",
+      "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+      "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+      "dataset_fingerprint": "b1e0a589ad7ea753e4c4ca7515173187aa8d4fe17761bcdf62bcaafe1daceb95",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "mIoU": 0.354755699634552,
+        "pixel_accuracy": 0.745210326942492,
+        "per_class_iou": [
+          0.9690871238708496,
+          0.748375415802002,
+          0.8211433291435242,
+          0.21897558867931366,
+          0.284769743680954,
+          0.2363046109676361,
+          0.08616184443235397,
+          0.365435928106308,
+          0.04575708135962486,
+          0.024178875610232353,
+          0.7529529929161072,
+          0.345209002494812,
+          0.0946902185678482,
+          0.8357799053192139,
+          0.4162680506706238,
+          0.3501669764518738,
+          0.0013398242881521583,
+          0.14261898398399353,
+          0.001143102184869349
+        ],
+        "valid_pixels": 917018489
+      },
+      "source_groups": [
+        "dev_selected_external_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-dev-selected-external-20261105\\external-results\\results\\K-Q0-r128\\cityscapes\\full.json",
+          "sha256": "70871a0d53005d6d5628c8b155c1ab09e6676f051f312a199ad3987ab2332c34",
+          "original_identity": {
+            "model": "K-Q0-r128",
+            "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+            "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+            "step": 20000,
+            "weight_type": "lora_on_official_base",
+            "expected_adapter_sha256": "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "C1_retest:10000:512:diode",
+      "model": "C1_retest",
+      "step": 10000,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+      "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 693.8937347706058,
+        "SqRel": 522878422.50517654,
+        "RMSE": 25200.806486923502,
+        "RMSE_log": 0.9272931575653008,
+        "delta_1.25": 0.31978029667303304,
+        "delta_1.25^2": 0.5452983931745298,
+        "delta_1.25^3": 0.7031411681990548,
+        "valid_pixels": 252999537,
+        "AbsRel_per_image": 687.8321714425259,
+        "RMSE_per_image": 1640.8683974008607,
+        "delta_1.25_per_image": 0.3194715879891982,
+        "images": 325,
+        "AbsRel_aligned": 0.7966468271088818,
+        "delta_1.25_aligned": 0.8542316520197584,
+        "RMSE_aligned": 2502.5133739718767,
+        "aligned_valid_pixels": 252214205,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "reference_dashboard_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-i97-comparison-20261103\\external-results\\results\\C1_retest\\diode\\full.json",
+          "sha256": "eab2d804eecd0bab534edc55e24e576a84cf8c23ed3c45553d2f3b2f42de94d3",
+          "original_identity": {
+            "model": "C1_retest",
+            "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+            "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+            "step": 10000,
+            "weight_type": "continued_lora_on_official_base",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128:0:512:diode",
+      "model": "Fusion-C1-KQ0r128",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+      "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 4.490430676041762,
+        "SqRel": 3077802.375685071,
+        "RMSE": 4494.0459294606935,
+        "RMSE_log": 0.70126659107395,
+        "delta_1.25": 0.28292213437769764,
+        "delta_1.25^2": 0.5186569288957334,
+        "delta_1.25^3": 0.7087647447678695,
+        "valid_pixels": 253020260,
+        "AbsRel_per_image": 4.455122543699466,
+        "RMSE_per_image": 500.0810048316304,
+        "delta_1.25_per_image": 0.2829588007549049,
+        "images": 325,
+        "AbsRel_aligned": 8.2252540611922,
+        "delta_1.25_aligned": 0.8483461522014087,
+        "RMSE_aligned": 8825.48648618318,
+        "aligned_valid_pixels": 253020260,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\diode\\full.json",
+          "sha256": "962640231e8e1ebe8e9ee6d4b1e4fba2b1b2b0efad0fa0ce9bcd645d619b9606",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\diode\\full.json",
+          "sha256": "95ccf31d12ba0ce006517696448e6a53a0ac8b3b05eefdf553d51fb2bdf11295",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-60-40:0:512:diode",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+      "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 3.76580462432206,
+        "SqRel": 2554484.4232174056,
+        "RMSE": 3989.6551937539016,
+        "RMSE_log": 0.6937205108042583,
+        "delta_1.25": 0.30007570576743287,
+        "delta_1.25^2": 0.5393640289482957,
+        "delta_1.25^3": 0.7207234510498055,
+        "valid_pixels": 253020353,
+        "AbsRel_per_image": 3.738226504067962,
+        "RMSE_per_image": 453.17645817064323,
+        "delta_1.25_per_image": 0.2994223002900285,
+        "images": 325,
+        "AbsRel_aligned": 7.307668492286827,
+        "delta_1.25_aligned": 0.8441566754117997,
+        "RMSE_aligned": 8345.789868785938,
+        "aligned_valid_pixels": 253020353,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\diode\\full.json",
+          "sha256": "8e5ac1c3e5177ba28c04b407699cb7fa805d1528eabab211fd61517098cef64d",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-60-40",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+            "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-75-25:0:512:diode",
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+      "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 1.7177890495534562,
+        "SqRel": 783756.3693699279,
+        "RMSE": 3678.975314575202,
+        "RMSE_log": 0.6925912007489669,
+        "delta_1.25": 0.3095619926572272,
+        "delta_1.25^2": 0.5631011894273018,
+        "delta_1.25^3": 0.7264432075145992,
+        "valid_pixels": 252983179,
+        "AbsRel_per_image": 1.7144631908662045,
+        "RMSE_per_image": 501.3274247188522,
+        "delta_1.25_per_image": 0.3089652595136907,
+        "images": 325,
+        "AbsRel_aligned": 1.2326431996597538,
+        "delta_1.25_aligned": 0.8393690317252279,
+        "RMSE_aligned": 3414.5353097576112,
+        "aligned_valid_pixels": 252983179,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-75-25\\diode\\full.json",
+          "sha256": "2d9eaf37e85f65b4cceb3c3ccbb6061394bef88fa346d2d0b24af2fc92447c36",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-75-25",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+            "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-90-10:0:512:diode",
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+      "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 83.17368027417254,
+        "SqRel": 57146730.24260058,
+        "RMSE": 13599.078865859861,
+        "RMSE_log": 0.8151375092111351,
+        "delta_1.25": 0.331831882646966,
+        "delta_1.25^2": 0.5499721339739432,
+        "delta_1.25^3": 0.7137645235538812,
+        "valid_pixels": 252992658,
+        "AbsRel_per_image": 82.42295773407588,
+        "RMSE_per_image": 1344.4827385273118,
+        "delta_1.25_per_image": 0.33141416151646946,
+        "images": 325,
+        "AbsRel_aligned": 10.818007015527892,
+        "delta_1.25_aligned": 0.8449714619122745,
+        "RMSE_aligned": 7313.8730361969,
+        "aligned_valid_pixels": 252207158,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-90-10\\diode\\full.json",
+          "sha256": "8abbe0ba6d5ddfbc1f5a44b2a8de918a6b7ca1e1d57b46ba3a803882434662c9",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-90-10",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+            "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-75-25-Q0M0-75-25:0:512:diode",
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+      "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 46.52281105305165,
+        "SqRel": 43187720.44875972,
+        "RMSE": 19258.57269273527,
+        "RMSE_log": 0.774691459823219,
+        "delta_1.25": 0.2989656945520569,
+        "delta_1.25^2": 0.5433191752332734,
+        "delta_1.25^3": 0.7102489005809421,
+        "valid_pixels": 252984745,
+        "AbsRel_per_image": 46.06757229558551,
+        "RMSE_per_image": 1661.2708350014457,
+        "delta_1.25_per_image": 0.29848918399515484,
+        "images": 325,
+        "AbsRel_aligned": 20.093579820079356,
+        "delta_1.25_aligned": 0.835473992710509,
+        "RMSE_aligned": 10724.071921845052,
+        "aligned_valid_pixels": 252984745,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-75-25-Q0M0-75-25\\diode\\full.json",
+          "sha256": "3637d0bd69ae7ff1125d1f78969a9e19879aae2331c4023d550f37000ae668c2",
+          "original_identity": {
+            "model": "Fusion-CK128-75-25-Q0M0-75-25",
+            "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+            "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-90-10-Q0M0-50-50:0:512:diode",
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+      "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 300.95941396758457,
+        "SqRel": 230556101.0369837,
+        "RMSE": 17248.20238036177,
+        "RMSE_log": 0.8475882949398451,
+        "delta_1.25": 0.2900380623550616,
+        "delta_1.25^2": 0.5265680880559059,
+        "delta_1.25^3": 0.6973361253617943,
+        "valid_pixels": 252949666,
+        "AbsRel_per_image": 311.8762498580263,
+        "RMSE_per_image": 2064.7377750790806,
+        "delta_1.25_per_image": 0.28961352399317336,
+        "images": 325,
+        "AbsRel_aligned": 15.214131203041324,
+        "delta_1.25_aligned": 0.8324201901074239,
+        "RMSE_aligned": 9660.007846525468,
+        "aligned_valid_pixels": 252164166,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-90-10-Q0M0-50-50\\diode\\full.json",
+          "sha256": "c03969b0f8527394fdf8220722d12c3365d4ede226319f57e3e519bf7068ae6c",
+          "original_identity": {
+            "model": "Fusion-CK128-90-10-Q0M0-50-50",
+            "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+            "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M0:0:512:diode",
+      "model": "Fusion-CK128-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M0",
+      "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 1697.3731015893409,
+        "SqRel": 1300755981.3959873,
+        "RMSE": 41257.49707428679,
+        "RMSE_log": 1.0819741267107104,
+        "delta_1.25": 0.26820280235249294,
+        "delta_1.25^2": 0.5064005271502934,
+        "delta_1.25^3": 0.6889295770456031,
+        "valid_pixels": 253005645,
+        "AbsRel_per_image": 1685.5015813656037,
+        "RMSE_per_image": 4678.725982477505,
+        "delta_1.25_per_image": 0.2682975652541899,
+        "images": 325,
+        "AbsRel_aligned": 70.13331805122293,
+        "delta_1.25_aligned": 0.855145596193201,
+        "RMSE_aligned": 11355.93414472375,
+        "aligned_valid_pixels": 251440640,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M0\\diode\\full.json",
+          "sha256": "dfa1113d37916c07bd5c1b97407eabdeaf18ff1a292687b6d19a0a9a41a9fb13",
+          "original_identity": {
+            "model": "Fusion-CK128-M0",
+            "repo": "local-weight-fusion/Fusion-CK128-M0",
+            "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M1:0:512:diode",
+      "model": "Fusion-CK128-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M1",
+      "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 449.69230417840595,
+        "SqRel": 360511897.71069676,
+        "RMSE": 35918.2814484983,
+        "RMSE_log": 0.955564751192414,
+        "delta_1.25": 0.2978746873836928,
+        "delta_1.25^2": 0.5207258208342148,
+        "delta_1.25^3": 0.6991973599040988,
+        "valid_pixels": 252993840,
+        "AbsRel_per_image": 449.6600881224985,
+        "RMSE_per_image": 4807.423771398022,
+        "delta_1.25_per_image": 0.2973810051001629,
+        "images": 325,
+        "AbsRel_aligned": 74.30398570805589,
+        "delta_1.25_aligned": 0.8398440313274335,
+        "RMSE_aligned": 29932.065954359383,
+        "aligned_valid_pixels": 252208340,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M1\\diode\\full.json",
+          "sha256": "184d83f0ab294dfa018ae5445eaca52745412bcb96ee4363ad4ec3f139aef452",
+          "original_identity": {
+            "model": "Fusion-CK128-M1",
+            "repo": "local-weight-fusion/Fusion-CK128-M1",
+            "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M0:0:512:diode",
+      "model": "Fusion-Q0-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M0",
+      "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 1593.8627839899837,
+        "SqRel": 1226955001.8310974,
+        "RMSE": 50350.76265634152,
+        "RMSE_log": 1.205019795805227,
+        "delta_1.25": 0.22038982149474665,
+        "delta_1.25^2": 0.4400542320057808,
+        "delta_1.25^3": 0.6292704211393674,
+        "valid_pixels": 252994515,
+        "AbsRel_per_image": 1580.47427791098,
+        "RMSE_per_image": 8095.0264654667335,
+        "delta_1.25_per_image": 0.22089401785993512,
+        "images": 325,
+        "AbsRel_aligned": 369.3063049844355,
+        "delta_1.25_aligned": 0.8138884964123904,
+        "RMSE_aligned": 83581.16029365243,
+        "aligned_valid_pixels": 252209015,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M0\\diode\\full.json",
+          "sha256": "b48137cc10cc53c77fde81fe6903e6d432c264f988052ecace9a28ce21204bdf",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M0\\diode\\full.json",
+          "sha256": "881021ebb14204652c03f2493662432a068d9bd1adac0a5694796f3e9263ed15",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M1:0:512:diode",
+      "model": "Fusion-Q0-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M1",
+      "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 1752.0061769605647,
+        "SqRel": 1514644722.183314,
+        "RMSE": 65254.80430649237,
+        "RMSE_log": 1.345096979430559,
+        "delta_1.25": 0.24669704022120653,
+        "delta_1.25^2": 0.4705140140151765,
+        "delta_1.25^3": 0.6582314510595536,
+        "valid_pixels": 251860545,
+        "AbsRel_per_image": 1744.521058910833,
+        "RMSE_per_image": 13045.298780795129,
+        "delta_1.25_per_image": 0.24711353181982618,
+        "images": 325,
+        "AbsRel_aligned": 558.7917435205952,
+        "delta_1.25_aligned": 0.8204609432101947,
+        "RMSE_aligned": 81642.54912648402,
+        "aligned_valid_pixels": 250259636,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M1\\diode\\full.json",
+          "sha256": "b7c7cde0fd7ddc8cdfb2967b3eebe3e9c68b8d60a836716db04a1de80451f664",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M1\\diode\\full.json",
+          "sha256": "3facdd13903fd556bc2d01e1b012ce29ffa3c72f61c55191cc92a00c2be0ae4c",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "K-Q0-r128:20000:512:diode",
+      "model": "K-Q0-r128",
+      "step": 20000,
+      "resolution": 512,
+      "dataset": "diode",
+      "task": "depth",
+      "samples": 325,
+      "status": "completed",
+      "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+      "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+      "dataset_fingerprint": "f4b836cb048031b5b7c172d41553212c193bbea573d4ac1ba4b144e6a79b7280",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 321.1738821346278,
+        "SqRel": 267466256.03915197,
+        "RMSE": 31588.571027480644,
+        "RMSE_log": 0.9279421593575714,
+        "delta_1.25": 0.18693943872599786,
+        "delta_1.25^2": 0.4001604983092018,
+        "delta_1.25^3": 0.6200772621266682,
+        "valid_pixels": 253020734,
+        "AbsRel_per_image": 335.4391736652415,
+        "RMSE_per_image": 2906.3213535310215,
+        "delta_1.25_per_image": 0.1866360081722643,
+        "images": 325,
+        "AbsRel_aligned": 230.77502933730273,
+        "delta_1.25_aligned": 0.872914483294104,
+        "RMSE_aligned": 48073.57686370995,
+        "aligned_valid_pixels": 252294131,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "dev_selected_external_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-dev-selected-external-20261105\\external-results\\results\\K-Q0-r128\\diode\\full.json",
+          "sha256": "4d62ce9784c5887818cca6bbf081a88b990cc14e3e1d04c533d406233ba923df",
+          "original_identity": {
+            "model": "K-Q0-r128",
+            "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+            "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+            "step": 20000,
+            "weight_type": "lora_on_official_base",
+            "expected_adapter_sha256": "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "C1_retest:10000:512:eth3d",
+      "model": "C1_retest",
+      "step": 10000,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+      "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.5414388682964936,
+        "SqRel": 3.4551063246007416,
+        "RMSE": 5.30518208585468,
+        "RMSE_log": 0.7952088825924107,
+        "delta_1.25": 0.25000889038292545,
+        "delta_1.25^2": 0.49997022173893224,
+        "delta_1.25^3": 0.6511289768799199,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.5570996601159155,
+        "RMSE_per_image": 4.10208196061692,
+        "delta_1.25_per_image": 0.26849948880765223,
+        "images": 454,
+        "AbsRel_aligned": 0.17330324896432805,
+        "delta_1.25_aligned": 0.9090702723997162,
+        "RMSE_aligned": 8.971609072181506,
+        "aligned_valid_pixels": 1979329816,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "reference_dashboard_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-i97-comparison-20261103\\external-results\\results\\C1_retest\\eth3d\\full.json",
+          "sha256": "f135f85063b0a903b202a7c7e843800cc2456445e50f9c0d269320ab55131954",
+          "original_identity": {
+            "model": "C1_retest",
+            "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+            "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+            "step": 10000,
+            "weight_type": "continued_lora_on_official_base",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128:0:512:eth3d",
+      "model": "Fusion-C1-KQ0r128",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+      "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.5836353267771608,
+        "SqRel": 5.3817247506209345,
+        "RMSE": 5.225629515871009,
+        "RMSE_log": 0.6840993303292796,
+        "delta_1.25": 0.3027994122834959,
+        "delta_1.25^2": 0.5233517525105579,
+        "delta_1.25^3": 0.7103526368543321,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.7124021561069636,
+        "RMSE_per_image": 4.053071555849739,
+        "delta_1.25_per_image": 0.31302173634153396,
+        "images": 454,
+        "AbsRel_aligned": 0.12518488569301697,
+        "delta_1.25_aligned": 0.9297890058551501,
+        "RMSE_aligned": 3.6932521191463534,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\eth3d\\full.json",
+          "sha256": "8b42dade234cfa8a3d25e22c60081eba4114b88de1e688268932b18e4a3f7e90",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\eth3d\\full.json",
+          "sha256": "bdb89768a181464ec35b167bf9b73da02770c32acfe42f0f4398440005481768",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-60-40:0:512:eth3d",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+      "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.5789678254993886,
+        "SqRel": 5.398403143709736,
+        "RMSE": 5.3516401658247155,
+        "RMSE_log": 0.7274019994626079,
+        "delta_1.25": 0.29104503218376215,
+        "delta_1.25^2": 0.5133717103567342,
+        "delta_1.25^3": 0.6961084539131703,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.707674355287154,
+        "RMSE_per_image": 4.153512022158517,
+        "delta_1.25_per_image": 0.3022292680507104,
+        "images": 454,
+        "AbsRel_aligned": 0.13957657786354008,
+        "delta_1.25_aligned": 0.9237857243693299,
+        "RMSE_aligned": 6.5780598600253875,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\eth3d\\full.json",
+          "sha256": "f5cd5fafe751c65a2608c67ea6590dce85d2cc85872c6dfca42f3f448f37eb9a",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-60-40",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+            "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-75-25:0:512:eth3d",
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+      "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.5708668285008988,
+        "SqRel": 5.506210615605929,
+        "RMSE": 5.500387022710754,
+        "RMSE_log": 0.7607554198282628,
+        "delta_1.25": 0.2750552452648953,
+        "delta_1.25^2": 0.5155297190753781,
+        "delta_1.25^3": 0.6940581882286969,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.6880691999134645,
+        "RMSE_per_image": 4.189397895388666,
+        "delta_1.25_per_image": 0.2908616431005277,
+        "images": 454,
+        "AbsRel_aligned": 0.19393773879076326,
+        "delta_1.25_aligned": 0.9241496958509389,
+        "RMSE_aligned": 14.835929621874053,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-75-25\\eth3d\\full.json",
+          "sha256": "3e5b5b52917b9b8b2f78ea217701b0cc8166ef3f434a6778a9859176634493c1",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-75-25",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+            "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-90-10:0:512:eth3d",
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+      "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.5275833007911843,
+        "SqRel": 3.4903395911467054,
+        "RMSE": 5.292581790276849,
+        "RMSE_log": 0.766489155564308,
+        "delta_1.25": 0.2627399343940363,
+        "delta_1.25^2": 0.514914352707351,
+        "delta_1.25^3": 0.6706545429011008,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.5521119394409367,
+        "RMSE_per_image": 4.056090461492276,
+        "delta_1.25_per_image": 0.2781998829456711,
+        "images": 454,
+        "AbsRel_aligned": 0.17951519050931125,
+        "delta_1.25_aligned": 0.9142120405465564,
+        "RMSE_aligned": 8.85189066068161,
+        "aligned_valid_pixels": 1979329816,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-90-10\\eth3d\\full.json",
+          "sha256": "5367d7c908fcedc06e338ef5f52a9476adefe0be255e677ea4cec3af9cd62ea0",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-90-10",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+            "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-75-25-Q0M0-75-25:0:512:eth3d",
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+      "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.6101062129578788,
+        "SqRel": 5.566166584288684,
+        "RMSE": 5.517194586217241,
+        "RMSE_log": 0.8005573167748946,
+        "delta_1.25": 0.25551559063666424,
+        "delta_1.25^2": 0.48477496688202265,
+        "delta_1.25^3": 0.6599983026780212,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.7370685622637624,
+        "RMSE_per_image": 4.303705853972141,
+        "delta_1.25_per_image": 0.26731269704678073,
+        "images": 454,
+        "AbsRel_aligned": 0.20259461511987983,
+        "delta_1.25_aligned": 0.9036896378939012,
+        "RMSE_aligned": 13.837776565033343,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-75-25-Q0M0-75-25\\eth3d\\full.json",
+          "sha256": "b9dfaaf9e1639328ba451c73a5899a36e0e4a4fbdc4ae4eb6342fab9ddff50ce",
+          "original_identity": {
+            "model": "Fusion-CK128-75-25-Q0M0-75-25",
+            "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+            "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-90-10-Q0M0-50-50:0:512:eth3d",
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+      "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.6327961093077186,
+        "SqRel": 5.89065440828696,
+        "RMSE": 5.704629473046594,
+        "RMSE_log": 0.8277904386949763,
+        "delta_1.25": 0.24462437390980019,
+        "delta_1.25^2": 0.47584486849360935,
+        "delta_1.25^3": 0.6423249428785445,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.7641544820625942,
+        "RMSE_per_image": 4.43312534177881,
+        "delta_1.25_per_image": 0.2558280429659865,
+        "images": 454,
+        "AbsRel_aligned": 0.25715986326846346,
+        "delta_1.25_aligned": 0.8923793932686462,
+        "RMSE_aligned": 14.13623184186525,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-90-10-Q0M0-50-50\\eth3d\\full.json",
+          "sha256": "19c7fe581152b55c443a6768c99cb366adf2badec5d8467bd31a06dde5ca77f5",
+          "original_identity": {
+            "model": "Fusion-CK128-90-10-Q0M0-50-50",
+            "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+            "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M0:0:512:eth3d",
+      "model": "Fusion-CK128-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M0",
+      "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.57425823814486,
+        "SqRel": 5.143354392657273,
+        "RMSE": 5.385151891891527,
+        "RMSE_log": 0.7193304730195916,
+        "delta_1.25": 0.2846253542214109,
+        "delta_1.25^2": 0.5172254465750947,
+        "delta_1.25^3": 0.6941402382229359,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.6932500664489385,
+        "RMSE_per_image": 4.1480842865839405,
+        "delta_1.25_per_image": 0.2764910504351188,
+        "images": 454,
+        "AbsRel_aligned": 0.15142622672062805,
+        "delta_1.25_aligned": 0.9203465431184216,
+        "RMSE_aligned": 5.867229017652286,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M0\\eth3d\\full.json",
+          "sha256": "24a69e8351573527aac40e1a9c1d5d2b5a4e4c3bc95ff1e3bb534a10fbc19c2b",
+          "original_identity": {
+            "model": "Fusion-CK128-M0",
+            "repo": "local-weight-fusion/Fusion-CK128-M0",
+            "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M1:0:512:eth3d",
+      "model": "Fusion-CK128-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M1",
+      "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.5881625709931078,
+        "SqRel": 5.935954728088104,
+        "RMSE": 5.890406700849648,
+        "RMSE_log": 0.7747996595908803,
+        "delta_1.25": 0.2778837263774134,
+        "delta_1.25^2": 0.5126001092887089,
+        "delta_1.25^3": 0.6751781391848644,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.7244863654466321,
+        "RMSE_per_image": 4.473558409098486,
+        "delta_1.25_per_image": 0.2660655991910455,
+        "images": 454,
+        "AbsRel_aligned": 0.14459713479035669,
+        "delta_1.25_aligned": 0.9287134514285322,
+        "RMSE_aligned": 6.743057078752146,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M1\\eth3d\\full.json",
+          "sha256": "d9a5ca1eac8333238fe20999efb08095e2daff01460eb1cbbec12f43de2e2d72",
+          "original_identity": {
+            "model": "Fusion-CK128-M1",
+            "repo": "local-weight-fusion/Fusion-CK128-M1",
+            "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M0:0:512:eth3d",
+      "model": "Fusion-Q0-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M0",
+      "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.8537075820480485,
+        "SqRel": 17.121239110538845,
+        "RMSE": 8.7789072192517,
+        "RMSE_log": 0.9147412725181894,
+        "delta_1.25": 0.2523421068901839,
+        "delta_1.25^2": 0.4538916903780931,
+        "delta_1.25^3": 0.6223266976745224,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.9463666248369125,
+        "RMSE_per_image": 5.2522137680292,
+        "delta_1.25_per_image": 0.24986213650264621,
+        "images": 454,
+        "AbsRel_aligned": 0.26122618933860664,
+        "delta_1.25_aligned": 0.8779246828699168,
+        "RMSE_aligned": 19.42206648930733,
+        "aligned_valid_pixels": 1974829283,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M0\\eth3d\\full.json",
+          "sha256": "139925aa63aa10dfefaa5f307659105317aa7878143c0d264803d0ff1df4ee52",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M0\\eth3d\\full.json",
+          "sha256": "67233c1d2cf36f8d6b4286968353f0919c15cf223ff555bc349fd7bfcd44b4af",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M1:0:512:eth3d",
+      "model": "Fusion-Q0-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M1",
+      "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.7020836293502475,
+        "SqRel": 7.9604608639035375,
+        "RMSE": 6.674726427924355,
+        "RMSE_log": 0.8842776621800477,
+        "delta_1.25": 0.2624609333930228,
+        "delta_1.25^2": 0.47641963020881406,
+        "delta_1.25^3": 0.6256341131174068,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.8567252033902948,
+        "RMSE_per_image": 5.010787371267043,
+        "delta_1.25_per_image": 0.24628453842435571,
+        "images": 454,
+        "AbsRel_aligned": 0.15173773801745216,
+        "delta_1.25_aligned": 0.906855859600903,
+        "RMSE_aligned": 7.08734564674379,
+        "aligned_valid_pixels": 1974829283,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M1\\eth3d\\full.json",
+          "sha256": "d9096b28ea1935a46cde6daf0ac08339f174d1d09163ea03d10a8637f9d26867",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M1\\eth3d\\full.json",
+          "sha256": "e77f39fb77ed37a94f906acb7e883f43053dcbcc37df85b194b710f6eca5ed32",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "K-Q0-r128:20000:512:eth3d",
+      "model": "K-Q0-r128",
+      "step": 20000,
+      "resolution": 512,
+      "dataset": "eth3d",
+      "task": "depth",
+      "samples": 454,
+      "status": "completed",
+      "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+      "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+      "dataset_fingerprint": "270ed01b289ec3cbaadf7dbf54f84c76cb717dee906cf5520d6c7a1ea438b61b",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.6821378492924003,
+        "SqRel": 6.056224913395802,
+        "RMSE": 5.40673638109096,
+        "RMSE_log": 0.6652874491525812,
+        "delta_1.25": 0.2759647187571088,
+        "delta_1.25^2": 0.49316707711333746,
+        "delta_1.25^3": 0.6900761388823539,
+        "valid_pixels": 1979329816,
+        "AbsRel_per_image": 0.7972239993126973,
+        "RMSE_per_image": 4.17852662244426,
+        "delta_1.25_per_image": 0.2837270651810739,
+        "images": 454,
+        "AbsRel_aligned": 0.0741253297714819,
+        "delta_1.25_aligned": 0.956526568704198,
+        "RMSE_aligned": 2.7004727702479654,
+        "aligned_valid_pixels": 1978237407,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "dev_selected_external_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-dev-selected-external-20261105\\external-results\\results\\K-Q0-r128\\eth3d\\full.json",
+          "sha256": "8496fdab76c82a80ea32d516ba38e81ed139ecb389dd87658b3d947e59db1621",
+          "original_identity": {
+            "model": "K-Q0-r128",
+            "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+            "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+            "step": 20000,
+            "weight_type": "lora_on_official_base",
+            "expected_adapter_sha256": "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "C1_retest:10000:512:nyu",
+      "model": "C1_retest",
+      "step": 10000,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+      "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.5840437876026997,
+        "SqRel": 2.0321641950801514,
+        "RMSE": 2.288030781362854,
+        "RMSE_log": 0.7080177016084392,
+        "delta_1.25": 0.3485051555510433,
+        "delta_1.25^2": 0.6145138799155792,
+        "delta_1.25^3": 0.7865804152129905,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.5840437652810907,
+        "RMSE_per_image": 1.679290106389045,
+        "delta_1.25_per_image": 0.3485051433672308,
+        "images": 654,
+        "AbsRel_aligned": 0.16230180965326854,
+        "delta_1.25_aligned": 0.8455890285648653,
+        "RMSE_aligned": 1.7469753414896376,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "reference_dashboard_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-i97-comparison-20261103\\external-results\\results\\C1_retest\\nyu\\full.json",
+          "sha256": "8e1355dc879f89711befc52fa0705a34e837313e256a4d756ae08dca1fd8c015",
+          "original_identity": {
+            "model": "C1_retest",
+            "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+            "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+            "step": 10000,
+            "weight_type": "continued_lora_on_official_base",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128:0:512:nyu",
+      "model": "Fusion-C1-KQ0r128",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+      "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.7633970054271079,
+        "SqRel": 2.56505809089288,
+        "RMSE": 2.5163904059054127,
+        "RMSE_log": 0.6681750223267797,
+        "delta_1.25": 0.23659863103185885,
+        "delta_1.25^2": 0.48896174575485535,
+        "delta_1.25^3": 0.715368568444305,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.7633969790760758,
+        "RMSE_per_image": 2.022886602885862,
+        "delta_1.25_per_image": 0.2365986225596408,
+        "images": 654,
+        "AbsRel_aligned": 0.12743374342150235,
+        "delta_1.25_aligned": 0.8778151836605771,
+        "RMSE_aligned": 1.1901858186048573,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\nyu\\full.json",
+          "sha256": "608606dea1f3e1388f4a55c60a8286f1d8d1a1253a1a1249d68f60e8725c7245",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\nyu\\full.json",
+          "sha256": "1cc45656d230fa7c3168fa533e864b8b828d90c0682bd4b105efeeaf2cd4a0b3",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-60-40:0:512:nyu",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+      "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.7198554964242982,
+        "SqRel": 2.467892912942529,
+        "RMSE": 2.454925560490645,
+        "RMSE_log": 0.677969767747124,
+        "delta_1.25": 0.27728279078138557,
+        "delta_1.25^2": 0.5340192339049588,
+        "delta_1.25^3": 0.7384569265747389,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.7198554714828365,
+        "RMSE_per_image": 1.9217727083017884,
+        "delta_1.25_per_image": 0.27728278063055567,
+        "images": 654,
+        "AbsRel_aligned": 0.12594376254744868,
+        "delta_1.25_aligned": 0.8738237208675088,
+        "RMSE_aligned": 1.023492326595152,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\nyu\\full.json",
+          "sha256": "93a91fcaef4c84719a1cd7afdc7daab45bbb2a675766c5c5cebec07dee50e7ba",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-60-40",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+            "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-75-25:0:512:nyu",
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+      "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.6817071499553213,
+        "SqRel": 2.5071879616936417,
+        "RMSE": 2.443216307614155,
+        "RMSE_log": 0.6918621906723923,
+        "delta_1.25": 0.31100666819469314,
+        "delta_1.25^2": 0.5744011597618329,
+        "delta_1.25^3": 0.7565791217744797,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.6817071243596551,
+        "RMSE_per_image": 1.8400440683719397,
+        "delta_1.25_per_image": 0.31100665677496775,
+        "images": 654,
+        "AbsRel_aligned": 0.1443858137421344,
+        "delta_1.25_aligned": 0.8550246304534649,
+        "RMSE_aligned": 1.1652609953573214,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-75-25\\nyu\\full.json",
+          "sha256": "14af0608129a86f50e5c75fd50913c0db6da4a8baf3ea3554e2fcb00b8d2c246",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-75-25",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+            "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-90-10:0:512:nyu",
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+      "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.6163746658961858,
+        "SqRel": 2.185189351792447,
+        "RMSE": 2.3439126342614354,
+        "RMSE_log": 0.6986321290406822,
+        "delta_1.25": 0.34036587004186175,
+        "delta_1.25^2": 0.6003456134359675,
+        "delta_1.25^3": 0.7776494081717625,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.6163746447043226,
+        "RMSE_per_image": 1.7302914414475088,
+        "delta_1.25_per_image": 0.340365857934627,
+        "images": 654,
+        "AbsRel_aligned": 0.1609408792936346,
+        "delta_1.25_aligned": 0.8510529922655197,
+        "RMSE_aligned": 1.503491678054602,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-90-10\\nyu\\full.json",
+          "sha256": "2ca0e78da2843e763b689bc20409f03932af7f90b088dcfdde0045e408ea2f66",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-90-10",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+            "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-75-25-Q0M0-75-25:0:512:nyu",
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+      "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.7196757303587649,
+        "SqRel": 2.5338086667881003,
+        "RMSE": 2.508762848817136,
+        "RMSE_log": 0.6939517628973755,
+        "delta_1.25": 0.2793581506880221,
+        "delta_1.25^2": 0.5264065214426211,
+        "delta_1.25^3": 0.7330395599899089,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.7196757056627889,
+        "RMSE_per_image": 1.953947270374506,
+        "delta_1.25_per_image": 0.2793581414351121,
+        "images": 654,
+        "AbsRel_aligned": 0.16855852279656983,
+        "delta_1.25_aligned": 0.8512248055099199,
+        "RMSE_aligned": 1.8002468239448566,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-75-25-Q0M0-75-25\\nyu\\full.json",
+          "sha256": "8513f07cabc8857478a9a92b1f79183d47d228f759be9bf04dd8bd007055527a",
+          "original_identity": {
+            "model": "Fusion-CK128-75-25-Q0M0-75-25",
+            "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+            "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-90-10-Q0M0-50-50:0:512:nyu",
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+      "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.7469529262602165,
+        "SqRel": 2.7236931174724135,
+        "RMSE": 2.598660314064245,
+        "RMSE_log": 0.7259346804487647,
+        "delta_1.25": 0.2656707254228736,
+        "delta_1.25^2": 0.5067275980039257,
+        "delta_1.25^3": 0.7133264290124026,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.7469528986123997,
+        "RMSE_per_image": 2.0214118908304686,
+        "delta_1.25_per_image": 0.2656707160016489,
+        "images": 654,
+        "AbsRel_aligned": 0.18060850661314054,
+        "delta_1.25_aligned": 0.8358033394044183,
+        "RMSE_aligned": 1.7980441655916857,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-90-10-Q0M0-50-50\\nyu\\full.json",
+          "sha256": "fd3a34a20fa680d831477980de086399461917822fe205f9fe820b0b812ccbe7",
+          "original_identity": {
+            "model": "Fusion-CK128-90-10-Q0M0-50-50",
+            "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+            "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M0:0:512:nyu",
+      "model": "Fusion-CK128-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M0",
+      "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.7701651333288219,
+        "SqRel": 2.554728586618865,
+        "RMSE": 2.5347101566914616,
+        "RMSE_log": 0.6684030469772774,
+        "delta_1.25": 0.22533990256523853,
+        "delta_1.25^2": 0.4768381376433935,
+        "delta_1.25^3": 0.7043015675603058,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.7701651062930305,
+        "RMSE_per_image": 2.0351790923636623,
+        "delta_1.25_per_image": 0.22533989454488665,
+        "images": 654,
+        "AbsRel_aligned": 0.13156484236465768,
+        "delta_1.25_aligned": 0.8732814124810022,
+        "RMSE_aligned": 1.201206663538534,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M0\\nyu\\full.json",
+          "sha256": "7b719e1ee43b1ab092f516bbb5d6b9907f7ed96b102612d2dba9063d61a5ed8d",
+          "original_identity": {
+            "model": "Fusion-CK128-M0",
+            "repo": "local-weight-fusion/Fusion-CK128-M0",
+            "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M1:0:512:nyu",
+      "model": "Fusion-CK128-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M1",
+      "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.7705058053447339,
+        "SqRel": 2.8616573614825125,
+        "RMSE": 2.560495329329233,
+        "RMSE_log": 0.691095957741529,
+        "delta_1.25": 0.27497643224279417,
+        "delta_1.25^2": 0.5298934727119086,
+        "delta_1.25^3": 0.7210438792284799,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.7705057781952966,
+        "RMSE_per_image": 1.9732224508914926,
+        "delta_1.25_per_image": 0.2749764225935869,
+        "images": 654,
+        "AbsRel_aligned": 0.14876885661120756,
+        "delta_1.25_aligned": 0.8651470430636828,
+        "RMSE_aligned": 1.2918026599769368,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M1\\nyu\\full.json",
+          "sha256": "b7b8dd160a846cac56d7047fbdfaefdb474f1f0e8176276351e92f4b43fedde3",
+          "original_identity": {
+            "model": "Fusion-CK128-M1",
+            "repo": "local-weight-fusion/Fusion-CK128-M1",
+            "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M0:0:512:nyu",
+      "model": "Fusion-Q0-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M0",
+      "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.9501140190672528,
+        "SqRel": 3.863278190594907,
+        "RMSE": 3.0794461949070375,
+        "RMSE_log": 0.7785865033394941,
+        "delta_1.25": 0.19509919481209376,
+        "delta_1.25^2": 0.39812532816675794,
+        "delta_1.25^3": 0.6142436871483744,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.9501139870488772,
+        "RMSE_per_image": 2.507730795702803,
+        "delta_1.25_per_image": 0.19509918830278813,
+        "images": 654,
+        "AbsRel_aligned": 0.18693455237080714,
+        "delta_1.25_aligned": 0.8112252445248315,
+        "RMSE_aligned": 1.530044135693185,
+        "aligned_valid_pixels": 155779680,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M0\\nyu\\full.json",
+          "sha256": "a56bc7cd5ec61f98ffb9bbe2af08b10610b318352a27bde2a6056dd51e0ddddb",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M0\\nyu\\full.json",
+          "sha256": "3435e6d9febf8913f3be714a5ea3e25c4278db5e3e9ccf4d7ca1e2b42ce9f18d",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M1:0:512:nyu",
+      "model": "Fusion-Q0-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M1",
+      "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.8971098521352175,
+        "SqRel": 3.7048879607745313,
+        "RMSE": 2.903326398017538,
+        "RMSE_log": 0.8509835489703378,
+        "delta_1.25": 0.23331065008809226,
+        "delta_1.25^2": 0.46943094602272145,
+        "delta_1.25^3": 0.6639902039658953,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.8971098203337339,
+        "RMSE_per_image": 2.2716762045517975,
+        "delta_1.25_per_image": 0.23331064187039302,
+        "images": 654,
+        "AbsRel_aligned": 0.1681710597688708,
+        "delta_1.25_aligned": 0.8306822787440389,
+        "RMSE_aligned": 1.3551914825236815,
+        "aligned_valid_pixels": 155541120,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M1\\nyu\\full.json",
+          "sha256": "05a3e006b409e51c8b8dd457799c53313f9b4e8048ff25bf450019671c4c555b",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M1\\nyu\\full.json",
+          "sha256": "b47f9626cdf270d5efed9995e81e28ea452671f6c83c3931530e11c88126fc24",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "K-Q0-r128:20000:512:nyu",
+      "model": "K-Q0-r128",
+      "step": 20000,
+      "resolution": 512,
+      "dataset": "nyu",
+      "task": "depth",
+      "samples": 654,
+      "status": "completed",
+      "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+      "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+      "dataset_fingerprint": "92f19a9e9bf3ade52609d4387138635b277cc7bae024958bce542f684530eab1",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "AbsRel": 0.9237871377050209,
+        "SqRel": 3.1663898285786343,
+        "RMSE": 2.7436287330516325,
+        "RMSE_log": 0.690101497318201,
+        "delta_1.25": 0.14569347148128323,
+        "delta_1.25^2": 0.37015789307711716,
+        "delta_1.25^3": 0.6442201886138441,
+        "valid_pixels": 156018240,
+        "AbsRel_per_image": 0.9237871050595416,
+        "RMSE_per_image": 2.350700306372905,
+        "delta_1.25_per_image": 0.14569346634747188,
+        "images": 654,
+        "AbsRel_aligned": 0.10733171530687294,
+        "delta_1.25_aligned": 0.8969476325332217,
+        "RMSE_aligned": 0.8548203349560861,
+        "aligned_valid_pixels": 156018240,
+        "skipped_samples": 0,
+        "depth_curve": "metric_power",
+        "depth_units": "metres"
+      },
+      "source_groups": [
+        "dev_selected_external_server",
+        "nyu_current_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-nyu-all-20261105\\external-results\\results\\K-Q0-r128\\full.json",
+          "sha256": "2f68e8f1d8f5553e0182cffb1ca7c7e8d7b21f9b3fa9b20b4f3517ba46e69516",
+          "original_identity": {
+            "model": "K-Q0-r128",
+            "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+            "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+            "step": 20000,
+            "kind": "lora",
+            "initialization": "Q",
+            "resolution": 512,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b",
+            "weights_sha256": [
+              "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a"
+            ]
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-dev-selected-external-20261105\\external-results\\results\\K-Q0-r128\\nyu\\full.json",
+          "sha256": "320aab6a08d44b49b409ee19c877a690719b76747c33506f3ba4dc4cd6a0c644",
+          "original_identity": {
+            "model": "K-Q0-r128",
+            "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+            "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+            "step": 20000,
+            "kind": "lora",
+            "initialization": "Q",
+            "resolution": 512,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b",
+            "weights_sha256": [
+              "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C1_retest:10000:512:reasonseg",
+      "model": "C1_retest",
+      "step": 10000,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+      "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.3048416410712846,
+        "cIoU": 0.26629091700276636,
+        "gIoU": 0.3048416410712846,
+        "Precision@0.5": 0.27,
+        "Precision": 0.28167240509026653,
+        "Recall": 0.8298287544256611,
+        "F-score": 0.42058410658596646,
+        "samples": 200
+      },
+      "source_groups": [
+        "reference_dashboard_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-i97-comparison-20261103\\external-results\\results\\C1_retest\\reasonseg\\full.json",
+          "sha256": "99af0cc5f97e69a00a7cc35d996c316d420465b6e60b521cf89601e5cfac42f8",
+          "original_identity": {
+            "model": "C1_retest",
+            "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+            "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+            "step": 10000,
+            "weight_type": "continued_lora_on_official_base",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128:0:512:reasonseg",
+      "model": "Fusion-C1-KQ0r128",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+      "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.36714659265852023,
+        "cIoU": 0.2917538595894245,
+        "gIoU": 0.36714659265852023,
+        "Precision@0.5": 0.365,
+        "Precision": 0.3082576908297619,
+        "Recall": 0.8449459326491853,
+        "F-score": 0.4517174188001367,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\reasonseg\\full.json",
+          "sha256": "29368476cfae95fae1f0703000d97c0a0a1b464389a03fd5f6474d6a0744df52",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\reasonseg\\full.json",
+          "sha256": "a00ed6d29d71d5bf3f1f356979b3852d2de1677eb9a71a4a0abf28b7f51ae8ae",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-60-40:0:512:reasonseg",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+      "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.35549493817200656,
+        "cIoU": 0.28314809673119423,
+        "gIoU": 0.35549493817200656,
+        "Precision@0.5": 0.355,
+        "Precision": 0.3020160007668818,
+        "Recall": 0.8192437931034402,
+        "F-score": 0.44133346330405815,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\reasonseg\\full.json",
+          "sha256": "74a0ed6b0653c41a00539d40c316902cc559064bcd205c376065b971e6c8e2c6",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-60-40",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+            "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-75-25:0:512:reasonseg",
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+      "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.3353850382754554,
+        "cIoU": 0.2850789639727654,
+        "gIoU": 0.3353850382754554,
+        "Precision@0.5": 0.315,
+        "Precision": 0.30356866694709467,
+        "Recall": 0.8239591355565353,
+        "F-score": 0.4436754035587919,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-75-25\\reasonseg\\full.json",
+          "sha256": "9da0388217ab79ee58de6524a8312298033909c59c41c71aec198dd8840a4105",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-75-25",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+            "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-90-10:0:512:reasonseg",
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+      "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.31708230110723373,
+        "cIoU": 0.2637683131872241,
+        "gIoU": 0.31708230110723373,
+        "Precision@0.5": 0.285,
+        "Precision": 0.28255456204891455,
+        "Recall": 0.79867962496168,
+        "F-score": 0.41743143966317736,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-90-10\\reasonseg\\full.json",
+          "sha256": "28cceadc221d2da7c09ee8127a6d12da5afe8f096022c486496aca700d347980",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-90-10",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+            "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-75-25-Q0M0-75-25:0:512:reasonseg",
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+      "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.3604168262441065,
+        "cIoU": 0.3033496291869394,
+        "gIoU": 0.3604168262441065,
+        "Precision@0.5": 0.355,
+        "Precision": 0.3259509230647587,
+        "Recall": 0.8139480222709709,
+        "F-score": 0.465492332055484,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-75-25-Q0M0-75-25\\reasonseg\\full.json",
+          "sha256": "4f795d309bd3e9b2444e98c836b0fb493f5b29a3a3febb48053d62ba0e1ce21e",
+          "original_identity": {
+            "model": "Fusion-CK128-75-25-Q0M0-75-25",
+            "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+            "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-90-10-Q0M0-50-50:0:512:reasonseg",
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+      "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.3683040927392197,
+        "cIoU": 0.3114370478733506,
+        "gIoU": 0.3683040927392197,
+        "Precision@0.5": 0.365,
+        "Precision": 0.33719677629271205,
+        "Recall": 0.8030229790017048,
+        "F-score": 0.4749553909253706,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-90-10-Q0M0-50-50\\reasonseg\\full.json",
+          "sha256": "b9a3853ddd3710184f96a3a08faad03d5f4cea34109b4abc3284826b2c965ddc",
+          "original_identity": {
+            "model": "Fusion-CK128-90-10-Q0M0-50-50",
+            "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+            "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M0:0:512:reasonseg",
+      "model": "Fusion-CK128-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M0",
+      "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.35892268724527476,
+        "cIoU": 0.31971909118287056,
+        "gIoU": 0.35892268724527476,
+        "Precision@0.5": 0.355,
+        "Precision": 0.3480461030798846,
+        "Recall": 0.7970902497282213,
+        "F-score": 0.4845259772612744,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M0\\reasonseg\\full.json",
+          "sha256": "66055543b86917539a398a18e3839c895e6e90dbbc81a46832ec80d7f4e2acbc",
+          "original_identity": {
+            "model": "Fusion-CK128-M0",
+            "repo": "local-weight-fusion/Fusion-CK128-M0",
+            "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M1:0:512:reasonseg",
+      "model": "Fusion-CK128-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M1",
+      "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.3524118693110688,
+        "cIoU": 0.292200574613063,
+        "gIoU": 0.3524118693110688,
+        "Precision@0.5": 0.345,
+        "Precision": 0.30821098046974293,
+        "Recall": 0.8490578740673681,
+        "F-score": 0.4522526616281061,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M1\\reasonseg\\full.json",
+          "sha256": "c4e9fd97aa0590e3af95beefe596886ec3d99c1d300123ca501cbc663bb4c548",
+          "original_identity": {
+            "model": "Fusion-CK128-M1",
+            "repo": "local-weight-fusion/Fusion-CK128-M1",
+            "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M0:0:512:reasonseg",
+      "model": "Fusion-Q0-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M0",
+      "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.40725480836195943,
+        "cIoU": 0.29607320320459307,
+        "gIoU": 0.40725480836195943,
+        "Precision@0.5": 0.42,
+        "Precision": 0.3551127024555017,
+        "Recall": 0.6403952299025386,
+        "F-score": 0.45687728512948217,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M0\\reasonseg\\full.json",
+          "sha256": "1e1e750c1c67c11bf0d2392a058c69a96559c20122af71269f1dc605d61b5ac3",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M0\\reasonseg\\full.json",
+          "sha256": "8aed0da6d93c6749f8585a853932d3bd2c208333a771102860dbe422d32febdf",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M1:0:512:reasonseg",
+      "model": "Fusion-Q0-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M1",
+      "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.40949329259540623,
+        "cIoU": 0.3029065257692999,
+        "gIoU": 0.40949329259540623,
+        "Precision@0.5": 0.415,
+        "Precision": 0.3260263839414215,
+        "Recall": 0.810299187107549,
+        "F-score": 0.46497046377206375,
+        "samples": 200
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-20261106\\external-results\\results\\Fusion-Q0-M1\\reasonseg\\full.json",
+          "sha256": "69ed39fc0bde8ad248e12aece95744d49cfb63613c36e425c608f267607af0af",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        },
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M1\\reasonseg\\full.json",
+          "sha256": "914a79e22ff4cd6a562e87a889b5354b837c869db0d581b168e957eaffc54b49",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "K-Q0-r128:20000:512:reasonseg",
+      "model": "K-Q0-r128",
+      "step": 20000,
+      "resolution": 512,
+      "dataset": "reasonseg",
+      "task": "referring",
+      "samples": 200,
+      "status": "completed",
+      "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+      "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+      "dataset_fingerprint": "60dad44603835c44a0e2b4268a7a4def77b5f883de70a2602fc0f2b3fa0a66d0",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1",
+        "reasonseg_query_mode": "legacy_annotation_string"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.3900111305945536,
+        "cIoU": 0.2819540448992428,
+        "gIoU": 0.3900111305945536,
+        "Precision@0.5": 0.4,
+        "Precision": 0.3077257198150866,
+        "Recall": 0.7709921070311243,
+        "F-score": 0.4398816728588792,
+        "samples": 200
+      },
+      "source_groups": [
+        "dev_selected_external_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-dev-selected-external-20261105\\external-results\\results\\K-Q0-r128\\reasonseg\\full.json",
+          "sha256": "ace2413606dd1c35419eb65a4269def7b666d787d592de41699e265fb45c61fc",
+          "original_identity": {
+            "model": "K-Q0-r128",
+            "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+            "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+            "step": 20000,
+            "weight_type": "lora_on_official_base",
+            "expected_adapter_sha256": "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "C1_retest:10000:512:refcocog",
+      "model": "C1_retest",
+      "step": 10000,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+      "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.511447826684158,
+        "cIoU": 0.42393336614039473,
+        "gIoU": 0.511447826684158,
+        "Precision@0.5": 0.5435049019607843,
+        "Precision": 0.47401288047179563,
+        "Recall": 0.8005033822420905,
+        "F-score": 0.5954398937774401,
+        "samples": 4896
+      },
+      "source_groups": [
+        "reference_dashboard_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-i97-comparison-20261103\\external-results\\results\\C1_retest\\refcocog\\full.json",
+          "sha256": "33ece6c03d2433c6d78e76de70f7a37e0adb64aaf55c52bdc448abfe51887995",
+          "original_identity": {
+            "model": "C1_retest",
+            "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+            "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+            "step": 10000,
+            "weight_type": "continued_lora_on_official_base",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128:0:512:refcocog",
+      "model": "Fusion-C1-KQ0r128",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+      "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5945235589567733,
+        "cIoU": 0.5266817187381424,
+        "gIoU": 0.5945235589567733,
+        "Precision@0.5": 0.6568627450980392,
+        "Precision": 0.606626670394469,
+        "Recall": 0.7998594901218266,
+        "F-score": 0.6899692480413847,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128\\refcocog\\full.json",
+          "sha256": "322c64225efa2f4e6924773f6fa96de34096f9b0ec332b83416abcbdf74db751",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+            "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-60-40:0:512:refcocog",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+      "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5895913135087003,
+        "cIoU": 0.5217784140800504,
+        "gIoU": 0.5895913135087003,
+        "Precision@0.5": 0.6513480392156863,
+        "Precision": 0.5978729235289756,
+        "Recall": 0.8039062569014733,
+        "F-score": 0.6857482130806506,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\refcocog\\full.json",
+          "sha256": "461590135720047b174fa1f4e1ec39a0808216986a138f5277ef30dc09450a09",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-60-40",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+            "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-75-25:0:512:refcocog",
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+      "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5719663581183025,
+        "cIoU": 0.4978504580107315,
+        "gIoU": 0.5719663581183025,
+        "Precision@0.5": 0.6276552287581699,
+        "Precision": 0.5688471529436353,
+        "Recall": 0.7995562000990498,
+        "F-score": 0.6647532206545076,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-75-25\\refcocog\\full.json",
+          "sha256": "d0fc6ddb207567d4439f6335b9e60c87203748ece7cf5eba5330893cd06169d3",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-75-25",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+            "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-C1-KQ0r128-90-10:0:512:refcocog",
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+      "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5403230920515166,
+        "cIoU": 0.4621507566410489,
+        "gIoU": 0.5403230920515166,
+        "Precision@0.5": 0.5821078431372549,
+        "Precision": 0.5228601080337835,
+        "Recall": 0.7992080616347608,
+        "F-score": 0.6321519919091417,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-90-10\\refcocog\\full.json",
+          "sha256": "5349ec2a44a543e8abb4b26e70ac5d202ad469bc03a54f4738da6dd6b81b46b0",
+          "original_identity": {
+            "model": "Fusion-C1-KQ0r128-90-10",
+            "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+            "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-75-25-Q0M0-75-25:0:512:refcocog",
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+      "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5900032598916374,
+        "cIoU": 0.5315271646723766,
+        "gIoU": 0.5900032598916374,
+        "Precision@0.5": 0.6568627450980392,
+        "Precision": 0.6236112987611738,
+        "Recall": 0.7825899425712715,
+        "F-score": 0.6941139235830408,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-75-25-Q0M0-75-25\\refcocog\\full.json",
+          "sha256": "a8b9cb24ec98e727aa240446a74dc07703a113fdecfba379b38c2d516c157e5a",
+          "original_identity": {
+            "model": "Fusion-CK128-75-25-Q0M0-75-25",
+            "repo": "local-weight-fusion/Fusion-CK128-75-25-Q0M0-75-25",
+            "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-90-10-Q0M0-50-50:0:512:refcocog",
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+      "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.593800160394818,
+        "cIoU": 0.5479970657143535,
+        "gIoU": 0.593800160394818,
+        "Precision@0.5": 0.6656454248366013,
+        "Precision": 0.6573961708637726,
+        "Recall": 0.7670626201625281,
+        "F-score": 0.708007886903157,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-cross-20261107\\external-results\\results\\Fusion-CK128-90-10-Q0M0-50-50\\refcocog\\full.json",
+          "sha256": "ea54f33646783a7ec7f93213c671c1d4325d928c0fd0e4c892114b5f2fbcf999",
+          "original_identity": {
+            "model": "Fusion-CK128-90-10-Q0M0-50-50",
+            "repo": "local-weight-fusion/Fusion-CK128-90-10-Q0M0-50-50",
+            "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M0:0:512:refcocog",
+      "model": "Fusion-CK128-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M0",
+      "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5780694051858789,
+        "cIoU": 0.5382955838184276,
+        "gIoU": 0.5780694051858789,
+        "Precision@0.5": 0.6527777777777778,
+        "Precision": 0.6704313191732769,
+        "Recall": 0.7319903052607726,
+        "F-score": 0.6998597531980761,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M0\\refcocog\\full.json",
+          "sha256": "1fb874727fdd0268231635f2784a3509ced67a1348ace958ea81dcea956d62ec",
+          "original_identity": {
+            "model": "Fusion-CK128-M0",
+            "repo": "local-weight-fusion/Fusion-CK128-M0",
+            "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-CK128-M1:0:512:refcocog",
+      "model": "Fusion-CK128-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-CK128-M1",
+      "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5880404142426644,
+        "cIoU": 0.5190171973037464,
+        "gIoU": 0.5880404142426644,
+        "Precision@0.5": 0.6513480392156863,
+        "Precision": 0.6052924816341559,
+        "Recall": 0.7845447456954875,
+        "F-score": 0.6833592117653456,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-CK128-M1\\refcocog\\full.json",
+          "sha256": "d20093c5271a3c2502a0936ba051a028828e261fb3780ebcd6a8a8b4ac560c1d",
+          "original_identity": {
+            "model": "Fusion-CK128-M1",
+            "repo": "local-weight-fusion/Fusion-CK128-M1",
+            "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+            "step": 0,
+            "weight_type": "fp32_full_weight_weighted_average",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M0:0:512:refcocog",
+      "model": "Fusion-Q0-M0",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M0",
+      "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.590696594237388,
+        "cIoU": 0.5597384842724719,
+        "gIoU": 0.590696594237388,
+        "Precision@0.5": 0.6666666666666666,
+        "Precision": 0.7215493223377866,
+        "Recall": 0.713958340927405,
+        "F-score": 0.7177337610330973,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M0\\refcocog\\full.json",
+          "sha256": "699fa31c7018b0d481e9e0249ac7856b4fc533e015a15e162ebd01f1e86fe382",
+          "original_identity": {
+            "model": "Fusion-Q0-M0",
+            "repo": "local-weight-fusion/Fusion-Q0-M0",
+            "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Fusion-Q0-M1:0:512:refcocog",
+      "model": "Fusion-Q0-M1",
+      "step": 0,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "local-weight-fusion/Fusion-Q0-M1",
+      "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.6118428392955509,
+        "cIoU": 0.5601568156666645,
+        "gIoU": 0.6118428392955509,
+        "Precision@0.5": 0.6768790849673203,
+        "Precision": 0.6603760252750686,
+        "Recall": 0.7868281169327345,
+        "F-score": 0.71807758046079,
+        "samples": 4896
+      },
+      "source_groups": [
+        "full_weight_fusion_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-Q0-M1\\refcocog\\full.json",
+          "sha256": "eb6dacba32cf070e916a4df3bb59aeb78d0d31b59f5b19f9ab82be908215bcba",
+          "original_identity": {
+            "model": "Fusion-Q0-M1",
+            "repo": "local-weight-fusion/Fusion-Q0-M1",
+            "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+            "step": 0,
+            "weight_type": "fp32_full_weight_average_50_50",
+            "expected_adapter_sha256": null,
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    },
+    {
+      "id": "K-Q0-r128:20000:512:refcocog",
+      "model": "K-Q0-r128",
+      "step": 20000,
+      "resolution": 512,
+      "dataset": "refcocog",
+      "task": "referring",
+      "samples": 4896,
+      "status": "completed",
+      "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+      "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+      "dataset_fingerprint": "ae8264572b09e33b3c8a35238aa21401449b1c7a1eea14430d1a614a8c7a0570",
+      "protocol": {
+        "num_inference_steps": 50,
+        "guidance_scale": 4.0,
+        "strength": 0.85,
+        "seed": 42,
+        "canvas_resolution": 512,
+        "native_resolution_scoring": true,
+        "referring_prompt_version": "fig4_v1"
+      },
+      "depth_curve": "metric_power",
+      "depth_colormap": "cube_edge",
+      "metrics": {
+        "IoU": 0.5702461442913628,
+        "cIoU": 0.5139050603052627,
+        "gIoU": 0.5702461442913628,
+        "Precision@0.5": 0.6209150326797386,
+        "Precision": 0.6090642740711746,
+        "Recall": 0.766858304619731,
+        "F-score": 0.6789131944662888,
+        "samples": 4896
+      },
+      "source_groups": [
+        "dev_selected_external_server"
+      ],
+      "evidence": [
+        {
+          "path": "E:\\Open-vision-banana\\output\\ovb-dev-selected-external-20261105\\external-results\\results\\K-Q0-r128\\refcocog\\full.json",
+          "sha256": "723ffc21acd93bead377879a97c7c65bf3dd1a3b660167e90108e5a53948f3cd",
+          "original_identity": {
+            "model": "K-Q0-r128",
+            "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+            "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+            "step": 20000,
+            "weight_type": "lora_on_official_base",
+            "expected_adapter_sha256": "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a",
+            "source_revision": "01e3d486630db36145a857273f318c2417d62f6b"
+          }
+        }
+      ]
+    }
+  ],
+  "recipes": [
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+      "coefficients": [
+        0.5,
+        0.5
+      ],
+      "parents": [
+        {
+          "model": "C1_retest",
+          "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+          "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+          "step": 10000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        },
+        {
+          "model": "K-Q0-r128",
+          "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+          "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+          "step": 20000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+      "coefficients": [
+        0.5,
+        0.5
+      ],
+      "parents": [
+        {
+          "model": "Q0",
+          "repo": "khazic/ovb-i97-q0-s42_20261102_2007",
+          "revision": "27d1dd02ba008a85fa8107ddbb4b0dc7827bc1e3",
+          "step": 20000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        },
+        {
+          "model": "M0",
+          "repo": "khazic/ovb-i97-m0-s42_20261102_2007",
+          "revision": "f6378442786e6339c89c36eddd81185e7a3bf83f",
+          "step": 20000,
+          "base": "/data/yrl/ovb-i97-external-20261104/model-views/E-merged"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "revision": "1f12d82b39de76f9a557405bb4c99d64ecbe3752ef349b5992a7a9c28e89a231",
+      "coefficients": [
+        0.5,
+        0.5
+      ],
+      "parents": [
+        {
+          "model": "Q0",
+          "repo": "khazic/ovb-i97-q0-s42_20261102_2007",
+          "revision": "27d1dd02ba008a85fa8107ddbb4b0dc7827bc1e3",
+          "step": 20000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        },
+        {
+          "model": "M1",
+          "repo": "khazic/ovb-i97-m1-s42_20261102_2007",
+          "revision": "47f84d218bed21de73a85c83012211218f2e602e",
+          "step": 20000,
+          "base": "/data/yrl/ovb-i97-external-20261104/model-views/E-merged"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "revision": "faa454e804cd0f1be45528c52d8277d8a38df976ae7af0f84903d122699c26c6",
+      "coefficients": [
+        0.5,
+        0.5
+      ],
+      "parents": [
+        {
+          "model": "Fusion-C1-KQ0r128",
+          "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+          "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+          "step": 0,
+          "base": "/data/yrl/ovb-fusion-20261106/models/Fusion-C1-KQ0r128"
+        },
+        {
+          "model": "M0",
+          "repo": "khazic/ovb-i97-m0-s42_20261102_2007",
+          "revision": "f6378442786e6339c89c36eddd81185e7a3bf83f",
+          "step": 20000,
+          "base": "/data/yrl/ovb-i97-external-20261104/model-views/E-merged"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "revision": "032006b12ef8c6a73a8e1e91639607a5ea21dfd96c768dada28e11bfe1b73246",
+      "coefficients": [
+        0.5,
+        0.5
+      ],
+      "parents": [
+        {
+          "model": "Fusion-C1-KQ0r128",
+          "repo": "local-weight-fusion/Fusion-C1-KQ0r128",
+          "revision": "e188b735601d520d1b1fe62c63e80bcbffdae4d57b33adfa9f64e03094eca77c",
+          "step": 0,
+          "base": "/data/yrl/ovb-fusion-20261106/models/Fusion-C1-KQ0r128"
+        },
+        {
+          "model": "M1",
+          "repo": "khazic/ovb-i97-m1-s42_20261102_2007",
+          "revision": "47f84d218bed21de73a85c83012211218f2e602e",
+          "step": 20000,
+          "base": "/data/yrl/ovb-i97-external-20261104/model-views/E-merged"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "revision": "244ca28d707a907c7cfd89869ae7544b247c44675bc2511c5e5ae4e382952ebe",
+      "coefficients": [
+        0.6,
+        0.4
+      ],
+      "parents": [
+        {
+          "model": "C1_retest",
+          "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+          "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+          "step": 10000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        },
+        {
+          "model": "K-Q0-r128",
+          "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+          "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+          "step": 20000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+      "coefficients": [
+        0.75,
+        0.25
+      ],
+      "parents": [
+        {
+          "model": "C1_retest",
+          "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+          "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+          "step": 10000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        },
+        {
+          "model": "K-Q0-r128",
+          "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+          "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+          "step": 20000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+      "coefficients": [
+        0.9,
+        0.09999999999999998
+      ],
+      "parents": [
+        {
+          "model": "C1_retest",
+          "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+          "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+          "step": 10000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        },
+        {
+          "model": "K-Q0-r128",
+          "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+          "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+          "step": 20000,
+          "base": "/data/yrl/ovb-benchmark-e2b-20261028/base_model"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "revision": "706fe71d57e6a0d422e3217afa14d4677836a1e55c723ef2f5eb4bdbe4a343e8",
+      "coefficients": [
+        0.5,
+        0.5
+      ],
+      "parents": [
+        {
+          "model": "Fusion-C1-KQ0r128-90-10",
+          "repo": "local-weight-fusion/Fusion-C1-KQ0r128-90-10",
+          "revision": "48074441f9b82910a259aee473e4b7b699dce2139865a5f668dc2dc439f542ec",
+          "step": 0,
+          "base": "/data/yrl/ovb-fusion-advanced-20261106/models/Fusion-C1-KQ0r128-90-10"
+        },
+        {
+          "model": "Fusion-Q0-M0",
+          "repo": "local-weight-fusion/Fusion-Q0-M0",
+          "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+          "step": 0,
+          "base": "/data/yrl/ovb-fusion-20261106/models/Fusion-Q0-M0"
+        }
+      ]
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "revision": "959c599a25b7305c257d31e6c576ba9d6fcf1abff4f9ea592d029f324764da56",
+      "coefficients": [
+        0.75,
+        0.25
+      ],
+      "parents": [
+        {
+          "model": "Fusion-C1-KQ0r128-75-25",
+          "repo": "local-weight-fusion/Fusion-C1-KQ0r128-75-25",
+          "revision": "454b2d41bf38446fcd25adbe7bcf6b40d810f58e0bae464d4839fc6ab2c51c9e",
+          "step": 0,
+          "base": "/data/yrl/ovb-fusion-advanced-20261106/models/Fusion-C1-KQ0r128-75-25"
+        },
+        {
+          "model": "Fusion-Q0-M0",
+          "repo": "local-weight-fusion/Fusion-Q0-M0",
+          "revision": "977a201aa20f92fc1b8fdd14e4c35459f11788d18193430f5f2446c2868146c0",
+          "step": 0,
+          "base": "/data/yrl/ovb-fusion-20261106/models/Fusion-Q0-M0"
+        }
+      ]
+    }
+  ]
+}

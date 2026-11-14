@@ -1,0 +1,78 @@
+{
+  "operation": "FP32 weighted sum of full effective Transformer weights; one final BF16 cast; saved fusion parent loaded exactly",
+  "coefficients": [
+    0.6,
+    0.4
+  ],
+  "parents": [
+    {
+      "model": "C1_retest",
+      "repo": "khazic/ovb-i88_c1_depth_cube100_20261030_1602",
+      "revision": "be6d643b8b8f58aa641c318a4ac02a1ff95b69cf",
+      "step": 10000,
+      "base": "/workspace/ovb-benchmark-e2b-20261028/base_model",
+      "lora": "/workspace/ovb-i97-external-20261104/checkpoints/C1_retest/ckpt/checkpoint-10000_final",
+      "files": [
+        {
+          "remote_path": "/workspace/ovb-i97-external-20261104/checkpoints/C1_retest/ckpt/checkpoint-10000_final/metadata.json",
+          "size": 425,
+          "sha256": "385681168c542cbf4408c03f0709c61d5a066bd6dbe3915bdd1d26b1387b55f5"
+        },
+        {
+          "remote_path": "/workspace/ovb-i97-external-20261104/checkpoints/C1_retest/ckpt/checkpoint-10000_final/lora_adapter/adapter_config.json",
+          "size": 1297,
+          "sha256": "b20024547d3632a9d88bd1d2fe62fd6724404e6f2cfb9ec9e9a9e79372e5a849"
+        },
+        {
+          "remote_path": "/workspace/ovb-i97-external-20261104/checkpoints/C1_retest/ckpt/checkpoint-10000_final/lora_adapter/adapter_model.safetensors",
+          "size": 335606096,
+          "sha256": "f43548e8f341bd7f91e1c6e73ef89bdd333d93e2897974c64deb0f50fd5730c0"
+        }
+      ]
+    },
+    {
+      "model": "K-Q0-r128",
+      "repo": "khazic/ovb-i97-k-q0-r128-s42_20261103_queue",
+      "revision": "1b84ff35d9989f3126c6acc86010df710d89585c",
+      "step": 20000,
+      "kind": "lora",
+      "initialization": "Q",
+      "resolution": 512,
+      "status": "staged",
+      "checkpoint": "/workspace/ovb-r128-external-20261105/Q0/checkpoints/K-Q0-r128/ckpt/checkpoint-20000_final",
+      "files": [
+        {
+          "path": "ckpt/checkpoint-20000_final/lora_adapter/adapter_config.json",
+          "relative": "lora_adapter/adapter_config.json",
+          "remote_path": "/workspace/ovb-r128-external-20261105/Q0/checkpoints/K-Q0-r128/ckpt/checkpoint-20000_final/lora_adapter/adapter_config.json",
+          "size": 1298,
+          "sha256": "c013a7c56e4c58beb048353a9102e2ebb54ed83d7092ef4f465f133c5edb4ff9"
+        },
+        {
+          "path": "ckpt/checkpoint-20000_final/lora_adapter/adapter_model.safetensors",
+          "relative": "lora_adapter/adapter_model.safetensors",
+          "remote_path": "/workspace/ovb-r128-external-20261105/Q0/checkpoints/K-Q0-r128/ckpt/checkpoint-20000_final/lora_adapter/adapter_model.safetensors",
+          "size": 1342239952,
+          "sha256": "ed0e537c5ca1c8c95e26076b859d20c2d91be8e65c6315ef7adeb80783eaf65a"
+        },
+        {
+          "path": "ckpt/checkpoint-20000_final/metadata.json",
+          "relative": "metadata.json",
+          "remote_path": "/workspace/ovb-r128-external-20261105/Q0/checkpoints/K-Q0-r128/ckpt/checkpoint-20000_final/metadata.json",
+          "size": 509,
+          "sha256": "f947d46665c8004d57ad080e8af5f4450f10c80d503ab5c87220c346d18120fd"
+        }
+      ],
+      "rank": 128,
+      "base": "/workspace/ovb-benchmark-e2b-20261028/base_model",
+      "lora": "/workspace/ovb-r128-external-20261105/Q0/checkpoints/K-Q0-r128/ckpt/checkpoint-20000_final",
+      "reuse": null
+    }
+  ],
+  "additional_optimizer_steps": 0,
+  "frozen_components": "/workspace/ovb-benchmark-e2b-20261028/base_model",
+  "base_model": {
+    "repo": "Qwen/Qwen-Image-2.1",
+    "sha": "d26bb61231c349cf6b7896fa83353113880e1ba3"
+  }
+}

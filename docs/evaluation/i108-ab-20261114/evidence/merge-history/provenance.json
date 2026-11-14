@@ -1,0 +1,437 @@
+{
+  "records": [
+    {
+      "model": "C1_retest",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/C1_retest/cityscapes/full.json",
+      "sha256": "7aff80ed1943dffa32664a391f6b0cf98822cf84abe6c94be453641210a43b87"
+    },
+    {
+      "model": "C1_retest",
+      "dataset": "diode",
+      "url": "evidence/merge-history/C1_retest/diode/full.json",
+      "sha256": "eab2d804eecd0bab534edc55e24e576a84cf8c23ed3c45553d2f3b2f42de94d3"
+    },
+    {
+      "model": "C1_retest",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/C1_retest/eth3d/full.json",
+      "sha256": "f135f85063b0a903b202a7c7e843800cc2456445e50f9c0d269320ab55131954"
+    },
+    {
+      "model": "C1_retest",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/C1_retest/nyu/full.json",
+      "sha256": "8e1355dc879f89711befc52fa0705a34e837313e256a4d756ae08dca1fd8c015"
+    },
+    {
+      "model": "C1_retest",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/C1_retest/reasonseg/full.json",
+      "sha256": "99af0cc5f97e69a00a7cc35d996c316d420465b6e60b521cf89601e5cfac42f8"
+    },
+    {
+      "model": "C1_retest",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/C1_retest/refcocog/full.json",
+      "sha256": "33ece6c03d2433c6d78e76de70f7a37e0adb64aaf55c52bdc448abfe51887995"
+    },
+    {
+      "model": "K-Q0-r128",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/K-Q0-r128/cityscapes/full.json",
+      "sha256": "70871a0d53005d6d5628c8b155c1ab09e6676f051f312a199ad3987ab2332c34"
+    },
+    {
+      "model": "K-Q0-r128",
+      "dataset": "diode",
+      "url": "evidence/merge-history/K-Q0-r128/diode/full.json",
+      "sha256": "4d62ce9784c5887818cca6bbf081a88b990cc14e3e1d04c533d406233ba923df"
+    },
+    {
+      "model": "K-Q0-r128",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/K-Q0-r128/eth3d/full.json",
+      "sha256": "8496fdab76c82a80ea32d516ba38e81ed139ecb389dd87658b3d947e59db1621"
+    },
+    {
+      "model": "K-Q0-r128",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/K-Q0-r128/nyu/full.json",
+      "sha256": "2f68e8f1d8f5553e0182cffb1ca7c7e8d7b21f9b3fa9b20b4f3517ba46e69516"
+    },
+    {
+      "model": "K-Q0-r128",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/K-Q0-r128/reasonseg/full.json",
+      "sha256": "ace2413606dd1c35419eb65a4269def7b666d787d592de41699e265fb45c61fc"
+    },
+    {
+      "model": "K-Q0-r128",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/K-Q0-r128/refcocog/full.json",
+      "sha256": "723ffc21acd93bead377879a97c7c65bf3dd1a3b660167e90108e5a53948f3cd"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128/cityscapes/full.json",
+      "sha256": "9d2240c017d1d93b485d6dbf31e622a57ed7e344b3258c026b8a56b12ccfd367"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128/diode/full.json",
+      "sha256": "962640231e8e1ebe8e9ee6d4b1e4fba2b1b2b0efad0fa0ce9bcd645d619b9606"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128/eth3d/full.json",
+      "sha256": "8b42dade234cfa8a3d25e22c60081eba4114b88de1e688268932b18e4a3f7e90"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128/nyu/full.json",
+      "sha256": "608606dea1f3e1388f4a55c60a8286f1d8d1a1253a1a1249d68f60e8725c7245"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128/reasonseg/full.json",
+      "sha256": "29368476cfae95fae1f0703000d97c0a0a1b464389a03fd5f6474d6a0744df52"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128/refcocog/full.json",
+      "sha256": "322c64225efa2f4e6924773f6fa96de34096f9b0ec332b83416abcbdf74db751"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/cityscapes/full.json",
+      "sha256": "c58cc3f181938ab827beeface7f6db72a9c80a1c297a1693a74c4153f5333de6"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/diode/full.json",
+      "sha256": "8e5ac1c3e5177ba28c04b407699cb7fa805d1528eabab211fd61517098cef64d"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/eth3d/full.json",
+      "sha256": "f5cd5fafe751c65a2608c67ea6590dce85d2cc85872c6dfca42f3f448f37eb9a"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/nyu/full.json",
+      "sha256": "93a91fcaef4c84719a1cd7afdc7daab45bbb2a675766c5c5cebec07dee50e7ba"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/reasonseg/full.json",
+      "sha256": "74a0ed6b0653c41a00539d40c316902cc559064bcd205c376065b971e6c8e2c6"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/refcocog/full.json",
+      "sha256": "461590135720047b174fa1f4e1ec39a0808216986a138f5277ef30dc09450a09"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/cityscapes/full.json",
+      "sha256": "e87c6dba28d5a44f0a75503573ccbe62ce33edf7707089b3031a4641ce388426"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/diode/full.json",
+      "sha256": "2d9eaf37e85f65b4cceb3c3ccbb6061394bef88fa346d2d0b24af2fc92447c36"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/eth3d/full.json",
+      "sha256": "3e5b5b52917b9b8b2f78ea217701b0cc8166ef3f434a6778a9859176634493c1"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/nyu/full.json",
+      "sha256": "14af0608129a86f50e5c75fd50913c0db6da4a8baf3ea3554e2fcb00b8d2c246"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/reasonseg/full.json",
+      "sha256": "9da0388217ab79ee58de6524a8312298033909c59c41c71aec198dd8840a4105"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/refcocog/full.json",
+      "sha256": "d0fc6ddb207567d4439f6335b9e60c87203748ece7cf5eba5330893cd06169d3"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/cityscapes/full.json",
+      "sha256": "17ad69fb7d132fab4e9caa1643dac2b1cd6e9ccfcfb5b3f53ab440a843619581"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/diode/full.json",
+      "sha256": "8abbe0ba6d5ddfbc1f5a44b2a8de918a6b7ca1e1d57b46ba3a803882434662c9"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/eth3d/full.json",
+      "sha256": "5367d7c908fcedc06e338ef5f52a9476adefe0be255e677ea4cec3af9cd62ea0"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/nyu/full.json",
+      "sha256": "2ca0e78da2843e763b689bc20409f03932af7f90b088dcfdde0045e408ea2f66"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/reasonseg/full.json",
+      "sha256": "28cceadc221d2da7c09ee8127a6d12da5afe8f096022c486496aca700d347980"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/refcocog/full.json",
+      "sha256": "5349ec2a44a543e8abb4b26e70ac5d202ad469bc03a54f4738da6dd6b81b46b0"
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-CK128-M0/cityscapes/full.json",
+      "sha256": "a1c6de6dc5aa23d473d6391c3e4dcdd5944576245e42ec8a6103614143aece1c"
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-CK128-M0/diode/full.json",
+      "sha256": "dfa1113d37916c07bd5c1b97407eabdeaf18ff1a292687b6d19a0a9a41a9fb13"
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-CK128-M0/eth3d/full.json",
+      "sha256": "24a69e8351573527aac40e1a9c1d5d2b5a4e4c3bc95ff1e3bb534a10fbc19c2b"
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-CK128-M0/nyu/full.json",
+      "sha256": "7b719e1ee43b1ab092f516bbb5d6b9907f7ed96b102612d2dba9063d61a5ed8d"
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-CK128-M0/reasonseg/full.json",
+      "sha256": "66055543b86917539a398a18e3839c895e6e90dbbc81a46832ec80d7f4e2acbc"
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-CK128-M0/refcocog/full.json",
+      "sha256": "1fb874727fdd0268231635f2784a3509ced67a1348ace958ea81dcea956d62ec"
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-CK128-M1/cityscapes/full.json",
+      "sha256": "b44dd8b671f45352a787b40993b19dbdc1e3e6cecb8df53a566462f03d84b226"
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-CK128-M1/diode/full.json",
+      "sha256": "184d83f0ab294dfa018ae5445eaca52745412bcb96ee4363ad4ec3f139aef452"
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-CK128-M1/eth3d/full.json",
+      "sha256": "d9a5ca1eac8333238fe20999efb08095e2daff01460eb1cbbec12f43de2e2d72"
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-CK128-M1/nyu/full.json",
+      "sha256": "b7b8dd160a846cac56d7047fbdfaefdb474f1f0e8176276351e92f4b43fedde3"
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-CK128-M1/reasonseg/full.json",
+      "sha256": "c4e9fd97aa0590e3af95beefe596886ec3d99c1d300123ca501cbc663bb4c548"
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-CK128-M1/refcocog/full.json",
+      "sha256": "d20093c5271a3c2502a0936ba051a028828e261fb3780ebcd6a8a8b4ac560c1d"
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-Q0-M0/cityscapes/full.json",
+      "sha256": "bc56a6f3b4de1c631a2f0fe4fc8b12197515386415ddf87e5c74444a24285969"
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-Q0-M0/diode/full.json",
+      "sha256": "b48137cc10cc53c77fde81fe6903e6d432c264f988052ecace9a28ce21204bdf"
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-Q0-M0/eth3d/full.json",
+      "sha256": "139925aa63aa10dfefaa5f307659105317aa7878143c0d264803d0ff1df4ee52"
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-Q0-M0/nyu/full.json",
+      "sha256": "a56bc7cd5ec61f98ffb9bbe2af08b10610b318352a27bde2a6056dd51e0ddddb"
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-Q0-M0/reasonseg/full.json",
+      "sha256": "1e1e750c1c67c11bf0d2392a058c69a96559c20122af71269f1dc605d61b5ac3"
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-Q0-M0/refcocog/full.json",
+      "sha256": "699fa31c7018b0d481e9e0249ac7856b4fc533e015a15e162ebd01f1e86fe382"
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-Q0-M1/cityscapes/full.json",
+      "sha256": "6c755e8e90420f34f0c8d97c045bbc3bdbc901b671872ecac469fafc8273aadd"
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-Q0-M1/diode/full.json",
+      "sha256": "b7c7cde0fd7ddc8cdfb2967b3eebe3e9c68b8d60a836716db04a1de80451f664"
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-Q0-M1/eth3d/full.json",
+      "sha256": "d9096b28ea1935a46cde6daf0ac08339f174d1d09163ea03d10a8637f9d26867"
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-Q0-M1/nyu/full.json",
+      "sha256": "05a3e006b409e51c8b8dd457799c53313f9b4e8048ff25bf450019671c4c555b"
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-Q0-M1/reasonseg/full.json",
+      "sha256": "69ed39fc0bde8ad248e12aece95744d49cfb63613c36e425c608f267607af0af"
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-Q0-M1/refcocog/full.json",
+      "sha256": "eb6dacba32cf070e916a4df3bb59aeb78d0d31b59f5b19f9ab82be908215bcba"
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/cityscapes/full.json",
+      "sha256": "090c410fe0814fb83c8af63ce776311ae4acfd904a3c8196d92f569d75201611"
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/diode/full.json",
+      "sha256": "c03969b0f8527394fdf8220722d12c3365d4ede226319f57e3e519bf7068ae6c"
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/eth3d/full.json",
+      "sha256": "19c7fe581152b55c443a6768c99cb366adf2badec5d8467bd31a06dde5ca77f5"
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/nyu/full.json",
+      "sha256": "fd3a34a20fa680d831477980de086399461917822fe205f9fe820b0b812ccbe7"
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/reasonseg/full.json",
+      "sha256": "b9a3853ddd3710184f96a3a08faad03d5f4cea34109b4abc3284826b2c965ddc"
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/refcocog/full.json",
+      "sha256": "ea54f33646783a7ec7f93213c671c1d4325d928c0fd0e4c892114b5f2fbcf999"
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "dataset": "cityscapes",
+      "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/cityscapes/full.json",
+      "sha256": "867b93d71a85e778e2840f2ebc48cc232271699450a8efbf8dfb06642d23f36b"
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "dataset": "diode",
+      "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/diode/full.json",
+      "sha256": "3637d0bd69ae7ff1125d1f78969a9e19879aae2331c4023d550f37000ae668c2"
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "dataset": "eth3d",
+      "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/eth3d/full.json",
+      "sha256": "b9dfaaf9e1639328ba451c73a5899a36e0e4a4fbdc4ae4eb6342fab9ddff50ce"
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "dataset": "nyu",
+      "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/nyu/full.json",
+      "sha256": "8513f07cabc8857478a9a92b1f79183d47d228f759be9bf04dd8bd007055527a"
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "dataset": "reasonseg",
+      "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/reasonseg/full.json",
+      "sha256": "4f795d309bd3e9b2444e98c836b0fb493f5b29a3a3febb48053d62ba0e1ce21e"
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "dataset": "refcocog",
+      "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/refcocog/full.json",
+      "sha256": "a8b9cb24ec98e727aa240446a74dc07703a113fdecfba379b38c2d516c157e5a"
+    }
+  ],
+  "scope": "Historical appendix; excluded from the 350 primary evaluation records"
+}

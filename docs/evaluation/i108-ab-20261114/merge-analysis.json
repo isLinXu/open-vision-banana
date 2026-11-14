@@ -1,0 +1,1157 @@
+{
+  "status": "proposed_not_evaluated",
+  "updated_at": "2026-11-14T23:00:35+08:00",
+  "summary": "建议从 B17.5k_best 这个已完成六项评测的均衡对照出发，先以 75:25 和 50:50 加入 B100k_best，再比较语义保留与指代保留两条路线。以下六组仅为待验证方案，没有新增融合分数，也未启动融合或 GPU 评测。",
+  "scope": "主表仍仅收录论文、起点与 A/B；历史融合仅作为本节证据附录，不计入主表的 350 项统计。",
+  "history": [
+    {
+      "model": "C1_retest",
+      "label": "C1_retest",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.3449547588825226,
+        "diode_absrel": 693.8937347706058,
+        "diode_delta": 0.31978029667303304,
+        "eth3d_absrel": 0.5414388682964936,
+        "eth3d_delta": 0.25000889038292545,
+        "nyu_absrel": 0.5840437876026997,
+        "nyu_delta": 0.3485051555510433,
+        "reasonseg_giou": 0.3048416410712846,
+        "refcocog_ciou": 0.42393336614039473
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/C1_retest/cityscapes/full.json",
+          "sha256": "7aff80ed1943dffa32664a391f6b0cf98822cf84abe6c94be453641210a43b87"
+        },
+        "diode": {
+          "url": "evidence/merge-history/C1_retest/diode/full.json",
+          "sha256": "eab2d804eecd0bab534edc55e24e576a84cf8c23ed3c45553d2f3b2f42de94d3"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/C1_retest/eth3d/full.json",
+          "sha256": "f135f85063b0a903b202a7c7e843800cc2456445e50f9c0d269320ab55131954"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/C1_retest/nyu/full.json",
+          "sha256": "8e1355dc879f89711befc52fa0705a34e837313e256a4d756ae08dca1fd8c015"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/C1_retest/reasonseg/full.json",
+          "sha256": "99af0cc5f97e69a00a7cc35d996c316d420465b6e60b521cf89601e5cfac42f8"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/C1_retest/refcocog/full.json",
+          "sha256": "33ece6c03d2433c6d78e76de70f7a37e0adb64aaf55c52bdc448abfe51887995"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "K-Q0-r128",
+      "label": "K-Q0-r128",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.354755699634552,
+        "diode_absrel": 321.1738821346278,
+        "diode_delta": 0.18693943872599786,
+        "eth3d_absrel": 0.6821378492924003,
+        "eth3d_delta": 0.2759647187571088,
+        "nyu_absrel": 0.9237871377050209,
+        "nyu_delta": 0.14569347148128323,
+        "reasonseg_giou": 0.3900111305945536,
+        "refcocog_ciou": 0.5139050603052627
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/K-Q0-r128/cityscapes/full.json",
+          "sha256": "70871a0d53005d6d5628c8b155c1ab09e6676f051f312a199ad3987ab2332c34"
+        },
+        "diode": {
+          "url": "evidence/merge-history/K-Q0-r128/diode/full.json",
+          "sha256": "4d62ce9784c5887818cca6bbf081a88b990cc14e3e1d04c533d406233ba923df"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/K-Q0-r128/eth3d/full.json",
+          "sha256": "8496fdab76c82a80ea32d516ba38e81ed139ecb389dd87658b3d947e59db1621"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/K-Q0-r128/nyu/full.json",
+          "sha256": "2f68e8f1d8f5553e0182cffb1ca7c7e8d7b21f9b3fa9b20b4f3517ba46e69516"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/K-Q0-r128/reasonseg/full.json",
+          "sha256": "ace2413606dd1c35419eb65a4269def7b666d787d592de41699e265fb45c61fc"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/K-Q0-r128/refcocog/full.json",
+          "sha256": "723ffc21acd93bead377879a97c7c65bf3dd1a3b660167e90108e5a53948f3cd"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-C1-KQ0r128",
+      "label": "C1:K128 = 50:50",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.37909695506095886,
+        "diode_absrel": 4.490430676041762,
+        "diode_delta": 0.28292213437769764,
+        "eth3d_absrel": 0.5836353267771608,
+        "eth3d_delta": 0.3027994122834959,
+        "nyu_absrel": 0.7633970054271079,
+        "nyu_delta": 0.23659863103185885,
+        "reasonseg_giou": 0.36714659265852023,
+        "refcocog_ciou": 0.5266817187381424
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128/cityscapes/full.json",
+          "sha256": "9d2240c017d1d93b485d6dbf31e622a57ed7e344b3258c026b8a56b12ccfd367"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128/diode/full.json",
+          "sha256": "962640231e8e1ebe8e9ee6d4b1e4fba2b1b2b0efad0fa0ce9bcd645d619b9606"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128/eth3d/full.json",
+          "sha256": "8b42dade234cfa8a3d25e22c60081eba4114b88de1e688268932b18e4a3f7e90"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128/nyu/full.json",
+          "sha256": "608606dea1f3e1388f4a55c60a8286f1d8d1a1253a1a1249d68f60e8725c7245"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128/reasonseg/full.json",
+          "sha256": "29368476cfae95fae1f0703000d97c0a0a1b464389a03fd5f6474d6a0744df52"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128/refcocog/full.json",
+          "sha256": "322c64225efa2f4e6924773f6fa96de34096f9b0ec332b83416abcbdf74db751"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "label": "C1:K128 = 60:40（W0）",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.38700196146965027,
+        "diode_absrel": 3.76580462432206,
+        "diode_delta": 0.30007570576743287,
+        "eth3d_absrel": 0.5789678254993886,
+        "eth3d_delta": 0.29104503218376215,
+        "nyu_absrel": 0.7198554964242982,
+        "nyu_delta": 0.27728279078138557,
+        "reasonseg_giou": 0.35549493817200656,
+        "refcocog_ciou": 0.5217784140800504
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/cityscapes/full.json",
+          "sha256": "c58cc3f181938ab827beeface7f6db72a9c80a1c297a1693a74c4153f5333de6"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/diode/full.json",
+          "sha256": "8e5ac1c3e5177ba28c04b407699cb7fa805d1528eabab211fd61517098cef64d"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/eth3d/full.json",
+          "sha256": "f5cd5fafe751c65a2608c67ea6590dce85d2cc85872c6dfca42f3f448f37eb9a"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/nyu/full.json",
+          "sha256": "93a91fcaef4c84719a1cd7afdc7daab45bbb2a675766c5c5cebec07dee50e7ba"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/reasonseg/full.json",
+          "sha256": "74a0ed6b0653c41a00539d40c316902cc559064bcd205c376065b971e6c8e2c6"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-60-40/refcocog/full.json",
+          "sha256": "461590135720047b174fa1f4e1ec39a0808216986a138f5277ef30dc09450a09"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-75-25",
+      "label": "C1:K128 = 75:25",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.37824541330337524,
+        "diode_absrel": 1.7177890495534562,
+        "diode_delta": 0.3095619926572272,
+        "eth3d_absrel": 0.5708668285008988,
+        "eth3d_delta": 0.2750552452648953,
+        "nyu_absrel": 0.6817071499553213,
+        "nyu_delta": 0.31100666819469314,
+        "reasonseg_giou": 0.3353850382754554,
+        "refcocog_ciou": 0.4978504580107315
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/cityscapes/full.json",
+          "sha256": "e87c6dba28d5a44f0a75503573ccbe62ce33edf7707089b3031a4641ce388426"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/diode/full.json",
+          "sha256": "2d9eaf37e85f65b4cceb3c3ccbb6061394bef88fa346d2d0b24af2fc92447c36"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/eth3d/full.json",
+          "sha256": "3e5b5b52917b9b8b2f78ea217701b0cc8166ef3f434a6778a9859176634493c1"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/nyu/full.json",
+          "sha256": "14af0608129a86f50e5c75fd50913c0db6da4a8baf3ea3554e2fcb00b8d2c246"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/reasonseg/full.json",
+          "sha256": "9da0388217ab79ee58de6524a8312298033909c59c41c71aec198dd8840a4105"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-75-25/refcocog/full.json",
+          "sha256": "d0fc6ddb207567d4439f6335b9e60c87203748ece7cf5eba5330893cd06169d3"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-90-10",
+      "label": "C1:K128 = 90:10",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.35764098167419434,
+        "diode_absrel": 83.17368027417254,
+        "diode_delta": 0.331831882646966,
+        "eth3d_absrel": 0.5275833007911843,
+        "eth3d_delta": 0.2627399343940363,
+        "nyu_absrel": 0.6163746658961858,
+        "nyu_delta": 0.34036587004186175,
+        "reasonseg_giou": 0.31708230110723373,
+        "refcocog_ciou": 0.4621507566410489
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/cityscapes/full.json",
+          "sha256": "17ad69fb7d132fab4e9caa1643dac2b1cd6e9ccfcfb5b3f53ab440a843619581"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/diode/full.json",
+          "sha256": "8abbe0ba6d5ddfbc1f5a44b2a8de918a6b7ca1e1d57b46ba3a803882434662c9"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/eth3d/full.json",
+          "sha256": "5367d7c908fcedc06e338ef5f52a9476adefe0be255e677ea4cec3af9cd62ea0"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/nyu/full.json",
+          "sha256": "2ca0e78da2843e763b689bc20409f03932af7f90b088dcfdde0045e408ea2f66"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/reasonseg/full.json",
+          "sha256": "28cceadc221d2da7c09ee8127a6d12da5afe8f096022c486496aca700d347980"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-C1-KQ0r128-90-10/refcocog/full.json",
+          "sha256": "5349ec2a44a543e8abb4b26e70ac5d202ad469bc03a54f4738da6dd6b81b46b0"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-CK128-M0",
+      "label": "CK50 : M0 = 50:50",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.372650682926178,
+        "diode_absrel": 1697.3731015893409,
+        "diode_delta": 0.26820280235249294,
+        "eth3d_absrel": 0.57425823814486,
+        "eth3d_delta": 0.2846253542214109,
+        "nyu_absrel": 0.7701651333288219,
+        "nyu_delta": 0.22533990256523853,
+        "reasonseg_giou": 0.35892268724527476,
+        "refcocog_ciou": 0.5382955838184276
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-CK128-M0/cityscapes/full.json",
+          "sha256": "a1c6de6dc5aa23d473d6391c3e4dcdd5944576245e42ec8a6103614143aece1c"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-CK128-M0/diode/full.json",
+          "sha256": "dfa1113d37916c07bd5c1b97407eabdeaf18ff1a292687b6d19a0a9a41a9fb13"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-CK128-M0/eth3d/full.json",
+          "sha256": "24a69e8351573527aac40e1a9c1d5d2b5a4e4c3bc95ff1e3bb534a10fbc19c2b"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-CK128-M0/nyu/full.json",
+          "sha256": "7b719e1ee43b1ab092f516bbb5d6b9907f7ed96b102612d2dba9063d61a5ed8d"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-CK128-M0/reasonseg/full.json",
+          "sha256": "66055543b86917539a398a18e3839c895e6e90dbbc81a46832ec80d7f4e2acbc"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-CK128-M0/refcocog/full.json",
+          "sha256": "1fb874727fdd0268231635f2784a3509ced67a1348ace958ea81dcea956d62ec"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-CK128-M1",
+      "label": "CK50 : M1 = 50:50",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.36554473638534546,
+        "diode_absrel": 449.69230417840595,
+        "diode_delta": 0.2978746873836928,
+        "eth3d_absrel": 0.5881625709931078,
+        "eth3d_delta": 0.2778837263774134,
+        "nyu_absrel": 0.7705058053447339,
+        "nyu_delta": 0.27497643224279417,
+        "reasonseg_giou": 0.3524118693110688,
+        "refcocog_ciou": 0.5190171973037464
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-CK128-M1/cityscapes/full.json",
+          "sha256": "b44dd8b671f45352a787b40993b19dbdc1e3e6cecb8df53a566462f03d84b226"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-CK128-M1/diode/full.json",
+          "sha256": "184d83f0ab294dfa018ae5445eaca52745412bcb96ee4363ad4ec3f139aef452"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-CK128-M1/eth3d/full.json",
+          "sha256": "d9a5ca1eac8333238fe20999efb08095e2daff01460eb1cbbec12f43de2e2d72"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-CK128-M1/nyu/full.json",
+          "sha256": "b7b8dd160a846cac56d7047fbdfaefdb474f1f0e8176276351e92f4b43fedde3"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-CK128-M1/reasonseg/full.json",
+          "sha256": "c4e9fd97aa0590e3af95beefe596886ec3d99c1d300123ca501cbc663bb4c548"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-CK128-M1/refcocog/full.json",
+          "sha256": "d20093c5271a3c2502a0936ba051a028828e261fb3780ebcd6a8a8b4ac560c1d"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-Q0-M0",
+      "label": "Q0:M0 = 50:50",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.3373442590236664,
+        "diode_absrel": 1593.8627839899837,
+        "diode_delta": 0.22038982149474665,
+        "eth3d_absrel": 0.8537075820480485,
+        "eth3d_delta": 0.2523421068901839,
+        "nyu_absrel": 0.9501140190672528,
+        "nyu_delta": 0.19509919481209376,
+        "reasonseg_giou": 0.40725480836195943,
+        "refcocog_ciou": 0.5597384842724719
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-Q0-M0/cityscapes/full.json",
+          "sha256": "bc56a6f3b4de1c631a2f0fe4fc8b12197515386415ddf87e5c74444a24285969"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-Q0-M0/diode/full.json",
+          "sha256": "b48137cc10cc53c77fde81fe6903e6d432c264f988052ecace9a28ce21204bdf"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-Q0-M0/eth3d/full.json",
+          "sha256": "139925aa63aa10dfefaa5f307659105317aa7878143c0d264803d0ff1df4ee52"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-Q0-M0/nyu/full.json",
+          "sha256": "a56bc7cd5ec61f98ffb9bbe2af08b10610b318352a27bde2a6056dd51e0ddddb"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-Q0-M0/reasonseg/full.json",
+          "sha256": "1e1e750c1c67c11bf0d2392a058c69a96559c20122af71269f1dc605d61b5ac3"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-Q0-M0/refcocog/full.json",
+          "sha256": "699fa31c7018b0d481e9e0249ac7856b4fc533e015a15e162ebd01f1e86fe382"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-Q0-M1",
+      "label": "Q0:M1 = 50:50",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.33364447951316833,
+        "diode_absrel": 1752.0061769605647,
+        "diode_delta": 0.24669704022120653,
+        "eth3d_absrel": 0.7020836293502475,
+        "eth3d_delta": 0.2624609333930228,
+        "nyu_absrel": 0.8971098521352175,
+        "nyu_delta": 0.23331065008809226,
+        "reasonseg_giou": 0.40949329259540623,
+        "refcocog_ciou": 0.5601568156666645
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-Q0-M1/cityscapes/full.json",
+          "sha256": "6c755e8e90420f34f0c8d97c045bbc3bdbc901b671872ecac469fafc8273aadd"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-Q0-M1/diode/full.json",
+          "sha256": "b7c7cde0fd7ddc8cdfb2967b3eebe3e9c68b8d60a836716db04a1de80451f664"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-Q0-M1/eth3d/full.json",
+          "sha256": "d9096b28ea1935a46cde6daf0ac08339f174d1d09163ea03d10a8637f9d26867"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-Q0-M1/nyu/full.json",
+          "sha256": "05a3e006b409e51c8b8dd457799c53313f9b4e8048ff25bf450019671c4c555b"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-Q0-M1/reasonseg/full.json",
+          "sha256": "69ed39fc0bde8ad248e12aece95744d49cfb63613c36e425c608f267607af0af"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-Q0-M1/refcocog/full.json",
+          "sha256": "eb6dacba32cf070e916a4df3bb59aeb78d0d31b59f5b19f9ab82be908215bcba"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-CK128-90-10-Q0M0-50-50",
+      "label": "CK90 : Q0M0 = 50:50",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.35681265592575073,
+        "diode_absrel": 300.95941396758457,
+        "diode_delta": 0.2900380623550616,
+        "eth3d_absrel": 0.6327961093077186,
+        "eth3d_delta": 0.24462437390980019,
+        "nyu_absrel": 0.7469529262602165,
+        "nyu_delta": 0.2656707254228736,
+        "reasonseg_giou": 0.3683040927392197,
+        "refcocog_ciou": 0.5479970657143535
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/cityscapes/full.json",
+          "sha256": "090c410fe0814fb83c8af63ce776311ae4acfd904a3c8196d92f569d75201611"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/diode/full.json",
+          "sha256": "c03969b0f8527394fdf8220722d12c3365d4ede226319f57e3e519bf7068ae6c"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/eth3d/full.json",
+          "sha256": "19c7fe581152b55c443a6768c99cb366adf2badec5d8467bd31a06dde5ca77f5"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/nyu/full.json",
+          "sha256": "fd3a34a20fa680d831477980de086399461917822fe205f9fe820b0b812ccbe7"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/reasonseg/full.json",
+          "sha256": "b9a3853ddd3710184f96a3a08faad03d5f4cea34109b4abc3284826b2c965ddc"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-CK128-90-10-Q0M0-50-50/refcocog/full.json",
+          "sha256": "ea54f33646783a7ec7f93213c671c1d4325d928c0fd0e4c892114b5f2fbcf999"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    },
+    {
+      "model": "Fusion-CK128-75-25-Q0M0-75-25",
+      "label": "CK75 : Q0M0 = 75:25",
+      "source": "Ruilin Yao · 历史评测",
+      "values": {
+        "cityscapes_miou": 0.37086451053619385,
+        "diode_absrel": 46.52281105305165,
+        "diode_delta": 0.2989656945520569,
+        "eth3d_absrel": 0.6101062129578788,
+        "eth3d_delta": 0.25551559063666424,
+        "nyu_absrel": 0.7196757303587649,
+        "nyu_delta": 0.2793581506880221,
+        "reasonseg_giou": 0.3604168262441065,
+        "refcocog_ciou": 0.5315271646723766
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/cityscapes/full.json",
+          "sha256": "867b93d71a85e778e2840f2ebc48cc232271699450a8efbf8dfb06642d23f36b"
+        },
+        "diode": {
+          "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/diode/full.json",
+          "sha256": "3637d0bd69ae7ff1125d1f78969a9e19879aae2331c4023d550f37000ae668c2"
+        },
+        "eth3d": {
+          "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/eth3d/full.json",
+          "sha256": "b9dfaaf9e1639328ba451c73a5899a36e0e4a4fbdc4ae4eb6342fab9ddff50ce"
+        },
+        "nyu": {
+          "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/nyu/full.json",
+          "sha256": "8513f07cabc8857478a9a92b1f79183d47d228f759be9bf04dd8bd007055527a"
+        },
+        "reasonseg": {
+          "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/reasonseg/full.json",
+          "sha256": "4f795d309bd3e9b2444e98c836b0fb493f5b29a3a3febb48053d62ba0e1ce21e"
+        },
+        "refcocog": {
+          "url": "evidence/merge-history/Fusion-CK128-75-25-Q0M0-75-25/refcocog/full.json",
+          "sha256": "a8b9cb24ec98e727aa240446a74dc07703a113fdecfba379b38c2d516c157e5a"
+        }
+      },
+      "samples": {
+        "cityscapes": 500,
+        "diode": 325,
+        "eth3d": 454,
+        "nyu": 654,
+        "reasonseg": 200,
+        "refcocog": 4896
+      }
+    }
+  ],
+  "history_metrics": [
+    "nyu_absrel",
+    "nyu_delta",
+    "eth3d_absrel",
+    "eth3d_delta",
+    "cityscapes_miou",
+    "reasonseg_giou",
+    "refcocog_ciou"
+  ],
+  "history_observations": [
+    "60:40 是任务折中，不是深度最优。C1 占比从 50% 增至 90%，NYU AbsRel 从 0.7634 降至 0.6164、δ1 从 23.66% 升至 34.04%；RefCOCOg 却从 52.67% 降至 46.22%，Reason 从 36.71% 降至 31.71%。City 在这四档中的最高点是 60:40 的 38.70%。",
+    "融合能出现互补，但指标不按权重线性变化。60:40 的 City 38.70% 高于 C1 的 34.50% 和 K128 的 35.48%；因此不能把两个父模型的得分加权平均，当作新融合的预期分数。",
+    "加入 M0/M1 没有带来全面改善。在 CK50 中加入 50% M0，RefCOCOg 增加约 1.16 pp，但 City、Reason 与 NYU 两项下降。Q0:M0 / Q0:M1 虽有约 56% RefCOCOg，City 仅约 33%。语义分割与指代分割应分别保护。",
+    "含 M 系列的部分旧融合涉及不同初始化；C1/K128 则共享 Q 基座。新 A/B 共享 W0，首轮更适合在共享起点的 checkpoint 间扫描比例，不把历史 60:40 当作跨实验通用最优解，也不把旧 M0/M1 自动加入新方案。"
+  ],
+  "history_note": "历史结果均来自 Ruilin Yao、512；ReasonSeg 为 200 queries / fig4_v1，RefCOCOg 也是 fig4_v1。只在历史表内部比较，不与新 A/B 的 query_v2 分数直接排序。CK50/CK75/CK90 分别表示 C1:K128=50:50、75:25、90:10；Q0M0 表示 Q0:M0=50:50。",
+  "parents": [
+    {
+      "model": "I108-B-5000",
+      "label": "B · 5,000_best",
+      "role": "语义保留参照",
+      "values": {
+        "cityscapes_miou": 0.3733241558074951,
+        "diode_absrel": 0.5179467091380876,
+        "diode_delta": 0.3115697519044822,
+        "eth3d_absrel": 0.514541336993127,
+        "eth3d_delta": 0.20339684409624434,
+        "nyu_absrel": 0.34719534854897016,
+        "nyu_delta": 0.4122367615478806,
+        "reasonseg_giou": 0.40046987677381246,
+        "refcocog_ciou": 0.5039410161521836
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/ruilin/I108-B-5000/cityscapes/full.json",
+          "sha256": "25bbd695475dc9d20109d98783a72ed0268628b5a5e4c731eb75773d63e9ac07",
+          "snapshot": "evidence/ruilin/I108-B-5000/cityscapes/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\cityscapes\\full.json"
+        },
+        "diode": {
+          "url": "evidence/ruilin/I108-B-5000/diode/full.json",
+          "sha256": "933dbecbfec5e70428bab9201a471d88a51408e7896b412091fe7fbc94724291",
+          "snapshot": "evidence/ruilin/I108-B-5000/diode/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\diode\\full.json"
+        },
+        "eth3d": {
+          "url": "evidence/ruilin/I108-B-5000/eth3d/full.json",
+          "sha256": "8253915fb00e513f433ddf1c484b58fce8fc59f0f4f5c42d569f7c282effb820",
+          "snapshot": "evidence/ruilin/I108-B-5000/eth3d/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\eth3d\\full.json"
+        },
+        "nyu": {
+          "url": "evidence/ruilin/I108-B-5000/nyu/full.json",
+          "sha256": "a600988c7c54038ca71d9a3b33d3e88c1df0ace0ac238c517c2f7b13cbfe6fe9",
+          "snapshot": "evidence/ruilin/I108-B-5000/nyu/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\nyu\\full.json"
+        },
+        "reasonseg": {
+          "url": "evidence/ruilin/I108-B-5000/reasonseg/full.json",
+          "sha256": "79b023199dad783456dfa935a4b88813d96631bc5823628d0be7e7f0c31b3676",
+          "snapshot": "evidence/ruilin/I108-B-5000/reasonseg/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\reasonseg\\full.json"
+        },
+        "refcocog": {
+          "url": "evidence/ruilin/I108-B-5000/refcocog/full.json",
+          "sha256": "09811821b7b9be71119498a9958054021c7fa1ae6019fcd5c9e791eeef7ffa42",
+          "snapshot": "evidence/ruilin/I108-B-5000/refcocog/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\refcocog\\full.json"
+        }
+      },
+      "adapter_sha256": "705dde91d5f6ff67c9a91e47baccf048f5d1967495775d55cdd4de628fca85fa",
+      "adapter_repo": "khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3",
+      "adapter_path": "/data/yrl/ovb-i108-5k-75k-20261110/checkpoints/I108-B-5000/ckpt/checkpoint-5000_best"
+    },
+    {
+      "model": "I108-B-17500",
+      "label": "B · 17,500_best",
+      "role": "均衡主对照",
+      "values": {
+        "cityscapes_miou": 0.3567378520965576,
+        "diode_absrel": 0.4680477883099456,
+        "diode_delta": 0.27847543272272934,
+        "eth3d_absrel": 0.5172353404601665,
+        "eth3d_delta": 0.1767213761811993,
+        "nyu_absrel": 0.29466584020155073,
+        "nyu_delta": 0.40693038198610626,
+        "reasonseg_giou": 0.4335101783749145,
+        "refcocog_ciou": 0.51821485984248
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/ruilin/I108-B-17500/cityscapes/full.json",
+          "sha256": "614ffdc11cd73b10c834748dca4285227664979d312c383258f6f3813a0aa9b9",
+          "snapshot": "evidence/ruilin/I108-B-17500/cityscapes/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\cityscapes\\full.json"
+        },
+        "diode": {
+          "url": "evidence/ruilin/I108-B-17500/diode/full.json",
+          "sha256": "31ac4390e49f989ab404739baea5e4965e6356c36c8e205d786d22a17f47ce93",
+          "snapshot": "evidence/ruilin/I108-B-17500/diode/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\diode\\full.json"
+        },
+        "eth3d": {
+          "url": "evidence/ruilin/I108-B-17500/eth3d/full.json",
+          "sha256": "f0e5ca60caf876966b021c0c424d7fa62b4fd1f358d61e7e8bbd79dd031b4b83",
+          "snapshot": "evidence/ruilin/I108-B-17500/eth3d/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\eth3d\\full.json"
+        },
+        "nyu": {
+          "url": "evidence/ruilin/I108-B-17500/nyu/full.json",
+          "sha256": "a6fcda5e3e297e58ac8415a4d29d535638f29e344576e3d75f2d72cb0b3c63e8",
+          "snapshot": "evidence/ruilin/I108-B-17500/nyu/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\nyu\\full.json"
+        },
+        "reasonseg": {
+          "url": "evidence/ruilin/I108-B-17500/reasonseg/full.json",
+          "sha256": "3e6a2129dd9a8c6b7e66346149ba8db6262c11a8b2e53cf73da49ed54e51ad5a",
+          "snapshot": "evidence/ruilin/I108-B-17500/reasonseg/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\reasonseg\\full.json"
+        },
+        "refcocog": {
+          "url": "evidence/ruilin/I108-B-17500/refcocog/full.json",
+          "sha256": "efcc4c514a74479e20a71a1ebf8b36dc7b512fdbdfd7a100ef7d317d5cc4b2ad",
+          "snapshot": "evidence/ruilin/I108-B-17500/refcocog/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\refcocog\\full.json"
+        }
+      },
+      "adapter_sha256": "df5f97400d9f2924df240d261260898101bd92ebf4174c071d14a935954f9912",
+      "adapter_repo": "khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3",
+      "adapter_path": "/data/yrl/ovb-i108-10k-15k-20261110/checkpoints/I108-B-17500/ckpt/checkpoint-17500_best"
+    },
+    {
+      "model": "I108-B-20000",
+      "label": "B · 20,000_best",
+      "role": "指代保留参照",
+      "values": {
+        "cityscapes_miou": 0.3548120856285095,
+        "diode_absrel": 0.9103946973803962,
+        "diode_delta": 0.22765181315591157,
+        "eth3d_absrel": 0.6021737581237888,
+        "eth3d_delta": 0.16538366943894914,
+        "nyu_absrel": 0.3616982823473176,
+        "nyu_delta": 0.3395260964359039,
+        "reasonseg_giou": 0.4420340680792309,
+        "refcocog_ciou": 0.5295616721794577
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/ruilin/I108-B-20000/cityscapes/full.json",
+          "sha256": "8aedf5f2222a84b6b99955e10ba98fc5df7f59801e4cbdda598f6a862f2e45c5",
+          "snapshot": "evidence/ruilin/I108-B-20000/cityscapes/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\cityscapes\\full.json"
+        },
+        "diode": {
+          "url": "evidence/ruilin/I108-B-20000/diode/full.json",
+          "sha256": "b39244e947b676896f3d943e7fc83a2f6e84b9f2026e131a2502ba9919608f26",
+          "snapshot": "evidence/ruilin/I108-B-20000/diode/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\diode\\full.json"
+        },
+        "eth3d": {
+          "url": "evidence/ruilin/I108-B-20000/eth3d/full.json",
+          "sha256": "f80407fcde81066b79e0c29fbdb9f24dbc8821fee2f9b42863a96a0e150d8c24",
+          "snapshot": "evidence/ruilin/I108-B-20000/eth3d/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\eth3d\\full.json"
+        },
+        "nyu": {
+          "url": "evidence/ruilin/I108-B-20000/nyu/full.json",
+          "sha256": "65d480c73714ee8496d8901652e771da167ddd11e2d11e31c1c8f0ee4ca8d145",
+          "snapshot": "evidence/ruilin/I108-B-20000/nyu/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\nyu\\full.json"
+        },
+        "reasonseg": {
+          "url": "evidence/ruilin/I108-B-20000/reasonseg/full.json",
+          "sha256": "e3de3350f3c1490f9cd25f4f630902ec1942649b482c7c09c09d26f7a4f5a869",
+          "snapshot": "evidence/ruilin/I108-B-20000/reasonseg/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\reasonseg\\full.json"
+        },
+        "refcocog": {
+          "url": "evidence/ruilin/I108-B-20000/refcocog/full.json",
+          "sha256": "356f6f6f87a9144f9b7af521ce8225f294adb631f390984e5fe10f0c73621389",
+          "snapshot": "evidence/ruilin/I108-B-20000/refcocog/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\refcocog\\full.json"
+        }
+      },
+      "adapter_sha256": "f00541e1568ca9a2ba5026b99e1f5891cc4621b6dddcdc8d26769656897642c5",
+      "adapter_repo": "khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3",
+      "adapter_path": "/data/yrl/ovb-i108-10k-15k-20261110/checkpoints/I108-B-20000/ckpt/checkpoint-20000_best"
+    },
+    {
+      "model": "I108-B-100000",
+      "label": "B · 100,000_best",
+      "role": "后期深度参照",
+      "values": {
+        "cityscapes_miou": 0.2923225462436676,
+        "diode_absrel": 0.4802264014678541,
+        "diode_delta": 0.3450034864992045,
+        "eth3d_absrel": 0.4182033806915014,
+        "eth3d_delta": 0.2207494599778211,
+        "nyu_absrel": 0.2664203474915517,
+        "nyu_delta": 0.4857847646531585,
+        "reasonseg_giou": 0.33291300456524353
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/ruilin/I108-B-100000/cityscapes/full.json",
+          "sha256": "d4e893d19216ffb27540f58137e75060052d67125737b3a37eca0474c9159019",
+          "snapshot": "evidence/ruilin/I108-B-100000/cityscapes/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\cityscapes\\full.json"
+        },
+        "diode": {
+          "url": "evidence/ruilin/I108-B-100000/diode/full.json",
+          "sha256": "5ea8d497cd20e76f7f4eea3b57f32acc154f43eecb46ee7523f916e4a69c4d4b",
+          "snapshot": "evidence/ruilin/I108-B-100000/diode/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\diode\\full.json"
+        },
+        "eth3d": {
+          "url": "evidence/ruilin/I108-B-100000/eth3d/full.json",
+          "sha256": "3e5308403afe7debb47bdf75a033ba788840ee4bb7329f8314816ff1f688ca23",
+          "snapshot": "evidence/ruilin/I108-B-100000/eth3d/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\eth3d\\full.json"
+        },
+        "nyu": {
+          "url": "evidence/ruilin/I108-B-100000/nyu/full.json",
+          "sha256": "d242334188ba90da2f019f0ef0b3efbcc3f0bcbd315e39092be290ea5f085b53",
+          "snapshot": "evidence/ruilin/I108-B-100000/nyu/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\nyu\\full.json"
+        },
+        "reasonseg": {
+          "url": "evidence/ruilin/I108-B-100000/reasonseg/full.json",
+          "sha256": "378b520a1ad56eef80ce657a0aaa713d42098a41ec814baf57de2ec2a12236bf",
+          "snapshot": "evidence/ruilin/I108-B-100000/reasonseg/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\reasonseg\\full.json"
+        }
+      },
+      "adapter_sha256": "fbd0a1a85ad6f42308196298077355ba3bd02fb978355c9f8b5f742b1a38d091",
+      "adapter_repo": "khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3",
+      "adapter_path": "/data/yrl/ovb-i108-b-90k-100k-20261114/checkpoints/I108-B-100000/ckpt/checkpoint-100000_best"
+    },
+    {
+      "model": "I108-A-80000",
+      "label": "A · 80,000_best",
+      "role": "条件消融，不作均衡首选",
+      "values": {
+        "cityscapes_miou": 0.266441285610199,
+        "diode_absrel": 0.7643210354042911,
+        "diode_delta": 0.1948132554113155,
+        "eth3d_absrel": 0.5625768941593834,
+        "eth3d_delta": 0.1819912907329235,
+        "nyu_absrel": 0.378307271910488,
+        "nyu_delta": 0.31088743213614,
+        "reasonseg_giou": 0.4371041215410221
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/ruilin/I108-A-80000/cityscapes/full.json",
+          "sha256": "1add682953b79f88e824326d51d93fb3544190e4f7e0c91b588b7a051e62c3d9",
+          "snapshot": "evidence/ruilin/I108-A-80000/cityscapes/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\cityscapes\\full.json"
+        },
+        "diode": {
+          "url": "evidence/ruilin/I108-A-80000/diode/full.json",
+          "sha256": "f175f3e7bfddd35049181ba5c35bf654504fc6bb7de4e64a1cfa90328be082eb",
+          "snapshot": "evidence/ruilin/I108-A-80000/diode/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\diode\\full.json"
+        },
+        "eth3d": {
+          "url": "evidence/ruilin/I108-A-80000/eth3d/full.json",
+          "sha256": "322eb6849d15e6f6c9ece776de1666418c5a2ffde0d0038f4bf21d0498149969",
+          "snapshot": "evidence/ruilin/I108-A-80000/eth3d/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\eth3d\\full.json"
+        },
+        "nyu": {
+          "url": "evidence/ruilin/I108-A-80000/nyu/full.json",
+          "sha256": "591e33c529856e4323bdf8e3b486daa02e78558c174c3b575a3b8c60886b1aa6",
+          "snapshot": "evidence/ruilin/I108-A-80000/nyu/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\nyu\\full.json"
+        },
+        "reasonseg": {
+          "url": "evidence/ruilin/I108-A-80000/reasonseg/full.json",
+          "sha256": "705974a7ece24cb1cf7073fcb526ebd5cba48c4d7b7ae1d9af5beee0c12214c7",
+          "snapshot": "evidence/ruilin/I108-A-80000/reasonseg/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\reasonseg\\full.json"
+        }
+      },
+      "adapter_sha256": "b9ecfaf9e445e58a80d4d706c438dd8f99ac6b496061336003f28d44a0dd9fa7",
+      "adapter_repo": "khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3",
+      "adapter_path": "/data/yrl/ovb-i108-b-90k-100k-20261114/checkpoints/I108-A-80000/ckpt/checkpoint-80000_best"
+    },
+    {
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "label": "起点 · C1:K-Q0-r128 = 60:40",
+      "role": "共享起点；旧 referring 协议",
+      "values": {
+        "cityscapes_miou": 0.38700196146965027,
+        "diode_absrel": 3.76580462432206,
+        "diode_delta": 0.30007570576743287,
+        "eth3d_absrel": 0.5789678254993886,
+        "eth3d_delta": 0.29104503218376215,
+        "nyu_absrel": 0.7198554964242982,
+        "nyu_delta": 0.27728279078138557,
+        "reasonseg_giou": 0.35549493817200656,
+        "refcocog_ciou": 0.5217784140800504
+      },
+      "evidence": {
+        "cityscapes": {
+          "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/cityscapes/full.json",
+          "sha256": "c58cc3f181938ab827beeface7f6db72a9c80a1c297a1693a74c4153f5333de6",
+          "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/cityscapes/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\cityscapes\\full.json"
+        },
+        "diode": {
+          "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/diode/full.json",
+          "sha256": "8e5ac1c3e5177ba28c04b407699cb7fa805d1528eabab211fd61517098cef64d",
+          "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/diode/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\diode\\full.json"
+        },
+        "eth3d": {
+          "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/eth3d/full.json",
+          "sha256": "f5cd5fafe751c65a2608c67ea6590dce85d2cc85872c6dfca42f3f448f37eb9a",
+          "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/eth3d/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\eth3d\\full.json"
+        },
+        "nyu": {
+          "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/nyu/full.json",
+          "sha256": "93a91fcaef4c84719a1cd7afdc7daab45bbb2a675766c5c5cebec07dee50e7ba",
+          "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/nyu/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\nyu\\full.json"
+        },
+        "reasonseg": {
+          "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/reasonseg/full.json",
+          "sha256": "74a0ed6b0653c41a00539d40c316902cc559064bcd205c376065b971e6c8e2c6",
+          "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/reasonseg/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\reasonseg\\full.json"
+        },
+        "refcocog": {
+          "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/refcocog/full.json",
+          "sha256": "461590135720047b174fa1f4e1ec39a0808216986a138f5277ef30dc09450a09",
+          "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/refcocog/full.json",
+          "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\refcocog\\full.json"
+        }
+      },
+      "adapter_sha256": null,
+      "adapter_repo": "local-weight-fusion/Fusion-C1-KQ0r128-60-40",
+      "adapter_path": null
+    }
+  ],
+  "candidates": [
+    {
+      "id": "P1",
+      "title": "均衡优先",
+      "stage": "首轮 · 优先",
+      "components": [
+        {
+          "label": "B17.5k",
+          "weight": 0.75,
+          "color": "#087e83"
+        },
+        {
+          "label": "B100k",
+          "weight": 0.25,
+          "color": "#bd7945"
+        }
+      ],
+      "rationale": "保留较多已具备深度与两类分割能力的 B17.5k，仅加入 25% 后期深度权重。建议先测这一组。",
+      "risk": "即使深度权重占比较小，Cityscapes、ReasonSeg 仍可能退化；它是试验假设，不是已验证的最优比例。"
+    },
+    {
+      "id": "P2",
+      "title": "更偏深度",
+      "stage": "首轮 · 比例对照",
+      "components": [
+        {
+          "label": "B17.5k",
+          "weight": 0.5,
+          "color": "#087e83"
+        },
+        {
+          "label": "B100k",
+          "weight": 0.5,
+          "color": "#bd7945"
+        }
+      ],
+      "rationale": "与 P1 保持相同父模型，只增加后期权重占比，判断深度收益与分割损失是否形成可接受的折中。",
+      "risk": "B100k 的 City 与 Reason 均明显低于 B17.5k；若 P1 已触及分割保护线，不继续扩大后期占比。"
+    },
+    {
+      "id": "P3",
+      "title": "保语义分割",
+      "stage": "首轮 · 语义路线",
+      "components": [
+        {
+          "label": "B5k",
+          "weight": 0.6,
+          "color": "#3775a1"
+        },
+        {
+          "label": "B100k",
+          "weight": 0.4,
+          "color": "#bd7945"
+        }
+      ],
+      "rationale": "B5k 的 City 37.33%、ETH δ1 20.34% 较好；以较多早期权重配合 B100k 的深度能力，检查语义保留路线。",
+      "risk": "B5k 的 Reason 40.05% 低于均衡对照，不能因 City 较高就预期指代也能保住。"
+    },
+    {
+      "id": "P4",
+      "title": "保指代分割",
+      "stage": "首轮 · 指代路线",
+      "components": [
+        {
+          "label": "B20k",
+          "weight": 0.6,
+          "color": "#7852b5"
+        },
+        {
+          "label": "B100k",
+          "weight": 0.4,
+          "color": "#bd7945"
+        }
+      ],
+      "rationale": "B20k 的 Reason 44.20%、RefCOCOg 52.96% 是本地较强端点；用后期深度更新尝试弥补其深度短板。",
+      "risk": "B20k 的 NYU、ETH 均弱于 B17.5k；融合后必须证明深度收益，同时保住 City，不能只看 Reason。"
+    },
+    {
+      "id": "P5",
+      "title": "三方兼顾",
+      "stage": "次轮 · 条件扩展",
+      "components": [
+        {
+          "label": "B5k",
+          "weight": 0.4,
+          "color": "#3775a1"
+        },
+        {
+          "label": "B17.5k",
+          "weight": 0.4,
+          "color": "#087e83"
+        },
+        {
+          "label": "B100k",
+          "weight": 0.2,
+          "color": "#bd7945"
+        }
+      ],
+      "rationale": "以 80% 早中期权重保留语义与指代，再加入 20% 后期深度权重。仅在二方实验显示互补性后尝试。",
+      "risk": "三模型并不天然优于两个模型；变量更多，可能只产生折中而不优于现成 B17.5k。"
+    },
+    {
+      "id": "P6",
+      "title": "加入少量起点",
+      "stage": "次轮 · 回拉对照",
+      "components": [
+        {
+          "label": "W0",
+          "weight": 0.2,
+          "color": "#8c9a8e"
+        },
+        {
+          "label": "B17.5k",
+          "weight": 0.55,
+          "color": "#087e83"
+        },
+        {
+          "label": "B100k",
+          "weight": 0.25,
+          "color": "#bd7945"
+        }
+      ],
+      "rationale": "共享起点的 City 38.70%、ETH δ1 29.10% 支持尝试减弱训练偏移。该配方等价于 W0 + 0.55ΔB17.5k + 0.25ΔB100k。",
+      "risk": "起点 NYU 较弱，可能稀释深度收益；本地起点 referring 是旧协议，不能据其分数承诺 Reason 或 Ref 回升。"
+    }
+  ],
+  "gates": [
+    {
+      "task": "NYUv2 深度",
+      "rule": "AbsRel ≤ 0.2947，δ1 ≥ 40.69%；至少一项优于 B17.5k，对另一项不接受退步。",
+      "why": "同时检查平均相对误差和阈值准确率，避免只优化 AbsRel。"
+    },
+    {
+      "task": "Cityscapes 语义",
+      "rule": "mIoU ≥ 34.67%（建议保护线：B17.5k 的 35.67% − 1 pp）。",
+      "why": "先限制语义能力损失，再比较候选深度收益。"
+    },
+    {
+      "task": "ReasonSeg 指代",
+      "rule": "gIoU ≥ 42.35%（B17.5k 的 43.35% − 1 pp），固定 query_v2 / 344 queries 与相同标签口径。",
+      "why": "不能用旧起点 200 queries 或更高的另一口径替代。"
+    },
+    {
+      "task": "ETH3D 泛化",
+      "rule": "对照为 AbsRel 0.5172 / δ1 17.67%；建议初筛容忍度：AbsRel ≤ 0.5272、δ1 ≥ 16.67%。",
+      "why": "这是工程保护线，防止只在 NYUv2 上变好。"
+    },
+    {
+      "task": "RefCOCOg 决赛",
+      "rule": "完整 UMD val 的 cIoU ≥ 50.82%（B17.5k 的 51.82% − 1 pp）。",
+      "why": "最终均衡结论必须包含 Ref；没有完整结果时只能称暂定候选。"
+    },
+    {
+      "task": "DIODE 稳定性",
+      "rule": "保留原始 AbsRel、δ1、RMSE 和有效像素数，核对极端预测与评分支持；不据异常降幅决定冠军。",
+      "why": "历史口径的有效像素支持会随预测变化，不宜设单一降幅目标。"
+    }
+  ],
+  "stages": [
+    "固定对照与口径：B17.5k 为均衡主对照、B5k 为语义对照、B100k_best 为深度对照。若评测代码或标签版本变化，先在同版本下校准这些对照；P6 如需讨论起点 referring 的恢复，补齐 W0 的 query_v2 评测。",
+    "首轮只做 P1–P4，先测完整 NYUv2、Cityscapes、ReasonSeg（654 / 500 / 344），快速识别语义与指代是否受损。首选观察 P1，再用 P2 判断后期权重剂量效应。",
+    "通过保护线的候选补完整 ETH3D 与 DIODE，再对候选前两名补 RefCOCOg UMD。当前 B100k 的 Ref 补测结果也应同步纳入父模型对照。",
+    "只有二方结果提示值得扩展时才尝试 P5/P6；可围绕已测较佳比例做小范围细化，不默认把深度端加至 75% 或 90%。",
+    "最终保留非支配候选：若一个方案深度更好但分割更差，明确列为偏好不同的备选，不计算未经约定的综合总分。若没有融合优于均衡对照，就继续使用 B17.5k。反复用于选比例的外部集会成为开发信号，最终泛化结论仍需独立留出数据确认。"
+  ],
+  "technical": [
+    "这里的 B5k/B17.5k/B20k/B100k 均指本报告实际评测的 _best EMA adapter；不能按 checkpoint 顶层 online 标签换用另一份权重。父文件 SHA 在下表与 data.json 中固定。",
+    "W0 固定为 Melo111/Fusion-C1-KQ0r128-60-40@9d5b9b8ede04d7d9f4a4ff8a6a75a4b734ab1b4d，直接使用已保存的起点。不要从 C1/K128 重新展开计算，以免改变历史 BF16 舍入。",
+    "在共享基座上先恢复每个实际增量 Δi，再计算 Wmerge = c0W0 + ΣciWi = W0 + ΣciΔi，其中 c0 + Σci = 1。所有候选使用非负系数；初轮不做外推。",
+    "按真实 adapter_config 恢复 rsLoRA 缩放。已核验 A80k/B100k 的 r64、α64、use_rslora=true，对应 α/√r = 8；实际实施前仍需逐个确认所选父模型的模块、shape 与 scaling。",
+    "不要分别平均 LoRA_A 与 LoRA_B：两者相乘会引入跨 adapter 的交叉项，通常不等于所需的加权增量。首轮采用完整有效 Transformer 权重或精确 ΔW 加权，不同时引入 SVD 降秩、TIES/DARE 或分层调权，以便解释比例效果。",
+    "延续历史实现：FP32 形成增量并加权，最后只转一次 BF16；冻结的 VAE、文本编码器等沿用共享版本。检查相同 tensor key/shape、有限值、adapter key 完整使用、父文件/输出 SHA，以及保存回读一致性。",
+    "嵌套配方需区分数学系数和实际保存权重。例如 CK50:M0=50:50 的名义系数是 C1 25% + K128 25% + M0 50%，不是各 1/3；真正复现应加载保存后的 CK50 父模型。不同初始化的旧 M/Q 模型必须先在各自正确基座恢复完整权重。"
+  ],
+  "alternatives": [
+    "A80k + B100k 不作均衡首选：A80k 相比 B17.5k 的 Reason 仅高约 0.36 pp，City 却低约 9.03 pp，且 NYU 较差；两个父模型的 City 都偏弱。若要检验跨 A/B 的互补，可另作有针对性的对照，不能假定合并后 City 自然恢复。",
+    "A5k 的 City 38.60% 很高，但 DIODE AbsRel 19.4940 有异常量级；优先用 B5k 做语义保留路线。B100k_final 在 khazic 的若干深度和 City 指标上优于 best，但尚缺本地与 RefCOCOg 完整对照，应作为后续独立消融，而不是悄悄替换所有 best 端点。",
+    "这些 B checkpoint 共享训练轨迹，并非独立训练的模型，且 best adapter 已使用 EMA；再次平均未必带来独立模型组合的收益。选择这些父模型的依据是已测任务互补，最终是否获益必须由融合实测决定。"
+  ],
+  "gate_note": "以下为建议先固定的工程筛选偏好，不是论文标准、显著性结论或成功保证。允许分割最多约 1 pp 的损失，以换取可观察的深度收益；如果目标是不允许任何分割退步，可把保护线提高到 B17.5k 原值。表中数值为显示精度，实际判定使用 data.json 中未四舍五入的对照值与同样的容忍量，避免把舍入差当成改善。",
+  "theory": "权重平均的研究支持把共享初始化的微调模型作为候选，但不能保证本项目这些 checkpoint 处于相同低损失区域，也不能保证多任务指标同时提高。",
+  "references": [
+    {
+      "label": "Model soups（ICML 2022，方法背景）",
+      "url": "https://proceedings.mlr.press/v162/wortsman22a.html"
+    },
+    {
+      "label": "历史 60:40 实际融合配方",
+      "url": "evidence/merge-history/fusion_recipe.json"
+    },
+    {
+      "label": "历史融合保存回读核验",
+      "url": "evidence/merge-history/historical-fusion-verification.json"
+    },
+    {
+      "label": "历史 FP32 融合实现",
+      "url": "evidence/merge-history/historical-materialize.py"
+    },
+    {
+      "label": "历史指标与配方快照",
+      "url": "evidence/merge-history/records.json"
+    }
+  ]
+}

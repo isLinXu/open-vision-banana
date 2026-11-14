@@ -1,0 +1,3018 @@
+{
+  "generated_at": "2026-11-14T23:00:35+08:00",
+  "hf_revision": "88f43c92048111bd25b4483e0117494937acb27f",
+  "local_export_sha256": "3991196e31917ac88aee94b592d974b0d53bdcc1e1a218187cf940e6cbb9554f",
+  "records": [
+    {
+      "source": "Ruilin Yao",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/cityscapes/full.json",
+      "sha256": "c58cc3f181938ab827beeface7f6db72a9c80a1c297a1693a74c4153f5333de6",
+      "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A/cityscapes/full.json",
+      "sha256": "e8234a9ca6d36f298f84b0fe09dd669be1b5ef6c6c36eed104db25d85e1a58bb",
+      "snapshot": "evidence/ruilin/I108-A/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-A\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-10000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-10000/cityscapes/full.json",
+      "sha256": "d5f0271077cc0cfc21ccdd68d7e88766092bfdd122f6fd8a2ac08ff172b50b4a",
+      "snapshot": "evidence/ruilin/I108-A-10000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-10000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-12500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-12500/cityscapes/full.json",
+      "sha256": "1785566fec18e9b47b443f5708b6d82c9389ea2e5e9f1e99eef8dd8030318866",
+      "snapshot": "evidence/ruilin/I108-A-12500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-12500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-15000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-15000/cityscapes/full.json",
+      "sha256": "1f347ecfd1d96ffffd0ad1914de7014560078321b1322581ce5d0b8e7499acb5",
+      "snapshot": "evidence/ruilin/I108-A-15000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-15000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-17500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-17500/cityscapes/full.json",
+      "sha256": "8086898053d21d0e7ff9ac47a63f7c656d1ca241a4945f5c23342661229ff6a0",
+      "snapshot": "evidence/ruilin/I108-A-17500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-17500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-22500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-22500/cityscapes/full.json",
+      "sha256": "af7cf906fb86c6dc44974aff93192ed0baa7ee36badbddad5022627d625f9812",
+      "snapshot": "evidence/ruilin/I108-A-22500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-A-22500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-5000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-5000/cityscapes/full.json",
+      "sha256": "8b070d44504912355984486bfe80ca2313853a5b557acea05f207a4addbb66e5",
+      "snapshot": "evidence/ruilin/I108-A-5000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-5000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-7500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-7500/cityscapes/full.json",
+      "sha256": "c674e89476d074ad7e23124e5e29267e79dc1e72c963232b5ea7a66eabe90e38",
+      "snapshot": "evidence/ruilin/I108-A-7500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-7500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-80000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-80000/cityscapes/full.json",
+      "sha256": "1add682953b79f88e824326d51d93fb3544190e4f7e0c91b588b7a051e62c3d9",
+      "snapshot": "evidence/ruilin/I108-A-80000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-90000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-90000/cityscapes/full.json",
+      "sha256": "62d5defd991809e27fb64d13f19c37738222c56099c3963ecaf805e3aac8e65d",
+      "snapshot": "evidence/ruilin/I108-A-90000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-90000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-95000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-A-95000/cityscapes/full.json",
+      "sha256": "1468c5026e59995917dbbc5de1c1295d416f35e16ef95f46e8e447772d4e6060",
+      "snapshot": "evidence/ruilin/I108-A-95000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-95000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B/cityscapes/full.json",
+      "sha256": "5bedb819ebc7695502a5bd0ff6fedb600be2bf4e98c92f45167c7a2372b09a59",
+      "snapshot": "evidence/ruilin/I108-B/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-B\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-10000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-10000/cityscapes/full.json",
+      "sha256": "01c4cc57894bbd97199fa03f10f98dcf0cd6c8e030e4d094d04a5162eb51ea61",
+      "snapshot": "evidence/ruilin/I108-B-10000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-10000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-100000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-100000/cityscapes/full.json",
+      "sha256": "d4e893d19216ffb27540f58137e75060052d67125737b3a37eca0474c9159019",
+      "snapshot": "evidence/ruilin/I108-B-100000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-12500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-12500/cityscapes/full.json",
+      "sha256": "adca14b45188d62a5ef326a64dbdf449384532f8954b2db2145e78f1e406a260",
+      "snapshot": "evidence/ruilin/I108-B-12500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-12500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-15000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-15000/cityscapes/full.json",
+      "sha256": "ea605072ccc13726337aae509864cc279bfe09f4feb1e9528a94dd82a7b959e0",
+      "snapshot": "evidence/ruilin/I108-B-15000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-15000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-17500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-17500/cityscapes/full.json",
+      "sha256": "614ffdc11cd73b10c834748dca4285227664979d312c383258f6f3813a0aa9b9",
+      "snapshot": "evidence/ruilin/I108-B-17500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-20000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-20000/cityscapes/full.json",
+      "sha256": "8aedf5f2222a84b6b99955e10ba98fc5df7f59801e4cbdda598f6a862f2e45c5",
+      "snapshot": "evidence/ruilin/I108-B-20000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-22500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-22500/cityscapes/full.json",
+      "sha256": "db4ed270eecb7f41541f5c3037166360e6cdcade89f62d8a8b64d7808c8b22c5",
+      "snapshot": "evidence/ruilin/I108-B-22500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-22500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-25000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-25000/cityscapes/full.json",
+      "sha256": "f7222cfce9b17d6f4e31506fb44ba25b36d9c466f0ab9466f23156c316b40a32",
+      "snapshot": "evidence/ruilin/I108-B-25000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-25000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-27500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-27500/cityscapes/full.json",
+      "sha256": "695d481b1aa65ce84104f05c600ac4086193f8530b29672d023c8fdffb749385",
+      "snapshot": "evidence/ruilin/I108-B-27500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-27500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-5000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-5000/cityscapes/full.json",
+      "sha256": "25bbd695475dc9d20109d98783a72ed0268628b5a5e4c731eb75773d63e9ac07",
+      "snapshot": "evidence/ruilin/I108-B-5000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-7500",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-7500/cityscapes/full.json",
+      "sha256": "51cb676a23001674a3c85bf431de580741097e03b828cda8351babb1802c2d6e",
+      "snapshot": "evidence/ruilin/I108-B-7500/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-7500\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-95000",
+      "dataset": "cityscapes",
+      "url": "evidence/ruilin/I108-B-95000/cityscapes/full.json",
+      "sha256": "21f82d8e1d690d1b178217f5fd7d12824f8493fcb8dfe46b61ce1f172ec2f129",
+      "snapshot": "evidence/ruilin/I108-B-95000/cityscapes/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-95000\\cityscapes\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "diode",
+      "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/diode/full.json",
+      "sha256": "8e5ac1c3e5177ba28c04b407699cb7fa805d1528eabab211fd61517098cef64d",
+      "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A/diode/full.json",
+      "sha256": "7647aac082bf164c6b99cbba1d54bc500820ef4e2c73dc6f25ce8e5a4757055f",
+      "snapshot": "evidence/ruilin/I108-A/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-A\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-10000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-10000/diode/full.json",
+      "sha256": "7d2ca9e8d33837bf143a995297a4884485e863f58f9c83240538cb3cd6a38221",
+      "snapshot": "evidence/ruilin/I108-A-10000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-10000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-12500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-12500/diode/full.json",
+      "sha256": "77f97c6c716115fef42ae0f2b489916c69421f29806ac7112d18bf440b692994",
+      "snapshot": "evidence/ruilin/I108-A-12500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-12500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-15000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-15000/diode/full.json",
+      "sha256": "ee1d5dcd188c0e66cba54fc103830c7a1bbaf9af24648251ca64054d0f002454",
+      "snapshot": "evidence/ruilin/I108-A-15000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-15000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-17500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-17500/diode/full.json",
+      "sha256": "87658f7b88117d991f61758c5dfc0c281133f6de388634f29d2f22cecc4c6470",
+      "snapshot": "evidence/ruilin/I108-A-17500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-17500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-22500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-22500/diode/full.json",
+      "sha256": "056efbdbeab03af5fe1efd264ed3548d8b7623570d6fdea719fcc8d603b42fd4",
+      "snapshot": "evidence/ruilin/I108-A-22500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-A-22500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-5000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-5000/diode/full.json",
+      "sha256": "67b4f0624a2944ee40956c359906fe368a3e6a2c720d092daf1fb29e43db66d1",
+      "snapshot": "evidence/ruilin/I108-A-5000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-5000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-7500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-7500/diode/full.json",
+      "sha256": "26d436a1f57d2b913be3d17a18b1fcfaa01e25b44eaf98bd97cde617de3c7f07",
+      "snapshot": "evidence/ruilin/I108-A-7500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-7500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-80000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-80000/diode/full.json",
+      "sha256": "f175f3e7bfddd35049181ba5c35bf654504fc6bb7de4e64a1cfa90328be082eb",
+      "snapshot": "evidence/ruilin/I108-A-80000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-90000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-90000/diode/full.json",
+      "sha256": "0ca02c8bfd4f549bd0934ae3c872e12060d44ef60aedca5f56755b50fb2d560b",
+      "snapshot": "evidence/ruilin/I108-A-90000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-90000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-95000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-A-95000/diode/full.json",
+      "sha256": "d796191f093c69e97ec952a9cc2b11ef09a6457f98fa6bce1793b22aa42bcabb",
+      "snapshot": "evidence/ruilin/I108-A-95000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-95000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B/diode/full.json",
+      "sha256": "2bd3bb451ba1c86b5b0faee1c3aaec70ffc9a25b483846a9ced3c25c3fc1ade3",
+      "snapshot": "evidence/ruilin/I108-B/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-B\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-10000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-10000/diode/full.json",
+      "sha256": "58c5d0b703b05eec96b9d99513e1124e3fee06cf26ce12bc3e819396e947c550",
+      "snapshot": "evidence/ruilin/I108-B-10000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-10000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-100000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-100000/diode/full.json",
+      "sha256": "5ea8d497cd20e76f7f4eea3b57f32acc154f43eecb46ee7523f916e4a69c4d4b",
+      "snapshot": "evidence/ruilin/I108-B-100000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-12500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-12500/diode/full.json",
+      "sha256": "d4e1feaed46326a2211ea647e8d598f1edb296e711ee2103ab2614b2189ef9bd",
+      "snapshot": "evidence/ruilin/I108-B-12500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-12500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-15000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-15000/diode/full.json",
+      "sha256": "c5dc8042d2c8ccc036bce902963ff156468b47af6f17d98f29ee2d1ce7296f52",
+      "snapshot": "evidence/ruilin/I108-B-15000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-15000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-17500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-17500/diode/full.json",
+      "sha256": "31ac4390e49f989ab404739baea5e4965e6356c36c8e205d786d22a17f47ce93",
+      "snapshot": "evidence/ruilin/I108-B-17500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-20000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-20000/diode/full.json",
+      "sha256": "b39244e947b676896f3d943e7fc83a2f6e84b9f2026e131a2502ba9919608f26",
+      "snapshot": "evidence/ruilin/I108-B-20000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-22500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-22500/diode/full.json",
+      "sha256": "d777af7c7654951c774a1a5e026b1b1edddea73a8c37ef63bc9ca174a8be0f56",
+      "snapshot": "evidence/ruilin/I108-B-22500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-22500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-25000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-25000/diode/full.json",
+      "sha256": "a1a3bd785f8f99776bad75fda9e31b20a842a3d1966d505154c25c22ed0712ab",
+      "snapshot": "evidence/ruilin/I108-B-25000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-25000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-27500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-27500/diode/full.json",
+      "sha256": "dd9cd86efda1fa40775d3faae0131a34e5bf6ede739796e8c1b0c7fa985768b3",
+      "snapshot": "evidence/ruilin/I108-B-27500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-27500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-5000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-5000/diode/full.json",
+      "sha256": "933dbecbfec5e70428bab9201a471d88a51408e7896b412091fe7fbc94724291",
+      "snapshot": "evidence/ruilin/I108-B-5000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-7500",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-7500/diode/full.json",
+      "sha256": "01ce73e1dcf5145fb44d43e02b497b4995b7e48014188f866c9327527e096aab",
+      "snapshot": "evidence/ruilin/I108-B-7500/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-7500\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-95000",
+      "dataset": "diode",
+      "url": "evidence/ruilin/I108-B-95000/diode/full.json",
+      "sha256": "2bfb633fd7fe260f61270cec6ed999e3da4238d5f30bba30d587da6e4fc5f999",
+      "snapshot": "evidence/ruilin/I108-B-95000/diode/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-95000\\diode\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/eth3d/full.json",
+      "sha256": "f5cd5fafe751c65a2608c67ea6590dce85d2cc85872c6dfca42f3f448f37eb9a",
+      "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A/eth3d/full.json",
+      "sha256": "6ca41f9da8f026b3b38ab97202852f4f8cf97260a27095f3256a8f1124f66036",
+      "snapshot": "evidence/ruilin/I108-A/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-A\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-10000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-10000/eth3d/full.json",
+      "sha256": "65853e79da6a3aa12cd8c64bca53bc6d27dcfc2135d0de708194a90152875ce9",
+      "snapshot": "evidence/ruilin/I108-A-10000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-10000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-12500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-12500/eth3d/full.json",
+      "sha256": "c45bb82ec3070ce7c4338e54c33b05d09ddc606d47b2da75749af3d4447228cb",
+      "snapshot": "evidence/ruilin/I108-A-12500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-12500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-15000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-15000/eth3d/full.json",
+      "sha256": "0e6844cc2296d465062519e53ac8a19e1c29ad4ef6b8d81c63e766466f577ca1",
+      "snapshot": "evidence/ruilin/I108-A-15000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-15000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-17500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-17500/eth3d/full.json",
+      "sha256": "d9126b749075844433c14c7cb5a1b3099c3a2e1b9771bdcf7bb4035fcaaa152b",
+      "snapshot": "evidence/ruilin/I108-A-17500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-17500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-22500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-22500/eth3d/full.json",
+      "sha256": "34bfdbc5b4e25bc1e079c57e2c9a22c97ea64d7eab4ba61c676827bb885085b2",
+      "snapshot": "evidence/ruilin/I108-A-22500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-A-22500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-5000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-5000/eth3d/full.json",
+      "sha256": "def98c98d5cf8df0f3763043baab107744e005b5d3d0335a9eca5a7b2bb6076e",
+      "snapshot": "evidence/ruilin/I108-A-5000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-5000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-7500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-7500/eth3d/full.json",
+      "sha256": "557bebdbe2d1b763dfd1d5088e84889410aac59894647058e61e5d56e8ad2c1b",
+      "snapshot": "evidence/ruilin/I108-A-7500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-7500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-80000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-80000/eth3d/full.json",
+      "sha256": "322eb6849d15e6f6c9ece776de1666418c5a2ffde0d0038f4bf21d0498149969",
+      "snapshot": "evidence/ruilin/I108-A-80000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-90000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-90000/eth3d/full.json",
+      "sha256": "288c7cde456e5ce5726c5eccea29156e1571aa70d939419c3c09559770fb9eb1",
+      "snapshot": "evidence/ruilin/I108-A-90000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-90000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-95000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-A-95000/eth3d/full.json",
+      "sha256": "02c7c0500a733846b232b0f4fdf6f1a5c147cc22eb365b5cd7d6c6e1847dce11",
+      "snapshot": "evidence/ruilin/I108-A-95000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-95000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B/eth3d/full.json",
+      "sha256": "b46fb85926a5d530ec5b6ae0cc3730b6fc61984c45cca533eed506208472557a",
+      "snapshot": "evidence/ruilin/I108-B/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-B\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-10000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-10000/eth3d/full.json",
+      "sha256": "c1ac78515a61186fa9ab522a9628734272374083fcf1a129e0b05f4db05e0b5c",
+      "snapshot": "evidence/ruilin/I108-B-10000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-10000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-100000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-100000/eth3d/full.json",
+      "sha256": "3e5308403afe7debb47bdf75a033ba788840ee4bb7329f8314816ff1f688ca23",
+      "snapshot": "evidence/ruilin/I108-B-100000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-12500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-12500/eth3d/full.json",
+      "sha256": "b7c2d0f151a5ed7203463378821d7621bcd7cce1350ba264f45ff31897989038",
+      "snapshot": "evidence/ruilin/I108-B-12500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-12500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-15000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-15000/eth3d/full.json",
+      "sha256": "3b5f4a91e2da27c9a5a1ca90e62689e28ade359212074ec15a23c68c2a7f11d3",
+      "snapshot": "evidence/ruilin/I108-B-15000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-15000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-17500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-17500/eth3d/full.json",
+      "sha256": "f0e5ca60caf876966b021c0c424d7fa62b4fd1f358d61e7e8bbd79dd031b4b83",
+      "snapshot": "evidence/ruilin/I108-B-17500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-20000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-20000/eth3d/full.json",
+      "sha256": "f80407fcde81066b79e0c29fbdb9f24dbc8821fee2f9b42863a96a0e150d8c24",
+      "snapshot": "evidence/ruilin/I108-B-20000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-22500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-22500/eth3d/full.json",
+      "sha256": "4a121f7b276ede77572e6d7fa0b8ef4dbdb86ff8bd6057ec46230a07f204e471",
+      "snapshot": "evidence/ruilin/I108-B-22500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-22500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-25000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-25000/eth3d/full.json",
+      "sha256": "c896efc8399cc70abb41ef562460b9b6de57edecde961266f549e8f9b2dad50c",
+      "snapshot": "evidence/ruilin/I108-B-25000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-25000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-27500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-27500/eth3d/full.json",
+      "sha256": "97b318c5f0b6fd92f169debc0b851203215a565d49233a2cbee1373975cb5654",
+      "snapshot": "evidence/ruilin/I108-B-27500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-27500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-5000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-5000/eth3d/full.json",
+      "sha256": "8253915fb00e513f433ddf1c484b58fce8fc59f0f4f5c42d569f7c282effb820",
+      "snapshot": "evidence/ruilin/I108-B-5000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-7500",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-7500/eth3d/full.json",
+      "sha256": "3cdbff57421af0938d885b660f464590046b50d426b89ca13c538201a8a8d9c5",
+      "snapshot": "evidence/ruilin/I108-B-7500/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-7500\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-95000",
+      "dataset": "eth3d",
+      "url": "evidence/ruilin/I108-B-95000/eth3d/full.json",
+      "sha256": "c15a19617b92eefd848b76be9134aeeb5d3578bc8bc3887b6de320d971bc2903",
+      "snapshot": "evidence/ruilin/I108-B-95000/eth3d/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-95000\\eth3d\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/nyu/full.json",
+      "sha256": "93a91fcaef4c84719a1cd7afdc7daab45bbb2a675766c5c5cebec07dee50e7ba",
+      "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A/nyu/full.json",
+      "sha256": "aefcc2825ad41a6165746e032ae1e7f624090127895cea8e69eed4ab97ed0e98",
+      "snapshot": "evidence/ruilin/I108-A/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-A\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-10000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-10000/nyu/full.json",
+      "sha256": "133ea39ee20dc28c171f7632f63a1059db1d16b72ea1584f6ddbee228e1b0545",
+      "snapshot": "evidence/ruilin/I108-A-10000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-10000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-12500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-12500/nyu/full.json",
+      "sha256": "df355d2eaab81eef51145c6ab32830e11a43be54527c48f239987c80e858a824",
+      "snapshot": "evidence/ruilin/I108-A-12500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-12500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-15000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-15000/nyu/full.json",
+      "sha256": "803ee541d6d62df3b07fe5435999c26048c28f1bbaf6499b1024f5601a73378b",
+      "snapshot": "evidence/ruilin/I108-A-15000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-15000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-17500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-17500/nyu/full.json",
+      "sha256": "38e692ca8e05a2187f0fc9ba2e1bd51708237bfbfbacd0cb93bf602cac3cfe9d",
+      "snapshot": "evidence/ruilin/I108-A-17500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-17500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-22500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-22500/nyu/full.json",
+      "sha256": "b98a103015c1288b9775a4347cdf1ca7693ffc0931aecb051ffce9c3cc60acfa",
+      "snapshot": "evidence/ruilin/I108-A-22500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-A-22500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-5000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-5000/nyu/full.json",
+      "sha256": "24d53177510970fe8b6235f4bb4dbc646d188843a55845bd6500b46d8d273e95",
+      "snapshot": "evidence/ruilin/I108-A-5000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-5000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-7500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-7500/nyu/full.json",
+      "sha256": "9924d604c10021cb505fac4b66ca1026ac0a4680a6f42d098a2a8631219a6f66",
+      "snapshot": "evidence/ruilin/I108-A-7500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-7500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-80000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-80000/nyu/full.json",
+      "sha256": "591e33c529856e4323bdf8e3b486daa02e78558c174c3b575a3b8c60886b1aa6",
+      "snapshot": "evidence/ruilin/I108-A-80000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-90000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-90000/nyu/full.json",
+      "sha256": "d09a0ae55ba50ae1ce2381517985c18179880235d98b495f52306ec3f3c2636f",
+      "snapshot": "evidence/ruilin/I108-A-90000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-90000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-95000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-A-95000/nyu/full.json",
+      "sha256": "b3f00f35f75fd7b5dd41bdf441a2e1c5522aa57a981b87fc815ead7cb89f7231",
+      "snapshot": "evidence/ruilin/I108-A-95000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-95000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B/nyu/full.json",
+      "sha256": "6a26cab99619287b7eb6ca3b3ab94862b40252e8b207b9fdea12776711622642",
+      "snapshot": "evidence/ruilin/I108-B/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-external-20261110\\external-results\\results\\I108-B\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-10000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-10000/nyu/full.json",
+      "sha256": "8145224bf0ca759235e51f70bcbe6818c8ba446c41d401c7de7b6a69aaac6a0c",
+      "snapshot": "evidence/ruilin/I108-B-10000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-10000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-100000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-100000/nyu/full.json",
+      "sha256": "d242334188ba90da2f019f0ef0b3efbcc3f0bcbd315e39092be290ea5f085b53",
+      "snapshot": "evidence/ruilin/I108-B-100000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-12500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-12500/nyu/full.json",
+      "sha256": "4953d5a1479f9d0a3c208e4e54b10bfb760cfddc38a9c6133c48227d71033cee",
+      "snapshot": "evidence/ruilin/I108-B-12500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-12500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-15000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-15000/nyu/full.json",
+      "sha256": "145bd298a15bc2897e5547d4208bbe82889b2a7fae08395d94bb93eafc013a9b",
+      "snapshot": "evidence/ruilin/I108-B-15000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-15000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-17500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-17500/nyu/full.json",
+      "sha256": "a6fcda5e3e297e58ac8415a4d29d535638f29e344576e3d75f2d72cb0b3c63e8",
+      "snapshot": "evidence/ruilin/I108-B-17500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-20000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-20000/nyu/full.json",
+      "sha256": "65d480c73714ee8496d8901652e771da167ddd11e2d11e31c1c8f0ee4ca8d145",
+      "snapshot": "evidence/ruilin/I108-B-20000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-22500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-22500/nyu/full.json",
+      "sha256": "5b799c8f5a7254e308e3550b543d4e8234c78abf8eaec9c0676ae69d7bd7fffb",
+      "snapshot": "evidence/ruilin/I108-B-22500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-22500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-25000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-25000/nyu/full.json",
+      "sha256": "d62eb95750a161c18d9d79794e2a7b4fa0f1332088c5aa3e5839f43c5974b2c9",
+      "snapshot": "evidence/ruilin/I108-B-25000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-25000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-27500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-27500/nyu/full.json",
+      "sha256": "8f8d3ea9fcb854d4de3faed7d2ffce6600148265451da81dcff9ea3c7e7fcd9e",
+      "snapshot": "evidence/ruilin/I108-B-27500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-27500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-5000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-5000/nyu/full.json",
+      "sha256": "a600988c7c54038ca71d9a3b33d3e88c1df0ace0ac238c517c2f7b13cbfe6fe9",
+      "snapshot": "evidence/ruilin/I108-B-5000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-7500",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-7500/nyu/full.json",
+      "sha256": "0b6abd7ea16d58b0622f9ecf5be121a44f66ece15b29ecb422d692f42b9e926f",
+      "snapshot": "evidence/ruilin/I108-B-7500/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-7500\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-95000",
+      "dataset": "nyu",
+      "url": "evidence/ruilin/I108-B-95000/nyu/full.json",
+      "sha256": "597a46eea618e21e04366bee0e804d38f3e5c3f7010ac15f19545f6e8b33d92e",
+      "snapshot": "evidence/ruilin/I108-B-95000/nyu/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-95000\\nyu\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/reasonseg/full.json",
+      "sha256": "74a0ed6b0653c41a00539d40c316902cc559064bcd205c376065b971e6c8e2c6",
+      "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A/reasonseg/full.json",
+      "sha256": "1816ee74c2f545fadf038971475e47d62cb3ae1b9f17bcc98d82aff1999ace47",
+      "snapshot": "evidence/ruilin/I108-A/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-query-v2-20261110\\external-results\\results\\I108-A\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-10000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-10000/reasonseg/full.json",
+      "sha256": "00064ee20677a0e35a40115f2e3937fb56da0471f1a8ba8976592520490f1238",
+      "snapshot": "evidence/ruilin/I108-A-10000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-10000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-12500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-12500/reasonseg/full.json",
+      "sha256": "39f111f9d158ec6140d5daff9f18601c3da123039e6ca6376f5c59e4465fb94f",
+      "snapshot": "evidence/ruilin/I108-A-12500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-12500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-15000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-15000/reasonseg/full.json",
+      "sha256": "e5a631a522a2e1665e2c55212fef1c84b097d205ed4de4234b9ced0dae87c10d",
+      "snapshot": "evidence/ruilin/I108-A-15000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-15000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-17500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-17500/reasonseg/full.json",
+      "sha256": "2f2cc699aca281746d092bfc7d845a3540ef1a908e173cde3af0934070392305",
+      "snapshot": "evidence/ruilin/I108-A-17500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-17500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-22500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-22500/reasonseg/full.json",
+      "sha256": "98f7ff565e926e80fae62984cfaae51adbcab940c26c2e3b049b3181be2514f2",
+      "snapshot": "evidence/ruilin/I108-A-22500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-A-22500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-5000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-5000/reasonseg/full.json",
+      "sha256": "2a520711ef1d93409f8d3c547f7c7faedaa86d7a010020b1c2575b69dd9cb61d",
+      "snapshot": "evidence/ruilin/I108-A-5000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-5000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-7500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-7500/reasonseg/full.json",
+      "sha256": "d12311f72d49a213dfd2eeb9ca4ea13614deef347522e34ccc4f4eba5f92f529",
+      "snapshot": "evidence/ruilin/I108-A-7500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-7500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-80000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-80000/reasonseg/full.json",
+      "sha256": "705974a7ece24cb1cf7073fcb526ebd5cba48c4d7b7ae1d9af5beee0c12214c7",
+      "snapshot": "evidence/ruilin/I108-A-80000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-80000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-90000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-90000/reasonseg/full.json",
+      "sha256": "40185a8cb12e2998c7bb00cd2192f253f1e0db1d1a6d7d1e1cf7ad2180d8e79e",
+      "snapshot": "evidence/ruilin/I108-A-90000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-90000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-95000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-A-95000/reasonseg/full.json",
+      "sha256": "b8e1d7956e9232d378804faa3787c84d58a858a197a754e2bf06f43843078736",
+      "snapshot": "evidence/ruilin/I108-A-95000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-A-95000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B/reasonseg/full.json",
+      "sha256": "f92c925b037f802d2caa9ab35e8c391e8ed74cae440c3e6931226a323ae6f31c",
+      "snapshot": "evidence/ruilin/I108-B/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-query-v2-20261110\\external-results\\results\\I108-B\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-10000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-10000/reasonseg/full.json",
+      "sha256": "6ad0dba955953b46f4b6d44a6723fb62b0fad38338f1757c145bd5982e52d503",
+      "snapshot": "evidence/ruilin/I108-B-10000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-10000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-100000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-100000/reasonseg/full.json",
+      "sha256": "378b520a1ad56eef80ce657a0aaa713d42098a41ec814baf57de2ec2a12236bf",
+      "snapshot": "evidence/ruilin/I108-B-100000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-100000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-12500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-12500/reasonseg/full.json",
+      "sha256": "e336a8ad9f916d33959f52046e6d32f0a85be6ca7e534bbd0d238be7dcfa13fb",
+      "snapshot": "evidence/ruilin/I108-B-12500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-12500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-15000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-15000/reasonseg/full.json",
+      "sha256": "e75d1236e274e422e83177de452c2563c2d45e8b4d71fdf0bf91774b2f79c305",
+      "snapshot": "evidence/ruilin/I108-B-15000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-15000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-17500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-17500/reasonseg/full.json",
+      "sha256": "3e6a2129dd9a8c6b7e66346149ba8db6262c11a8b2e53cf73da49ed54e51ad5a",
+      "snapshot": "evidence/ruilin/I108-B-17500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-20000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-20000/reasonseg/full.json",
+      "sha256": "e3de3350f3c1490f9cd25f4f630902ec1942649b482c7c09c09d26f7a4f5a869",
+      "snapshot": "evidence/ruilin/I108-B-20000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-22500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-22500/reasonseg/full.json",
+      "sha256": "54b58ddb451bd22bb45fa386eedaa3d1b2509c1a32c1aff705f9347e2422b770",
+      "snapshot": "evidence/ruilin/I108-B-22500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-22500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-25000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-25000/reasonseg/full.json",
+      "sha256": "5c14f3f6c25c3fed44cb9a0bed0e5c25364fb802b8d472df2aff3d8832a4eb3c",
+      "snapshot": "evidence/ruilin/I108-B-25000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-25000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-27500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-27500/reasonseg/full.json",
+      "sha256": "92a79b429ea126819724c90b4f72bff7ca27c1c83ebbb13dd560b1aac597fc08",
+      "snapshot": "evidence/ruilin/I108-B-27500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-27500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-5000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-5000/reasonseg/full.json",
+      "sha256": "79b023199dad783456dfa935a4b88813d96631bc5823628d0be7e7f0c31b3676",
+      "snapshot": "evidence/ruilin/I108-B-5000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-7500",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-7500/reasonseg/full.json",
+      "sha256": "19a30642aae801e5f57a1125627b75be1fe3c89047487c5e128ddfa760fb02c1",
+      "snapshot": "evidence/ruilin/I108-B-7500/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-7500\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-95000",
+      "dataset": "reasonseg",
+      "url": "evidence/ruilin/I108-B-95000/reasonseg/full.json",
+      "sha256": "2a574b7641b5172e56a4a4e35d9dc43b644d63c7b1ffe8b86b18af8b88bd3c31",
+      "snapshot": "evidence/ruilin/I108-B-95000/reasonseg/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-b-90k-100k-20261114\\external-results\\results\\I108-B-95000\\reasonseg\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "Fusion-C1-KQ0r128-60-40",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/refcocog/full.json",
+      "sha256": "461590135720047b174fa1f4e1ec39a0808216986a138f5277ef30dc09450a09",
+      "snapshot": "evidence/ruilin/Fusion-C1-KQ0r128-60-40/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-fusion-advanced-20261106\\external-results\\results\\Fusion-C1-KQ0r128-60-40\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A/refcocog/full.json",
+      "sha256": "ab5952e1cb295a8a0b0b7c92d3df936be47b6bf6ba5c1b84d25220dcc2ad60c4",
+      "snapshot": "evidence/ruilin/I108-A/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-query-v2-20261110\\external-results\\results\\I108-A\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-10000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A-10000/refcocog/full.json",
+      "sha256": "07cf33c60d58e915c698a787968d8d8b5e9d1d4d74dfb5bace6aacdfff06c0e7",
+      "snapshot": "evidence/ruilin/I108-A-10000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-10000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-12500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A-12500/refcocog/full.json",
+      "sha256": "c500fec590f4ef70a7266d914a2ffcfdb23ad6f9473489a439dbc7307de2dfaf",
+      "snapshot": "evidence/ruilin/I108-A-12500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-12500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-15000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A-15000/refcocog/full.json",
+      "sha256": "d5084b0d0ab361d62e8e14d61b828f91d700a4bd6ae95e08aef9ca6d29e7d85b",
+      "snapshot": "evidence/ruilin/I108-A-15000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-15000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-17500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A-17500/refcocog/full.json",
+      "sha256": "a61849836764c8e62a69a07621d0f9158787707a4350d1decf1a6e7916662435",
+      "snapshot": "evidence/ruilin/I108-A-17500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-A-17500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-22500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A-22500/refcocog/full.json",
+      "sha256": "a36c6134e20a54002722f50f987c54eb45677332448c8feb1152443f416fa65f",
+      "snapshot": "evidence/ruilin/I108-A-22500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-A-22500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-5000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A-5000/refcocog/full.json",
+      "sha256": "92259a3846da56e2e374f8f57c1eceed2f4845ed6cca7815b13dcff4c19a686c",
+      "snapshot": "evidence/ruilin/I108-A-5000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-5000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-A-7500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-A-7500/refcocog/full.json",
+      "sha256": "d3bdfa901f8239477439ff987fad2f8872cd79b50148c25393245e3d9bc5088a",
+      "snapshot": "evidence/ruilin/I108-A-7500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-A-7500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B/refcocog/full.json",
+      "sha256": "6bea0df997810d3d46ab6475eb3344d96b72885d9b47cff5cd52fb31d9c79ba7",
+      "snapshot": "evidence/ruilin/I108-B/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-query-v2-20261110\\external-results\\results\\I108-B\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-10000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-10000/refcocog/full.json",
+      "sha256": "69cf4602e0e12a7dbc1d2057db964c5d0a1e367ccc4e4b3768ea542dc2fc8a59",
+      "snapshot": "evidence/ruilin/I108-B-10000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-10000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-12500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-12500/refcocog/full.json",
+      "sha256": "fe6369be34f3bb20f24d5065c911e90939dcf0da74fa336b3bf145830eb02234",
+      "snapshot": "evidence/ruilin/I108-B-12500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-12500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-15000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-15000/refcocog/full.json",
+      "sha256": "cda5002a859b018b94ecc4492dfa4623684ed97ae688e067c27fa783041b440a",
+      "snapshot": "evidence/ruilin/I108-B-15000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-15000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-17500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-17500/refcocog/full.json",
+      "sha256": "efcc4c514a74479e20a71a1ebf8b36dc7b512fdbdfd7a100ef7d317d5cc4b2ad",
+      "snapshot": "evidence/ruilin/I108-B-17500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-17500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-20000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-20000/refcocog/full.json",
+      "sha256": "356f6f6f87a9144f9b7af521ce8225f294adb631f390984e5fe10f0c73621389",
+      "snapshot": "evidence/ruilin/I108-B-20000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-10k-15k-20261110\\external-results\\results\\I108-B-20000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-22500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-22500/refcocog/full.json",
+      "sha256": "c8b17549562bc444303e75f05662894a73843987aff655b48ed4897382ff7a07",
+      "snapshot": "evidence/ruilin/I108-B-22500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-22500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-25000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-25000/refcocog/full.json",
+      "sha256": "8d65774158d141c8de0c5f1745f09bbbde5b60a46407585ea2e7bfeb73845e80",
+      "snapshot": "evidence/ruilin/I108-B-25000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-25000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-27500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-27500/refcocog/full.json",
+      "sha256": "6e6dbefefb5263990880fec1658f3f225acbb5bea6d0d41425d16b0bd8f2fbfd",
+      "snapshot": "evidence/ruilin/I108-B-27500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-22500-27500-20261111\\external-results\\results\\I108-B-27500\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-5000",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-5000/refcocog/full.json",
+      "sha256": "09811821b7b9be71119498a9958054021c7fa1ae6019fcd5c9e791eeef7ffa42",
+      "snapshot": "evidence/ruilin/I108-B-5000/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-5000\\refcocog\\full.json"
+    },
+    {
+      "source": "Ruilin Yao",
+      "model": "I108-B-7500",
+      "dataset": "refcocog",
+      "url": "evidence/ruilin/I108-B-7500/refcocog/full.json",
+      "sha256": "c662d022c3c9b0347dff23956ac3075b7a9f2ea46984cfc67d285b27367a3df9",
+      "snapshot": "evidence/ruilin/I108-B-7500/refcocog/full.json",
+      "original_path": "E:\\Open-vision-banana\\output\\ovb-i108-5k-75k-20261110\\external-results\\results\\I108-B-7500\\refcocog\\full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-010000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-010000-best/core/A-010000-best/cityscapes/full.json",
+      "sha256": "2b03cb47feb8e2646adc634bbbb96b8c3a4785460a4c06c3573e746f5d00bc74",
+      "snapshot": "evidence/khazic/A-010000-best/core/A-010000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-010000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-010000-best/core/A-010000-best/diode/full.json",
+      "sha256": "387c8d38df1775426f7d5e14c1a53146e2bb4a9864ab6d891fea78212cd47dbe",
+      "snapshot": "evidence/khazic/A-010000-best/core/A-010000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-010000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-010000-best/core/A-010000-best/eth3d/full.json",
+      "sha256": "0bb8ed496ed3f498fd8e329aaee8c00942991bfdfed429ea9f2775a2296f0f28",
+      "snapshot": "evidence/khazic/A-010000-best/core/A-010000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-010000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-010000-best/core/A-010000-best/nyu/full.json",
+      "sha256": "dac33d8ab2310f09f4383d168afdf56401b73284bb42272b71a8cf24e604b5b6",
+      "snapshot": "evidence/khazic/A-010000-best/core/A-010000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-010000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-010000-best/core/A-010000-best/reasonseg/full.json",
+      "sha256": "d6cb14d23ab5df76ae74a98b6e1d94473d7b1a205825b9552bf319ec26e152ed",
+      "snapshot": "evidence/khazic/A-010000-best/core/A-010000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-030000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-030000-best/core/A-030000-best/cityscapes/full.json",
+      "sha256": "caa1805f4478517760de71b24a0055c1b7145f2b64556757c988f3d948e02745",
+      "snapshot": "evidence/khazic/A-030000-best/core/A-030000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-030000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-030000-best/core/A-030000-best/diode/full.json",
+      "sha256": "068b460c771eef412b16c0fc7f77d6fd9ba965bc607480b7121a6c7bb9d58c18",
+      "snapshot": "evidence/khazic/A-030000-best/core/A-030000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-030000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-030000-best/core/A-030000-best/eth3d/full.json",
+      "sha256": "52d55bddf7483b0ee3b5383e2d53e3d429266f466a7b1b0b55bd4fefdbc00ae4",
+      "snapshot": "evidence/khazic/A-030000-best/core/A-030000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-030000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-030000-best/core/A-030000-best/nyu/full.json",
+      "sha256": "8685d62a26cab46e16c6676058c9ceee275a9a717975e0b060082c0c728f3af1",
+      "snapshot": "evidence/khazic/A-030000-best/core/A-030000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-030000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-030000-best/core/A-030000-best/reasonseg/full.json",
+      "sha256": "477915b5fd4fc8a5d291c769483c19f164d5310da7068c0dee144c7bd11c56b8",
+      "snapshot": "evidence/khazic/A-030000-best/core/A-030000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-040000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-040000-best/core/A-040000-best/cityscapes/full.json",
+      "sha256": "f8da3b1a6be0cb69491c368ad164a74de02e44b0ffa701175ce9c5cebb064d72",
+      "snapshot": "evidence/khazic/A-040000-best/core/A-040000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-040000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-040000-best/core/A-040000-best/diode/full.json",
+      "sha256": "191e8284f58388d5fd67c16aa048621092a1112e62c36463d4bae52e1361f3ed",
+      "snapshot": "evidence/khazic/A-040000-best/core/A-040000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-040000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-040000-best/core/A-040000-best/eth3d/full.json",
+      "sha256": "a226d9954dbe47d7c08f2d34f9b878d43306f2850defcc02f5f9e424a1b496cb",
+      "snapshot": "evidence/khazic/A-040000-best/core/A-040000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-040000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-040000-best/core/A-040000-best/nyu/full.json",
+      "sha256": "a906d32016d38fbd4c52248478e288e777bde0674bd0f55fe724a59e7f686cf5",
+      "snapshot": "evidence/khazic/A-040000-best/core/A-040000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-040000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-040000-best/core/A-040000-best/reasonseg/full.json",
+      "sha256": "14b9a76abbae4005265c7becc25f68bbb05aed55a9f86a31cac59e56751e72bf",
+      "snapshot": "evidence/khazic/A-040000-best/core/A-040000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-050000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-050000-best/core/A-050000-best/cityscapes/full.json",
+      "sha256": "7dc266dfc689109108c987c9e76d7d49f7703340553105a05d810b6e6e9978c6",
+      "snapshot": "evidence/khazic/A-050000-best/core/A-050000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-050000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-050000-best/core/A-050000-best/diode/full.json",
+      "sha256": "5ed63dd37b61f6fc42dc3e7eab7a53e6e2ef2f45fa43e48b71dea904559c35d7",
+      "snapshot": "evidence/khazic/A-050000-best/core/A-050000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-050000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-050000-best/core/A-050000-best/eth3d/full.json",
+      "sha256": "dea36ed4ad9c68bffdb9646d989b7108440d1fd45b499c25e50c6e43a407d0fe",
+      "snapshot": "evidence/khazic/A-050000-best/core/A-050000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-050000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-050000-best/core/A-050000-best/nyu/full.json",
+      "sha256": "306e69411c8c60a16959029e0a6141ca1f08e603910a6861348800590004e026",
+      "snapshot": "evidence/khazic/A-050000-best/core/A-050000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-050000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-050000-best/core/A-050000-best/reasonseg/full.json",
+      "sha256": "87068ce2eee1630980b4c9b55216ae78e2cac9261f9937238ded6b373c5e02b2",
+      "snapshot": "evidence/khazic/A-050000-best/core/A-050000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-060000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-060000-best/core/A-060000-best/cityscapes/full.json",
+      "sha256": "7cd3beb13918648135ecdebdb6aaaa6b6065927f20f9198dd6c3844bfe7b36b6",
+      "snapshot": "evidence/khazic/A-060000-best/core/A-060000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-060000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-060000-best/core/A-060000-best/diode/full.json",
+      "sha256": "9157d469ba27284afa2a10063a8e895b22dcb3802c0eff9e7e99c1e166879562",
+      "snapshot": "evidence/khazic/A-060000-best/core/A-060000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-060000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-060000-best/core/A-060000-best/eth3d/full.json",
+      "sha256": "7169779d07c8615fff04a22fc433e0e1073fa27a03b58520e4ba7e6bf06b4b5f",
+      "snapshot": "evidence/khazic/A-060000-best/core/A-060000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-060000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-060000-best/core/A-060000-best/nyu/full.json",
+      "sha256": "39a1be7503b9de29822be39af04e81ea38bcc5d8d301d77c9813061b7c72ca59",
+      "snapshot": "evidence/khazic/A-060000-best/core/A-060000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-060000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-060000-best/core/A-060000-best/reasonseg/full.json",
+      "sha256": "06c5c083d9a9aaff7fc88b93190533544cde77fe8494b3515a9b77cd15b77bc5",
+      "snapshot": "evidence/khazic/A-060000-best/core/A-060000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-062500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-062500-best/core/A-062500-best/cityscapes/full.json",
+      "sha256": "47349e0a73c8597855ca2378c92839f12da3ade6af9a1e1c82171cfdfba3f37b",
+      "snapshot": "evidence/khazic/A-062500-best/core/A-062500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-062500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-062500-best/core/A-062500-best/diode/full.json",
+      "sha256": "1833bd5d6ff8f0bc6e1668828d0cc8d69b9ff75b9846f477405322ec860e3928",
+      "snapshot": "evidence/khazic/A-062500-best/core/A-062500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-062500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-062500-best/core/A-062500-best/eth3d/full.json",
+      "sha256": "5c25734e2c1d42a0f33a3a96e9d54e4fe841a86f2654676d952ead08ac9f2a50",
+      "snapshot": "evidence/khazic/A-062500-best/core/A-062500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-062500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-062500-best/core/A-062500-best/nyu/full.json",
+      "sha256": "42cffea6302a4bb696d9123c45a4992328b5e97a1a92cbd27efb8a7b114b6fa6",
+      "snapshot": "evidence/khazic/A-062500-best/core/A-062500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-062500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-062500-best/core/A-062500-best/reasonseg/full.json",
+      "sha256": "1b329d6d569e13b79fa879ce72a1a5e5e1c3a71274f52288d5563a9ce31969f1",
+      "snapshot": "evidence/khazic/A-062500-best/core/A-062500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-065000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-065000-best/core/A-065000-best/cityscapes/full.json",
+      "sha256": "6b6a173fab1effaf375e6d5b6843cc7a72cb9b7e061de7004a7f323b557414db",
+      "snapshot": "evidence/khazic/A-065000-best/core/A-065000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-065000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-065000-best/core/A-065000-best/diode/full.json",
+      "sha256": "9a41a829063f79ba8728643ff07ed0157d8185b4315380f59609d94faab1d0f4",
+      "snapshot": "evidence/khazic/A-065000-best/core/A-065000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-065000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-065000-best/core/A-065000-best/eth3d/full.json",
+      "sha256": "f88b9fadf833f0c34b5c88824fc3798ecf13c5a05a2e1aa803f511ac1f9c7ea6",
+      "snapshot": "evidence/khazic/A-065000-best/core/A-065000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-065000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-065000-best/core/A-065000-best/nyu/full.json",
+      "sha256": "c3abde13b609a81371dc0090d935a841045969956e72c4daf60154d2b8897e54",
+      "snapshot": "evidence/khazic/A-065000-best/core/A-065000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-065000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-065000-best/core/A-065000-best/reasonseg/full.json",
+      "sha256": "5a81b7e3c14ba7a90495b6f091036a06b89cb5588406533f2c7f559501dc0c1c",
+      "snapshot": "evidence/khazic/A-065000-best/core/A-065000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-067500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-067500-best/core/A-067500-best/cityscapes/full.json",
+      "sha256": "0136a0ba09e3feeb5244e35f453c980adbddc089f99bc3a29f99f19ed04b5af4",
+      "snapshot": "evidence/khazic/A-067500-best/core/A-067500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-067500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-067500-best/core/A-067500-best/diode/full.json",
+      "sha256": "e41d3710f27b7b5a45f77e36be39a2cd7a062d03d8113f6a5ba2ed655c795425",
+      "snapshot": "evidence/khazic/A-067500-best/core/A-067500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-067500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-067500-best/core/A-067500-best/eth3d/full.json",
+      "sha256": "d636f3d0ba00a6d53a714896dc797a9577f0391459eb9859b012659f79360abb",
+      "snapshot": "evidence/khazic/A-067500-best/core/A-067500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-067500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-067500-best/core/A-067500-best/nyu/full.json",
+      "sha256": "1b1b0828c2875bf375a1259bdbbb72f7a54feb9f4282c47ca2d0342a87424608",
+      "snapshot": "evidence/khazic/A-067500-best/core/A-067500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-067500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-067500-best/core/A-067500-best/reasonseg/full.json",
+      "sha256": "43e78d6393de0ee2ccfbb4defc4f052b4b81af6f40536e30cf227cfe79d884d4",
+      "snapshot": "evidence/khazic/A-067500-best/core/A-067500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-070000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-070000-best/core/A-070000-best/cityscapes/full.json",
+      "sha256": "1aff63c9cddef0a3394de4aa8dfc9bdfed9c25f459031784b1e1f70cd1ee277c",
+      "snapshot": "evidence/khazic/A-070000-best/core/A-070000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-070000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-070000-best/core/A-070000-best/diode/full.json",
+      "sha256": "aa78a4466e803f4ee4aba818e6c0f6f72de4cf48de5cb5c90d409e49667c469d",
+      "snapshot": "evidence/khazic/A-070000-best/core/A-070000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-070000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-070000-best/core/A-070000-best/eth3d/full.json",
+      "sha256": "5d1a41f32e4bcf8b50e3ccec76b761fde9a43a21e642387471b2e1cf2aca10ee",
+      "snapshot": "evidence/khazic/A-070000-best/core/A-070000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-070000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-070000-best/core/A-070000-best/nyu/full.json",
+      "sha256": "7c95d57585b52dca7cd42cbae1a0bf62d39f2632fd9766e26c550ee187cb203f",
+      "snapshot": "evidence/khazic/A-070000-best/core/A-070000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-070000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-070000-best/core/A-070000-best/reasonseg/full.json",
+      "sha256": "83fcf868c260598312e8b65119a5cdf2a56a94fa0d7eb26b3cf8e66e782ae3fa",
+      "snapshot": "evidence/khazic/A-070000-best/core/A-070000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-072500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-072500-best/core/A-072500-best/cityscapes/full.json",
+      "sha256": "305b119d68c62cfea4130eaa17f0e51457663939cddd038807435bb8f07237f1",
+      "snapshot": "evidence/khazic/A-072500-best/core/A-072500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-072500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-072500-best/core/A-072500-best/diode/full.json",
+      "sha256": "3ec4c121bf4463aa9d7ff4fc5b27ae337452391244254cf088529b9be9a8894a",
+      "snapshot": "evidence/khazic/A-072500-best/core/A-072500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-072500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-072500-best/core/A-072500-best/eth3d/full.json",
+      "sha256": "1dba8bc6334041456d067e8e2983954db9803701bb91a2d3bcebf8378ba7e6d6",
+      "snapshot": "evidence/khazic/A-072500-best/core/A-072500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-072500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-072500-best/core/A-072500-best/nyu/full.json",
+      "sha256": "6e761f490c54c9b1a2623fc5b076d73db7c7922277b4cc48e4d77dc5c6cc069d",
+      "snapshot": "evidence/khazic/A-072500-best/core/A-072500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-072500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-072500-best/core/A-072500-best/reasonseg/full.json",
+      "sha256": "0071babf8f6eee087591e3f47f9bae38a95badacabaae0eb3eb4df7b30cf4df4",
+      "snapshot": "evidence/khazic/A-072500-best/core/A-072500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-075000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-075000-best/core/A-075000-best/cityscapes/full.json",
+      "sha256": "9027eb8daac767367b59919865b7e39b5d67ab3efec39c9e4a577bdffdc4e01a",
+      "snapshot": "evidence/khazic/A-075000-best/core/A-075000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-075000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-075000-best/core/A-075000-best/diode/full.json",
+      "sha256": "3ec47adb3a383a13b73a1fbd408826be3ebd4f6ded5a5467083ab1a3ae7d4cb9",
+      "snapshot": "evidence/khazic/A-075000-best/core/A-075000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-075000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-075000-best/core/A-075000-best/eth3d/full.json",
+      "sha256": "51aff71e0a790a3d1ca01bd847ffa21a72809a958006f4efc24e91f5e449d10b",
+      "snapshot": "evidence/khazic/A-075000-best/core/A-075000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-075000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-075000-best/core/A-075000-best/nyu/full.json",
+      "sha256": "aa394ade0a09de419cd20e9764b7b9436df15ed9660e1973c4ecd9d8522f854e",
+      "snapshot": "evidence/khazic/A-075000-best/core/A-075000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-075000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-075000-best/core/A-075000-best/reasonseg/full.json",
+      "sha256": "686e95a71e71c344d013727b47588d68748c3938bb7ac5933cdd2f41717be2ee",
+      "snapshot": "evidence/khazic/A-075000-best/core/A-075000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-077500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-077500-best/core/A-077500-best/cityscapes/full.json",
+      "sha256": "ad62a91341c436ae581069f9ff9d1a1668fc9de721194446a208bca377305839",
+      "snapshot": "evidence/khazic/A-077500-best/core/A-077500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-077500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-077500-best/core/A-077500-best/diode/full.json",
+      "sha256": "abb5175eea56f0c4ef1b35c4e1afdc38d594db3a6637f072691a3d97a1fe776b",
+      "snapshot": "evidence/khazic/A-077500-best/core/A-077500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-077500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-077500-best/core/A-077500-best/eth3d/full.json",
+      "sha256": "93e741c1f89ea720bc7b7f7c19d4a330653064d534673920e71f035cd16a97e0",
+      "snapshot": "evidence/khazic/A-077500-best/core/A-077500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-077500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-077500-best/core/A-077500-best/nyu/full.json",
+      "sha256": "899d45529c02701a2fee1da438334b584c8c4dc161c720997a4b18eeaac19216",
+      "snapshot": "evidence/khazic/A-077500-best/core/A-077500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-077500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-077500-best/core/A-077500-best/reasonseg/full.json",
+      "sha256": "49f5b2281f0c0f2d0e4cbda6310bb1792f55acae534dea2d2ab3545061c4357d",
+      "snapshot": "evidence/khazic/A-077500-best/core/A-077500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-080000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-080000-best/core/A-080000-best/cityscapes/full.json",
+      "sha256": "f214a51142061fb892308838d18768b79399fba5a4815526ccd969ab46ad634f",
+      "snapshot": "evidence/khazic/A-080000-best/core/A-080000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-080000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-080000-best/core/A-080000-best/diode/full.json",
+      "sha256": "09f2d764ab00718591da99bda3ea5d6e462f409495269ec4dd266af1995fe930",
+      "snapshot": "evidence/khazic/A-080000-best/core/A-080000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-080000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-080000-best/core/A-080000-best/eth3d/full.json",
+      "sha256": "9bdddb42c0d1f36a32ed2c6b1fa1b96aa98c7ff8d5f86bd8832f7b3b97f4f146",
+      "snapshot": "evidence/khazic/A-080000-best/core/A-080000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-080000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-080000-best/core/A-080000-best/nyu/full.json",
+      "sha256": "eea2b2b12720061de2eebba15556850d3455603e977bc1f2fa83a136cff713a9",
+      "snapshot": "evidence/khazic/A-080000-best/core/A-080000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-080000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-080000-best/core/A-080000-best/reasonseg/full.json",
+      "sha256": "ca92682b97944d8047896e6e82ff6acf06712e0f891af1ff262d46d59aca2e47",
+      "snapshot": "evidence/khazic/A-080000-best/core/A-080000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-082500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-082500-best/core/A-082500-best/cityscapes/full.json",
+      "sha256": "a7afefceda7b7544368781625f4d28f2bcc0eac5543e11d6449f2115461ebe54",
+      "snapshot": "evidence/khazic/A-082500-best/core/A-082500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-082500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-082500-best/core/A-082500-best/diode/full.json",
+      "sha256": "ab61648b08bc95970a428dc14fd23b609d9c1e5ac21c4f856a98db00a64fa4c7",
+      "snapshot": "evidence/khazic/A-082500-best/core/A-082500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-082500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-082500-best/core/A-082500-best/eth3d/full.json",
+      "sha256": "8866f60387f085986c619e624d831ce21f4d65a50115474cc95a3df5d7c5c3c0",
+      "snapshot": "evidence/khazic/A-082500-best/core/A-082500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-082500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-082500-best/core/A-082500-best/nyu/full.json",
+      "sha256": "7c8011d3d8b2dba7c556576f1693bf3ac3fd39d275aefb9fb956d2ad8d95ba1c",
+      "snapshot": "evidence/khazic/A-082500-best/core/A-082500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-082500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-082500-best/core/A-082500-best/reasonseg/full.json",
+      "sha256": "86f4b824decb5359beaf4d124a4797d84189b8ef52a063e24d930af84ad4290e",
+      "snapshot": "evidence/khazic/A-082500-best/core/A-082500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-085000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-085000-best/core/A-085000-best/cityscapes/full.json",
+      "sha256": "7892f54a2bdbddd7f7c4f5ef6b0b6dba4bae0eeb48fb2be36e87ee8c13b47792",
+      "snapshot": "evidence/khazic/A-085000-best/core/A-085000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-085000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-085000-best/core/A-085000-best/diode/full.json",
+      "sha256": "f3bf5e54f73a152a1d8cb947a2c58940f78f8ad10211f3c837acbe815f080086",
+      "snapshot": "evidence/khazic/A-085000-best/core/A-085000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-085000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-085000-best/core/A-085000-best/eth3d/full.json",
+      "sha256": "ba0b4edfad75b818ab3c6a2ee690abe01d91563d69681111176d94df3ac36b2f",
+      "snapshot": "evidence/khazic/A-085000-best/core/A-085000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-085000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-085000-best/core/A-085000-best/nyu/full.json",
+      "sha256": "1b6b837ff5d072c49d47f44500ba0decdbdc4f1e18ec7d512f65e07fa29843e9",
+      "snapshot": "evidence/khazic/A-085000-best/core/A-085000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-085000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-085000-best/core/A-085000-best/reasonseg/full.json",
+      "sha256": "a191d39f563fae732b6f5fccc72d365ddf7708837b73db9027826fefdb4ac27d",
+      "snapshot": "evidence/khazic/A-085000-best/core/A-085000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-087500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-087500-best/core/A-087500-best/cityscapes/full.json",
+      "sha256": "0f1980669a2e1aab802f10ea8c77237365adca8f71f0390b010af8d21b377005",
+      "snapshot": "evidence/khazic/A-087500-best/core/A-087500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-087500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-087500-best/core/A-087500-best/diode/full.json",
+      "sha256": "433678e103f0273293594f5d23d5e8c28641a5014d2d82ecba2286c74cc0887c",
+      "snapshot": "evidence/khazic/A-087500-best/core/A-087500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-087500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-087500-best/core/A-087500-best/eth3d/full.json",
+      "sha256": "caea96cdf12cfcec0aaf0e3dd8d7fdda66f8fef441f3a170eda1c42242fdb085",
+      "snapshot": "evidence/khazic/A-087500-best/core/A-087500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-087500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-087500-best/core/A-087500-best/nyu/full.json",
+      "sha256": "f266e87c2b5ae8e7cb38fdd71b23eb77b078e2cec45ba1ce84ca3c80d653c382",
+      "snapshot": "evidence/khazic/A-087500-best/core/A-087500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-087500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-087500-best/core/A-087500-best/reasonseg/full.json",
+      "sha256": "d5550189e4a259a894df19bd61ab014f9267a113e5413641cb61f2d3053ef2dd",
+      "snapshot": "evidence/khazic/A-087500-best/core/A-087500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-090000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-090000-best/core/A-090000-best/cityscapes/full.json",
+      "sha256": "0b3448273bb87360273bc070c961aec1bf354dbc910e0e1e5e014ba484865984",
+      "snapshot": "evidence/khazic/A-090000-best/core/A-090000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-090000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-090000-best/core/A-090000-best/diode/full.json",
+      "sha256": "c3d7a446d8e10ed7533fb063f2df937913614bfa3a6875ec790239bdaea5b2e9",
+      "snapshot": "evidence/khazic/A-090000-best/core/A-090000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-090000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-090000-best/core/A-090000-best/eth3d/full.json",
+      "sha256": "3af4c01fd3e5d500fccca91d0ce156be3bd73f42c04355693f2ef94cb46fc191",
+      "snapshot": "evidence/khazic/A-090000-best/core/A-090000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-090000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-090000-best/core/A-090000-best/nyu/full.json",
+      "sha256": "a9980a5ab9214757b01f87ceb6520f945417d1bfa0c46deb9b3d85e1aa4faf3f",
+      "snapshot": "evidence/khazic/A-090000-best/core/A-090000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-090000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-090000-best/core/A-090000-best/reasonseg/full.json",
+      "sha256": "45116ae00c48a312aa5292b5831cb78e1342f738a4920166e6a54d0158bc27a9",
+      "snapshot": "evidence/khazic/A-090000-best/core/A-090000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-092500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-092500-best/core/A-092500-best/cityscapes/full.json",
+      "sha256": "b5c76c5dac6bd798bba241907b34ee81521795b6e2b3c0596a53f3a81a3fcf69",
+      "snapshot": "evidence/khazic/A-092500-best/core/A-092500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-092500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-092500-best/core/A-092500-best/diode/full.json",
+      "sha256": "ac3d5605691b38ee81b5b6de2a218983bdfc34d2112ed42170606ebf1bac203f",
+      "snapshot": "evidence/khazic/A-092500-best/core/A-092500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-092500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-092500-best/core/A-092500-best/eth3d/full.json",
+      "sha256": "1d8405861deeb87c1c93e5cde7f27fefeb331b9db9e706368cf315570bb45339",
+      "snapshot": "evidence/khazic/A-092500-best/core/A-092500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-092500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-092500-best/core/A-092500-best/nyu/full.json",
+      "sha256": "e142a397a936b5b11ce0fee1fae2535560ceb09918882a90e073521970971936",
+      "snapshot": "evidence/khazic/A-092500-best/core/A-092500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-092500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-092500-best/core/A-092500-best/reasonseg/full.json",
+      "sha256": "a45e558c95b93bea0c6ef8eaf3e36d4055ede08d97f2caed1adaa4c162e21d86",
+      "snapshot": "evidence/khazic/A-092500-best/core/A-092500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-095000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-095000-best/core/A-095000-best/cityscapes/full.json",
+      "sha256": "d3edcba931206c0eb7ea76d76d980edfbbbabc5a7323996f66d5443f9ea034e5",
+      "snapshot": "evidence/khazic/A-095000-best/core/A-095000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-095000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-095000-best/core/A-095000-best/diode/full.json",
+      "sha256": "0307dbd091a218dbff00286914f4b46ad47537cf95bf67fa8ebde0bcceaed95d",
+      "snapshot": "evidence/khazic/A-095000-best/core/A-095000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-095000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-095000-best/core/A-095000-best/eth3d/full.json",
+      "sha256": "ab0569592991437877321750d575295320eda081125b7e743e495b8be978fce4",
+      "snapshot": "evidence/khazic/A-095000-best/core/A-095000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-095000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-095000-best/core/A-095000-best/nyu/full.json",
+      "sha256": "148dd2f137947c712b1cffbf94540e4055ce28bedf2979791ea3112f89f8a749",
+      "snapshot": "evidence/khazic/A-095000-best/core/A-095000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-095000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-095000-best/core/A-095000-best/reasonseg/full.json",
+      "sha256": "d2676eb5278dba6024baa6544d2a32c0294a77a3f872c49c8faf36dae79d9d10",
+      "snapshot": "evidence/khazic/A-095000-best/core/A-095000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-097500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-097500-best/core/A-097500-best/cityscapes/full.json",
+      "sha256": "c6947ec15a144119af3eb3b14bd0d93e95a93dc312fa37370e4b56ac22f777e9",
+      "snapshot": "evidence/khazic/A-097500-best/core/A-097500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-097500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-097500-best/core/A-097500-best/diode/full.json",
+      "sha256": "e4cdeaed0f6dd7571df8a8aa93163cafc56b6f232b7ba7c1d131019bdc5a7827",
+      "snapshot": "evidence/khazic/A-097500-best/core/A-097500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-097500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-097500-best/core/A-097500-best/eth3d/full.json",
+      "sha256": "4ab6f03eebdf16cceb7e9a12a4ae5641b32a0ba33d622a3eebb049c9b5201c7e",
+      "snapshot": "evidence/khazic/A-097500-best/core/A-097500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-097500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-097500-best/core/A-097500-best/nyu/full.json",
+      "sha256": "ce8be4d33335aeb440303d606c9796187571a2466e22df93de9fcd0be40b2403",
+      "snapshot": "evidence/khazic/A-097500-best/core/A-097500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-097500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-097500-best/core/A-097500-best/reasonseg/full.json",
+      "sha256": "0f382fa5c5d36425ada624724e9fa826d4b06d3ffbbf07165ab9a9865c19c04e",
+      "snapshot": "evidence/khazic/A-097500-best/core/A-097500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-best/core/A-100000-best/cityscapes/full.json",
+      "sha256": "123a5825c4886a9e8d3e0e12b4491eafd813bb548a6a9cf3b6a0b8a7122c57ae",
+      "snapshot": "evidence/khazic/A-100000-best/core/A-100000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-best/core/A-100000-best/diode/full.json",
+      "sha256": "b57fb97259e05d6f42681285f1c12514faa24f47d77be683cf8ba09bf41bfbf3",
+      "snapshot": "evidence/khazic/A-100000-best/core/A-100000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-best/core/A-100000-best/eth3d/full.json",
+      "sha256": "45161d53ffaee3b61fee95179d4e8078c4b285d16c66285824dfc4a1dabbc7f5",
+      "snapshot": "evidence/khazic/A-100000-best/core/A-100000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-best/core/A-100000-best/nyu/full.json",
+      "sha256": "817ffcf41e0d7dbb5cacd9c159d09c234e8aa354bf0706f3b338092d5af611b1",
+      "snapshot": "evidence/khazic/A-100000-best/core/A-100000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-best/core/A-100000-best/reasonseg/full.json",
+      "sha256": "ef9bba2ad382c90775d1e8e920f37e7b2b18d66add243013561fadedfa830e71",
+      "snapshot": "evidence/khazic/A-100000-best/core/A-100000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-final",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-final/core/A-100000-final/cityscapes/full.json",
+      "sha256": "25dffc66b722d3551f6cea97b896f7c185d3e2039159f0d74925f2e4cc7e016c",
+      "snapshot": "evidence/khazic/A-100000-final/core/A-100000-final/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-final",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-final/core/A-100000-final/diode/full.json",
+      "sha256": "3215d893f41697dca56031760922dac5d63d4d2f304d54594d26b810f58cf291",
+      "snapshot": "evidence/khazic/A-100000-final/core/A-100000-final/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-final",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-final/core/A-100000-final/eth3d/full.json",
+      "sha256": "9b5b5276b3847f945e5154746a3bbc273860afdbf3c25b471a0dab8313203450",
+      "snapshot": "evidence/khazic/A-100000-final/core/A-100000-final/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-final",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-final/core/A-100000-final/nyu/full.json",
+      "sha256": "82fb3b769cf6b1e967279f42648ac71213a4ea79f8e85c2a83969a9c098c6478",
+      "snapshot": "evidence/khazic/A-100000-final/core/A-100000-final/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "A-100000-final",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/A-100000-final/core/A-100000-final/reasonseg/full.json",
+      "sha256": "54bef2ad884278d46ddbc551f94c558b78532807d81e2d705d7eb36f1988a77d",
+      "snapshot": "evidence/khazic/A-100000-final/core/A-100000-final/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-010000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-010000-best/core/B-010000-best/cityscapes/full.json",
+      "sha256": "d2f86b51a469ae6704788336c8e33365d63c36fb4a02fc4afd8603249f176482",
+      "snapshot": "evidence/khazic/B-010000-best/core/B-010000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-010000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-010000-best/core/B-010000-best/diode/full.json",
+      "sha256": "11a4288e4cafaa6eed1869475c3d1279baa2663589da7969daa6f5143913eede",
+      "snapshot": "evidence/khazic/B-010000-best/core/B-010000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-010000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-010000-best/core/B-010000-best/eth3d/full.json",
+      "sha256": "9ec23cfdcb70d01477710493d345997b452730aed71f3a9e336d97a7cf74832c",
+      "snapshot": "evidence/khazic/B-010000-best/core/B-010000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-010000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-010000-best/core/B-010000-best/nyu/full.json",
+      "sha256": "223165a6584a86cbd3e0db815f969d449c45df4259a2b9920a272f0129ab5e9a",
+      "snapshot": "evidence/khazic/B-010000-best/core/B-010000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-010000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-010000-best/core/B-010000-best/reasonseg/full.json",
+      "sha256": "94f7d1da0a43bcabc65ce4a86e0f13c47ea41ffe4a0c00b1495aee12e657623d",
+      "snapshot": "evidence/khazic/B-010000-best/core/B-010000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-020000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-020000-best/core/B-020000-best/cityscapes/full.json",
+      "sha256": "6a4a3b3ef94fc066087cda507bb538bd6ae776d9ac89b22ae72777abed6e070e",
+      "snapshot": "evidence/khazic/B-020000-best/core/B-020000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-020000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-020000-best/core/B-020000-best/diode/full.json",
+      "sha256": "1ae1b6c3c27e8801d61ee26d7cc716dd784096e6815315831921eff977306ba9",
+      "snapshot": "evidence/khazic/B-020000-best/core/B-020000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-020000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-020000-best/core/B-020000-best/eth3d/full.json",
+      "sha256": "d4d61fc9c7e407add4353ad34a2c3afbeaa06b36650da96638649572555a4cd0",
+      "snapshot": "evidence/khazic/B-020000-best/core/B-020000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-020000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-020000-best/core/B-020000-best/nyu/full.json",
+      "sha256": "a47bb2889bd545be13e789e44ce69c1c465c1a5e25da1a324f3e798c6ebe7798",
+      "snapshot": "evidence/khazic/B-020000-best/core/B-020000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-020000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-020000-best/core/B-020000-best/reasonseg/full.json",
+      "sha256": "c51204c72ae0d2b87392dcc52b267e3b9b660be21f607f5a7ebbe9c64fb50bf7",
+      "snapshot": "evidence/khazic/B-020000-best/core/B-020000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-030000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-030000-best/core/B-030000-best/cityscapes/full.json",
+      "sha256": "92a14f9f2fda1c4d1dd7feb7ab4abda6927c353de2816465e455dd79fcc85855",
+      "snapshot": "evidence/khazic/B-030000-best/core/B-030000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-030000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-030000-best/core/B-030000-best/diode/full.json",
+      "sha256": "95973f676c468d0cc328309abf2ae0a3df66cd4112a277be9a6b7a8bf0b33dfb",
+      "snapshot": "evidence/khazic/B-030000-best/core/B-030000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-030000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-030000-best/core/B-030000-best/eth3d/full.json",
+      "sha256": "b0c3524608c420088c9368118fe81d6df3a62ce81638212d65c0578543218224",
+      "snapshot": "evidence/khazic/B-030000-best/core/B-030000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-030000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-030000-best/core/B-030000-best/nyu/full.json",
+      "sha256": "6f52f9c16f4982180b9a67d9ab951c30260e6e6731b604f02dd8bc87644a8196",
+      "snapshot": "evidence/khazic/B-030000-best/core/B-030000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-030000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-030000-best/core/B-030000-best/reasonseg/full.json",
+      "sha256": "dc0989e45c07e14bdab466a9fa594e2a1f4a586e2c8ab46fd208b111ce542200",
+      "snapshot": "evidence/khazic/B-030000-best/core/B-030000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-040000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-040000-best/core/B-040000-best/cityscapes/full.json",
+      "sha256": "f401f3a6649bf2cac0c080a55cec0e23ed613935e5ed02e47748e88e728062a5",
+      "snapshot": "evidence/khazic/B-040000-best/core/B-040000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-040000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-040000-best/core/B-040000-best/diode/full.json",
+      "sha256": "901ffbb304f95e66d605d270acc8134538cf5290734439175513442626e17093",
+      "snapshot": "evidence/khazic/B-040000-best/core/B-040000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-040000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-040000-best/core/B-040000-best/eth3d/full.json",
+      "sha256": "cf80e72b4f6aadf56b49eeb94a69d3c963f7732eef2389c796b7ae32967b1c73",
+      "snapshot": "evidence/khazic/B-040000-best/core/B-040000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-040000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-040000-best/core/B-040000-best/nyu/full.json",
+      "sha256": "a876c7b5444c6c2b62f7cccad512ec1c4b988155a41eaf82dae4e28af3933b87",
+      "snapshot": "evidence/khazic/B-040000-best/core/B-040000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-040000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-040000-best/core/B-040000-best/reasonseg/full.json",
+      "sha256": "7360298a81463c77fcef54d7815c31244143163ef29848dce2792dff6f638765",
+      "snapshot": "evidence/khazic/B-040000-best/core/B-040000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-050000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-050000-best/core/B-050000-best/cityscapes/full.json",
+      "sha256": "c07bb1e060c75c93a6b0bd5a281c97d05fc43dbedfdb429069a343004aab3835",
+      "snapshot": "evidence/khazic/B-050000-best/core/B-050000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-050000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-050000-best/core/B-050000-best/diode/full.json",
+      "sha256": "1b402353ba65dad23b41a4328eb6f0bce9b96f1a23c51ce3168a24f934431cd1",
+      "snapshot": "evidence/khazic/B-050000-best/core/B-050000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-050000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-050000-best/core/B-050000-best/eth3d/full.json",
+      "sha256": "ce7024b3884c68e665fae204ba3d39a6d3cb4a0a606505e91eab7e3487538b1e",
+      "snapshot": "evidence/khazic/B-050000-best/core/B-050000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-050000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-050000-best/core/B-050000-best/nyu/full.json",
+      "sha256": "ca615d7f15292b9d744c67b906a9e49891d82b3a58412a8f4b97fc33ee96b69d",
+      "snapshot": "evidence/khazic/B-050000-best/core/B-050000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-050000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-050000-best/core/B-050000-best/reasonseg/full.json",
+      "sha256": "090c8d04aad8b4fa3a6788e8fc1f662219a6295d7ebbb000e74b7894ad25c5ed",
+      "snapshot": "evidence/khazic/B-050000-best/core/B-050000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-057500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-057500-best/core/B-057500-best/cityscapes/full.json",
+      "sha256": "78b31d7cefd0cf36578a03301744be8068b6e679360f3eb93c90e040231363a5",
+      "snapshot": "evidence/khazic/B-057500-best/core/B-057500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-057500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-057500-best/core/B-057500-best/diode/full.json",
+      "sha256": "17b489bb0bb9da6c9d33d485e0719aaa4b718be53c00fcb58993fb7c4edff80e",
+      "snapshot": "evidence/khazic/B-057500-best/core/B-057500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-057500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-057500-best/core/B-057500-best/eth3d/full.json",
+      "sha256": "aee55ed2adcabac2db2c3c598661ae9c7531bc2ce6fc1d6311b18da5885ffe10",
+      "snapshot": "evidence/khazic/B-057500-best/core/B-057500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-057500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-057500-best/core/B-057500-best/nyu/full.json",
+      "sha256": "c3f8d51a757611cbb3e91d9bc16e88b7df270b4aeb5c64006ee5f949284382f9",
+      "snapshot": "evidence/khazic/B-057500-best/core/B-057500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-057500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-057500-best/core/B-057500-best/reasonseg/full.json",
+      "sha256": "72f5e242c750e56c4ac4bdef5e5d825a689df7ffd54d40774bf05570732fd467",
+      "snapshot": "evidence/khazic/B-057500-best/core/B-057500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-060000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-060000-best/core/B-060000-best/cityscapes/full.json",
+      "sha256": "3ac35833c40d4947af0821840f13ac8266a99aa9d3fd1ec25cc342f927114cd5",
+      "snapshot": "evidence/khazic/B-060000-best/core/B-060000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-060000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-060000-best/core/B-060000-best/diode/full.json",
+      "sha256": "efaa5a19a4a94e34c5177d61d46da4a500c1c7d7ac710324222e904f416b37b9",
+      "snapshot": "evidence/khazic/B-060000-best/core/B-060000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-060000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-060000-best/core/B-060000-best/eth3d/full.json",
+      "sha256": "ed706df2a355874eec0b56e5eba20e9d4da2a985e0d41179cca308ee06fb22b0",
+      "snapshot": "evidence/khazic/B-060000-best/core/B-060000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-060000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-060000-best/core/B-060000-best/nyu/full.json",
+      "sha256": "0f57f5b16bbeacc7ac64349fa6a14409caa4b4460810c84a628ee23b6b3f06fd",
+      "snapshot": "evidence/khazic/B-060000-best/core/B-060000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-060000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-060000-best/core/B-060000-best/reasonseg/full.json",
+      "sha256": "c035d35fb11a06480f63b58f3fb2bd22c33ba4db2a6ef245e4a72a21dc3da5e2",
+      "snapshot": "evidence/khazic/B-060000-best/core/B-060000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-065000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-065000-best/core/B-065000-best/cityscapes/full.json",
+      "sha256": "ac81041db51f1368aad3df6310ba59ab5ce2567abb2e7e4f9f00abf6024ea527",
+      "snapshot": "evidence/khazic/B-065000-best/core/B-065000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-065000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-065000-best/core/B-065000-best/diode/full.json",
+      "sha256": "a509ebf64d949e316f7f93fe21deb40a47c68aa3745368e49e38435f626f1c43",
+      "snapshot": "evidence/khazic/B-065000-best/core/B-065000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-065000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-065000-best/core/B-065000-best/eth3d/full.json",
+      "sha256": "78fa8cbb70b5b1384e92db4df2bb77569e053eefd48900c7dc27420a49d4ee84",
+      "snapshot": "evidence/khazic/B-065000-best/core/B-065000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-065000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-065000-best/core/B-065000-best/nyu/full.json",
+      "sha256": "bd178d62468925b20eea44c04190c0889e06b4a84f7710b3964f9d7a090cd8ea",
+      "snapshot": "evidence/khazic/B-065000-best/core/B-065000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-065000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-065000-best/core/B-065000-best/reasonseg/full.json",
+      "sha256": "b858e4720e12b5be13739445ddfdc9c0ec36b65e20357f97efdc0685fe30ff72",
+      "snapshot": "evidence/khazic/B-065000-best/core/B-065000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-067500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-067500-best/core/B-067500-best/cityscapes/full.json",
+      "sha256": "c404aeb4d87f6ac82bccd19eb016bd6b8d579b63d67b3ad336d24e35fffa722b",
+      "snapshot": "evidence/khazic/B-067500-best/core/B-067500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-067500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-067500-best/core/B-067500-best/diode/full.json",
+      "sha256": "67f9f98fffcb8ef6bbd305c075bc9e31a51494817a582d07d45260da9faa221e",
+      "snapshot": "evidence/khazic/B-067500-best/core/B-067500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-067500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-067500-best/core/B-067500-best/eth3d/full.json",
+      "sha256": "ac4b80f21bf643242d4c6c6e41dc41465a8a81a4a1789be4018be7f09f3b8af5",
+      "snapshot": "evidence/khazic/B-067500-best/core/B-067500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-067500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-067500-best/core/B-067500-best/nyu/full.json",
+      "sha256": "9d27dad130fc5f28a978e85c027ede967d9660456adde9a4450364eabcb8aaa9",
+      "snapshot": "evidence/khazic/B-067500-best/core/B-067500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-067500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-067500-best/core/B-067500-best/reasonseg/full.json",
+      "sha256": "64441fbd0b36b5188121aceb6099b6806672a215b4ff3109688e4c5bf674c8bd",
+      "snapshot": "evidence/khazic/B-067500-best/core/B-067500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-070000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-070000-best/core/B-070000-best/cityscapes/full.json",
+      "sha256": "8685b4db02e04028e3eb0a43d5f2785bb475910c7a27a154054430bf1edd92dc",
+      "snapshot": "evidence/khazic/B-070000-best/core/B-070000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-070000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-070000-best/core/B-070000-best/diode/full.json",
+      "sha256": "b35efef735367d18758c136f371600970994537e5843c9da13ab06f01c4caba8",
+      "snapshot": "evidence/khazic/B-070000-best/core/B-070000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-070000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-070000-best/core/B-070000-best/eth3d/full.json",
+      "sha256": "f3cfe9a4e245639f6aa49c7edd41bc5d05972e15f2f27bd3b533e56f57860180",
+      "snapshot": "evidence/khazic/B-070000-best/core/B-070000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-070000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-070000-best/core/B-070000-best/nyu/full.json",
+      "sha256": "4ee62243927b8c1edb06019d85e31164948508727e856b89e947be864ba0ce1a",
+      "snapshot": "evidence/khazic/B-070000-best/core/B-070000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-070000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-070000-best/core/B-070000-best/reasonseg/full.json",
+      "sha256": "611feadc6e0196a52feeeb49e9c075e8c086a10166ebafa81830424dcc9aa258",
+      "snapshot": "evidence/khazic/B-070000-best/core/B-070000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-075000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-075000-best/core/B-075000-best/cityscapes/full.json",
+      "sha256": "11b08e78b792e2e8aacc9aa767a0c6fa5cc4350e46b8f56d3db7dc659a49b90d",
+      "snapshot": "evidence/khazic/B-075000-best/core/B-075000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-075000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-075000-best/core/B-075000-best/diode/full.json",
+      "sha256": "834639a344b0f17f88625dee383fff89a7e16bab651c2d3c2b13a89c87cf6f40",
+      "snapshot": "evidence/khazic/B-075000-best/core/B-075000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-075000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-075000-best/core/B-075000-best/eth3d/full.json",
+      "sha256": "05c37e375fe85786d63f99b924c5053da0682407f4b8aa13168444bfc033a0d5",
+      "snapshot": "evidence/khazic/B-075000-best/core/B-075000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-075000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-075000-best/core/B-075000-best/nyu/full.json",
+      "sha256": "69469b3de3dfcac39f69f1138fae4ba7b05d920dc7c63971b1a26a2a9eac5c69",
+      "snapshot": "evidence/khazic/B-075000-best/core/B-075000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-075000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-075000-best/core/B-075000-best/reasonseg/full.json",
+      "sha256": "29c08beaa9609b3a9c57602420772486129d3b1d930bc2e1cc391a239cc7f841",
+      "snapshot": "evidence/khazic/B-075000-best/core/B-075000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-080000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-080000-best/core/B-080000-best/cityscapes/full.json",
+      "sha256": "e47c6a0a1bb867895eafc259775f912ee02db97d74c5c9f9ada8f1e1b52e7f3d",
+      "snapshot": "evidence/khazic/B-080000-best/core/B-080000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-080000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-080000-best/core/B-080000-best/diode/full.json",
+      "sha256": "53020774ef5a5f674998ec6d75373ef52a33cb8b5f7ededdbb10720d0dea7334",
+      "snapshot": "evidence/khazic/B-080000-best/core/B-080000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-080000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-080000-best/core/B-080000-best/eth3d/full.json",
+      "sha256": "62d50ea986727fc40f5cbf4228fddd5da612fd44db98c328b3f459aecfc13cfb",
+      "snapshot": "evidence/khazic/B-080000-best/core/B-080000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-080000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-080000-best/core/B-080000-best/nyu/full.json",
+      "sha256": "b9b7b2c9fc86ce0a019cdcdc597eae52e30d66fd299eb9f9470c5b9b6eda424c",
+      "snapshot": "evidence/khazic/B-080000-best/core/B-080000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-080000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-080000-best/core/B-080000-best/reasonseg/full.json",
+      "sha256": "c98de8f1a16adfbed675e5c6e3a2b33d4f019d795c3ed2eab922cc447346560f",
+      "snapshot": "evidence/khazic/B-080000-best/core/B-080000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-085000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-085000-best/core/B-085000-best/cityscapes/full.json",
+      "sha256": "45c13054a2582684670339636de79325dfb4b3d967a606d207a1fb4e5322e533",
+      "snapshot": "evidence/khazic/B-085000-best/core/B-085000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-085000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-085000-best/core/B-085000-best/diode/full.json",
+      "sha256": "e1e25ba3f36fa55c10a2d4384eedaac5d654d34679d9e811a2a7c9d63132759c",
+      "snapshot": "evidence/khazic/B-085000-best/core/B-085000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-085000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-085000-best/core/B-085000-best/eth3d/full.json",
+      "sha256": "6c5f3ddd99fe644825a60601db0766b3d8a3f9f805bb5980aa31667c62d924df",
+      "snapshot": "evidence/khazic/B-085000-best/core/B-085000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-085000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-085000-best/core/B-085000-best/nyu/full.json",
+      "sha256": "afead4edc3fb97e9de3abd502cdb0f05df551a2c77b9f424fd84480060bb90a1",
+      "snapshot": "evidence/khazic/B-085000-best/core/B-085000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-085000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-085000-best/core/B-085000-best/reasonseg/full.json",
+      "sha256": "bdc20677f0d227b83a1f4915bb6ad6155c8e67eb8aba28dfa0463049c416db63",
+      "snapshot": "evidence/khazic/B-085000-best/core/B-085000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-087500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-087500-best/core/B-087500-best/cityscapes/full.json",
+      "sha256": "38a33cb8fae72294b1a96b819484b34aef670ac7a2208944a42c15697b90e365",
+      "snapshot": "evidence/khazic/B-087500-best/core/B-087500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-087500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-087500-best/core/B-087500-best/diode/full.json",
+      "sha256": "b6e2830fa43f174036a4664d41fea8f446649f1645ec1abae2db0bf94c7cd944",
+      "snapshot": "evidence/khazic/B-087500-best/core/B-087500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-087500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-087500-best/core/B-087500-best/eth3d/full.json",
+      "sha256": "658fff56f87fb6cffdea77476b8104cb15d2b80f74e24036f23edf61fc15e404",
+      "snapshot": "evidence/khazic/B-087500-best/core/B-087500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-087500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-087500-best/core/B-087500-best/nyu/full.json",
+      "sha256": "ebeabca7896576883bfb2b24b276c4565d3615c950df72793b09a4aff38457e5",
+      "snapshot": "evidence/khazic/B-087500-best/core/B-087500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-087500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-087500-best/core/B-087500-best/reasonseg/full.json",
+      "sha256": "270a6722585e4e56c9999f1d9f242a284009884458163d61006590d4a47ec04c",
+      "snapshot": "evidence/khazic/B-087500-best/core/B-087500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-092500-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-092500-best/core/B-092500-best/cityscapes/full.json",
+      "sha256": "2e4a6f1284f338afc29d2a0a1c5aa24b10895263c8b4a7b8d73190678f6ec64d",
+      "snapshot": "evidence/khazic/B-092500-best/core/B-092500-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-092500-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-092500-best/core/B-092500-best/diode/full.json",
+      "sha256": "049d0b5d2f5ea51be4e91cc0658ca4f9f918e068781f8e46529c9e2e18b91ec7",
+      "snapshot": "evidence/khazic/B-092500-best/core/B-092500-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-092500-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-092500-best/core/B-092500-best/eth3d/full.json",
+      "sha256": "b7bf20e229a817859a2516580e2b93f1492ad75b49e8aa2071fc8f27ffbdb9d1",
+      "snapshot": "evidence/khazic/B-092500-best/core/B-092500-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-092500-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-092500-best/core/B-092500-best/nyu/full.json",
+      "sha256": "1adddacc82325cbba5473024475e5794ca86977d55cfa54573a4c2c051e08174",
+      "snapshot": "evidence/khazic/B-092500-best/core/B-092500-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-092500-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-092500-best/core/B-092500-best/reasonseg/full.json",
+      "sha256": "a739b72cbfae806626413432e4a912bbdc902a40c9bb8322a050b58fc8e61a31",
+      "snapshot": "evidence/khazic/B-092500-best/core/B-092500-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-095000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-095000-best/core/B-095000-best/cityscapes/full.json",
+      "sha256": "ae463b957b0c2567f2336dadb0144cad0492c96f46c6900e73340d34bf969aa7",
+      "snapshot": "evidence/khazic/B-095000-best/core/B-095000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-095000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-095000-best/core/B-095000-best/diode/full.json",
+      "sha256": "193de338de36500aac4a24a381b1c6d761251417ffbcbdd94c67759e1fd3771c",
+      "snapshot": "evidence/khazic/B-095000-best/core/B-095000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-095000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-095000-best/core/B-095000-best/eth3d/full.json",
+      "sha256": "49ce1757c5a21990bc26093c7f7fcc7cb56c833ab973da2e9b8366c8c596b5da",
+      "snapshot": "evidence/khazic/B-095000-best/core/B-095000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-095000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-095000-best/core/B-095000-best/nyu/full.json",
+      "sha256": "677dbdd264676096b7e3c182371893e06962e115cd25821cd9fb6877b73eca6a",
+      "snapshot": "evidence/khazic/B-095000-best/core/B-095000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-095000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-095000-best/core/B-095000-best/reasonseg/full.json",
+      "sha256": "9210835141220462a8069b0303ccde0121fff5e4f18ae9cf763a4fa7e812a77e",
+      "snapshot": "evidence/khazic/B-095000-best/core/B-095000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-best",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-best/core/B-100000-best/cityscapes/full.json",
+      "sha256": "cfc44ba53ed6b281983b12e7ed801602dd1dabfb7f20f83c3cf4eae825fea308",
+      "snapshot": "evidence/khazic/B-100000-best/core/B-100000-best/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-best",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-best/core/B-100000-best/diode/full.json",
+      "sha256": "c6967e0defe12c1d39ed6e41591a926ee6b02dd6b7560369d218e66b63122e31",
+      "snapshot": "evidence/khazic/B-100000-best/core/B-100000-best/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-best",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-best/core/B-100000-best/eth3d/full.json",
+      "sha256": "3b24ffa4cab6dc09cd394b7808ed68e388509ef9b5308f05bebc2874c91a95f4",
+      "snapshot": "evidence/khazic/B-100000-best/core/B-100000-best/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-best",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-best/core/B-100000-best/nyu/full.json",
+      "sha256": "29f519c9151b4d4aadbc8ee4df2752a5bd0f9259b24cea391da934572130e8ac",
+      "snapshot": "evidence/khazic/B-100000-best/core/B-100000-best/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-best",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-best/core/B-100000-best/reasonseg/full.json",
+      "sha256": "3e92943537488097c58031e61ce201ed1436f521d3532f1b2d5dd2e8bdb25360",
+      "snapshot": "evidence/khazic/B-100000-best/core/B-100000-best/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-final",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-final/core/B-100000-final/cityscapes/full.json",
+      "sha256": "522ff43badbdd6469548443ff052ce127ad7cb04c06eb784387e33fb89dd60b4",
+      "snapshot": "evidence/khazic/B-100000-final/core/B-100000-final/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-final",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-final/core/B-100000-final/diode/full.json",
+      "sha256": "067f811c63e6d11f540f38b7110423e2c571c1f3f8b12011e8a537b777d1d9fa",
+      "snapshot": "evidence/khazic/B-100000-final/core/B-100000-final/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-final",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-final/core/B-100000-final/eth3d/full.json",
+      "sha256": "d77de63e3efffe6021dadb9395d9dd0169f99e28aebaf6277870267fd3210aac",
+      "snapshot": "evidence/khazic/B-100000-final/core/B-100000-final/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-final",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-final/core/B-100000-final/nyu/full.json",
+      "sha256": "121b968ac7364fcb1f43c4b9a00f351e48d34d8ae8d3303b7d586f5953eccca9",
+      "snapshot": "evidence/khazic/B-100000-final/core/B-100000-final/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "B-100000-final",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/B-100000-final/core/B-100000-final/reasonseg/full.json",
+      "sha256": "84b5929b82937aa01df23abb74ea116706ea309990616fef40c6427c0fc4bc06",
+      "snapshot": "evidence/khazic/B-100000-final/core/B-100000-final/reasonseg/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "base-000000",
+      "dataset": "cityscapes",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/base-000000/core/base-000000/cityscapes/full.json",
+      "sha256": "0080a5863dd49e835c29e648f8efbdba832ac504321879b36ba74aa8011424eb",
+      "snapshot": "evidence/khazic/base-000000/core/base-000000/cityscapes/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "base-000000",
+      "dataset": "diode",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/base-000000/core/base-000000/diode/full.json",
+      "sha256": "e1e1997c79a22c2606bf52b2a4ec2810e161c0a102355d361093cb9133305176",
+      "snapshot": "evidence/khazic/base-000000/core/base-000000/diode/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "base-000000",
+      "dataset": "eth3d",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/base-000000/core/base-000000/eth3d/full.json",
+      "sha256": "31ce0d4d381b06a7c287cde0153565da290e87844a1bfbcaf467027d9b4f3996",
+      "snapshot": "evidence/khazic/base-000000/core/base-000000/eth3d/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "base-000000",
+      "dataset": "nyu",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/base-000000/core/base-000000/nyu/full.json",
+      "sha256": "9da67c9bc136fdcdf7fe897fcefc6cb72d83cea18d5e9186a17a2991ab0ebd56",
+      "snapshot": "evidence/khazic/base-000000/core/base-000000/nyu/full.json"
+    },
+    {
+      "source": "khazic",
+      "model": "base-000000",
+      "dataset": "reasonseg",
+      "url": "https://huggingface.co/khazic/ovb-i120-external-eval/blob/88f43c92048111bd25b4483e0117494937acb27f/base-000000/core/base-000000/reasonseg/full.json",
+      "sha256": "64c5a8bb7faf3ac13dc25f4c870845ce84186c58ca455d30d5786144a544d588",
+      "snapshot": "evidence/khazic/base-000000/core/base-000000/reasonseg/full.json"
+    }
+  ],
+  "paired_identities": [
+    {
+      "label": "A · 10,000_best",
+      "local_id": "ruilin:I108-A-10000",
+      "hf_id": "khazic:A-010000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "193e2e4f8f99d3ebe97b8bd0dd49dcebba4aea3ff6a51e81075414b18d58b93c",
+      "hf_adapter_sha256": "193e2e4f8f99d3ebe97b8bd0dd49dcebba4aea3ff6a51e81075414b18d58b93c"
+    },
+    {
+      "label": "A · 80,000_best",
+      "local_id": "ruilin:I108-A-80000",
+      "hf_id": "khazic:A-080000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "b9ecfaf9e445e58a80d4d706c438dd8f99ac6b496061336003f28d44a0dd9fa7",
+      "hf_adapter_sha256": "b9ecfaf9e445e58a80d4d706c438dd8f99ac6b496061336003f28d44a0dd9fa7"
+    },
+    {
+      "label": "A · 90,000_best",
+      "local_id": "ruilin:I108-A-90000",
+      "hf_id": "khazic:A-090000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "3295b8f12ab1c323748f63946de4c45ed301927e8e21f0ff0139de65b1037cf1",
+      "hf_adapter_sha256": "3295b8f12ab1c323748f63946de4c45ed301927e8e21f0ff0139de65b1037cf1"
+    },
+    {
+      "label": "A · 95,000_best",
+      "local_id": "ruilin:I108-A-95000",
+      "hf_id": "khazic:A-095000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "32a183a1cf94b3a0e9afed381e2500a692bb98c3999a0add675ca1404fd542aa",
+      "hf_adapter_sha256": "32a183a1cf94b3a0e9afed381e2500a692bb98c3999a0add675ca1404fd542aa"
+    },
+    {
+      "label": "B · 10,000_best",
+      "local_id": "ruilin:I108-B-10000",
+      "hf_id": "khazic:B-010000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "adffac166811305daa550e0008dcffcdd2bc5175f18c2c702ba9193ae7a22153",
+      "hf_adapter_sha256": "adffac166811305daa550e0008dcffcdd2bc5175f18c2c702ba9193ae7a22153"
+    },
+    {
+      "label": "B · 20,000_best",
+      "local_id": "ruilin:I108-B-20000",
+      "hf_id": "khazic:B-020000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "f00541e1568ca9a2ba5026b99e1f5891cc4621b6dddcdc8d26769656897642c5",
+      "hf_adapter_sha256": "f00541e1568ca9a2ba5026b99e1f5891cc4621b6dddcdc8d26769656897642c5"
+    },
+    {
+      "label": "B · 95,000_best",
+      "local_id": "ruilin:I108-B-95000",
+      "hf_id": "khazic:B-095000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "0dac24f4acb0ba3cf95a73815a85fbc8908ca8e4ebd26c2c72a32af19a05025f",
+      "hf_adapter_sha256": "0dac24f4acb0ba3cf95a73815a85fbc8908ca8e4ebd26c2c72a32af19a05025f"
+    },
+    {
+      "label": "B · 100,000_best",
+      "local_id": "ruilin:I108-B-100000",
+      "hf_id": "khazic:B-100000-best",
+      "weight_match": true,
+      "local_adapter_sha256": "fbd0a1a85ad6f42308196298077355ba3bd02fb978355c9f8b5f742b1a38d091",
+      "hf_adapter_sha256": "fbd0a1a85ad6f42308196298077355ba3bd02fb978355c9f8b5f742b1a38d091"
+    }
+  ]
+}
