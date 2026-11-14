@@ -433,3 +433,38 @@ def test_full_train_loop_saves_validates_and_closes_the_group(group, tmp_path):
     assert names == ["checkpoint-2", "checkpoint-4", "checkpoint-4_best", "checkpoint-4_final"]
     assert torch.load(out / "train_state" / "extra.pt", weights_only=False)["step"] == 4
     assert trainer.callbacks.best_val_loss == 0.4
+
+
+def test_train_loop_logs_the_grad_norm_of_every_step(group, tmp_path):
+    trainer = _full_trainer(tmp_path, seed=20, steps=4, grad_accum=1)
+    trainer.callbacks.log_every = 2
+    trainer.callbacks.save_every = trainer.callbacks.eval_every = 100
+    model = trainer.backend.peft_model
+    trainer.start_step = 0
+    trainer.trainable_params = list(model.parameters())
+    trainer.train_loader = torch.utils.data.DataLoader(list(range(4)), batch_size=1)
+    trainer.val_loader = None
+    trainer._train_step = lambda batch, step: {
+        "loss": model(torch.randn(1, 4)).float().pow(2).mean(),
+        "total_loss": 0.0,
+        "flow_loss": 0.0,
+        "depth_aux": 0.0,
+        "normal_aux": 0.0,
+    }
+    logged = []
+    trainer.callbacks.on_log = lambda step, total, metrics, *args: logged.append((step, dict(metrics)))
+    try:
+        trainer.train()
+    finally:
+        distributed.ensure_process_group()
+
+    path = trainer.callbacks.output_dir / "grad_norm.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [row["step"] for row in rows] == [1, 2, 3, 4]
+    assert not any(row["dropped"] for row in rows)
+    norms = [row["grad_norm"] for row in rows]
+    assert all(norm > 0 for norm in norms)
+    assert [step for step, _ in logged] == [2, 4]
+    for (_, metrics), window in zip(logged, (norms[:2], norms[2:])):
+        assert metrics["grad_norm_mean"] == pytest.approx(sum(window) / len(window))
+        assert metrics["grad_norm_max"] == max(window)
