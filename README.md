@@ -21,7 +21,7 @@
 
 <br>
 
-<img src="docs/assets/fig1_overview.png" alt="Open-Vision-Banana overview: one frozen Qwen-Image-2.1 backbone with a shared LoRA turns a source image and a task instruction into an RGB prediction, which a parameter-free decoder converts to metric depth, class IDs, instance masks or a referring mask" width="100%">
+<img src="docs/assets/fig1_overview.png" alt="Open-Vision-Banana overview: a frozen generative backbone (Qwen-Image-2.1 by default, swappable by config for FLUX.1, FLUX.2, Qwen-Image-Edit, SANA and more) with a new rank-64 LoRA turns a source image and a task instruction into an RGB prediction, which a parameter-free decoder converts to metric depth, class IDs, instance masks or a referring mask" width="100%">
 
 <sub><b>Overview.</b> A frozen image generator with one shared LoRA adapter answers every task with an RGB image; a fixed, parameter-free decoder turns that image back into metric depth, a class-ID map, instance masks or a binary referring mask. Each task is fully specified by its contract (encoder, instruction, decoder).</sub>
 
