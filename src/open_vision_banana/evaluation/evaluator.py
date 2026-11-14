@@ -691,9 +691,7 @@ class VisionEvaluator:
                         suffix = "_native" if native_resolution else ""
                         variant_gt = variant["gt_mask" + suffix].to(self.device).bool()
                         variant_valid = variant["valid_mask" + suffix].to(self.device).bool()
-                        # The primary GT falls back to a canvas-size empty mask when a query's
-                        # legacy mask is empty, while variants always carry the native image size,
-                        # so the prediction is resized per variant exactly as for the primary GT.
+                        # Variants keep the native size even when the primary GT falls back to the canvas.
                         variant_pred = _resize_mask_to(pred_mask, variant_gt.shape[-2:])
                         accumulator.update(variant_pred, variant_gt, valid_mask=variant_valid)
                         reasonseg_variant_valid_pixels[name] += int(variant_valid.sum().item())

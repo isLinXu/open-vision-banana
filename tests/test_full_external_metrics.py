@@ -118,8 +118,7 @@ def test_export_refuses_unmerged_shards(tmp_path):
 
 
 def test_empty_legacy_mask_scores_variants_at_native_size(tmp_path):
-    # No shapes: the primary GT falls back to an empty canvas-size mask while both variants keep
-    # the native 10x12 image size; the prediction must be resized per variant instead of crashing.
+    # shapes=[]: the primary GT is canvas-size, both variants are the native 10x12.
     Image.new("RGB", (12, 10)).save(tmp_path / "a.jpg")
     (tmp_path / "a.json").write_text(json.dumps(dict(text=["query"], shapes=[])))
     ds = ReasonSegDataset(tmp_path, resolution=6, native_gt=True, report_annotation_variants=True)
