@@ -2,17 +2,22 @@
 
 # 🍌 Open-Vision-Banana
 
-**An open reimplementation of "Image Generators are Generalist Vision Learners"**
+**An open, community reproduction of Vision Banana — *Image Generators are Generalist Vision Learners***
 
-*Instruction-tune an open image generator so that depth, surface normals and segmentation all come out as RGB images.*
+*Instruction-tune an open image generator so that depth, surface normals and segmentation all come out as RGB images — with open weights, public data and an auditable evaluation.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-2000+-green.svg)](tests/)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.20329-b31b1b.svg)](https://arxiv.org/abs/2604.20329)
 [![Checkpoints](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints-yellow.svg)](https://huggingface.co/khazic?search=ovb-)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/isLinXu/open-vision-banana/actions/workflows/ci.yml/badge.svg)](https://github.com/isLinXu/open-vision-banana/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-2000+-green.svg)](tests/)
 
-[Results](#results) · [Quick Start](#quick-start) · [Training](#training) · [Checkpoints](#checkpoints) · [Datasets](docs/DATASETS.md) · [Paper alignment](#paper-alignment-statement)
+[![GitHub stars](https://img.shields.io/github/stars/isLinXu/open-vision-banana?style=social)](https://github.com/isLinXu/open-vision-banana/stargazers)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
+[![Help wanted](https://img.shields.io/badge/help%20wanted-open%20problems-orange.svg)](#where-we-need-help)
+
+[News](#-news) · [Results](#-results) · [Quick Start](#-quick-start) · [Training](#training) · [Contributing](#-contributing) · [Datasets](docs/DATASETS.md) · [Paper alignment](#paper-alignment-statement)
 
 <br>
 
@@ -23,49 +28,76 @@
 </div>
 
 > [!IMPORTANT]
-> This is an **unofficial, community reimplementation**. It is not affiliated with the paper's authors. The paper reports state-of-the-art zero-shot transfer with a closed base model and in-house data; **this repository has not reproduced those numbers**. Measured scores are in [Results](#results).
+> This is an **unofficial, community reproduction**. It is not affiliated with or endorsed by the paper's authors. Vision Banana is built on the closed Nano Banana Pro model and in-house data; **this repository has not reproduced the paper's numbers**. Our measured scores are in [Results](#-results), next to the paper's for reference.
 
 ---
 
 ## Table of Contents
 
-External evaluation collaborators: [reproduction guide and protocol audit](docs/external-evaluation-handoff.md),
-[public benchmark input package](https://huggingface.co/datasets/Melo111/open-vision-banana-external-eval).
-
-- [Overview](#overview)
-- [How It Works](#how-it-works)
-- [Results](#results)
-- [Supported Tasks](#supported-tasks)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Models](#models)
-- [Training](#training)
-- [Key Algorithms](#key-algorithms)
-- [Checkpoints](#checkpoints)
-- [Paper Alignment Statement](#paper-alignment-statement)
-- [Benchmarks (from paper)](#benchmarks-from-paper)
-- [Evaluation & Export](#evaluation--export)
-- [Docker](#docker)
-- [Project Structure](#project-structure)
-- [Roadmap & TODO](#roadmap--todo)
-- [Citation](#citation)
-- [License](#license)
+- [News](#-news) · [Why Open-Vision-Banana](#-why-open-vision-banana) · [Gallery](#-gallery) · [How It Works](#how-it-works) · [Results](#-results)
+- [Quick Start](#-quick-start) · [Models](#models) · [Training](#training) · [Supported Tasks](#supported-tasks) · [Key Algorithms](#key-algorithms)
+- [Checkpoints](#checkpoints) · [Paper Alignment](#paper-alignment-statement) · [Benchmarks (from paper)](#benchmarks-from-paper) · [Evaluation & Export](#evaluation--export)
+- [Docker](#docker) · [Project Structure](#project-structure) · [Contributing](#-contributing) · [Roadmap](#roadmap) · [Citation](#citation) · [License](#license)
 
 ---
 
-## Overview
+## 📰 News
 
-Vision Banana demonstrates that **state-of-the-art visual understanding can emerge from image generation pretraining**. By instruction-tuning an image generator on a mixture of its original training data and vision task data, the paper obtains a model with strong zero-shot transfer on segmentation, depth estimation, and surface normal estimation — all through the lens of image generation. This repository reimplements that recipe on open backbones and public data; its measured results are well below the paper's (see [Benchmarks](#benchmarks-from-paper)).
+- **[2026-11-14]** 🔥 Prepared for the public release: cleaned code and docs, new overview and task-contract figures, and the I108 Fusion r64 results from an external evaluation ([#122](https://github.com/isLinXu/open-vision-banana/pull/122), [#128](https://github.com/isLinXu/open-vision-banana/pull/128)).
+- **[2026-11-12]** 🎨 Interactive showcase in [`demo/`](demo/): normal-map relighting, depth point clouds and segmentation comparisons ([#121](https://github.com/isLinXu/open-vision-banana/pull/121)).
+- **[2026-11-11]** 🎲 Depth seed ensembles in evaluation (`--depth-seed-ensemble K`, [#117](https://github.com/isLinXu/open-vision-banana/pull/117)) and experimental post-training objectives, on-policy distillation and GRPO ([#114](https://github.com/isLinXu/open-vision-banana/pull/114)).
+- **[2026-11-10]** 📏 Optional metric-depth scale loss for the absolute-scale gap ([#113](https://github.com/isLinXu/open-vision-banana/pull/113), [docs](docs/metric_depth_scale_ablation.md)).
+- **[2026-11-08]** 🚀 Fusion r64 large-scale plan: two 100k-step rsLoRA r64 arms on a fused Qwen-Image-2.1 base ([#109](https://github.com/isLinXu/open-vision-banana/pull/109), [docs](docs/fusion_r64_large_scale_plan.md)).
+- **[2026-11-05]** 🏠 Observed indoor-depth supplement from ARKitScenes, DIODE and SUN RGB-D ([#104](https://github.com/isLinXu/open-vision-banana/pull/104)); versioned referring query prompts `query_v2` ([#103](https://github.com/isLinXu/open-vision-banana/pull/103)).
 
-> **Key insight**: All vision tasks are parameterized as RGB images, enabling seamless integration with generative models while (per the paper) retaining the base model's generation capability. Generation retention has not been measured in this repo.
+<details>
+<summary><b>Earlier</b></summary>
 
-**Highlights**
+- **[2026-11-03]** COCONut-B semantic and instance supervision ([#100](https://github.com/isLinXu/open-vision-banana/pull/100), [docs](docs/coconut_segmentation.md)).
+- **[2026-11-02]** Full fine-tuning mode ([#94](https://github.com/isLinXu/open-vision-banana/pull/94)) and LingBot full-pool depth experiments ([#98](https://github.com/isLinXu/open-vision-banana/pull/98)).
+- **[2026-10-28]** Static project page in [`website/`](website/) ([#85](https://github.com/isLinXu/open-vision-banana/pull/85)).
+- **[2026-10-23]** Line-by-line paper-alignment audit, 58 checkable statements ([#46](https://github.com/isLinXu/open-vision-banana/pull/46), [docs](docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md)).
+- **[2026-09-10]** v0.5.0, the pre-open-source release ([CHANGELOG](CHANGELOG.md)).
 
-- 🎨 **Unified RGB paradigm** — Vision tasks encoded as RGB images and decoded back to structured outputs
-- 🔧 **Multi-model registry** — Qwen-Image-2.1, SANA and FLUX.1-dev have been trained end to end; the other registered backbones (Z-Image, Lumina2, Chroma, …) are not verified
-- 📊 **Tasks** — Depth, surface normals and semantic / instance / referring segmentation are trained and evaluated; edge, flow, keypoint, detection and depth-edge have mapper code only
-- ⚡ **Efficient tuning** — rsLoRA trains only 0.5%-1% of parameters
-- 🚀 **Pipeline** — Data preparation, training, inference and paper-protocol evaluation; the export and serving modules are not verified against the unified trainer
+</details>
+
+---
+
+## ✨ Why Open-Vision-Banana
+
+Vision Banana shows that instruction-tuning an image generator on a small amount of vision data, with every output written as an RGB image, gives one model that does segmentation, depth and normals. Its base model and data are closed. This repository rebuilds the recipe in the open so that anyone can train it, measure it and improve it.
+
+- 🧩 **One interface for every task.** Each task is a *contract*: an RGB encoder, an instruction and a deterministic decoder. Depth, normals, semantic, instance and referring segmentation share one generator and one adapter.
+- 🔓 **Open end to end.** Open backbones (Qwen-Image-2.1, SANA-1600M, FLUX.1-dev), public data with download → prepare → audit scripts, and published LoRAs on the Hugging Face Hub.
+- 🔬 **Honest, auditable evaluation.** Paper protocols on official splits at native resolution, a zero-shot leakage audit, raw metrics as the headline with aligned metrics marked as diagnostics, and a 58-item audit against the paper text.
+- ⚡ **Parameter-efficient.** rsLoRA r32 / r64 trains about 1.2 % / 2.4 % of the 7B Qwen-Image-2.1 transformer. One trainer drives 40+ registered model configurations.
+- 🧪 **Built for research.** 2,000+ tests, seed-ensemble and depth-scale diagnostics, sharded evaluation and per-task validation losses.
+
+---
+
+## 🎥 Gallery
+
+<table>
+  <tr><th></th><th>Input</th><th>Prediction</th><th>Ground truth</th></tr>
+  <tr><td><b>Depth</b></td>
+    <td><img src="demo/assets/samples/depth/2_input.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/depth/2_output.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/depth/2_target.jpg" width="200"></td></tr>
+  <tr><td><b>Depth</b></td>
+    <td><img src="demo/assets/samples/depth/4_input.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/depth/4_output.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/depth/4_target.jpg" width="200"></td></tr>
+  <tr><td><b>Normals</b></td>
+    <td><img src="demo/assets/samples/normal/3_input.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/normal/3_output.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/normal/3_target.jpg" width="200"></td></tr>
+  <tr><td><b>Normals</b></td>
+    <td><img src="demo/assets/samples/normal/4_input.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/normal/4_output.jpg" width="200"></td>
+    <td><img src="demo/assets/samples/normal/4_target.jpg" width="200"></td></tr>
+</table>
+
+<sub>SANA-1600M, <a href="https://huggingface.co/khazic/ovb-fix_best3_rank64_60k"><code>khazic/ovb-fix_best3_rank64_60k</code></a> (EMA, step 60k), on held-out rows of its training manifest. These are same-source samples, not a zero-shot benchmark. The interactive showcase with semantic segmentation, point clouds and relighting is in <a href="demo/"><code>demo/</code></a>: run <code>python -m http.server 8000 -d demo</code> and open <code>http://localhost:8000</code>.</sub>
 
 ---
 
@@ -104,11 +136,27 @@ flowchart LR
 
 ---
 
-## Results
+## 📊 Results
 
-### Measurements in this repository
+Our numbers are measured with this repository's `scripts/evaluate_paper_benchmarks.py`. Raw metric δ1 (no scale alignment) is the headline metric; per-image aligned δ1 is a diagnostic only and is not comparable to the paper. Rows marked *closed reference* are the numbers reported in the paper, shown for comparison only.
 
-Metric depth δ1 without scale alignment, and segmentation metrics, at native ground-truth resolution: NYU n=654, ETH3D n=454, DIODE indoor n=325, Cityscapes n=500, RefCOCOg n=4896, ReasonSeg n=200. Repos for each row are listed under [Checkpoints](#checkpoints).
+### Fusion r64 runs (I108, external evaluation)
+
+Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0r128-60-40`), rsLoRA r64, sampling mix depth 35 % / semantic 20 % / instance 20 % / referring 20 % / editing replay 5 % ([config](configs/experiments/fusion_r64_large_scale.yaml)). Arm A uses lr 3e-5 ([`ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3)), arm B lr 1e-5 ([`ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3)). Scores from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval): 512 canvas, 50 steps, guidance 4.0, strength 0.85, seed 42, native-resolution scoring. ReasonSeg here is n=344 (`query_mode=all`, `legacy_union` masks), so it is not directly comparable with the n=200 column above. Aligned δ1 in parentheses is a diagnostic only.
+
+| Checkpoint | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
+|-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
+| Fused base (no adapter) | 0.278 (0.873) | **0.292** (0.924) | 0.300 (0.844) | **0.386** | pending | 0.417 |
+| A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | pending | 0.357 |
+| B, step 20k | 0.340 (0.903) | 0.166 (0.910) | 0.229 (0.888) | 0.353 | pending | **0.440** |
+| B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | pending | 0.333 |
+| *Vision Banana (closed reference, from the paper)* | *0.948* | *0.935* | *0.917* | *0.699* | *0.738* | *0.793* |
+
+Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg has not been scored for these runs yet.
+
+### Earlier Qwen-Image-2.1 runs
+
+Metric depth δ1 without scale alignment, and segmentation metrics, at native ground-truth resolution: NYU n=654, ETH3D n=454, DIODE indoor n=325, Cityscapes n=500, RefCOCOg n=4896, ReasonSeg n=200. Checkpoint naming is explained under [Checkpoints](#checkpoints).
 
 | Run | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
 |-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
@@ -123,19 +171,6 @@ Metric depth δ1 without scale alignment, and segmentation metrics, at native gr
 | Vision Banana (closed reference, from the paper) | 0.948 | 0.935 | 0.917 | 0.699 | 0.738 | 0.793 |
 
 No run improves depth and segmentation together, and none beats the parent on every benchmark. The depth gap is mostly absolute scale: with per-image median alignment the best δ1 rises to 0.845 / 0.906 / 0.855 on NYU / ETH3D / DIODE, but aligned δ1 is a diagnostic only and is not comparable to the paper's protocol.
-
-### Fusion r64 runs (I108, external evaluation)
-
-Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0r128-60-40`), rsLoRA r64, sampling mix depth 35 % / semantic 20 % / instance 20 % / referring 20 % / editing replay 5 % ([config](configs/experiments/fusion_r64_large_scale.yaml)). Arm A uses lr 3e-5 ([`ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3)), arm B lr 1e-5 ([`ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3)). Scores from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval): 512 canvas, 50 steps, guidance 4.0, strength 0.85, seed 42, native-resolution scoring. ReasonSeg here is n=344 (`query_mode=all`, `legacy_union` masks), so it is not directly comparable with the n=200 column above. Aligned δ1 in parentheses is a diagnostic only.
-
-| Checkpoint | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
-|-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
-| Fused base (no adapter) | 0.278 (0.873) | **0.292** (0.924) | 0.300 (0.844) | **0.386** | pending | 0.417 |
-| A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | pending | 0.357 |
-| B, step 20k | 0.340 (0.903) | 0.166 (0.910) | 0.229 (0.888) | 0.353 | pending | **0.440** |
-| B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | pending | 0.333 |
-
-Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg has not been scored for these runs yet.
 
 <details>
 <summary><b>Earlier SANA-1600M and FLUX.1-dev runs</b></summary>
@@ -186,32 +221,14 @@ Paper reference numbers and the per-benchmark status table are in [Benchmarks (f
 
 ---
 
-## Supported Tasks
+## 🚀 Quick Start
 
-| Task | RGB encoding | Encoder / decoder | Public-data training pipeline |
-|------|--------------|:-----------------:|:---------------------:|
-| Metric Depth Estimation | Power transform + colormap (cube-edge, plasma, inferno, viridis, grayscale, rainbow, turbo) | ✅ | ✅ |
-| Surface Normal Estimation | Direct linear mapping (x,y,z) → (R,G,B) | ✅ | ✅ |
-| Semantic Segmentation | Color mapping: `{"cat": "red", "background": "yellow"}` | ✅ | ✅ |
-| Instance Segmentation | "Each dog is colored differently" | ✅ | ✅ |
-| Referring Expression Segmentation | "The man in pink t shirt is rendered solid white" | ✅ | ✅ |
-| Edge Detection | "Edges are white, background is black" | ✅ | — |
-| Optical Flow | HSV encoding: direction=hue, magnitude=saturation | ✅ | — |
-| 2D Keypoint Detection | Colored dots per keypoint type | ✅ | — |
-| Object Detection | Colored bounding box per class | ✅ | — |
-| Depth Edge Detection | Depth discontinuity → white edges | ✅ | — |
-
-The first five rows are the paper's tasks and have a verified public-data pipeline
-(download → prepare → merge → zero-shot audit → `Trainer`, see
-[`docs/DATASETS.md`](docs/DATASETS.md)) plus a sixth `generation` task for the
-paper's generation-preservation mixing. The remaining rows have RGB encoders /
-decoders and inference wiring but no curated training source in this repository.
-
----
-
-## Installation
+### Installation
 
 ```bash
+git clone https://github.com/isLinXu/open-vision-banana.git
+cd open-vision-banana
+
 # Core only (no GPU dependencies)
 pip install -e .
 
@@ -225,63 +242,59 @@ pip install -e ".[training]"
 pip install -e ".[all]"
 ```
 
----
-
-## Quick Start
-
-### Core Algorithms (no GPU required)
+### Core algorithms (no GPU required)
 
 ```python
-from open_vision_banana.core import DepthRGBMapper, NormalRGBMapper, SegmentationDecoder
 import torch
+from open_vision_banana.core import DepthRGBMapper, NormalRGBMapper, SegmentationDecoder
 
-# Depth → RGB → Depth (roundtrip)
-mapper = DepthRGBMapper()
-depth = torch.rand(1, 1, 512, 512) * 50.0
+# Metric depth -> RGB (power curve + RGB-cube-edge colormap) -> metric depth
+mapper = DepthRGBMapper()                      # λ = -3, c = 10/3, cube_edge
+depth = torch.rand(1, 1, 512, 512) * 50.0      # metres
 rgb = mapper.depth_to_rgb(depth)
-recovered = mapper.rgb_to_depth(rgb)
+recovered = mapper.rgb_to_depth(rgb)           # max relative error < 1e-3
 
-# Normal → RGB → Normal
-mapper = NormalRGBMapper()
-normal = torch.randn(1, 3, 512, 512)
-normal = normal / normal.norm(dim=1, keepdim=True).clamp(min=1e-8)
-rgb = mapper.normal_to_rgb(normal)
+# Unit normals <-> RGB
+normal_mapper = NormalRGBMapper()
+normal = torch.nn.functional.normalize(torch.randn(1, 3, 512, 512), dim=1)
+normal_rgb = normal_mapper.normal_to_rgb(normal)
 
-# Instance segmentation decoding
-decoder = SegmentationDecoder()
-instances = decoder.decode_instance(rgb)
+# Instance masks from a "one colour per instance" RGB image (Appendix A decoder)
+instances = SegmentationDecoder().decode_instance(rgb)
 ```
 
-### Inference (requires GPU + 16-24GB VRAM)
+### Inference (GPU)
 
 ```python
+import torch
+from PIL import Image
+import torchvision.transforms.functional as TF
 from open_vision_banana import VisionBanana
 
-# Load a base model plus a LoRA checkpoint (local path, hf:repo/id, or registry:alias)
 model = VisionBanana.from_pretrained(
-    lora_path="path/to/checkpoint",
-    model_name="qwen-image-2.1",  # or "sana-1600m", "flux-dev", ...
+    model_name="qwen-image-2.1",              # the default is FLUX.1-schnell, so set it explicitly
+    lora_path="path/to/checkpoint",           # local dir, hf:repo/id or registry:alias
+    # enable_sequential_cpu_offload=True,     # for ~16 GB GPUs
 )
 
-# 16GB GPU: enable CPU offload
-model = VisionBanana.from_pretrained(
-    lora_path="path/to/checkpoint",
-    enable_sequential_cpu_offload=True,
-)
-
-# Depth estimation
-result = model.predict(image=input_image, task="depth")
+image = TF.to_tensor(Image.open("input.jpg").convert("RGB")).unsqueeze(0) * 2 - 1  # [1,3,H,W] in [-1,1]
+result = model.predict(image=image, task="depth",
+                       num_inference_steps=50, guidance_scale=4.0, seed=42)
 ```
 
-### CLI Inference
+> [!NOTE]
+> `predict()` defaults to `num_inference_steps=1` and `guidance_scale=0`, which are smoke-test settings. Pass the evaluation settings explicitly, as above. The values the published results use are 512 px, 50 steps, guidance 4.0 and strength 0.85.
+
+### Command line
 
 ```bash
 # List the registry aliases (the generic `vision-banana*` aliases are placeholders without weights)
 python scripts/download_checkpoint.py --list
 
-# Inference on 16GB GPU
+# Single-image inference (this script has no CFG option, so guidance stays 0)
 python scripts/inference.py --image input.jpg --task depth \
-  --lora-path path/to/checkpoint --cpu-offload --vae-slicing
+  --model-name qwen-image-2.1 --lora-path path/to/checkpoint --steps 50 \
+  --cpu-offload --vae-slicing
 
 # SANA multi-task visualization on a manifest's val split (input / target / prediction)
 python scripts/infer_sana_512.py \
@@ -291,6 +304,8 @@ python scripts/infer_sana_512.py \
   --num-inference-steps 20 --output-dir output/infer_sana
 ```
 
+For benchmark numbers use [`scripts/evaluate_paper_benchmarks.py`](#evaluation--export), which exposes every protocol setting.
+
 ---
 
 ## Models
@@ -299,22 +314,25 @@ Trained end to end with the unified trainer and published on the Hub:
 
 | Model | `model_name` | Notes |
 |-------|--------------|-------|
-| Qwen-Image-2.1 | `qwen-image-2.1` | Current main line; instruction-editing layout |
+| Qwen-Image-2.1 (7B) | `qwen-image-2.1` | Current main line; instruction-editing layout |
 | SANA-1600M | `sana-1600m` | Earlier runs; text-to-image backbone |
-| FLUX.1-dev | `flux-dev` | Earlier runs; 4-bit quantized transformer |
+| FLUX.1-dev (12B) | `flux-dev` | Earlier runs; 4-bit quantized transformer |
 
 <details>
 <summary><b>Other registered base models (not trained end to end here)</b></summary>
 
-| Model | Family | Size | License | VRAM |
-|-------|--------|------|---------|------|
-| FLUX.1-schnell | flux | 12B | Apache-2.0 | ~24GB |
-| Z-Image-Turbo | z-image | 6B | Apache-2.0 | ~24GB |
-| Qwen-Image | qwen-image | ~6B | Apache-2.0 | ~24GB |
-| SANA-600M | sana | 600M | Apache-2.0 | ~12GB |
-| SANA-1600M | sana | 1600M | Apache-2.0 | ~16GB |
-| Lumina2 | lumina2 | ~3B | Apache-2.0 | ~16GB |
-| Chroma | chroma | ~3B | MIT | ~16GB |
+The registry (`src/open_vision_banana/model_registry.py`) holds 40+ configurations across 29 families. A few of the text-to-image ones:
+
+| Model | `model_name` | Size |
+|-------|--------------|------|
+| FLUX.1-schnell | `flux-schnell` | 12B |
+| Z-Image | `z-image` | 6B |
+| Qwen-Image | `qwen-image` | 20B |
+| SANA-600M | `sana-600m` | 600M |
+| Lumina-Image-2.0 | `lumina2` | 2B |
+| Chroma1-HD | `chroma` | 8.9B |
+
+Licenses differ between base models (FLUX.1-dev and FLUX.1 Kontext are non-commercial); check each model card before use.
 
 </details>
 
@@ -477,7 +495,32 @@ PYTHONPATH=src python scripts/train_flux.py \
 | `quality` | ~40 GB | ★★★ | ★★★★★ | bfloat16 + max-autotune compile |
 | `cpu` | RAM only | ★ | ★★★ | float32 + sequential offload |
 
+Profiles live in `configs/optimization_presets.yaml`: `python scripts/optimize_inference.py --list-presets`, then `--profile <name>`.
+
 </details>
+
+---
+
+## Supported Tasks
+
+| Task | RGB encoding | Encoder / decoder | Public-data training pipeline |
+|------|--------------|:-----------------:|:---------------------:|
+| Metric Depth Estimation | Power transform + colormap (cube-edge, plasma, inferno, viridis, grayscale, rainbow, turbo) | ✅ | ✅ |
+| Surface Normal Estimation | Direct linear mapping (x,y,z) → (R,G,B) | ✅ | ✅ |
+| Semantic Segmentation | Color mapping: `{"cat": "red", "background": "yellow"}` | ✅ | ✅ |
+| Instance Segmentation | "Each dog is colored differently" | ✅ | ✅ |
+| Referring Expression Segmentation | "The man in pink t shirt is rendered solid white" | ✅ | ✅ |
+| Edge Detection | "Edges are white, background is black" | ✅ | — |
+| Optical Flow | HSV encoding: direction=hue, magnitude=saturation | ✅ | — |
+| 2D Keypoint Detection | Colored dots per keypoint type | ✅ | — |
+| Object Detection | Colored bounding box per class | ✅ | — |
+| Depth Edge Detection | Depth discontinuity → white edges | ✅ | — |
+
+The first five rows are the paper's tasks and have a verified public-data pipeline
+(download → prepare → merge → zero-shot audit → `Trainer`, see
+[`docs/DATASETS.md`](docs/DATASETS.md)) plus a sixth `generation` task for the
+paper's generation-preservation mixing. The remaining rows have RGB encoders /
+decoders and inference wiring but no curated training source in this repository.
 
 ---
 
@@ -485,13 +528,13 @@ PYTHONPATH=src python scripts/train_flux.py \
 
 ### 1. Depth → RGB Mapping
 
-Maps unbounded depth [0, ∞) to bounded RGB [0, 1]³ via **power transform**:
+Maps metric depth [0, ∞) to [0, 1] with a **power transform**, which with the paper's parameters is u(d) = 1 − (1 + d/10)^−2:
 
 ```
 f(d, λ, c) = 1 - (1 - d/(λc))^(λ+1)
 ```
 
-Then maps via the **first-order 3D Hilbert path** (black → red → yellow → green → cyan → blue → magenta → white) with piecewise-linear interpolation.
+Then paints u along the **edges of the RGB cube**, the first-order 3D Hilbert path (black → red → yellow → green → cyan → blue → magenta → white) with piecewise-linear interpolation.
 
 **Parameters**: λ=-3, c=10/3
 
@@ -508,18 +551,16 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 5-stage clustering from Appendix A of the paper:
 
 1. **Background Initialization** — τ=14 color tolerance
-2. **Color Similarity Grouping** — Union-Find with 16-connectivity (O(E α(N)), ~100× faster than flood-fill)
+2. **Color Similarity Grouping** — seed-based grouping with 16-connectivity (paper Eq. 3), implemented with Union-Find; an `adjacent` grouping mode is available as an alternative
 3. **Noise Pruning** — θ_size = 2×10⁻⁴
 4. **Boundary Artifact Elimination** — 3×3 erosion, θ_erosion=0.1
 5. **Spatially Constrained Merging** — γ=5.0
 
 ### 4. Instruction Tuning (rsLoRA)
 
-- LoRA rank=16~64, alpha=32~128 with rsLoRA scaling (α/√r)
-- 9:1 visual-to-language data mixing ratio
-- Only 0.5%-1% of total parameters trained
-- Aims to preserve generation capability (not yet measured here; the paper reports human win rates of 53.5% / 47.8% vs the base model)
-- Supports 18+ model families via unified registry
+- rsLoRA (scale α/√r) on the attention and image-MLP projections: r32/α64 in the paper-aligned recipe, r64/α64 in the Fusion r64 runs, about 1.2 % / 2.4 % of the 7B Qwen-Image-2.1 transformer
+- The share of vision-task samples is a repository choice set by `vision_ratio` (0.5 paper-aligned, 0.9 Fusion r64); the paper only says the vision data is a small amount
+- Generation or editing replay is mixed in to preserve generation; retention has not been measured here (the paper reports human win rates of 53.5 % / 47.8 % against its base model)
 
 ---
 
@@ -533,7 +574,7 @@ Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb
 | `ovb-fix_*`, `ovb-best3_*`, `ovb-ctrl_*`, `ovb-main_*` | SANA-1600M | `checkpoint-*_final` (prefer `ema_adapter` when that directory exists) |
 | `ovb-flux*`, `ovb-flux2*`, `ovb-flux3*`, `ovb-flux4*` | FLUX.1-dev | same layout; `metadata.json` records `model_name: flux-dev` |
 
-The Qwen-Image-2.1 checkpoints behind the results table below are published under `khazic/ovb-i88_*` and `khazic/ovb-ft_*` (the naming table above maps the prefixes to backbones). Exact run names and per-run metrics are also rendered from the evaluation JSONs in [`demo/`](demo/) and [`website/`](website/).
+The earlier Qwen-Image-2.1 runs in [Results](#-results) are published under `khazic/ovb-i88_*` and `khazic/ovb-ft_*` (the table above maps the prefixes to backbones), and the I108 arms are linked in that section. Exact run names and per-run metrics are also rendered from the evaluation JSONs in [`demo/`](demo/) and [`website/`](website/).
 
 SANA / FLUX task-matched runs:
 
@@ -564,7 +605,7 @@ The `fix_*` depth LoRAs were trained as closer-brighter grayscale. Decode them w
 
 ## Benchmarks (from paper)
 
-> These are the **paper's** numbers (Nano Banana Pro base, undisclosed in-house data). This repository has **not** reproduced them. Measured scores, gates, and blocked benches are in [`docs/EXPERIMENTAL_RESULTS_2026-10-10.md`](docs/EXPERIMENTAL_RESULTS_2026-10-10.md).
+> These are the **paper's** numbers (Nano Banana Pro base, undisclosed in-house data). This repository has **not** reproduced them. Measured scores are in [Results](#-results); older gates and blocked benches are in [`docs/EXPERIMENTAL_RESULTS_2026-10-10.md`](docs/EXPERIMENTAL_RESULTS_2026-10-10.md).
 
 | Task | Benchmark | Metric | Vision Banana | Previous SOTA |
 |------|-----------|:------:|:-------------:|:-------------:|
@@ -584,13 +625,13 @@ The paper evaluates three axes. This table is the current measured-or-blocked st
 | Axis | Benchmark | Paper | This repo | Status |
 |------|-----------|------:|-----------|--------|
 | 2D | RefCOCOg UMD val cIoU | 0.738 | Qwen-Image-2.1 I102-i1 0.547; SANA `ovb-fix_seg_plus_gcg` 0.143 (n=4896) | measured |
-| 2D | ReasonSeg val gIoU | 0.793 | Qwen-Image-2.1 parent 0.328 (n=200) | measured on 200 samples; not directly comparable. Paper score uses Gemini 2.5 Pro query rewrite |
-| 2D | Cityscapes val mIoU | 0.699 | Qwen-Image-2.1 I102-i1 0.368 (n=500) | measured. Do not use `cityscapes8` |
+| 2D | ReasonSeg val gIoU | 0.793 | Qwen-Image-2.1 I108 B-20k 0.440 (n=344, all queries); parent 0.328 (n=200) | measured on 200 samples; not directly comparable. Paper score uses Gemini 2.5 Pro query rewrite |
+| 2D | Cityscapes val mIoU | 0.699 | Qwen-Image-2.1 fused base 0.386; I102-i1 0.368 (n=500) | measured. Do not use `cityscapes8` |
 | 2D | SA-Co/Gold cgF1 | 47.5 | — | adapter ready (query JSONL + pmF1/IL_MCC/cgF1). Dataset not present. Paper score uses Gemini 3.1 Flash-Lite NP filter |
-| 3D depth | NYU δ1 / AbsRel | 0.948 / 0.081 | Qwen-Image-2.1 C1 δ1 0.348; SANA gray 0.066 / 1.990; SANA metric 0.124 / 1.251; FLUX gray 0.155 / 1.472 | measured, gate fail |
+| 3D depth | NYU δ1 / AbsRel | 0.948 / 0.081 | Qwen-Image-2.1 I108 B-100k δ1 0.497; C1 0.348; SANA gray 0.066 / 1.990; SANA metric 0.124 / 1.251; FLUX gray 0.155 / 1.472 | measured, gate fail |
 | 3D depth | iBims-1 | 0.934 / 0.078 | SANA gray 0.101; SANA metric 0.179; FLUX gray 0.179 | measured, gate fail |
-| 3D depth | ETH3D | 0.935 / 0.103 | Qwen-Image-2.1 T2 δ1 0.251; SANA gray 0.186; SANA metric 0.292; FLUX gray 0.163 | measured, gate fail |
-| 3D depth | DIODE-Indoor | 0.917 / 0.108 | Qwen-Image-2.1 C1 δ1 0.321; SANA gray 0.083; SANA metric 0.184; FLUX gray 0.140 | measured, gate fail |
+| 3D depth | ETH3D | 0.935 / 0.103 | Qwen-Image-2.1 fused base δ1 0.292; T2 0.251; SANA gray 0.186; SANA metric 0.292; FLUX gray 0.163 | measured, gate fail |
+| 3D depth | DIODE-Indoor | 0.917 / 0.108 | Qwen-Image-2.1 I108 B-100k δ1 0.353; C1 0.321; SANA gray 0.083; SANA metric 0.184; FLUX gray 0.140 | measured, gate fail |
 | 3D depth | KITTI | 0.915 / 0.107 | SANA gray 0.264; SANA metric 0.051; FLUX gray 0.095 | measured, gate fail |
 | 3D depth | nuScenes | 0.643 / 0.219 | — | adapter now returns metric `gt_depth` (80 m cap, no paper crop). LiDAR projections not on the eval machine |
 | 3D normal | DIODE-Indoor mean° | 13.818 | SANA 24.96 (gates pass); FLUX 91.09 | measured |
@@ -613,16 +654,25 @@ from open_vision_banana.evaluation import evaluate_depth, evaluate_normals
 
 # Depth metrics
 metrics = evaluate_depth(pred_depth, gt_depth)
-# → {"AbsRel": 0.12, "SqRel": 0.45, "RMSE": 3.2, ...}
+# → {"AbsRel": ..., "SqRel": ..., "RMSE": ..., "RMSE_log": ..., "δ<1.25": ..., ...}
 
 # Normal metrics
 metrics = evaluate_normals(pred_normals, gt_normals)
-# → {"Mean Angular Error (°)": 15.3, "Cosine Similarity": 0.96, ...}
+# → {"Mean Angular Error (°)": ..., "Median Angular Error (°)": ..., "Mean Cosine Similarity": ..., "11.25° Accuracy": ...}
 ```
 
 Paper-protocol eval scores a decoded task against the official split at native ground-truth resolution. Relative grayscale depth LoRAs need the invert flags. Metric cube-edge checkpoints omit them.
 
 ```bash
+# Qwen-Image-2.1 with the protocol of the published results (the defaults of 1 step and
+# guidance 0 are smoke settings; always pass them explicitly)
+PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
+  --benchmark depth --model-name qwen-image-2.1 --lora-path path/to/checkpoint \
+  --dtype bfloat16 --resolution 512 --num-inference-steps 50 --guidance-scale 4.0 \
+  --strength 0.85 --seed 42 --native-resolution \
+  --nyu-root data/nyu/official_test --output-json output/eval/nyu.json
+
+# SANA relative-depth LoRA (closer-brighter grayscale)
 PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
   --benchmark depth --model-name sana-1600m \
   --lora-path checkpoints/ovb-fix_ctrl_depth/ema_adapter \
@@ -744,45 +794,104 @@ Project page: static GitHub Pages site in [`website/`](website/) (results and ga
 
 ---
 
-## Roadmap & TODO
+## 🤝 Contributing
 
-> This is an **unofficial, community-driven reimplementation**. We are transparent about what is done and what is not.
+The gap to the paper is large and well understood, so there is real work for everyone: researchers, engineers, and people who want a first open-source contribution. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code style and the PR checklist, then pick a problem below or open an issue to discuss your idea.
 
-### High Priority
-- [x] Unified trainer used for the published SANA LoRAs and the FLUX.1-dev LoRAs under `khazic/ovb-*`
-- [x] Paper-protocol adapters for 2D (Cityscapes, RefCOCOg, ReasonSeg, SA-Co/Gold), 3D (NYU, iBims, ETH3D, DIODE indoor, KITTI, nuScenes, normals) and generation prompt/edit sets
-- [ ] Paper Table 1 reproduction (current measurements are far from those numbers; Cityscapes `gtFine`, ReasonSeg, SA-Co/Gold, nuScenes, GenAI-Bench and ImgEdit data are not all present)
-- [ ] Public checkpoint whose paper-protocol scores match the paper
-- [ ] 9:1 vision-to-language data mix verification
+### Where we need help
 
-### Medium Priority
-- [ ] Multi-model training verification (Z-Image, Qwen-Image, Lumina2, Chroma)
-- [ ] Additional vision task training (edge, flow, keypoint, object_detection, depth_edge)
-- [ ] Generation preservation measurement (FID/CLIP on COCO)
-- [ ] Export/serving integration with unified training framework
+| Area | Problem | Where to start | Level |
+|------|---------|----------------|:-----:|
+| Depth | Raw metric δ1 is far below aligned δ1 (NYU 0.497 vs 0.926), so absolute scale is the bottleneck, and single samples vary a lot between seeds | `--depth-scale-ratios`, `--depth-seed-ensemble`, [scale-loss ablation](docs/metric_depth_scale_ablation.md) | 🔴 research |
+| Multi-task | Longer training helps depth but hurts Cityscapes and ReasonSeg; no checkpoint beats the base on every benchmark | `task_sampling_weights`, `vision_ratio`, [Fusion r64 plan](docs/fusion_r64_large_scale_plan.md) | 🔴 research |
+| Evaluation | Normals, instance segmentation (SA-Co/Gold) and RefCOCOg are not yet scored for the Qwen-Image-2.1 runs | `scripts/evaluate_paper_benchmarks.py --benchmark normal / instance / referring` | 🟡 medium |
+| Generation | Generation retention, a core claim of the paper, is unmeasured | `scripts/evaluate_generation_preservation.py` (FID/LPIPS proxy) | 🟡 medium |
+| Protocol | ReasonSeg in the paper uses Gemini query rewriting; ours does not, so the scores are not comparable | `--reasonseg-query-mode`, [referring prompts](docs/referring_query_prompts.md) | 🟡 medium |
+| Backbones | Z-Image, Lumina-Image-2.0, Chroma, FLUX.2 Klein and other registered models are untested end to end | `model_registry.py`, `scripts/train.py` | 🟡 medium |
+| Tasks | Edge, optical flow, keypoints, detection and depth edges have RGB mappers but no training data pipeline | `src/open_vision_banana/core/`, [Adding new tasks](CONTRIBUTING.md#adding-new-vision-tasks) | 🟡 medium |
+| Docs | Tutorials, a notebook walk-through with a published checkpoint, and translations | `notebooks/`, `docs/` | 🟢 good first |
 
-### Low Priority
-- [ ] DDP/FSDP/DeepSpeed verification with unified `Trainer`
-- [ ] EMA verification in actual training runs
-- [ ] Legacy script deprecation (`train_sana_512.py`, `train_flux.py`)
-- [ ] Comprehensive test coverage for new unified training modules
-- [ ] Dataset preparation pipeline documentation
+### Ground rules that keep results trustworthy
+
+- Report raw metrics as the headline; mark aligned depth, seed ensembles and subset evaluations as such.
+- Keep evaluation data out of training: new sources must pass the zero-shot audit in `scripts/build_qwen_baseline_manifest.py`.
+- Record the effective config, data revision, checkpoint, seed and inference settings with every number you publish.
+
+### Contributors
+
+<a href="https://github.com/isLinXu/open-vision-banana/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=isLinXu/open-vision-banana" alt="Contributors" />
+</a>
+
+---
+
+## Roadmap
+
+> We are transparent about what is done and what is not.
+
+**Done**
+- [x] Task contracts, encoders and decoders for the paper's five tasks, plus five extra mappers
+- [x] Public-data pipeline: download → prepare → merge → zero-shot audit → train ([`docs/DATASETS.md`](docs/DATASETS.md))
+- [x] Unified trainer; LoRAs trained and published for Qwen-Image-2.1, SANA-1600M and FLUX.1-dev
+- [x] Paper-protocol evaluation for 2D (Cityscapes, RefCOCOg, ReasonSeg, SA-Co/Gold), 3D (NYU, iBims, ETH3D, DIODE, KITTI, nuScenes, normals) and generation prompt/edit sets
+- [x] Depth diagnostics: aligned metrics, seed ensembles, per-image scale ratios, optional scale loss
+
+**Next**
+- [ ] Close the raw metric-depth scale gap
+- [ ] One checkpoint that is at least as good as its parent on every benchmark
+- [ ] Score normals, instance segmentation, RefCOCOg and generation retention for the Qwen-Image-2.1 runs
+- [ ] End-to-end runs on more open backbones
+- [ ] Training data for edge, flow, keypoint, detection and depth-edge tasks
+- [ ] Export and serving integrated with the unified trainer
+
+**Out of reach for an open reproduction**
+- The Nano Banana Pro base model, the in-house annotations and 3D renders, and the human generation study
+
+---
+
+## Acknowledgement
+
+- [Vision Banana](https://arxiv.org/abs/2604.20329) by Gabeur et al., whose paper this repository reproduces.
+- The open base models we build on: [Qwen-Image](https://github.com/QwenLM/Qwen-Image), [SANA](https://github.com/NVlabs/Sana) and [FLUX.1](https://github.com/black-forest-labs/flux).
+- [Diffusers](https://github.com/huggingface/diffusers), [PEFT](https://github.com/huggingface/peft) and [PyTorch](https://pytorch.org/).
+- The public datasets listed in [`configs/datasets/sources.tsv`](configs/datasets/sources.tsv) and [`docs/DATASETS.md`](docs/DATASETS.md). Each keeps its own license.
 
 ---
 
 ## Citation
 
-If you use this codebase or build upon the Vision Banana paradigm, please cite the original paper:
+If you use this codebase, please cite the original paper:
 
 ```bibtex
-@article{visionbanana2026,
-  title={Image Generators are Generalist Vision Learners},
-  author={Gabeur, Valentin and others},
-  year={2026},
-  eprint={2604.20329},
-  archivePrefix={arXiv}
+@article{gabeur2026image,
+  title   = {Image Generators are Generalist Vision Learners},
+  author  = {Gabeur, Valentin and Long, Shangbang and Peng, Songyou and Voigtlaender, Paul and
+             Sun, Shuyang and Bao, Yanan and Truong, Karen and Wang, Zhicheng and Zhou, Wenlei and
+             Barron, Jonathan T. and Genova, Kyle and Kannen, Nithish and Ben, Sherry and
+             Li, Yandong and Guo, Mandy and Yogin, Suhas and Gu, Yiming and Chen, Huizhong and
+             Wang, Oliver and Xie, Saining and Zhou, Howard and He, Kaiming and
+             Funkhouser, Thomas and Alayrac, Jean-Baptiste and Soricut, Radu},
+  journal = {arXiv preprint arXiv:2604.20329},
+  year    = {2026}
 }
 ```
+
+and, if it helped your work, this repository:
+
+```bibtex
+@misc{openvisionbanana2026,
+  title        = {Open-Vision-Banana: An Open Reproduction of Vision Banana},
+  author       = {{Open-Vision-Banana contributors}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/isLinXu/open-vision-banana}}
+}
+```
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=isLinXu/open-vision-banana&type=Date)](https://star-history.com/#isLinXu/open-vision-banana&Date)
 
 ---
 
