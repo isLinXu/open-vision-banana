@@ -88,6 +88,13 @@ def _resize_to(depth: torch.Tensor, size: torch.Size) -> torch.Tensor:
     return torch.nn.functional.interpolate(depth, size=size, mode="bilinear", align_corners=False)
 
 
+def _resize_mask_to(mask: torch.Tensor, size: torch.Size) -> torch.Tensor:
+    """Nearest resize of [B, H, W] boolean masks to ``size`` (H, W); unchanged when it already matches."""
+    if mask.shape[-2:] == size:
+        return mask
+    return torch.nn.functional.interpolate(mask.unsqueeze(1).float(), size=size, mode="nearest").squeeze(1) > 0.5
+
+
 def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
     """Unitless closer=brighter map in (0, 1], before any metric calibration."""
     return (1.0 - rgb.mean(dim=1, keepdim=True)).clamp(1e-3, 1.0)
@@ -665,15 +672,7 @@ class VisionEvaluator:
                     ).squeeze(1)
                 if gt_mask.dim() == 4 and gt_mask.shape[1] == 1:
                     gt_mask = gt_mask.squeeze(1)
-                if pred_mask.shape[-2:] != gt_mask.shape[-2:]:
-                    pred_mask = (
-                        torch.nn.functional.interpolate(
-                            pred_mask.unsqueeze(1).float(),
-                            size=gt_mask.shape[-2:],
-                            mode="nearest",
-                        ).squeeze(1)
-                        > 0.5
-                    )
+                pred_mask = _resize_mask_to(pred_mask, gt_mask.shape[-2:])
                 valid_key = "valid_mask_native" if native_resolution else "valid_mask"
                 valid_mask = batch.get(valid_key)
                 if valid_mask is not None:
@@ -695,16 +694,7 @@ class VisionEvaluator:
                         # The primary GT falls back to a canvas-size empty mask when a query's
                         # legacy mask is empty, while variants always carry the native image size,
                         # so the prediction is resized per variant exactly as for the primary GT.
-                        variant_pred = pred_mask
-                        if variant_pred.shape[-2:] != variant_gt.shape[-2:]:
-                            variant_pred = (
-                                torch.nn.functional.interpolate(
-                                    variant_pred.unsqueeze(1).float(),
-                                    size=variant_gt.shape[-2:],
-                                    mode="nearest",
-                                ).squeeze(1)
-                                > 0.5
-                            )
+                        variant_pred = _resize_mask_to(pred_mask, variant_gt.shape[-2:])
                         accumulator.update(variant_pred, variant_gt, valid_mask=variant_valid)
                         reasonseg_variant_valid_pixels[name] += int(variant_valid.sum().item())
 
