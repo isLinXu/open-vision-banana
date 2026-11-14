@@ -30,7 +30,7 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSamp
 
 from ..model_registry import resolve_model_config
 from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT
-from . import qwen_image21
+from . import full_finetune, qwen_image21
 from .callbacks import TrainingCallbacks
 from .config import TrainingConfig
 from .distributed import (
