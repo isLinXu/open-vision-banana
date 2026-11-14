@@ -14,6 +14,12 @@
 
 [Results](#results) · [Quick Start](#quick-start) · [Training](#training) · [Checkpoints](#checkpoints) · [Datasets](docs/DATASETS.md) · [Paper alignment](#paper-alignment-statement)
 
+<br>
+
+<img src="docs/assets/fig1_overview.png" alt="Open-Vision-Banana overview: one frozen Qwen-Image-2.1 backbone with a shared LoRA turns a source image and a task instruction into an RGB prediction, which a parameter-free decoder converts to metric depth, class IDs, instance masks or a referring mask" width="100%">
+
+<sub><b>Overview.</b> A frozen image generator with one shared LoRA adapter answers every task with an RGB image; a fixed, parameter-free decoder turns that image back into metric depth, a class-ID map, instance masks or a binary referring mask. Each task is fully specified by its contract (encoder, instruction, decoder).</sub>
+
 </div>
 
 > [!IMPORTANT]
@@ -65,6 +71,15 @@ Vision Banana demonstrates that **state-of-the-art visual understanding can emer
 
 ## How It Works
 
+<p align="center">
+  <img src="docs/assets/fig2_task_contracts.png" alt="Task contracts for metric depth, semantic, instance and referring segmentation; checks run before training; and the conditional flow-matching training loop" width="100%">
+</p>
+
+<sub><b>(a)</b> Each task is an explicit RGB code with a specification S<sub>q</sub>, encoder E<sub>q</sub>, instruction p<sub>q</sub> and decoder D<sub>q</sub>. <b>(b)</b> Contract checks run before the first training step. <b>(c)</b> Conditional flow matching updates one adapter shared by all tasks; the hyper-parameters and sampling mix shown are the Fusion r64 recipe in <a href="configs/experiments/fusion_r64_large_scale.yaml"><code>configs/experiments/fusion_r64_large_scale.yaml</code></a>. Editing replay is meant to preserve generation; retention has not been measured in this repository.</sub>
+
+<details>
+<summary><b>Data-flow diagram</b></summary>
+
 ```mermaid
 flowchart LR
     X["Input image"] --> E1["VAE encoder"]
@@ -80,6 +95,8 @@ flowchart LR
     R --> DEC["Task decoder"]
     DEC --> O["Metric depth · normals · masks"]
 ```
+
+</details>
 
 1. **Every task is an image.** Depth is passed through a power curve and painted along a path on the edges of the RGB cube; normals map linearly to RGB; segmentation classes, instances and referred objects are painted in prompt-specified colors.
 2. **One generator, one adapter.** A pretrained image generator is instruction-tuned with rsLoRA on a mixture of vision-task pairs and its own generation / editing data, using the standard flow-matching loss. The diagram shows the instruction-editing layout used by Qwen-Image-2.1, where the input image is context and the target is generated from noise.
@@ -103,9 +120,22 @@ Metric depth δ1 without scale alignment, and segmentation metrics, at native gr
 | T3: segmentation specialist | 0.050 | 0.032 | 0.143 | 0.264 | 0.519 | 0.304 |
 | I101-h1: full fine-tune, lr 5e-6 | 0.222 | 0.193 | 0.247 | 0.362 | 0.241 | 0.175 |
 | I102-i1: LoRA | 0.099 | 0.195 | 0.115 | **0.368** | **0.547** | 0.321 |
-| Vision Banana (paper) | 0.948 | 0.935 | 0.917 | 0.699 | 0.738 | 0.793 |
+| Vision Banana (closed reference, from the paper) | 0.948 | 0.935 | 0.917 | 0.699 | 0.738 | 0.793 |
 
 No run improves depth and segmentation together, and none beats the parent on every benchmark. The depth gap is mostly absolute scale: with per-image median alignment the best δ1 rises to 0.845 / 0.906 / 0.855 on NYU / ETH3D / DIODE, but aligned δ1 is a diagnostic only and is not comparable to the paper's protocol.
+
+### Fusion r64 runs (I108, external evaluation)
+
+Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0r128-60-40`), rsLoRA r64, sampling mix depth 35 % / semantic 20 % / instance 20 % / referring 20 % / editing replay 5 % ([config](configs/experiments/fusion_r64_large_scale.yaml)). Arm A uses lr 3e-5 ([`ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3)), arm B lr 1e-5 ([`ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3)). Scores from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval): 512 canvas, 50 steps, guidance 4.0, strength 0.85, seed 42, native-resolution scoring. ReasonSeg here is n=344 (`query_mode=all`, `legacy_union` masks), so it is not directly comparable with the n=200 column above. Aligned δ1 in parentheses is a diagnostic only.
+
+| Checkpoint | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
+|-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
+| Fused base (no adapter) | 0.278 (0.873) | **0.292** (0.924) | 0.300 (0.844) | **0.386** | pending | 0.417 |
+| A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | pending | 0.357 |
+| B, step 20k | 0.340 (0.903) | 0.166 (0.910) | 0.229 (0.888) | 0.353 | pending | **0.440** |
+| B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | pending | 0.333 |
+
+Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg has not been scored for these runs yet.
 
 <details>
 <summary><b>Earlier SANA-1600M and FLUX.1-dev runs</b></summary>
@@ -148,7 +178,7 @@ FLUX.1-dev specialist `ovb-flux3_ctrl_depth_nominsnr_15k`, 20 steps, 4-bit, clos
 
 FLUX.1-dev specialist `ovb-flux3_ctrl_normal_nominsnr_15k`, DIODE indoor n=325: mean angle 91.09°, median 91.51°. That is chance-level orientation, not the paper's 13.818°.
 
-FLUX.1 Kontext Hypersim metric EMA finished 3000/3000 (`flow_loss=0.1526`). NYU official_test (654, cube-edge, 28 steps) is still running. `ovb-flux3_ctrl_seg_nominsnr_15k` has no Cityscapes `gtFine` here, so semantic mIoU is not measured.
+FLUX.1 Kontext Hypersim metric EMA finished 3000/3000 (`flow_loss=0.1526`). Its NYU official_test result is not reported here. `ovb-flux3_ctrl_seg_nominsnr_15k` has no Cityscapes `gtFine` here, so semantic mIoU is not measured.
 
 </details>
 
