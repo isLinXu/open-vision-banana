@@ -1208,6 +1208,10 @@ class Trainer:
         from .exposure import ExposureAudit
         exposure = ExposureAudit(Path(config.output_dir), self.dist.rank, self.start_step)
         global_step = self.start_step
+        # Pre-clip norm of every optimizer step (dropped updates included): one JSON line per
+        # step in grad_norm.jsonl, plus the mean and max over each logging window.
+        grad_norm_path = self.callbacks.output_dir / "grad_norm.jsonl"
+        grad_norm_window: list[float] = []
         micro_step = 0
         # full passes over the train loader; seeds DistributedSampler shuffles. A resumed
         # run continues the count (from the start of the pass it stopped in).
@@ -1267,7 +1271,13 @@ class Trainer:
                 # The pre-clip norm decides a drop; a dropped update discards the clipped
                 # gradients, so clipping first leaves both outcomes unchanged.
                 grad_norm = clip_grad_norm(self.trainable_params, config.max_grad_norm)
-                if drop_oversized_gradients(grad_norm, config.drop_grad_norm):
+                dropped = drop_oversized_gradients(grad_norm, config.drop_grad_norm)
+                if self.dist.is_main:
+                    grad_norm_window.append(grad_norm)
+                    with open(grad_norm_path, "a") as grad_norm_file:
+                        record = {"step": global_step + 1, "grad_norm": grad_norm, "dropped": dropped}
+                        grad_norm_file.write(json.dumps(record) + "\n")
+                if dropped:
                     exposure.dropped_updates += 1
                     self.optimizer.zero_grad(set_to_none=True)
                     if self.dist.is_main:
@@ -1304,6 +1314,10 @@ class Trainer:
                         metrics["depth_scale_samples"] = train_metrics["depth_scale_samples"]
                     lr = self.lr_scheduler.get_last_lr()[0]
                     if self.dist.is_main:
+                        if grad_norm_window:
+                            metrics["grad_norm_mean"] = sum(grad_norm_window) / len(grad_norm_window)
+                            metrics["grad_norm_max"] = max(grad_norm_window)
+                            grad_norm_window = []
                         metrics.update({f"sample_count/{t}": n for t, n in task_sample_counts.items()})
                         count = sum(task_sample_counts.values())
                         metrics.update({
