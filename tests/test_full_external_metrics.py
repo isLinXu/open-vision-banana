@@ -115,3 +115,17 @@ def test_export_refuses_unmerged_shards(tmp_path):
     path.write_text(json.dumps(dict(benchmarks={"referring/reasonseg": dict(shard={})})))
     with pytest.raises(ValueError, match="Merge shards"):
         list(comparison.load_full_result(path))
+
+
+def test_empty_legacy_mask_scores_variants_at_native_size(tmp_path):
+    # shapes=[]: the primary GT is canvas-size, both variants are the native 10x12.
+    Image.new("RGB", (12, 10)).save(tmp_path / "a.jpg")
+    (tmp_path / "a.json").write_text(json.dumps(dict(text=["query"], shapes=[])))
+    ds = ReasonSegDataset(tmp_path, resolution=6, native_gt=True, report_annotation_variants=True)
+    report = VisionEvaluator(WhiteModel(), device="cpu").evaluate(
+        DataLoader(ds, batch_size=1), task="referring", native_resolution=True)
+    for mode in ("legacy_union", "lisa_v1"):
+        variant = report["annotation_variants"][mode]
+        assert variant["samples"] == 1
+        assert variant["valid_pixels"] == 10 * 12
+        assert variant["cIoU"] == 0.0
