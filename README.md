@@ -624,11 +624,12 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 
 ## Checkpoints
 
-Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb-). The repo id is `khazic/ovb-<run>`.
+Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb-). The repo id is `khazic/ovb-<run>`. The full list of published weights, pinned revisions, the README row each repo belongs to, and download commands is in [`MODEL_CARD.md`](MODEL_CARD.md#published-checkpoints).
 
 | Name pattern | Base | What to load |
 |--------------|------|----------------|
-| `ovb-i88_*`, `ovb-ft_*`, `ovb-i97-*`, `ovb-i108-*` | Qwen-Image-2.1 | `checkpoint-*_final`; `metadata.json` records `model_name: qwen-image-2.1` |
+| `ovb-i88_*`, `ovb-ft_*`, `ovb-i97-*` | Qwen-Image-2.1 | `checkpoint-*_final`; `metadata.json` records `model_name: qwen-image-2.1` |
+| `ovb-i108-*` | Qwen-Image-2.1 on the fused base [`Melo111/Fusion-C1-KQ0r128-60-40`](https://huggingface.co/Melo111/Fusion-C1-KQ0r128-60-40) | `ckpt/checkpoint-N_best` (EMA adapter), `ckpt/checkpoint-N` or `ckpt/checkpoint-100000_final`; download a single folder with `--include` (each repo is ~200 GB) |
 | `ovb-fix_*`, `ovb-best3_*`, `ovb-ctrl_*`, `ovb-main_*` | SANA-1600M | `checkpoint-*_final` (prefer `ema_adapter` when that directory exists) |
 | `ovb-flux*`, `ovb-flux2*`, `ovb-flux3*`, `ovb-flux4*` | FLUX.1-dev | same layout; `metadata.json` records `model_name: flux-dev` |
 
@@ -910,7 +911,8 @@ The gap to the paper is large and well understood, so there is real work for eve
 ## Acknowledgement
 
 - [Vision Banana](https://arxiv.org/abs/2604.20329) by Gabeur et al., whose paper this repository reproduces.
-- The open base models we build on: [Qwen-Image](https://github.com/QwenLM/Qwen-Image), [SANA](https://github.com/NVlabs/Sana) and [FLUX.1](https://github.com/black-forest-labs/flux).
+- The open base models we have trained on: [Qwen-Image](https://github.com/QwenLM/Qwen-Image) (Qwen-Image-2.1), [SANA](https://github.com/NVlabs/Sana) and [FLUX.1](https://github.com/black-forest-labs/flux).
+- The other open image generators and editors registered in [Models](#models): [Qwen-Image](https://huggingface.co/Qwen/Qwen-Image) and [Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit), [FLUX.1 Kontext](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev), [FLUX.2](https://huggingface.co/black-forest-labs/FLUX.2-dev) (dev, [klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B)), [FLUX.3 Image Klein](https://huggingface.co/black-forest-labs/flux-3-image-klein-base), [Z-Image](https://huggingface.co/Tongyi-MAI/Z-Image), [HunyuanImage](https://huggingface.co/tencent/HunyuanImage) and [HunyuanImage-3.0-Instruct](https://huggingface.co/tencent/HunyuanImage-3.0-Instruct), [LongCat-Image](https://huggingface.co/meituan-longcat/LongCat-Image), [JoyAI-Image-Edit](https://huggingface.co/jdopensource/JoyAI-Image-Edit-Diffusers), [Lumina-Image-2.0](https://huggingface.co/Alpha-VLLM/Lumina-Image-2.0), [Chroma](https://huggingface.co/lodestones/Chroma1-HD), [Stable Diffusion 3 / SDXL](https://huggingface.co/stabilityai) and [InstructPix2Pix](https://huggingface.co/timbrooks/instruct-pix2pix). Most of them have not been trained end to end here.
 - [Diffusers](https://github.com/huggingface/diffusers), [PEFT](https://github.com/huggingface/peft) and [PyTorch](https://pytorch.org/).
 - The public datasets listed in [`configs/datasets/sources.tsv`](configs/datasets/sources.tsv) and [`docs/DATASETS.md`](docs/DATASETS.md). Each keeps its own license.
 
