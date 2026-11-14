@@ -1,0 +1,39 @@
+{
+  "cpu_tests_passed": 139,
+  "cpu_tests_failed": 0,
+  "tests": [
+    "test_external_eval_audit",
+    "test_external_eval_suite",
+    "test_restore_external_eval_data",
+    "test_reasonseg_annotation_protocol",
+    "test_eval_shards",
+    "test_referring_masks_strict",
+    "test_paper_benchmarks",
+    "test_paper_alignment_metrics",
+    "test_depth_decode",
+    "test_depth_curve",
+    "test_depth_seed_ensemble"
+  ],
+  "reasonseg_official_parity": {
+    "images": 200,
+    "queries": 344,
+    "mismatches": 0
+  },
+  "gpu_retest_performed": false,
+  "historical_scores_modified": false,
+  "source_base": "d3f3426",
+  "active_server_source": "62c5b3de8c04e02a18946bf03076e675967d627a",
+  "asset_restoration": {
+    "diode": {
+      "verified_files": 975,
+      "samples": 325,
+      "status": "verified"
+    },
+    "eth3d": {
+      "verified_files": 908,
+      "samples": 454,
+      "status": "verified"
+    }
+  },
+  "asset_restoration_scope": "complete local-server archive reconstruction and every extracted file SHA256; not an HF full download round trip"
+}

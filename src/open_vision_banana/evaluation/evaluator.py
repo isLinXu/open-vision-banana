@@ -88,6 +88,13 @@ def _resize_to(depth: torch.Tensor, size: torch.Size) -> torch.Tensor:
     return torch.nn.functional.interpolate(depth, size=size, mode="bilinear", align_corners=False)
 
 
+def _resize_mask_to(mask: torch.Tensor, size: torch.Size) -> torch.Tensor:
+    """Nearest resize of [B, H, W] boolean masks to ``size`` (H, W); unchanged when it already matches."""
+    if mask.shape[-2:] == size:
+        return mask
+    return torch.nn.functional.interpolate(mask.unsqueeze(1).float(), size=size, mode="nearest").squeeze(1) > 0.5
+
+
 def relative_luminance_depth(rgb: torch.Tensor) -> torch.Tensor:
     """Unitless closer=brighter map in (0, 1], before any metric calibration."""
     return (1.0 - rgb.mean(dim=1, keepdim=True)).clamp(1e-3, 1.0)
@@ -380,6 +387,15 @@ class VisionEvaluator:
         )
         instance_accumulator = SACoAccumulator() if task == "instance" else None
         referring_accumulator = ReferringAccumulator() if task == "referring" else None
+        reasonseg_variant_accumulators = {}
+        reasonseg_variant_valid_pixels = {name: 0 for name in ("legacy_union", "lisa_v1")}
+        source_dataset = getattr(dataloader, "dataset", None)
+        while hasattr(source_dataset, "dataset"):
+            source_dataset = source_dataset.dataset
+        if task == "referring" and getattr(source_dataset, "report_annotation_variants", False):
+            reasonseg_variant_accumulators = {
+                name: ReferringAccumulator() for name in ("legacy_union", "lisa_v1")
+            }
 
         # Pre-instantiate shared decoders once (not per batch)
         depth_mapper = (
@@ -656,18 +672,29 @@ class VisionEvaluator:
                     ).squeeze(1)
                 if gt_mask.dim() == 4 and gt_mask.shape[1] == 1:
                     gt_mask = gt_mask.squeeze(1)
-                if pred_mask.shape[-2:] != gt_mask.shape[-2:]:
-                    pred_mask = (
-                        torch.nn.functional.interpolate(
-                            pred_mask.unsqueeze(1).float(),
-                            size=gt_mask.shape[-2:],
-                            mode="nearest",
-                        ).squeeze(1)
-                        > 0.5
-                    )
+                pred_mask = _resize_mask_to(pred_mask, gt_mask.shape[-2:])
+                valid_key = "valid_mask_native" if native_resolution else "valid_mask"
+                valid_mask = batch.get(valid_key)
+                if valid_mask is not None:
+                    valid_mask = valid_mask.to(self.device).bool()
+                    if valid_mask.dim() == 4 and valid_mask.shape[1] == 1:
+                        valid_mask = valid_mask.squeeze(1)
                 if referring_accumulator is not None:
-                    referring_accumulator.update(pred_mask, gt_mask)
-                metrics = evaluate_referring(pred_mask, gt_mask)
+                    referring_accumulator.update(pred_mask, gt_mask, valid_mask=valid_mask)
+                metrics = evaluate_referring(pred_mask, gt_mask, valid_mask=valid_mask)
+                variants = batch.get("reasonseg_annotation_variants", {})
+                if variants or reasonseg_variant_accumulators:
+                    if set(variants) != {"legacy_union", "lisa_v1"}:
+                        raise ValueError("ReasonSeg needs both annotation variants on every sample")
+                    for name, variant in variants.items():
+                        accumulator = reasonseg_variant_accumulators.setdefault(name, ReferringAccumulator())
+                        suffix = "_native" if native_resolution else ""
+                        variant_gt = variant["gt_mask" + suffix].to(self.device).bool()
+                        variant_valid = variant["valid_mask" + suffix].to(self.device).bool()
+                        # Variants keep the native size even when the primary GT falls back to the canvas.
+                        variant_pred = _resize_mask_to(pred_mask, variant_gt.shape[-2:])
+                        accumulator.update(variant_pred, variant_gt, valid_mask=variant_valid)
+                        reasonseg_variant_valid_pixels[name] += int(variant_valid.sum().item())
 
             elif task == "edge":
                 # Edge detection: treat RGB as edge probability (grayscale)
@@ -803,6 +830,11 @@ class VisionEvaluator:
             self.last_accumulator_states = {"main": accumulator_state(semantic_accumulator)}
         elif task == "referring" and referring_accumulator is not None:
             self.last_accumulator_states = {"main": accumulator_state(referring_accumulator)}
+            if reasonseg_variant_accumulators:
+                self.last_accumulator_states["annotation_variants"] = {
+                    name: {**accumulator_state(acc), "valid_pixels": reasonseg_variant_valid_pixels[name]}
+                    for name, acc in reasonseg_variant_accumulators.items()
+                }
 
         if n_batches == 0:
             logger.warning("evaluate() called on an empty dataloader — returning empty metrics")
@@ -823,7 +855,13 @@ class VisionEvaluator:
         if task == "semantic" and semantic_accumulator is not None:
             return semantic_accumulator.compute()
         if task == "referring" and referring_accumulator is not None:
-            return referring_accumulator.compute()
+            report = referring_accumulator.compute()
+            if reasonseg_variant_accumulators:
+                report["annotation_variants"] = {
+                    name: {**acc.compute(), "valid_pixels": reasonseg_variant_valid_pixels[name]}
+                    for name, acc in reasonseg_variant_accumulators.items()
+                }
+            return report
 
         for k in all_metrics:
             metric_value = all_metrics[k]

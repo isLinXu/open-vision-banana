@@ -269,7 +269,8 @@ class SemanticAccumulator:
                 f"pred/gt spatial shapes must match: {tuple(pred.shape)} vs {tuple(gt.shape)}"
             )
         valid = (gt != self.ignore_index) & (gt >= 0) & (gt < self.num_classes)
-        valid = valid & (pred >= 0) & (pred < self.num_classes)
+        if bool((valid & ((pred < 0) | (pred >= self.num_classes))).any()):
+            raise ValueError("Predicted class outside the semantic label range on valid GT")
         indices = gt[valid] * self.num_classes + pred[valid]
         self.confusion += torch.bincount(
             indices, minlength=self.num_classes * self.num_classes

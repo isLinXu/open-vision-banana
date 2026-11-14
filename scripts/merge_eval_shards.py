@@ -182,8 +182,7 @@ def main() -> int:
         raise SystemExit("cannot merge generation shards with benchmark shards")
     merged = merge_shards(shards)
     write_results(args.output_json, merged)
-    if args.output_csv is not None:
-        write_metrics_csv(args.output_csv, merged)
+    write_metrics_csv(args.output_csv or args.output_json.with_suffix(".csv"), merged)
     for key, record in merged["benchmarks"].items():
         shards = record["merged_shards"]["count"]
         print(f"{key}: {record['samples']} samples from {shards} shards")

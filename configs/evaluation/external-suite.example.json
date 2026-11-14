@@ -1,0 +1,36 @@
+{
+  "resolution": 512,
+  "reasonseg_annotation_mode": "legacy_union",
+  "datasets": ["nyu", "eth3d", "diode", "cityscapes", "reasonseg", "refcocog"],
+  "data_roots": {
+    "nyu": "/absolute/benchmarks/nyu_h5",
+    "eth3d": "/absolute/benchmarks/eth3d",
+    "diode": "/absolute/benchmarks/diode",
+    "cityscapes": "/absolute/benchmarks/cityscapes",
+    "reasonseg": "/absolute/benchmarks/reasonseg",
+    "refcocog": "/absolute/benchmarks/refcocog"
+  },
+  "models": [
+    {
+      "name": "baseline",
+      "base_path": "/absolute/models/merged-pipeline",
+      "base_repo": "Melo111/Fusion-C1-KQ0r128-60-40",
+      "base_revision": "9d5b9b8ede04d7d9f4a4ff8a6a75a4b734ab1b4d",
+      "lora_path": null
+    },
+    {
+      "name": "trained-best",
+      "base_path": "/absolute/models/merged-pipeline",
+      "base_repo": "Melo111/Fusion-C1-KQ0r128-60-40",
+      "base_revision": "9d5b9b8ede04d7d9f4a4ff8a6a75a4b734ab1b4d",
+      "adapter_repo": "REPLACE_WITH_FIXED_HF_MODEL_ID",
+      "adapter_revision": "REPLACE_WITH_FIXED_COMMIT_SHA",
+      "weight_source": "ema",
+      "lora_path": "/absolute/checkpoint-best",
+      "weight_files": [
+        {"path": "/absolute/checkpoint-best/lora_adapter/adapter_model.safetensors", "sha256": "REPLACE_WITH_SHA256"},
+        {"path": "/absolute/checkpoint-best/lora_adapter/adapter_config.json", "sha256": "REPLACE_WITH_SHA256"}
+      ]
+    }
+  ]
+}

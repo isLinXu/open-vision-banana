@@ -1,0 +1,14 @@
+{
+  "images": 200,
+  "queries": 344,
+  "official_mask_mismatches": [],
+  "official_source_url": "https://raw.githubusercontent.com/JIA-Lab-research/LISA/main/utils/data_processing.py",
+  "official_source_sha256": "31f13818a2a937b46b0d14cf78a0a3d8437873151167e8f255242eb212ba14f2",
+  "counts": {
+    "ignored_pixels": 17910035,
+    "images_with_ignore": 76,
+    "label_target": 340,
+    "label_ignore": 176,
+    "label_flag": 62
+  }
+}
