@@ -914,9 +914,13 @@ The gap to the paper is large and well understood, so there is real work for eve
 
 ### Contributors
 
+Thanks to everyone who has contributed code, experiments and reviews:
+
 <a href="https://github.com/isLinXu/open-vision-banana/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=isLinXu/open-vision-banana" alt="Contributors" />
+  <img src="https://contrib.rocks/image?repo=isLinXu/open-vision-banana&max=100&columns=12" alt="Avatars of the Open-Vision-Banana contributors" />
 </a>
+
+<sub>If the avatars do not load, see the <a href="https://github.com/isLinXu/open-vision-banana/graphs/contributors">contributors graph</a>.</sub>
 
 ---
 
@@ -989,7 +993,9 @@ and, if it helped your work, this repository:
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=isLinXu/open-vision-banana&type=Date)](https://star-history.com/#isLinXu/open-vision-banana&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=isLinXu/open-vision-banana&type=Date&theme=light)](https://star-history.com/#isLinXu/open-vision-banana&Date)
+
+<sub>If the chart does not load, open it on <a href="https://star-history.com/#isLinXu/open-vision-banana&Date">star-history.com</a>.</sub>
 
 ---
 
