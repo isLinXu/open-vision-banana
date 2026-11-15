@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Publish website/ to the gh-pages branch (GitHub Pages, no Actions needed).
-#   bash scripts/publish_site.sh            # push website/ as the root of gh-pages
+# Publish website/ (site root) and demo/ (at /demo/) to the gh-pages branch
+# (GitHub Pages, no Actions needed).
+#   bash scripts/publish_site.sh            # push website/ + demo/ to gh-pages
 #   bash scripts/publish_site.sh --dry-run
 # Then enable Pages once: repo Settings -> Pages -> Source: "Deploy from a branch" -> gh-pages / (root).
 set -euo pipefail
@@ -9,7 +10,7 @@ DRY=0; [[ ${1:-} == --dry-run ]] && DRY=1
 [[ -f website/index.html ]] || { echo "website/index.html missing" >&2; exit 1; }
 python3 -c "import json,sys; [json.load(open(p)) for p in ('website/data/results.json','website/data/gallery.json')]; print('json ok')"
 tmp="$(mktemp -d)"
-cp -R website/. "$tmp"/ && touch "$tmp/.nojekyll"
+cp -R website/. "$tmp"/ && mkdir -p "$tmp/demo" && cp -R demo/. "$tmp/demo"/ && touch "$tmp/.nojekyll"
 commit="$(git rev-parse --short HEAD)"
 echo "publishing website/ @ $commit -> gh-pages"
 if [[ $DRY -eq 1 ]]; then ls -aR "$tmp" | head -30; rm -rf "$tmp"; exit 0; fi
