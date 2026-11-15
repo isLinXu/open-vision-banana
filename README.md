@@ -217,21 +217,21 @@ Our numbers are measured with this repository's `scripts/evaluate_paper_benchmar
 
 ### Fusion r64 runs (I108, external evaluation)
 
-Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0r128-60-40`), rsLoRA r64, sampling mix depth 35 % / semantic 20 % / instance 20 % / referring 20 % / editing replay 5 % ([config](configs/experiments/fusion_r64_large_scale.yaml)). Arm A uses lr 3e-5 ([`ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3)), arm B lr 1e-5 ([`ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3)). Scores from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval): 512 canvas, 50 steps, guidance 4.0, seed 42, native-resolution scoring (the target is generated from noise; `--strength` is ignored for this backbone). ReasonSeg here is n=344 (`query_mode=all`, `legacy_union` masks), so it is not directly comparable with the n=200 column above. Aligned δ1 in parentheses is a diagnostic only.
+Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0r128-60-40`), rsLoRA r64, sampling mix depth 35 % / semantic 20 % / instance 20 % / referring 20 % / editing replay 5 % ([config](configs/experiments/fusion_r64_large_scale.yaml)). Arm A uses lr 3e-5 ([`ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3)), arm B lr 1e-5 ([`ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3)). Scores from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval): 512 canvas, 50 steps, guidance 4.0, seed 42, native-resolution scoring (the target is generated from noise; `--strength` is ignored for this backbone). ReasonSeg here is n=344 (`query_mode=all`, `legacy_union` masks), so it is not directly comparable with the n=200 ReasonSeg column of the earlier runs below. Aligned δ1 in parentheses is a diagnostic only.
 
 | Checkpoint | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
 |-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
-| Fused base (no adapter) | 0.278 (0.873) | **0.292** (0.924) | 0.300 (0.844) | **0.386** | — | 0.417 |
-| A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | — | 0.357 |
+| Fused base (no adapter) | 0.278 (0.873) | **0.292** (0.924) | 0.300 (0.844) | **0.386** | 0.466 | 0.417 |
+| A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | 0.438 | 0.357 |
 | B, step 20k | 0.340 (0.903) | 0.166 (0.910) | 0.229 (0.888) | 0.353 | — | **0.440** |
-| B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | 0.481 | 0.333 |
+| B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | **0.481** | 0.333 |
 | *Vision Banana (closed reference, from the paper)* | *0.948* | *0.935* | *0.917* | *0.699* | *0.738* | *0.793* |
 
-Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg (—: not scored) comes from the merge evaluation below, which also scores B 17.5k (0.518) and B 100k best (0.482).
+Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg is UMD val n=4896 from the same external evaluation (—: not scored). B 20k has no RefCOCOg score; B 17.5k, the balanced checkpoint, scores 0.518 in the merge evaluation below.
 
 ### LoRA merges of the B arm (I127, external evaluation)
 
-Six exact ΔW-weighted merges of B `_best` EMA adapters, built by concatenating LoRA factors into one rank-128 adapter (ΔW = Σ wᵢ · 8 · BᵢAᵢ). Same suite and settings as above, eval code `a8cc7e2`; RefCOCOg is UMD val n=4896. Results and adapters are in [`khazic/ovb-i127-merge-eval`](https://huggingface.co/khazic/ovb-i127-merge-eval), archived with per-file checksums in [`docs/evaluation/i127-merge-20261115/`](docs/evaluation/i127-merge-20261115/results.md).
+Six exact ΔW-weighted merges of B `_best` EMA adapters, built by concatenating LoRA factors into one adapter (ΔW = Σ wᵢ · 8 · BᵢAᵢ) of rank 128, or 192 for the three-adapter P5; the fused base in P6 adds no factors. Same suite and settings as above, eval code `a8cc7e2`; RefCOCOg is UMD val n=4896. Results and adapters are in [`khazic/ovb-i127-merge-eval`](https://huggingface.co/khazic/ovb-i127-merge-eval), archived with per-file checksums in [`docs/evaluation/i127-merge-20261115/`](docs/evaluation/i127-merge-20261115/results.md).
 
 | Model (recipe) | NYU δ1 | NYU AbsRel | ETH3D δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
 |-----|-------:|-------:|---------:|----------------:|--------------:|---------------:|
@@ -719,8 +719,8 @@ The paper evaluates three axes. This table is the current measured-or-blocked st
 
 | Axis | Benchmark | Paper | This repo | Status |
 |------|-----------|------:|-----------|--------|
-| 2D | RefCOCOg UMD val cIoU | 0.738 | Qwen-Image-2.1 I102-i1 0.547; SANA `ovb-fix_seg_plus_gcg` 0.143 (n=4896) | measured |
-| 2D | ReasonSeg val gIoU | 0.793 | Qwen-Image-2.1 I108 B-20k 0.440 (n=344, all queries); parent 0.328 (n=200) | measured on 200 samples; not directly comparable. Paper score uses Gemini 2.5 Pro query rewrite |
+| 2D | RefCOCOg UMD val cIoU | 0.738 | Qwen-Image-2.1 I102-i1 0.547, I108 B-17.5k 0.518; SANA `ovb-fix_seg_plus_gcg` 0.143 (n=4896) | measured |
+| 2D | ReasonSeg val gIoU | 0.793 | Qwen-Image-2.1 I108 B-20k 0.440 (n=344, all queries); parent 0.328 (n=200) | measured (n=344 and n=200); not directly comparable. Paper score uses Gemini 2.5 Pro query rewrite |
 | 2D | Cityscapes val mIoU | 0.699 | Qwen-Image-2.1 fused base 0.386; I102-i1 0.368 (n=500) | measured. Do not use `cityscapes8` |
 | 2D | SA-Co/Gold cgF1 | 47.5 | — | adapter ready (query JSONL + pmF1/IL_MCC/cgF1). Dataset not present. Paper score uses Gemini 3.1 Flash-Lite NP filter |
 | 3D depth | NYU δ1 / AbsRel | 0.948 / 0.081 | Qwen-Image-2.1 I108 B-100k δ1 0.497; C1 0.348; SANA gray 0.066 / 1.990; SANA metric 0.124 / 1.251; FLUX gray 0.155 / 1.472 | measured, gate fail |
@@ -764,7 +764,7 @@ Paper-protocol eval scores a decoded task against the official split at native g
 PYTHONPATH=src python scripts/evaluate_paper_benchmarks.py \
   --benchmark depth --model-name qwen-image-2.1 --lora-path path/to/checkpoint \
   --dtype bfloat16 --resolution 512 --num-inference-steps 50 --guidance-scale 4.0 \
-  --strength 0.85 --seed 42 --native-resolution \
+  --seed 42 --native-resolution \
   --nyu-root data/nyu/official_test --output-json output/eval/nyu.json
 
 # SANA relative-depth LoRA (closer-brighter grayscale)
