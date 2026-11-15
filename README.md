@@ -21,7 +21,7 @@
 
 <br>
 
-<img src="docs/assets/fig1_overview.png" alt="Open-Vision-Banana overview: one frozen Qwen-Image-2.1 backbone with a shared LoRA turns a source image and a task instruction into an RGB prediction, which a parameter-free decoder converts to metric depth, class IDs, instance masks or a referring mask" width="100%">
+<img src="docs/assets/fig1_overview.png" alt="Open-Vision-Banana overview: a frozen generative backbone (Qwen-Image-2.1 by default, swappable by config for FLUX.1, FLUX.2, Qwen-Image-Edit, SANA and more) with a new rank-64 LoRA turns a source image and a task instruction into an RGB prediction, which a parameter-free decoder converts to metric depth, class IDs, instance masks or a referring mask" width="100%">
 
 <sub><b>Overview.</b> A frozen image generator with one shared LoRA adapter answers every task with an RGB image; a fixed, parameter-free decoder turns that image back into metric depth, a class-ID map, instance masks or a binary referring mask. Each task is fully specified by its contract (encoder, instruction, decoder).</sub>
 
@@ -77,27 +77,85 @@ Vision Banana shows that instruction-tuning an image generator on a small amount
 
 ## 🎥 Gallery
 
+Qwen-Image-2.1 from the I108 Fusion r64 runs on validation and test images of the evaluation benchmarks. Depth is shown as the RGB-coded image the model writes, before decoding to metres; instance colors are arbitrary per instance, so they need not match the ground-truth colors. The editing rows check that the adapter still follows ordinary editing instructions.
+
+<table>
+  <tr><th></th><th>Input</th><th>Prediction</th><th>Ground truth</th></tr>
+  <tr><td><b>Metric depth</b><br><sub>NYU Depth V2 val</sub></td>
+    <td><img src="docs/assets/gallery/depth_nyu_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/depth_nyu_pred.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/depth_nyu_gt.jpg" width="200"></td></tr>
+  <tr><td><b>Metric depth</b><br><sub>DIODE Indoor val</sub></td>
+    <td><img src="docs/assets/gallery/depth_diode_a_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/depth_diode_a_pred.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/depth_diode_a_gt.jpg" width="200"></td></tr>
+  <tr><td><b>Semantic</b><br><sub>Cityscapes val</sub></td>
+    <td><img src="docs/assets/gallery/semantic_cityscapes_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/semantic_cityscapes_pred.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/semantic_cityscapes_gt.jpg" width="200"></td></tr>
+  <tr><td><b>Instance</b><br><sub>COCO val2017</sub></td>
+    <td><img src="docs/assets/gallery/instance_coco_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/instance_coco_pred.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/instance_coco_gt.jpg" width="200"></td></tr>
+  <tr><td><b>Instance</b><br><sub>LVIS v1 val</sub></td>
+    <td><img src="docs/assets/gallery/instance_lvis_horse_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/instance_lvis_horse_pred.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/instance_lvis_horse_gt.jpg" width="200"></td></tr>
+  <tr><td><b>Referring</b><br><sub>ReasonSeg val</sub></td>
+    <td><img src="docs/assets/gallery/referring_reasonseg_a_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/referring_reasonseg_a_pred.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/referring_reasonseg_a_gt.jpg" width="200"></td></tr>
+  <tr><td><b>Referring</b><br><sub>RefCOCOg val</sub></td>
+    <td><img src="docs/assets/gallery/referring_refcocog_a_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/referring_refcocog_a_pred.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/referring_refcocog_a_gt.jpg" width="200"></td></tr>
+  <tr><th></th><th>Input</th><th>Prediction</th><th>Instruction</th></tr>
+  <tr><td><b>Editing</b><br><sub>ImgEdit-Bench test</sub></td>
+    <td><img src="docs/assets/gallery/edit_imgedit_add_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/edit_imgedit_add_pred.jpg" width="200"></td>
+    <td><sub><i>“Add a small brown dog sitting inside the open trunk of the antique car.”</i></sub></td></tr>
+  <tr><td><b>Editing</b><br><sub>COCO val2017</sub></td>
+    <td><img src="docs/assets/gallery/edit_coco_watercolor_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/edit_coco_watercolor_pred.jpg" width="200"></td>
+    <td><sub><i>“Turn this photograph into a watercolor painting while preserving the composition and recognizable objects.”</i></sub></td></tr>
+  <tr><td><b>Editing</b><br><sub>ImgEdit-Bench test</sub></td>
+    <td><img src="docs/assets/gallery/edit_imgedit_oil_input.jpg" width="200"></td>
+    <td><img src="docs/assets/gallery/edit_imgedit_oil_pred.jpg" width="200"></td>
+    <td><sub><i>“Transfer the image into a classic impasto oil-painting style.”</i></sub></td></tr>
+</table>
+
+<sub>Samples were picked for illustration and are not a random draw; benchmark-level numbers are in <a href="#-results">Results</a>.</sub>
+
+<details>
+<summary><b>Surface normals and earlier SANA-1600M samples</b></summary>
+
+<br>
+
 <table>
   <tr><th></th><th>Input</th><th>Prediction</th><th>Ground truth</th></tr>
   <tr><td><b>Depth</b></td>
-    <td><img src="demo/assets/samples/depth/2_input.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/depth/2_output.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/depth/2_target.jpg" width="200"></td></tr>
+    <td><img src="demo/assets/samples/depth/2_input.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/depth/2_output.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/depth/2_target.jpg" width="160"></td></tr>
   <tr><td><b>Depth</b></td>
-    <td><img src="demo/assets/samples/depth/4_input.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/depth/4_output.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/depth/4_target.jpg" width="200"></td></tr>
+    <td><img src="demo/assets/samples/depth/4_input.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/depth/4_output.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/depth/4_target.jpg" width="160"></td></tr>
   <tr><td><b>Normals</b></td>
-    <td><img src="demo/assets/samples/normal/3_input.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/normal/3_output.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/normal/3_target.jpg" width="200"></td></tr>
+    <td><img src="demo/assets/samples/normal/3_input.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/normal/3_output.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/normal/3_target.jpg" width="160"></td></tr>
   <tr><td><b>Normals</b></td>
-    <td><img src="demo/assets/samples/normal/4_input.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/normal/4_output.jpg" width="200"></td>
-    <td><img src="demo/assets/samples/normal/4_target.jpg" width="200"></td></tr>
+    <td><img src="demo/assets/samples/normal/4_input.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/normal/4_output.jpg" width="160"></td>
+    <td><img src="demo/assets/samples/normal/4_target.jpg" width="160"></td></tr>
 </table>
 
-<sub>SANA-1600M, <a href="https://huggingface.co/khazic/ovb-fix_best3_rank64_60k"><code>khazic/ovb-fix_best3_rank64_60k</code></a> (EMA, step 60k), on held-out rows of its training manifest. These are same-source samples, not a zero-shot benchmark. The interactive showcase with semantic segmentation, point clouds and relighting is in <a href="demo/"><code>demo/</code></a>: run <code>python -m http.server 8000 -d demo</code> and open <code>http://localhost:8000</code>.</sub>
+<sub>SANA-1600M, <a href="https://huggingface.co/khazic/ovb-fix_best3_rank64_60k"><code>khazic/ovb-fix_best3_rank64_60k</code></a> (EMA, step 60k), on held-out rows of its training manifest. These are same-source samples, not a zero-shot benchmark.</sub>
+
+</details>
+
+The interactive showcase with point clouds, normal relighting and segmentation comparisons is in [`demo/`](demo/): run `python -m http.server 8000 -d demo` and open `http://localhost:8000`.
 
 ---
 
@@ -566,11 +624,12 @@ R = (1-x)/2,  G = (1+y)/2,  B = (1+z)/2
 
 ## Checkpoints
 
-Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb-). The repo id is `khazic/ovb-<run>`.
+Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb-). The repo id is `khazic/ovb-<run>`. The full list of published weights, pinned revisions, the README row each repo belongs to, and download commands is in [`MODEL_CARD.md`](MODEL_CARD.md#published-checkpoints).
 
 | Name pattern | Base | What to load |
 |--------------|------|----------------|
-| `ovb-i88_*`, `ovb-ft_*`, `ovb-i97-*`, `ovb-i108-*` | Qwen-Image-2.1 | `checkpoint-*_final`; `metadata.json` records `model_name: qwen-image-2.1` |
+| `ovb-i88_*`, `ovb-ft_*`, `ovb-i97-*` | Qwen-Image-2.1 | `checkpoint-*_final`; `metadata.json` records `model_name: qwen-image-2.1` |
+| `ovb-i108-*` | Qwen-Image-2.1 on the fused base [`Melo111/Fusion-C1-KQ0r128-60-40`](https://huggingface.co/Melo111/Fusion-C1-KQ0r128-60-40) | `ckpt/checkpoint-N_best` (EMA adapter), `ckpt/checkpoint-N` or `ckpt/checkpoint-100000_final`; download a single folder with `--include` (each repo is ~200 GB) |
 | `ovb-fix_*`, `ovb-best3_*`, `ovb-ctrl_*`, `ovb-main_*` | SANA-1600M | `checkpoint-*_final` (prefer `ema_adapter` when that directory exists) |
 | `ovb-flux*`, `ovb-flux2*`, `ovb-flux3*`, `ovb-flux4*` | FLUX.1-dev | same layout; `metadata.json` records `model_name: flux-dev` |
 
@@ -852,7 +911,8 @@ The gap to the paper is large and well understood, so there is real work for eve
 ## Acknowledgement
 
 - [Vision Banana](https://arxiv.org/abs/2604.20329) by Gabeur et al., whose paper this repository reproduces.
-- The open base models we build on: [Qwen-Image](https://github.com/QwenLM/Qwen-Image), [SANA](https://github.com/NVlabs/Sana) and [FLUX.1](https://github.com/black-forest-labs/flux).
+- The open base models we have trained on: [Qwen-Image](https://github.com/QwenLM/Qwen-Image) (Qwen-Image-2.1), [SANA](https://github.com/NVlabs/Sana) and [FLUX.1](https://github.com/black-forest-labs/flux).
+- The other open image generators and editors registered in [Models](#models): [Qwen-Image](https://huggingface.co/Qwen/Qwen-Image) and [Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit), [FLUX.1 Kontext](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev), [FLUX.2](https://huggingface.co/black-forest-labs/FLUX.2-dev) (dev, [klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B)), [FLUX.3 Image Klein](https://huggingface.co/black-forest-labs/flux-3-image-klein-base), [Z-Image](https://huggingface.co/Tongyi-MAI/Z-Image), [HunyuanImage](https://huggingface.co/tencent/HunyuanImage) and [HunyuanImage-3.0-Instruct](https://huggingface.co/tencent/HunyuanImage-3.0-Instruct), [LongCat-Image](https://huggingface.co/meituan-longcat/LongCat-Image), [JoyAI-Image-Edit](https://huggingface.co/jdopensource/JoyAI-Image-Edit-Diffusers), [Lumina-Image-2.0](https://huggingface.co/Alpha-VLLM/Lumina-Image-2.0), [Chroma](https://huggingface.co/lodestones/Chroma1-HD), [Stable Diffusion 3 / SDXL](https://huggingface.co/stabilityai) and [InstructPix2Pix](https://huggingface.co/timbrooks/instruct-pix2pix). Most of them have not been trained end to end here.
 - [Diffusers](https://github.com/huggingface/diffusers), [PEFT](https://github.com/huggingface/peft) and [PyTorch](https://pytorch.org/).
 - The public datasets listed in [`configs/datasets/sources.tsv`](configs/datasets/sources.tsv) and [`docs/DATASETS.md`](docs/DATASETS.md). Each keeps its own license.
 
