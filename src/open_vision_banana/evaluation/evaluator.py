@@ -29,15 +29,15 @@ from ..core.depth_mapper import (
     per_sample_positive_median,
 )
 from ..core.flow_mapper import FlowRGBMapper
+from ..core.keypoint_mapper import KeypointRGBMapper
+from ..core.normal_mapper import NormalRGBMapper
+from ..core.object_detection_mapper import ObjectDetectionRGBMapper
+from ..core.referring import decode_referring_mask, resolve_referring_encoding
 from ..core.relative_depth_mapper import (
     RELATIVE_INVERSE_CURVE,
     RelativeDepthMapper,
     align_inverse_depth_affine,
 )
-from ..core.keypoint_mapper import KeypointRGBMapper
-from ..core.normal_mapper import NormalRGBMapper
-from ..core.object_detection_mapper import ObjectDetectionRGBMapper
-from ..core.referring import decode_referring_mask, resolve_referring_encoding
 from ..core.segmentation import SegmentationDecoder
 from .benchmark import (
     DepthAccumulator,

@@ -100,11 +100,11 @@ def test_evaluator_scores_relative_inverse_after_affine_fit():
     acc = DepthAccumulator()
     batch = {"gt_depth_native": gt, "valid_mask_native": valid}
     metrics = VisionEvaluator._relative_inverse_depth_metrics(fake, pred_rgb, batch, "diode", True, acc)
-    assert metrics["delta_1.25"] > 0.99
+    assert metrics["δ<1.25"] > 0.99
     plain = VisionEvaluator._relative_inverse_depth_metrics(
         fake, pred_rgb, {"gt_depth": gt, "valid_mask": valid}, "nyu", False, None
     )
-    assert plain["delta_1.25"] > 0.99
+    assert plain["δ<1.25"] > 0.99 and plain["AbsRel"] < 0.01
     with pytest.raises(ValueError):
         VisionEvaluator._relative_inverse_depth_metrics(fake, pred_rgb, {}, "nyu", True, None)
     with pytest.raises(ValueError):
