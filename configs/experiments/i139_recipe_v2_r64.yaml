@@ -1,0 +1,101 @@
+# Issue #139 recipe v2 arm: I108-B (lr 1e-5, same pool, same schedule, batch 32) with three changes:
+#   1. depth rows train as depth_rel (relative inverse depth, per-image min-max, grey, near = bright);
+#   2. semantic legends re-drawn per sample (64-colour palette, 70% subset / 15% all / 15% negatives,
+#      black background);
+#   3. invalid geometry pixels (depth_rel sentinel) are excluded from the flow loss.
+# Compare the 20k checkpoint against B-20k; the 100k schedule is kept so the LR curve matches B.
+model:
+  name: qwen-image-2.1
+  dtype: bfloat16
+  resolution: 512
+lora:
+  rank: 64
+  alpha: 64
+  rs_lora: true
+  target_modules:
+  - to_q
+  - to_k
+  - to_v
+  - to_out.0
+  - img_mlp.proj
+  - img_mlp.gate_layer
+  - img_mlp.out
+data:
+  tasks:
+  - depth_rel
+  - semantic
+  - instance
+  - referring
+  - generation
+  referring_prompt_version: query_v2
+  task_sampling: uniform
+  task_sampling_weights:
+    depth_rel: 0.35
+    semantic: 0.20
+    instance: 0.20
+    referring: 0.20
+    generation: 0.05
+  vision_ratio: 0.9
+  depth_curve: metric_power
+  semantic_legend_mode: random_v2
+  geometry_loss_mask: true
+  aspect_preserving_crop: true
+  num_workers: 4
+  dir: data/fusion_r64_full_referring
+  # Strict composition output: full RES + all admitted LLMSeg COCO questions (no EgoObjects).
+  # Replace legacy referring subsets; see configs/datasets/fusion_r64_pool_spec.example.json.
+  pair_manifest: data/fusion_r64_full_referring/training.jsonl
+  max_samples_per_task: null
+training:
+  tune_mode: lora
+  objective: sft
+  steps: 100000
+  # Deployment placeholders: bind to the actual training environment.
+  # Require world_size * batch_size * gradient_accumulation == 32.
+  # These values do not assert an 8-process or evaluation-server deployment.
+  batch_size: 1
+  gradient_accumulation: 4
+  lr: 1.0e-05
+  max_grad_norm: 1.0
+  drop_grad_norm: 10.0
+  seed: 42
+  gradient_checkpointing: true
+optimizer:
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-08
+scheduler:
+  type: cosine
+  warmup_steps: 2000
+validation:
+  max_samples_per_task: 40
+flow:
+  img2img_flow: true
+  sigma: 0.0
+  logit_normal_timesteps: true
+  shift: 1.0
+  min_snr: false
+  cfg_dropout_rate: 0.05
+loss:
+  task_loss_weights:
+    depth_rel: 1.0
+    semantic: 1.0
+    instance: 1.0
+    referring: 1.0
+  normal_angular_loss_weight: 0.0
+  depth_edge_aux_weight: 0.0
+ema:
+  enabled: true
+  decay: 0.9999
+  warmup_steps: 500
+checkpoint:
+  output_dir: output/i139_recipe_v2_r64_s42
+  save_every: 5000
+  eval_every: 2500
+  log_every: 50
+  resume_weights_only: false
+wandb:
+  enabled: false
+  project: open-vision-banana
+device: cuda

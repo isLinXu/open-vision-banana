@@ -421,6 +421,8 @@ def validate_manifest_contract(
     depth_curve: str = "metric_power",
     max_target_samples_per_task: int = 16,
     split: str = "train",
+    relative_depth: bool = False,
+    relative_depth_samples_per_source: int = 8,
 ) -> ValidationReport:
     """Audit a JSONL pair manifest and model config for Vision-Banana contract bugs.
 
@@ -432,6 +434,9 @@ def validate_manifest_contract(
        non-cube-edge / grayscale depth targets whose decoded metres explode.
     4. Multi-prompt tasks that prevent ``uniform_task_prompts`` from recording
        the training prompt into ``checkpoint/metadata.json``.
+    5. With ``relative_depth`` (the ``depth_rel`` task), per depth source: the
+       ``depth_rel`` encode/decode round trip, sentinel colour == invalid pixels
+       exactly, and the invalid-pixel fraction (``stats["depth_rel_audit"]``).
     """
     import json
     import re
@@ -477,6 +482,7 @@ def validate_manifest_contract(
     ade150_semantic_rows = 0
     relative_depth_prompt_rows = 0
 
+    relative_rows: dict[str, list[tuple[Path, Path | None]]] = {}
     legend_entry_re = re.compile(r'"[^"]+"\s*:\s*<\s*\d+\s*,\s*\d+\s*,\s*\d+\s*>')
 
     with manifest.open(encoding="utf-8") as handle:
@@ -510,6 +516,16 @@ def validate_manifest_contract(
                 estimated_tokens = 12 + 13 * len(entries) if entries else len(prompt.split()) * 2
                 if estimated_tokens > max_tokens:
                     truncated_legend_rows += 1
+
+            if relative_depth and task == "depth" and tgt_rel:
+                source = str(row.get("source_dataset") or row.get("target_kind") or "unknown")
+                bucket = relative_rows.setdefault(source, [])
+                if len(bucket) < relative_depth_samples_per_source:
+                    mask_rel = row.get("valid_mask")
+                    bucket.append((
+                        resolve_manifest_path(tgt_rel, anchor),
+                        resolve_manifest_path(mask_rel, anchor) if mask_rel else None,
+                    ))
 
             if task == "depth" and "relative depth" in prompt.lower():
                 relative_depth_prompt_rows += 1
@@ -607,6 +623,8 @@ def validate_manifest_contract(
                 )
             )
 
+    relative_stats = _audit_relative_depth(relative_rows, report) if relative_depth else {}
+
     semantic_total = task_counts.get("semantic", 0)
     report.stats = {
         "model_name": model_name,
@@ -621,8 +639,67 @@ def validate_manifest_contract(
         "truncated_legend_rows": truncated_legend_rows,
         "relative_depth_prompt_rows": relative_depth_prompt_rows,
         "depth_target_audit": depth_stats,
+        **({"depth_rel_audit": relative_stats} if relative_depth else {}),
     }
     return report
+
+
+def _audit_relative_depth(
+    rows: dict[str, list[tuple[Path, Path | None]]], report: ValidationReport
+) -> dict[str, dict]:
+    """Encode sampled depth rows as depth_rel targets and check the stored contract."""
+    import numpy as np
+    import torch
+
+    from ..core.relative_depth_mapper import RelativeDepthMapper, metric_target_inverse_depth
+
+    mapper = RelativeDepthMapper()
+    stats: dict[str, dict] = {}
+    for source, items in sorted(rows.items()):
+        invalid, roundtrip, collisions, mismatches, checked = [], [], 0, 0, 0
+        for target_path, mask_path in items:
+            if not target_path.is_file() or (mask_path is not None and not mask_path.is_file()):
+                report.issues.append(ValidationIssue("error", f"depth_rel audit: missing file for {target_path}"))
+                continue
+            with Image.open(target_path) as img:
+                rgb = np.asarray(img.convert("RGB"))
+            mask = None
+            if mask_path is not None:
+                with Image.open(mask_path) as img:
+                    mask = np.asarray(img)
+                mask = mask[..., 0] if mask.ndim == 3 else mask
+                if mask.shape != rgb.shape[:2]:
+                    report.issues.append(ValidationIssue("error", f"depth_rel audit: mask/target size differ for {target_path}"))
+                    continue
+            inverse, valid = metric_target_inverse_depth(rgb, mask)
+            valid_t = torch.from_numpy(valid)
+            normalized = mapper.normalize_inverse_depth(torch.from_numpy(inverse), valid_t)
+            encoded = (mapper.encode(normalized, valid_t) * 255.0).round().to(torch.uint8)
+            sentinel = mapper.sentinel_mask(encoded)
+            mismatches += int((sentinel != ~valid_t).sum())
+            collisions += int((sentinel & valid_t).sum())
+            if valid.any():
+                decoded = mapper.decode(encoded.float() / 255.0)
+                roundtrip.append(float((decoded - normalized)[valid_t].abs().max()))
+            invalid.append(float(1.0 - valid.mean()))
+            checked += 1
+        entry = {
+            "sampled_rows": checked,
+            "invalid_fraction_mean": float(np.mean(invalid)) if invalid else None,
+            "invalid_fraction_max": float(np.max(invalid)) if invalid else None,
+            "roundtrip_max_abs": float(np.max(roundtrip)) if roundtrip else None,
+            "sentinel_mismatch_pixels": mismatches,
+            "sentinel_collision_pixels": collisions,
+        }
+        stats[source] = entry
+        if mismatches or collisions:
+            report.issues.append(ValidationIssue(
+                "error", f"depth_rel audit ({source}): sentinel pixels differ from invalid pixels "
+                f"({mismatches} mismatched, {collisions} on valid pixels)"))
+        if roundtrip and max(roundtrip) > 0.5 / 255.0 + 1e-6:
+            report.issues.append(ValidationIssue(
+                "error", f"depth_rel audit ({source}): round trip error {max(roundtrip):.5f} exceeds 0.5/255"))
+    return stats
 
 
 __all__ = [

@@ -20,6 +20,21 @@ from .sana_flow import flow_min_snr_weight
 logger = logging.getLogger(__name__)
 
 
+def latent_loss_mask(pixel_mask: torch.Tensor, latent_shape: torch.Size) -> torch.Tensor:
+    """Downsample a ``[B, 1, H, W]`` pixel mask to the latent grid of ``latent_shape``.
+
+    Returns a 0/1 float mask broadcastable to ``latent_shape`` (``[B, 1, ..., h, w]``):
+    a latent cell is kept when at least half of its pixels are valid.
+    """
+    if pixel_mask.ndim != 4 or pixel_mask.shape[1] != 1:
+        raise ValueError("pixel_mask must be [B, 1, H, W]")
+    if pixel_mask.shape[0] != latent_shape[0]:
+        raise ValueError("pixel_mask and latents disagree on batch size")
+    fraction = torch.nn.functional.adaptive_avg_pool2d(pixel_mask.float(), tuple(latent_shape[-2:]))
+    cells = (fraction >= 0.5).float()
+    return cells.reshape(latent_shape[0], 1, *([1] * (len(latent_shape) - 4)), *latent_shape[-2:])
+
+
 class TrainingLosses:
     """Unified loss computation for multi-task training.
 
@@ -60,21 +75,31 @@ class TrainingLosses:
         timesteps: torch.Tensor,
         batch_tasks: list[str],
         device: torch.device,
+        pixel_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, dict[str, list[float]]]:
         """Compute MSE flow loss with task weighting and optional Min-SNR.
 
         Args:
-            predicted_velocity: Model prediction [B, C, H, W].
-            velocity_target: Flow target [B, C, H, W].
+            predicted_velocity: Model prediction [B, C, H, W] (or [B, C, T, H, W]).
+            velocity_target: Flow target, same shape.
             timesteps: Flow timesteps [B].
             batch_tasks: Task label per sample.
             device: Device for weight tensors.
+            pixel_mask: Optional [B, 1, H_px, W_px] pixel validity. Each latent cell
+                counts only when at least half of the pixels it covers are valid, and a
+                sample's loss is the mean over its counted cells (all-ones = unmasked).
 
         Returns:
             (flow_loss, per_sample_loss, task_loss_acc)
         """
         sq_error = (predicted_velocity.float() - velocity_target.float()).square()
-        per_sample_loss = sq_error.flatten(1).mean(dim=1)
+        if pixel_mask is None:
+            per_sample_loss = sq_error.flatten(1).mean(dim=1)
+        else:
+            cells = latent_loss_mask(pixel_mask, sq_error.shape)
+            per_sample_loss = (sq_error * cells).flatten(1).sum(dim=1) / (
+                cells.expand_as(sq_error).flatten(1).sum(dim=1).clamp(min=1.0)
+            )
 
         # Task loss weighting
         weights = torch.tensor(

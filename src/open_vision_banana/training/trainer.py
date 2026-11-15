@@ -28,6 +28,7 @@ import torch.nn.functional as F
 from PIL import Image, ImageFile
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler, Subset
 
+from ..core.relative_depth_mapper import DEPTH_REL_PROMPT, DEPTH_REL_TASK
 from ..model_registry import resolve_model_config
 from ..task_prompts import SEMANTIC_SEGMENTATION_PROMPT
 from . import full_finetune, qwen_image21
@@ -91,6 +92,7 @@ TASK_PROMPTS = {
     "depth": "Generate a metric depth visualization of this image.",
     "normal": "Generate an RGB surface-normal map. Encode XYZ surface orientation in the RGB channels and preserve fine geometry.",
     "semantic": "Generate a 150-class semantic segmentation mask. Use only the fixed training palette, with one solid class color per pixel and sharp object boundaries.",
+    DEPTH_REL_TASK: DEPTH_REL_PROMPT,
     "structure": "Generate a binary structural edge map. Use a black background and thin white edges aligned to visible scene boundaries.",
 }
 
@@ -230,6 +232,7 @@ class ManifestVisionDataset(Dataset):
         depth_colormaps: list[str] | None = None,
         semantic_prompt_styles: list[str] | None = None,
         semantic_color_remap_prob: float = 0.0,
+        semantic_legend_mode: str = "legacy",
         aspect_preserving_crop: bool = False,
         seed: int = 42,
         tar_index_path: Path | None = None,
@@ -248,6 +251,10 @@ class ManifestVisionDataset(Dataset):
             list(semantic_prompt_styles) if semantic_prompt_styles else None
         )
         self.semantic_color_remap_prob = float(semantic_color_remap_prob)
+        self.semantic_legend_mode = semantic_legend_mode
+        # Class names seen per semantic source: the pool negative legend entries come from.
+        self.semantic_vocabulary: dict[str, tuple[str, ...]] = {}
+        vocabulary: dict[str, set[str]] = {}
         self.aspect_preserving_crop = bool(aspect_preserving_crop)
         self.rng = random.Random(seed)
         self.inner_prefix = inner_prefix
@@ -299,6 +306,9 @@ class ManifestVisionDataset(Dataset):
                 row = json.loads(line)
                 raw_task = row.get("task")
                 mapped = TASK_ALIASES.get(raw_task, raw_task)
+                # depth_rel is derived from the metric depth rows of the same pool.
+                if mapped == "depth" and DEPTH_REL_TASK in tasks:
+                    mapped = DEPTH_REL_TASK
                 if mapped not in tasks:
                     continue
                 if row.get("split") != split:
@@ -319,11 +329,13 @@ class ManifestVisionDataset(Dataset):
                     raise FileNotFoundError(
                         f"{manifest_path}:{_line_no}: missing input/target: {img_path}, {tgt_path}"
                     )
-                if split == "train" and mapped in {"depth", "depth_edge"}:
+                if split == "train" and mapped in {"depth", "depth_edge", DEPTH_REL_TASK}:
                     depth_admission.check(row, _line_no)
                 prompt = row.get("prompt") or TASK_PROMPTS.get(
                     mapped, TASK_PROMPTS.get(raw_task, "")
                 )
+                if mapped == DEPTH_REL_TASK:
+                    prompt = DEPTH_REL_PROMPT
                 if mapped == "referring":
                     from ..data.res_contract import resolve_referring_prompt
 
@@ -332,6 +344,11 @@ class ManifestVisionDataset(Dataset):
                     except ValueError as exc:
                         raise ValueError(f"{manifest_path}:{_line_no}: {exc}") from exc
                 mapping = row.get("mapping") if mapped == "semantic" else None
+                semantic_source = str(row.get("source_dataset") or row.get("source") or "")
+                if isinstance(mapping, dict) and mapping:
+                    vocabulary.setdefault(semantic_source, set()).update(
+                        name for name in mapping if name != "background"
+                    )
                 background = row.get("background_color") if mapped == "instance" else None
                 metric_supervision = {}
                 if (
@@ -356,6 +373,9 @@ class ManifestVisionDataset(Dataset):
                         "task": mapped,
                         "prompt": prompt,
                         **metric_supervision,
+                        **({"valid_mask_path": str(resolve_manifest_path(row["valid_mask"], path_anchor))}
+                           if mapped == DEPTH_REL_TASK and row.get("valid_mask") else {}),
+                        **({"semantic_source": semantic_source} if mapped == "semantic" else {}),
                         **{key: row[key] for key in ("experiment_source", "experiment_sample_id", "source_scene") if key in row},
                         # Builders record the exact legend; it beats re-parsing the prompt.
                         **({"mapping": {k: tuple(int(c) for c in v) for k, v in mapping.items()}}
@@ -372,6 +392,7 @@ class ManifestVisionDataset(Dataset):
                     }
                 )
 
+        self.semantic_vocabulary = {source: tuple(sorted(names)) for source, names in vocabulary.items()}
         if max_samples and max_samples > 0:
             self.samples = self.samples[:max_samples]
         self._depth_admission_checked = split == "train"
@@ -452,6 +473,7 @@ class ManifestVisionDataset(Dataset):
         tgt_img: Image.Image,
         target_resample: Image.Resampling,
         *native_planes: Image.Image,
+        plane_resample: Image.Resampling = Image.Resampling.NEAREST,
     ) -> tuple[Image.Image, ...]:
         """Resize (inp, tgt) to (resolution, resolution), optionally preserving aspect ratio."""
         r = self.resolution
@@ -459,7 +481,7 @@ class ManifestVisionDataset(Dataset):
             return (
                 inp_img.resize((r, r), Image.Resampling.LANCZOS),
                 tgt_img.resize((r, r), target_resample),
-                *(plane.resize((r, r), Image.Resampling.NEAREST) for plane in native_planes),
+                *(plane.resize((r, r), plane_resample) for plane in native_planes),
             )
         w, h = inp_img.size
         if tgt_img.size != (w, h):
@@ -469,7 +491,7 @@ class ManifestVisionDataset(Dataset):
             return (
                 inp_img.resize((r, r), Image.Resampling.LANCZOS),
                 tgt_img.resize((r, r), target_resample),
-                *(plane.resize((r, r), Image.Resampling.NEAREST) for plane in native_planes),
+                *(plane.resize((r, r), plane_resample) for plane in native_planes),
             )
         scale = r / float(short)
         new_w = max(r, int(round(w * scale)))
@@ -477,7 +499,7 @@ class ManifestVisionDataset(Dataset):
         inp_scaled = inp_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         tgt_scaled = tgt_img.resize((new_w, new_h), target_resample)
         scaled_planes = tuple(
-            plane.resize((new_w, new_h), Image.Resampling.NEAREST) for plane in native_planes
+            plane.resize((new_w, new_h), plane_resample) for plane in native_planes
         )
         if new_w == r and new_h == r:
             return inp_scaled, tgt_scaled, *scaled_planes
@@ -499,6 +521,8 @@ class ManifestVisionDataset(Dataset):
         )
         raw_inp = self._open_pil_rgb(s["image_path"], s.get("input_tar_key", ""))
         raw_tgt = self._open_pil_rgb(s["target_path"], s.get("target_tar_key", ""))
+        if s["task"] == DEPTH_REL_TASK:
+            return self._load_depth_rel(s, raw_inp, raw_tgt)
         native_planes: tuple[Image.Image, ...] = ()
         if "metric_depth_path" in s:
             from .metric_scale_loss import load_native_metric_pair
@@ -533,6 +557,8 @@ class ManifestVisionDataset(Dataset):
                 # prompt inference will use, and the bare canonical prompt is
                 # a distribution the model never sees under augmentation.
                 prompt = depth_colormap_prompt(target_cmap, self.depth_curve)
+        elif s["task"] == "semantic" and self.split == "train" and self.semantic_legend_mode == "random_v2":
+            tgt, prompt = self._random_legend(tgt, prompt, s)
         elif s["task"] == "semantic" and self.split == "train" and (
             self.semantic_prompt_styles or self.semantic_color_remap_prob > 0.0
         ):
@@ -560,6 +586,70 @@ class ManifestVisionDataset(Dataset):
         if s["task"] == "instance" and "background_color" in s:
             item["background_color"] = s["background_color"]
         return item
+
+    def _load_depth_rel(self, s: dict, raw_inp: Image.Image, raw_tgt: Image.Image) -> dict:
+        """Relative inverse-depth target + validity mask, from the stored cube-edge metric target.
+
+        The metric target is decoded at its native size; ``1 / z`` and validity are then
+        resized with the input (bilinear, validity-weighted, so holes never blend into
+        valid values) and min-max normalised on the crop the model actually sees.
+        """
+        from open_vision_banana.core.relative_depth_mapper import (
+            RelativeDepthMapper,
+            metric_target_inverse_depth,
+        )
+
+        valid_mask = None
+        if "valid_mask_path" in s:
+            with Image.open(s["valid_mask_path"]) as mask_img:
+                if mask_img.size != raw_tgt.size:
+                    mask_img = mask_img.resize(raw_tgt.size, Image.Resampling.NEAREST)
+                valid_mask = np.asarray(mask_img)
+                if valid_mask.ndim == 3:
+                    valid_mask = valid_mask[..., 0]
+        inverse, valid = metric_target_inverse_depth(np.asarray(raw_tgt), valid_mask)
+        planes = (Image.fromarray(inverse, mode="F"), Image.fromarray(valid.astype(np.float32), mode="F"))
+        if raw_tgt.size != raw_inp.size:
+            planes = tuple(plane.resize(raw_inp.size, Image.Resampling.BILINEAR) for plane in planes)
+        img, _, inv_plane, valid_plane = self._resize_and_crop_pair(
+            raw_inp, raw_tgt, Image.Resampling.NEAREST, *planes,
+            plane_resample=Image.Resampling.BILINEAR,
+        )
+        weight = torch.from_numpy(np.array(valid_plane, np.float32))
+        valid_t = weight > 0.999
+        inverse_t = torch.from_numpy(np.array(inv_plane, np.float32)) / weight.clamp(min=1e-6)
+        mapper = RelativeDepthMapper()
+        tgt = mapper.encode(mapper.normalize_inverse_depth(inverse_t, valid_t), valid_t)
+        inp = torch.from_numpy(np.asarray(img, np.float32) / 255.0).permute(2, 0, 1)
+        item = {
+            "prompt": s["prompt"],
+            "image": inp * 2.0 - 1.0,
+            "target_rgb": tgt,
+            "task": s["task"],
+            "loss_mask": valid_t.float().unsqueeze(0),
+        }
+        if "experiment_source" in s:
+            item["experiment_audit"] = {
+                "source": s["experiment_source"], "id": s["experiment_sample_id"],
+                "scene": s.get("source_scene"), "task": s["task"], "palette": "relative_inverse_grey",
+            }
+        return item
+
+    def _random_legend(self, tgt: torch.Tensor, prompt: str, s: dict) -> tuple[torch.Tensor, str]:
+        """Recipe-v2 legend: random subset / all / negatives, 64-colour palette, black background."""
+        from open_vision_banana.data.semantic_legend import randomize_semantic_legend
+
+        mapping = dict(s["mapping"]) if s.get("mapping") else parse_semantic_legend_from_prompt(prompt)
+        if not mapping:
+            return tgt, prompt
+        quantized = (tgt.permute(1, 2, 0) * 255.0).round().to(torch.uint8).numpy()
+        sample = randomize_semantic_legend(
+            quantized, mapping, self.rng,
+            vocabulary=self.semantic_vocabulary.get(s.get("semantic_source", ""), ()),
+        )
+        if sample is None:
+            return tgt, prompt
+        return torch.from_numpy(sample.target).float().div(255.0).permute(2, 0, 1), sample.prompt
 
     def _augment_semantic(
         self, tgt: torch.Tensor, prompt: str, mapping: dict | None = None
@@ -612,6 +702,11 @@ def _collate_fn(batch: list[dict]) -> dict:
         "target_rgb": torch.stack([b["target_rgb"] for b in batch]),
         "task": [b["task"] for b in batch],
     }
+    if any("loss_mask" in b for b in batch):
+        # Rows without a mask (non-geometry tasks) count every pixel.
+        result["loss_mask"] = torch.stack([
+            b["loss_mask"] if "loss_mask" in b else torch.ones_like(b["target_rgb"][:1]) for b in batch
+        ])
     if any("metric_depth_supervision" in b for b in batch):
         result["metric_depth_supervision"] = [b.get("metric_depth_supervision") for b in batch]
     if any("experiment_audit" in b for b in batch):
@@ -1072,6 +1167,7 @@ class Trainer:
                 depth_colormaps=config.depth_colormaps,
                 semantic_prompt_styles=config.semantic_prompt_styles,
                 semantic_color_remap_prob=config.semantic_color_remap_prob,
+                semantic_legend_mode=config.semantic_legend_mode,
                 load_metric_supervision=config.depth_scale_loss_weight > 0,
                 aspect_preserving_crop=config.aspect_preserving_crop,
                 seed=config.seed,
@@ -1445,6 +1541,7 @@ class Trainer:
             # training-time re-encoding list and must not change what the storage contract is.
             depth_colormap="cube_edge",
             depth_curve=config.depth_curve,
+            relative_depth=DEPTH_REL_TASK in {TASK_ALIASES.get(t, t) for t in (config.tasks or ())},
         )
         for issue in report.warnings:
             logger.warning("preflight: %s", issue.message)
@@ -1546,6 +1643,7 @@ class Trainer:
             timesteps,
             batch_tasks,
             self.device,
+            pixel_mask=self._pixel_loss_mask(batch),
         )
 
         depth_aux_loss, normal_aux_loss = self.losses.compute_aux_losses(
@@ -1579,6 +1677,12 @@ class Trainer:
             "task_loss_acc": task_loss_acc,
             **scale_metrics,
         }
+
+    def _pixel_loss_mask(self, batch: dict) -> torch.Tensor | None:
+        """``[B, 1, H, W]`` pixel validity for the flow loss, or None when masking is off."""
+        if not self.config.geometry_loss_mask or "loss_mask" not in batch:
+            return None
+        return batch["loss_mask"].to(self.device)
 
     def _metric_scale_loss(self, batch, predicted, noisy_latents, timesteps):
         from .flow_matching import FlowScheduler
@@ -1852,6 +1956,7 @@ class Trainer:
                 flow_batch["timesteps"],
                 batch_tasks,
                 self.device,
+                pixel_mask=self._pixel_loss_mask(batch),
             )
             if not torch.isfinite(flow_loss):
                 raise FloatingPointError("Non-finite validation flow loss")

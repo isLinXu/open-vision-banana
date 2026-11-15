@@ -73,7 +73,13 @@ class TrainingConfig:
     semantic_prompt_styles: list[str] | None = None
     referring_prompt_version: str = "query_v2"
     semantic_color_remap_prob: float = 0.0
+    # "legacy" keeps the manifest legends (plus the style/remap options above);
+    # "random_v2" re-draws each legend from the 64-colour palette with random
+    # subsets / negatives and a black background (data/semantic_legend.py).
+    semantic_legend_mode: str = "legacy"
     aspect_preserving_crop: bool = False
+    # Exclude invalid geometry pixels (sentinel-coloured in depth_rel targets) from the flow loss.
+    geometry_loss_mask: bool = False
 
     # ── Scheduler ──────────────────────────────────────────────────────
     scheduler: str = "cosine"
@@ -237,6 +243,8 @@ class TrainingConfig:
                 )
         if not 0.0 <= self.semantic_color_remap_prob < 1.0:
             raise ValueError("semantic_color_remap_prob must be in [0, 1)")
+        if self.semantic_legend_mode not in {"legacy", "random_v2"}:
+            raise ValueError("semantic_legend_mode must be 'legacy' or 'random_v2'")
         self.task_loss_weights = self.parse_task_weights()
         self.task_sampling_weights = _parse_weights(
             self.task_sampling_weights, "task_sampling_weights", allow_empty=True
@@ -424,6 +432,8 @@ _YAML_SECTIONS = {
              "referring_prompt_version": "referring_prompt_version",
              "semantic_prompt_styles": "semantic_prompt_styles",
              "semantic_color_remap_prob": "semantic_color_remap_prob",
+             "semantic_legend_mode": "semantic_legend_mode",
+             "geometry_loss_mask": "geometry_loss_mask",
              "aspect_preserving_crop": "aspect_preserving_crop"},
     "training": {"steps": "steps", "batch_size": "batch_size", "gradient_accumulation": "grad_accum",
                  "lr": "lr", "max_grad_norm": "max_grad_norm", "drop_grad_norm": "drop_grad_norm",
