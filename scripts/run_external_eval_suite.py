@@ -44,7 +44,8 @@ def command(config, model, dataset, output):
             "--device", "cuda", "--dtype", "bfloat16", "--batch-size", "1",
             "--resolution", str(config.get("resolution", 512)), "--native-resolution",
             "--num-inference-steps", "50", "--guidance-scale", "4", "--strength", "0.85",
-            "--seed", "42", "--depth-colormap", "cube_edge", "--depth-curve", "metric_power",
+            "--seed", "42", "--depth-colormap", "cube_edge",
+            "--depth-curve", model.get("depth_curve", "metric_power"),
             "--reasonseg-query-mode", "all", "--reasonseg-annotation-variants",
             "--reasonseg-annotation-mode", config["reasonseg_annotation_mode"],
             "--referring-prompt-version", "query_v2", "--output-json", str(output)]

@@ -29,6 +29,11 @@ from ..core.depth_mapper import (
     per_sample_positive_median,
 )
 from ..core.flow_mapper import FlowRGBMapper
+from ..core.relative_depth_mapper import (
+    RELATIVE_INVERSE_CURVE,
+    RelativeDepthMapper,
+    align_inverse_depth_affine,
+)
 from ..core.keypoint_mapper import KeypointRGBMapper
 from ..core.normal_mapper import NormalRGBMapper
 from ..core.object_detection_mapper import ObjectDetectionRGBMapper
@@ -404,7 +409,7 @@ class VisionEvaluator:
                 curve=depth_curve,
                 log_alpha=depth_log_alpha,
             )
-            if task in ("depth", "depth_edge")
+            if task in ("depth", "depth_edge") and depth_curve != RELATIVE_INVERSE_CURVE
             else None
         )
         relative_accumulator = (
@@ -494,7 +499,11 @@ class VisionEvaluator:
 
             # ── Decode & compute metrics ──────────────────────────────────
             metrics: dict[str, Any]
-            if task == "depth":
+            if task == "depth" and depth_curve == RELATIVE_INVERSE_CURVE:
+                metrics = self._relative_inverse_depth_metrics(
+                    pred_rgb, batch, dataset_name, native_resolution, depth_accumulator
+                )
+            elif task == "depth":
                 pred_depth = decode_depth_rgb(pred_rgb, depth_mapper, invert=invert_depth)
                 if relative_accumulator is not None:
                     relative_depth = relative_luminance_depth(pred_rgb)
@@ -959,6 +968,40 @@ class VisionEvaluator:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _relative_inverse_depth_metrics(
+        self, pred_rgb, batch, dataset_name, native_resolution, depth_accumulator
+    ) -> dict[str, Any]:
+        """Score a depth_rel prediction: grey -> per-image affine fit to GT 1/z on valid pixels.
+
+        The headline (``raw``) metrics of this curve are therefore affine-aligned in
+        inverse depth; a relative encoding has no unaligned metric reading.
+        """
+        if native_resolution:
+            if "gt_depth_native" not in batch:
+                raise ValueError("native_resolution=True needs 'gt_depth_native' in the batch")
+            gt_depth = batch["gt_depth_native"].to(self.device)
+            valid_mask = batch["valid_mask_native"].to(self.device)
+        else:
+            gt_depth = batch.get("gt_depth")
+            if gt_depth is None:
+                raise ValueError("relative_inverse depth scoring needs native GT depth")
+            gt_depth = gt_depth.to(self.device)
+            valid_mask = batch.get("valid_mask")
+            valid_mask = valid_mask.to(self.device) if valid_mask is not None else None
+        prediction = RelativeDepthMapper.decode(pred_rgb.float()).unsqueeze(1)
+        prediction = _resize_to(prediction, gt_depth.shape[-2:])
+        _, gt_depth, mask = apply_depth_benchmark_protocol(
+            dataset_name or "", prediction, gt_depth, valid_mask
+        )
+        mask = mask.reshape(gt_depth.shape) if mask is not None else torch.ones_like(gt_depth, dtype=torch.bool)
+        aligned = align_inverse_depth_affine(prediction.reshape(gt_depth.shape), gt_depth, mask)
+        pred_depth, gt_depth, mask = apply_depth_benchmark_protocol(
+            dataset_name or "", aligned, gt_depth, mask
+        )
+        if depth_accumulator is not None:
+            depth_accumulator.update(pred_depth, gt_depth, mask)
+        return evaluate_depth(pred_depth, gt_depth, mask)
 
     def _run_inference(
         self,

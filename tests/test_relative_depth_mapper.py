@@ -84,3 +84,43 @@ def test_affine_alignment_recovers_depth():
     assert torch.isfinite(none).all()
     with pytest.raises(ValueError):
         align_inverse_depth_affine(prediction, gt[..., :3], valid)
+
+
+def test_evaluator_scores_relative_inverse_after_affine_fit():
+    from types import SimpleNamespace
+
+    from open_vision_banana.evaluation.benchmark import DepthAccumulator
+    from open_vision_banana.evaluation.evaluator import VisionEvaluator
+
+    gt = _depth(16, 16)[None, None]
+    valid = torch.ones(1, 16, 16, dtype=torch.bool)
+    mapper = RelativeDepthMapper()
+    pred_rgb = mapper.encode_depth(gt[:, 0], valid)  # perfect relative prediction, [1, 3, H, W]
+    fake = SimpleNamespace(device="cpu")
+    acc = DepthAccumulator()
+    batch = {"gt_depth_native": gt, "valid_mask_native": valid}
+    metrics = VisionEvaluator._relative_inverse_depth_metrics(fake, pred_rgb, batch, "diode", True, acc)
+    assert metrics["delta_1.25"] > 0.99
+    plain = VisionEvaluator._relative_inverse_depth_metrics(
+        fake, pred_rgb, {"gt_depth": gt, "valid_mask": valid}, "nyu", False, None
+    )
+    assert plain["delta_1.25"] > 0.99
+    with pytest.raises(ValueError):
+        VisionEvaluator._relative_inverse_depth_metrics(fake, pred_rgb, {}, "nyu", True, None)
+    with pytest.raises(ValueError):
+        VisionEvaluator._relative_inverse_depth_metrics(fake, pred_rgb, {}, "nyu", False, None)
+
+
+def test_suite_command_passes_depth_curve():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts/run_external_eval_suite.py"
+    spec = importlib.util.spec_from_file_location("suite", path)
+    suite = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(suite)
+    config = {"data_roots": {"nyu": "/d"}, "reasonseg_annotation_mode": "x"}
+    args = suite.command(config, {"name": "m", "depth_curve": "relative_inverse"}, "nyu", Path("o.json"))
+    assert args[args.index("--depth-curve") + 1] == "relative_inverse"
+    default = suite.command(config, {"name": "m"}, "nyu", Path("o.json"))
+    assert default[default.index("--depth-curve") + 1] == "metric_power"

@@ -19,6 +19,8 @@ import numpy as np
 import torch
 
 DEPTH_REL_TASK = "depth_rel"
+# Evaluation decode curve name for depth_rel predictions (``--depth-curve relative_inverse``).
+RELATIVE_INVERSE_CURVE = "relative_inverse"
 DEPTH_REL_PROMPT = (
     "Generate a relative inverse depth map of this image in grayscale: "
     "near surfaces are bright and far surfaces are dark."
@@ -174,6 +176,7 @@ __all__ = [
     "DEPTH_REL_PROMPT",
     "DEPTH_REL_SENTINEL",
     "DEPTH_REL_TASK",
+    "RELATIVE_INVERSE_CURVE",
     "RelativeDepthMapper",
     "align_inverse_depth_affine",
     "metric_target_inverse_depth",

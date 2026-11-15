@@ -250,12 +250,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--depth-curve",
-        choices=["metric_power", "log_relative"],
+        choices=["metric_power", "log_relative", "relative_inverse"],
         default="metric_power",
         help=(
             "1-D depth curve before the colormap. metric_power is the Vision Banana "
             "paper protocol. log_relative is an opt-in median+log ablation; decode "
-            "units are relative and must not be cited as paper AbsRel."
+            "units are relative and must not be cited as paper AbsRel. relative_inverse "
+            "scores depth_rel checkpoints (grey inverse depth, per-image affine fit to "
+            "GT inverse depth) and defaults the depth prompt to the depth_rel prompt."
         ),
     )
     parser.add_argument(
@@ -688,6 +690,10 @@ def main() -> int:
         instance_decoding_config=instance_decoding,
     )
     model.referring_prompt_version = args.referring_prompt_version
+    if args.depth_curve == "relative_inverse" and not args.depth_prompt:
+        from open_vision_banana.core.relative_depth_mapper import DEPTH_REL_PROMPT, DEPTH_REL_TASK
+
+        args.depth_prompt = model.training_prompts.get(DEPTH_REL_TASK, DEPTH_REL_PROMPT)
     if args.depth_prompt:
         model.training_prompts["depth"] = args.depth_prompt
     evaluator = VisionEvaluator(model, device=device)

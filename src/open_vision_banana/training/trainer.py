@@ -911,6 +911,8 @@ class Trainer:
             "skipped": bool(config.skip_preflight),
             "errors": [i.message for i in self.preflight_report.errors] if self.preflight_report else [],
             "warnings": [i.message for i in self.preflight_report.warnings] if self.preflight_report else [],
+            **({"depth_rel_audit": self.preflight_report.stats["depth_rel_audit"]}
+               if self.preflight_report and "depth_rel_audit" in self.preflight_report.stats else {}),
         }
         effective["sampling_rank"] = self.dist.rank
         effective["sampling_world_size"] = self.dist.world_size
