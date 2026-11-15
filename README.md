@@ -34,7 +34,7 @@
 
 ## Table of Contents
 
-- [News](#-news) · [Why Open-Vision-Banana](#-why-open-vision-banana) · [Gallery](#-gallery) · [How It Works](#how-it-works) · [Results](#-results)
+- [News](#-news) · [Why Open-Vision-Banana](#-why-open-vision-banana) · [Key findings](#-key-findings) · [Gallery](#-gallery) · [How It Works](#how-it-works) · [Results](#-results)
 - [Quick Start](#-quick-start) · [Models](#models) · [Training](#training) · [Supported Tasks](#supported-tasks) · [Key Algorithms](#key-algorithms)
 - [Checkpoints](#checkpoints) · [Paper Alignment](#paper-alignment-statement) · [Benchmarks (from paper)](#benchmarks-from-paper) · [Evaluation & Export](#evaluation--export)
 - [Docker](#docker) · [Project Structure](#project-structure) · [Contributing](#-contributing) · [Roadmap](#roadmap) · [Citation](#citation) · [License](#license)
@@ -43,6 +43,8 @@
 
 ## 📰 News
 
+- **[2026-11-15]** 📌 Open release: the five key findings so far are summarized in [Key findings](#-key-findings).
+- **[2026-11-15]** 🧪 Six exact LoRA merges of the I108 B arm, externally evaluated on all six benchmarks. None passes every gate; B `checkpoint-17500_best` stays the balanced pick ([#127](https://github.com/isLinXu/open-vision-banana/issues/127), [results](docs/evaluation/i127-merge-20261115/results.md)).
 - **[2026-11-14]** 🔥 Prepared for the public release: cleaned code and docs, new overview and task-contract figures, and the I108 Fusion r64 results from an external evaluation ([#122](https://github.com/isLinXu/open-vision-banana/pull/122), [#128](https://github.com/isLinXu/open-vision-banana/pull/128)).
 - **[2026-11-12]** 🎨 Interactive showcase in [`demo/`](demo/): normal-map relighting, depth point clouds and segmentation comparisons ([#121](https://github.com/isLinXu/open-vision-banana/pull/121)).
 - **[2026-11-11]** 🎲 Depth seed ensembles in evaluation (`--depth-seed-ensemble K`, [#117](https://github.com/isLinXu/open-vision-banana/pull/117)) and experimental post-training objectives, on-policy distillation and GRPO ([#114](https://github.com/isLinXu/open-vision-banana/pull/114)).
@@ -72,6 +74,20 @@ Vision Banana shows that instruction-tuning an image generator on a small amount
 - 🔬 **Honest, auditable evaluation.** Paper protocols on official splits at native resolution, a zero-shot leakage audit, raw metrics as the headline with aligned metrics marked as diagnostics, and a 58-item audit against the paper text.
 - ⚡ **Parameter-efficient.** rsLoRA r32 / r64 trains about 1.2 % / 2.4 % of the 7B Qwen-Image-2.1 transformer. One trainer drives 40+ registered model configurations.
 - 🧪 **Built for research.** 2,000+ tests, seed-ensemble and depth-scale diagnostics, sharded evaluation and per-task validation losses.
+
+---
+
+## 🔎 Key findings
+
+What the open recipe (frozen Qwen-Image-2.1, one shared rsLoRA, **metric** depth, public data) shows so far. Every number is from the tables in [Results](#-results).
+
+1. **Geometry is learned early; absolute scale is not.** Across the 40 evaluated checkpoints of the two 100k-step runs, per-image median-aligned NYU δ1 stays at 0.89–0.93, while raw metric δ1 moves between 0.11 and 0.50. Almost all of the depth gap is one number per image.
+2. **A single sample does not commit to a scale.** On run C1, a ten-seed log-scale median raises raw NYU δ1 from 0.348 to 0.516 with no retraining (`--depth-seed-ensemble`). It is a diagnostic at ten times the inference cost, not a method.
+3. **Depth and 2D segmentation trade off under one adapter.** In arm B, NYU δ1 rises from 0.111 to 0.485 while Cityscapes mIoU falls from 0.362 to 0.293; ReasonSeg peaks at 0.440 at 20k and ends at 0.333. No checkpoint beats the fused base on every benchmark.
+4. **Weight merging moves along the trade-off.** Six exact LoRA merges all improve ETH3D, and Cityscapes lands 0.7–1.8 points above the weighted average of the parents, but every merge loses 3–6 points of ReasonSeg against the balanced checkpoint.
+5. **Validation flow loss does not select checkpoints.** Over the EMA checkpoints of each arm, lower loss goes with lower Cityscapes mIoU (Spearman ρ ≈ −0.9 between loss reduction and mIoU).
+
+These are results on one backbone with one training seed per run. Checkpoints and merge recipes were inspected on the evaluation benchmarks, so the best scores are optimistic.
 
 ---
 
@@ -200,17 +216,34 @@ Our numbers are measured with this repository's `scripts/evaluate_paper_benchmar
 
 ### Fusion r64 runs (I108, external evaluation)
 
-Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0r128-60-40`), rsLoRA r64, sampling mix depth 35 % / semantic 20 % / instance 20 % / referring 20 % / editing replay 5 % ([config](configs/experiments/fusion_r64_large_scale.yaml)). Arm A uses lr 3e-5 ([`ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3)), arm B lr 1e-5 ([`ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3)). Scores from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval): 512 canvas, 50 steps, guidance 4.0, strength 0.85, seed 42, native-resolution scoring. ReasonSeg here is n=344 (`query_mode=all`, `legacy_union` masks), so it is not directly comparable with the n=200 column above. Aligned δ1 in parentheses is a diagnostic only.
+Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0r128-60-40`), rsLoRA r64, sampling mix depth 35 % / semantic 20 % / instance 20 % / referring 20 % / editing replay 5 % ([config](configs/experiments/fusion_r64_large_scale.yaml)). Arm A uses lr 3e-5 ([`ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3)), arm B lr 1e-5 ([`ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3)). Scores from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval): 512 canvas, 50 steps, guidance 4.0, seed 42, native-resolution scoring (the target is generated from noise; `--strength` is ignored for this backbone). ReasonSeg here is n=344 (`query_mode=all`, `legacy_union` masks), so it is not directly comparable with the n=200 column above. Aligned δ1 in parentheses is a diagnostic only.
 
 | Checkpoint | NYU δ1 | ETH3D δ1 | DIODE δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
 |-----|-------:|---------:|---------:|----------------:|--------------:|---------------:|
-| Fused base (no adapter) | 0.278 (0.873) | **0.292** (0.924) | 0.300 (0.844) | **0.386** | pending | 0.417 |
-| A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | pending | 0.357 |
-| B, step 20k | 0.340 (0.903) | 0.166 (0.910) | 0.229 (0.888) | 0.353 | pending | **0.440** |
-| B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | pending | 0.333 |
+| Fused base (no adapter) | 0.278 (0.873) | **0.292** (0.924) | 0.300 (0.844) | **0.386** | — | 0.417 |
+| A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | — | 0.357 |
+| B, step 20k | 0.340 (0.903) | 0.166 (0.910) | 0.229 (0.888) | 0.353 | — | **0.440** |
+| B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | 0.481 | 0.333 |
 | *Vision Banana (closed reference, from the paper)* | *0.948* | *0.935* | *0.917* | *0.699* | *0.738* | *0.793* |
 
-Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg has not been scored for these runs yet.
+Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg (—: not scored) comes from the merge evaluation below, which also scores B 17.5k (0.518) and B 100k best (0.482).
+
+### LoRA merges of the B arm (I127, external evaluation)
+
+Six exact ΔW-weighted merges of B `_best` EMA adapters, built by concatenating LoRA factors into one rank-128 adapter (ΔW = Σ wᵢ · 8 · BᵢAᵢ). Same suite and settings as above, eval code `a8cc7e2`; RefCOCOg is UMD val n=4896. Results and adapters are in [`khazic/ovb-i127-merge-eval`](https://huggingface.co/khazic/ovb-i127-merge-eval), archived with per-file checksums in [`docs/evaluation/i127-merge-20261115/`](docs/evaluation/i127-merge-20261115/results.md).
+
+| Model (recipe) | NYU δ1 | NYU AbsRel | ETH3D δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
+|-----|-------:|-------:|---------:|----------------:|--------------:|---------------:|
+| B 17.5k (control, rescored) | 0.407 | 0.294 | 0.176 | 0.355 | **0.518** | **0.431** |
+| B 100k best | **0.485** | **0.267** | **0.221** | 0.293 | 0.482 | 0.333 |
+| P1: 17.5k 75 % + 100k 25 % | 0.407 | 0.295 | 0.193 | 0.346 | 0.515 | 0.400 |
+| P2: 17.5k 50 % + 100k 50 % | 0.419 | 0.288 | 0.198 | 0.338 | 0.506 | 0.380 |
+| P3: 5k 60 % + 100k 40 % | 0.431 | 0.311 | 0.214 | 0.350 | 0.505 | 0.371 |
+| P4: 20k 60 % + 100k 40 % | 0.394 | 0.320 | 0.203 | 0.339 | 0.517 | 0.385 |
+| P5: 5k 40 % + 17.5k 40 % + 100k 20 % | 0.406 | 0.306 | 0.194 | **0.364** | 0.513 | 0.395 |
+| P6: base 20 % + 17.5k 55 % + 100k 25 % | 0.449 | 0.324 | 0.200 | **0.364** | 0.512 | 0.400 |
+
+Every merge improves ETH3D, and the three-way merges recover Cityscapes. But every merge loses 3–6 pp of ReasonSeg against the control, so none passes the pre-registered gates, and B 17.5k remains the balanced checkpoint. P2, P3 and P4 also give unstable DIODE AbsRel (1.1–2.9).
 
 ### Earlier Qwen-Image-2.1 runs
 
@@ -224,11 +257,13 @@ Metric depth δ1 without scale alignment, and segmentation metrics, at native gr
 | T1: no normals | 0.149 | 0.192 | 0.180 | 0.337 | 0.467 | 0.271 |
 | T2: depth 75 %, five colormaps | 0.179 | **0.251** | 0.241 | 0.331 | 0.291 | 0.276 |
 | T3: segmentation specialist | 0.050 | 0.032 | 0.143 | 0.264 | 0.519 | 0.304 |
-| I101-h1: full fine-tune, lr 5e-6 | 0.222 | 0.193 | 0.247 | 0.362 | 0.241 | 0.175 |
-| I102-i1: LoRA | 0.099 | 0.195 | 0.115 | **0.368** | **0.547** | 0.321 |
+| ML: LoRA continued from the parent, T1 mixture, cube-edge | 0.169 | 0.227 | 0.246 | 0.354 | 0.489 | 0.304 |
+| I101-h1: full fine-tune of the merged parent, T1 mixture, lr 5e-6 | 0.222 | 0.193 | 0.247 | 0.362 | 0.241 | 0.175 |
+| Untuned Qwen-Image-2.1 (no adapter) | 0.072 | 0.119 | 0.077 | 0.215 | 0.376 | 0.254 |
+| I102-i1: fresh LoRA on the untuned base, referring 35 % | 0.099 | 0.195 | 0.115 | **0.368** | **0.547** | 0.321 |
 | Vision Banana (closed reference, from the paper) | 0.948 | 0.935 | 0.917 | 0.699 | 0.738 | 0.793 |
 
-No run improves depth and segmentation together, and none beats the parent on every benchmark. The depth gap is mostly absolute scale: with per-image median alignment the best δ1 rises to 0.845 / 0.906 / 0.855 on NYU / ETH3D / DIODE, but aligned δ1 is a diagnostic only and is not comparable to the paper's protocol.
+All rows except the last two start from the parent; I102-i1 starts from the untuned backbone. No run improves depth and segmentation together, and none beats the parent on every benchmark. At this budget, full fine-tuning (I101-h1) halves RefCOCOg against the matched LoRA run (ML). The depth gap is mostly absolute scale: with per-image median alignment the best δ1 rises to 0.845 / 0.906 / 0.855 on NYU / ETH3D / DIODE, but aligned δ1 is a diagnostic only and is not comparable to the paper's protocol.
 
 <details>
 <summary><b>Earlier SANA-1600M and FLUX.1-dev runs</b></summary>
@@ -341,7 +376,7 @@ result = model.predict(image=image, task="depth",
 ```
 
 > [!NOTE]
-> `predict()` defaults to `num_inference_steps=1` and `guidance_scale=0`, which are smoke-test settings. Pass the evaluation settings explicitly, as above. The values the published results use are 512 px, 50 steps, guidance 4.0 and strength 0.85.
+> `predict()` defaults to `num_inference_steps=1` and `guidance_scale=0`, which are smoke-test settings. Pass the evaluation settings explicitly, as above. The values the published results use are 512 px, 50 steps and guidance 4.0.
 
 ### Command line
 
@@ -635,7 +670,7 @@ Published LoRAs are at [`khazic/ovb-*`](https://huggingface.co/khazic?search=ovb
 
 The earlier Qwen-Image-2.1 runs in [Results](#-results) are published under `khazic/ovb-i88_*` and `khazic/ovb-ft_*` (the table above maps the prefixes to backbones), and the I108 arms are linked in that section. Exact run names and per-run metrics are also rendered from the evaluation JSONs in [`demo/`](demo/) and [`website/`](website/).
 
-SANA / FLUX task-matched runs:
+SANA / FLUX task-matched runs (as of 2026-11-15 these `ovb-fix_*` and `ovb-flux3_*` repositories return 404 on the Hub, so the weights cannot be downloaded; the numbers are kept as a record):
 
 - Depth: [`ovb-fix_ctrl_depth`](https://huggingface.co/khazic/ovb-fix_ctrl_depth), [`ovb-flux3_ctrl_depth_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_depth_nominsnr_15k)
 - Normals: [`ovb-fix_ctrl_normal`](https://huggingface.co/khazic/ovb-fix_ctrl_normal), [`ovb-flux3_ctrl_normal_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_normal_nominsnr_15k)
@@ -863,9 +898,9 @@ The gap to the paper is large and well understood, so there is real work for eve
 |------|---------|----------------|:-----:|
 | Depth | Raw metric δ1 is far below aligned δ1 (NYU 0.497 vs 0.926), so absolute scale is the bottleneck, and single samples vary a lot between seeds | `--depth-scale-ratios`, `--depth-seed-ensemble`, [scale-loss ablation](docs/metric_depth_scale_ablation.md) | 🔴 research |
 | Multi-task | Longer training helps depth but hurts Cityscapes and ReasonSeg; no checkpoint beats the base on every benchmark | `task_sampling_weights`, `vision_ratio`, [Fusion r64 plan](docs/fusion_r64_large_scale_plan.md) | 🔴 research |
-| Evaluation | Normals, instance segmentation (SA-Co/Gold) and RefCOCOg are not yet scored for the Qwen-Image-2.1 runs | `scripts/evaluate_paper_benchmarks.py --benchmark normal / instance / referring` | 🟡 medium |
+| Evaluation | Normals and instance segmentation (SA-Co/Gold) are not yet scored for the Qwen-Image-2.1 runs; RefCOCOg is scored for only a few I108 checkpoints | `scripts/evaluate_paper_benchmarks.py --benchmark normal / instance / referring` | 🟡 medium |
 | Generation | Generation retention, a core claim of the paper, is unmeasured | `scripts/evaluate_generation_preservation.py` (FID/LPIPS proxy) | 🟡 medium |
-| Protocol | ReasonSeg in the paper uses Gemini query rewriting; ours does not, so the scores are not comparable | `--reasonseg-query-mode`, [referring prompts](docs/referring_query_prompts.md) | 🟡 medium |
+| Protocol | ReasonSeg in the paper uses Gemini query rewriting; ours does not, so the scores are not comparable. | `--reasonseg-query-mode`, [referring prompts](docs/referring_query_prompts.md) | 🟡 medium |
 | Backbones | Z-Image, Lumina-Image-2.0, Chroma, FLUX.2 Klein and other registered models are untested end to end | `model_registry.py`, `scripts/train.py` | 🟡 medium |
 | Tasks | Edge, optical flow, keypoints, detection and depth edges have RGB mappers but no training data pipeline | `src/open_vision_banana/core/`, [Adding new tasks](CONTRIBUTING.md#adding-new-vision-tasks) | 🟡 medium |
 | Docs | Tutorials, a notebook walk-through with a published checkpoint, and translations | `notebooks/`, `docs/` | 🟢 good first |
@@ -898,7 +933,7 @@ The gap to the paper is large and well understood, so there is real work for eve
 **Next**
 - [ ] Close the raw metric-depth scale gap
 - [ ] One checkpoint that is at least as good as its parent on every benchmark
-- [ ] Score normals, instance segmentation, RefCOCOg and generation retention for the Qwen-Image-2.1 runs
+- [ ] Score normals, instance segmentation and generation retention for the Qwen-Image-2.1 runs, and RefCOCOg for the remaining I108 checkpoints
 - [ ] End-to-end runs on more open backbones
 - [ ] Training data for edge, flow, keypoint, detection and depth-edge tasks
 - [ ] Export and serving integrated with the unified trainer

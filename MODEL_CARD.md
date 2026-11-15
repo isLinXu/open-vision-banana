@@ -80,7 +80,7 @@ settings are in the README section
 | ReasonSeg val gIoU (n=344, `legacy_union`) | 0.440 | I108 B, `checkpoint-20000_best` | 0.793 |
 
 I108 scores come from [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval/tree/88f43c92048111bd25b4483e0117494937acb27f).
-That snapshot has no RefCOCOg results for I108 yet. The paper's ReasonSeg number uses
+That snapshot has no RefCOCOg results for I108. The I127 merge evaluation adds them: B `checkpoint-17500_best` 0.518, B `checkpoint-100000_best` 0.482. The paper's ReasonSeg number uses
 queries rewritten by Gemini; ours uses the raw queries, so the two are not the same
 protocol.
 
@@ -97,6 +97,7 @@ reproducible results, pin the listed revision.
 | [`khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-a-lr3e-5-r64-2x8-s42_20261109r3) | `f5f44cbb` | rsLoRA r64 / α64, lr 3e-5, 100k steps | 37 `ckpt/checkpoint-N_best`, 20 periodic `ckpt/checkpoint-N` (every 5k) and `ckpt/checkpoint-100000_final`. Each has `lora_adapter/`, `lora.pt` and `metadata.json` |
 | [`khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3`](https://huggingface.co/khazic/ovb-i108-b-lr1e-5-r64-2x8-s42_20261109r3) | `66b028c7` | rsLoRA r64 / α64, lr 1e-5, 100k steps | Same layout, with 38 `_best` checkpoints |
 | [`khazic/ovb-i120-external-eval`](https://huggingface.co/khazic/ovb-i120-external-eval) | `88f43c92` | Evaluation results only | 205 `full.json` files covering the fused base and 40 I108 checkpoints on NYUv2, ETH3D, DIODE, Cityscapes and ReasonSeg |
+| [`khazic/ovb-i127-merge-eval`](https://huggingface.co/khazic/ovb-i127-merge-eval) | `d218ff58` | Merged adapters + evaluation results | `merged/P1`–`P6` are exact ΔW-weighted merges of B `_best` adapters (rank 128, loader scale 1), and `merged/M0` is B 17.5k passed through the same path. `eval/` has the full six-benchmark results; archived in `docs/evaluation/i127-merge-20261115/` |
 
 Both I108 arms use the training recipe in `configs/experiments/fusion_r64_large_scale.yaml`.
 In `metadata.json`, `adapter_weight_source` records which weights the adapter holds; for
@@ -114,7 +115,10 @@ The A/B archive on branch `docs/i108-ab-eval-and-merge-20261114`
 (`docs/evaluation/i108-ab-20261114/`) adds a second, independent evaluation that
 includes RefCOCOg. There, B `checkpoint-17500_best` is the most balanced checkpoint:
 NYU δ1 0.407, Cityscapes 0.357, ReasonSeg 0.434, RefCOCOg cIoU 0.518. The archive
-also proposes six weight-merge recipes, none of which has been evaluated yet.
+also proposes six weight-merge recipes. All six have since been evaluated (I127,
+[`docs/evaluation/i127-merge-20261115/`](docs/evaluation/i127-merge-20261115/results.md)). None passes every gate,
+because each loses 3–6 pp of ReasonSeg, so B `checkpoint-17500_best` remains the balanced checkpoint. P5 and P6 recover
+Cityscapes (0.364), and P6 raises NYU δ1 to 0.449.
 
 ### Earlier Qwen-Image-2.1 runs (README "Earlier Qwen-Image-2.1 runs" table)
 
