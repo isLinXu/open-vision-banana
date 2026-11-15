@@ -5,126 +5,206 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Open-Vision-Banana — an open reproduction study of "Image Generators are Generalist Vision Learners"</title>
 <meta name="description" content="Open-source reimplementation of the Vision Banana paradigm on public backbones and public data: RGB task interface, six-task instruction tuning, decoders, strict zero-shot audits, and reproducible evaluation.">
+<meta name="theme-color" content="#0c0d1a">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<nav class="topnav">
-  <a href="#top" class="brand">🍌 Open-Vision-Banana</a>
-  <div class="links">
-    <a href="#overview">Overview</a><a href="#method">Method</a><a href="#capabilities">Capabilities</a>
-    <a href="#results">Results</a><a href="#reproduce">Reproduce</a><a href="#alignment">Paper alignment</a><a href="#boundaries">Boundaries</a>
-  </div>
-</nav>
+<a class="skip" href="#main">Skip to content</a>
+<!-- Scroll depth, painted with the paper's depth code: the further down the page, the further along the cube edges. -->
+<div class="depthbar" id="depthbar" aria-hidden="true"></div>
 
-<header id="top" class="hero">
-  <p class="kicker">Unofficial open-source reproduction study</p>
-  <h1>Open-Vision-Banana</h1>
-  <p class="sub">Re-implementing <em>"Image Generators are Generalist Vision Learners"</em> (Vision Banana, arXiv:2604.20329) on <strong>public backbones</strong> and <strong>public data</strong> — and reporting exactly what transfers and what does not.</p>
-  <div class="cta">
-    <a class="btn primary" href="https://github.com/isLinXu/open-vision-banana">Code</a>
-    <a class="btn" href="https://arxiv.org/abs/2604.20329">Original paper</a>
-    <a class="btn" href="https://vision-banana.github.io/">Original project page</a>
-    <a class="btn" id="report-link" href="#results">Technical report (in progress)</a>
-  </div>
-  <p class="disclaimer">Not affiliated with, endorsed by, or verified by the paper's authors or Google DeepMind. Nano Banana Pro, the in-house training data and the human study are closed; nothing here reproduces them.</p>
+<header class="nav">
+  <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="26" height="26"><span>Open-Vision-Banana</span></a>
+  <nav aria-label="Sections">
+    <a href="#cases">Cases</a><a href="#overview">Overview</a><a href="#method">Method</a><a href="#results">Results</a><a href="#reproduce">Reproduce</a><a href="#cite">Citation</a>
+    <a class="out" href="demo/index.html">Interactive demo</a>
+  </nav>
 </header>
 
-<main>
-<section id="overview">
-  <h2 data-num="01">Overview</h2>
-  <div class="cards">
-    <div class="card"><div class="ico">🧩</div><h3>One interface, five vision tasks</h3><p>Semantic, instance and referring segmentation, metric depth and surface normals are all emitted as RGB images selected by the prompt and decoded back to structured outputs — the paper's method, implemented one-to-one where the paper is explicit.</p></div>
-    <div class="card"><div class="ico">🔓</div><h3>Open backbone, open data</h3><p>Qwen-Image-2.1 / Qwen-Image-Edit as the natively image-conditioned base; Hypersim, TartanAir, ADE20K, COCO/LVIS, RefCOCO and OmniEdit as public substitutes for the paper's in-house data, with a strict zero-shot audit on every manifest.</p></div>
-    <div class="card"><div class="ico">📏</div><h3>Measured, not claimed</h3><p>Every number on this page is rendered from an evaluation JSON that records its inference protocol; the untuned base model is a row in every table; differences below the measured noise floor are reported as "no significant difference".</p></div>
-  </div>
-  <figure class="wide">
-    <img src="assets/figures/overview.svg" alt="Overview: vision targets are encoded as RGB, an image generator is instruction-tuned on them mixed with generation replay, and generated RGB is decoded back to depth, normals and masks">
-    <figcaption>Vision target → RGB encoding → image generator (LoRA instruction-tuning, mixed with generation replay) → generated RGB → decoder → metric. The same weights serve every task; only the prompt changes.</figcaption>
-  </figure>
-</section>
-
-<section id="method">
-  <h2 data-num="02">Method as implemented</h2>
-  <div class="grid2">
-    <div>
-      <h3>Encodings (paper §3.1–3.2, Appendix A)</h3>
-      <ul class="tight">
-        <li><strong>Metric depth</strong> — power transform <code>f(d)=1−(1−d/λc)^(λ+1)</code>, λ=−3, c=10/3, then a piecewise-linear path along the RGB-cube edges black→red→yellow→green→cyan→blue→magenta→white (Fig. 5, verified against the figure). Inverse: project onto the nearest segment. Training augments with Plasma / Inferno / Viridis / grayscale.</li>
-        <li><strong>Normals</strong> — camera frame +x right, +y up, +z out; <code>R=(1−x)/2, G=(1+y)/2, B=(1+z)/2</code>.</li>
-        <li><strong>Semantic</strong> — open-vocabulary; the prompt carries the class→colour legend in one of four styles (RGB-tuple JSON, named-colour JSON, natural language, hex); decode = nearest legend colour.</li>
-        <li><strong>Instance</strong> — prompt gives only the class and background colour; the model picks a colour per instance; decoded with the five-stage Appendix A algorithm (τ=14, 16-connectivity, θ<sub>size</sub>=2·10⁻⁴, 3×3 erosion with θ=0.1, γ=5.0).</li>
-        <li><strong>Referring</strong> — Fig. 4 (c)/(d) template, white target on black, kept identical across training, inference and evaluation.</li>
-      </ul>
+<main id="main">
+  <!-- Title -->
+  <section class="hero" id="top">
+    <p class="note">Unofficial open-source reproduction study</p>
+    <h1 id="headline">Open-Vision-Banana</h1>
+    <p class="lede">Re-implementing <em>Image Generators are Generalist Vision Learners</em> (Vision Banana, <a href="https://arxiv.org/abs/2604.20329">arXiv:2604.20329</a>) on <strong>public backbones</strong> and <strong>public data</strong>, and reporting exactly what transfers and what does not.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/isLinXu/open-vision-banana">Code</a>
+      <a class="btn" href="https://arxiv.org/abs/2604.20329">Original paper</a>
+      <a class="btn" href="https://vision-banana.github.io/">Original project page</a>
+      <a class="btn" id="report-link" href="#results">Technical report (in progress)</a>
     </div>
-    <div>
-      <h3>Training recipe (repository choices — the paper states none)</h3>
+    <p class="disclaimer">Not affiliated with, endorsed by, or verified by the paper's authors or Google DeepMind. Nano Banana Pro, the in-house training data and the human study are closed; nothing here reproduces them.</p>
+  </section>
+
+  <!-- The selected cases, three to a row -->
+  <section class="block cases" id="cases" aria-label="Selected cases">
+    <div class="cases-head">
+      <div class="seg" role="tablist" aria-label="Task" id="case-tasks"></div>
+      <div class="cases-ctl">
+        <div class="seg" role="group" aria-label="Relight material" id="relit-modes" hidden>
+          <button type="button" data-mode="0" aria-pressed="true">Clay</button><button type="button" data-mode="1" aria-pressed="false">Photo</button>
+        </div>
+        <div class="seg" role="group" aria-label="What the pictures show" id="case-views"></div>
+      </div>
+    </div>
+    <p class="what" id="case-what"></p>
+    <div class="case-grid" id="case-grid"></div>
+    <p class="fine" id="case-meta"></p>
+  </section>
+
+  <!-- Overview -->
+  <section class="block" id="overview">
+    <h2>Overview</h2>
+    <div class="cols3">
+      <div>
+        <h3>One interface, five vision tasks</h3>
+        <p>Semantic, instance and referring segmentation, metric depth and surface normals are all emitted as RGB images selected by the prompt and decoded back to structured outputs: the paper's method, implemented one-to-one where the paper is explicit.</p>
+      </div>
+      <div>
+        <h3>Open backbone, open data</h3>
+        <p>Qwen-Image-2.1 / Qwen-Image-Edit as the natively image-conditioned base; Hypersim, TartanAir, ADE20K, COCO/LVIS, RefCOCO and OmniEdit as public substitutes for the paper's in-house data, with a strict zero-shot audit on every manifest.</p>
+      </div>
+      <div>
+        <h3>Measured, not claimed</h3>
+        <p>Every number on this page is rendered from an evaluation JSON that records its inference protocol; the untuned base model is a row in every table; differences below the measured noise floor are reported as "no significant difference".</p>
+      </div>
+    </div>
+    <ol class="flow" id="flow">
+      <li>
+        <img src="assets/samples/semantic/0_target.jpg" alt="" loading="lazy">
+        <b>Vision target</b>
+        <span>Metric depth, normals, semantic, instance and referring masks.</span>
+        <small>Hypersim, TartanAir, COCO, ADE20K, RefCOCO</small>
+      </li>
+      <li>
+        <div class="vis ramp" aria-hidden="true"></div>
+        <b>RGB encoding</b>
+        <span>Eq. 1 power transform, cube-edge colormap, legend in the prompt.</span>
+        <small>Paper §3.1–3.2, verified</small>
+      </li>
+      <li class="key">
+        <div class="vis core" aria-hidden="true"><i></i><i></i><i></i></div>
+        <b>Image generator</b>
+        <span>Qwen-Image-2.1 (open). Source image as visual tokens plus reference latents; LoRA instruction-tuning mixed with generation replay.</span>
+        <small>One set of weights; the prompt selects the task</small>
+      </li>
+      <li>
+        <img src="assets/samples/normal/3_output.jpg" alt="" loading="lazy">
+        <b>Decoder</b>
+        <span>Inverse colormap to metres, nearest legend colour, Appendix A clustering.</span>
+        <small>τ = 14, 16-connectivity, γ = 5</small>
+      </li>
+      <li>
+        <div class="vis score" aria-hidden="true"><code id="flow-score">δ<sub>1</sub> AbsRel<br>mIoU cgF1<br>cIoU</code></div>
+        <b>Metrics</b>
+        <span>δ<sub>1</sub>, AbsRel and angle error; mIoU, cgF1 and cIoU; strict zero-shot.</span>
+        <small>Base-model row in every table</small>
+      </li>
+    </ol>
+    <p class="fine caption">Vision target, RGB encoding, image generator (LoRA instruction-tuning, mixed with generation replay), generated RGB, decoder, metric. The same weights serve every task; only the prompt changes.</p>
+  </section>
+
+  <!-- Method -->
+  <section class="block" id="method">
+    <h2>Method as implemented</h2>
+    <h3 class="sub">Encodings (paper §3.1–3.2, Appendix A)</h3>
+    <div class="duo">
+      <div class="panel">
+        <h3>Metric depth</h3>
+        <div class="swatch" id="d-swatch"><b id="d-m">3.2 m</b><span id="d-rgb"></span></div>
+        <input type="range" id="d-slider" min="0" max="1000" value="520" aria-label="Distance">
+        <div class="cube" id="d-cube"><i id="d-mark"></i></div>
+        <div class="ticks"><span>0</span><span>0.8</span><span>1.8</span><span>3.2</span><span>5.3</span><span>8.7</span><span>16 m</span><span>∞</span></div>
+        <p class="fine">Power transform <code>f(d) = 1 − (1 − d / λc)<sup>λ+1</sup></code>, λ = −3, c = 10/3, then a piecewise-linear path along the RGB-cube edges: black, red, yellow, green, cyan, blue, magenta, white (Fig. 5, verified against the figure). Inverse: project onto the nearest segment. Training augments with Plasma, Inferno, Viridis and grayscale.</p>
+      </div>
+      <div class="panel">
+        <h3>Normals</h3>
+        <canvas id="sphere" width="520" height="520" aria-label="Normal sphere"></canvas>
+        <p class="vec" id="n-read">Hover the sphere</p>
+        <p class="fine">Camera frame +x right, +y up, +z out; <code>R = (1−x)/2</code>, <code>G = (1+y)/2</code>, <code>B = (1+z)/2</code>. A surface facing the camera is always <span class="chip"></span> <code>rgb(128, 128, 255)</code>.</p>
+      </div>
+    </div>
+    <div class="trio">
+      <div class="panel slim">
+        <svg class="glyph" viewBox="0 0 120 72" aria-hidden="true"><rect width="120" height="72" rx="6" fill="#4682b4"/><path d="M0 44h120v28H0z" fill="#804080"/><path d="M0 38h34v10H0zM84 34h36v12H84z" fill="#6b8e23"/><rect x="48" y="40" width="30" height="14" rx="3" fill="#00008e"/><rect x="22" y="36" width="7" height="20" rx="3" fill="#dc143c"/></svg>
+        <h3>Semantic</h3>
+        <p class="fine">Open-vocabulary; the prompt carries the class-to-colour legend in one of four styles (RGB-tuple JSON, named-colour JSON, natural language, hex); decode = nearest legend colour.</p>
+      </div>
+      <div class="panel slim">
+        <svg class="glyph" viewBox="0 0 120 72" aria-hidden="true"><rect width="120" height="72" rx="6" fill="#05060f"/><circle cx="30" cy="40" r="17" fill="#ff5d8f"/><circle cx="62" cy="32" r="14" fill="#35d0ba"/><circle cx="92" cy="44" r="16" fill="#f5c63a"/></svg>
+        <h3>Instance</h3>
+        <p class="fine">The prompt gives only the class and background colour; the model picks a colour per instance; decoded with the five-stage Appendix A algorithm (τ = 14, 16-connectivity, θ<sub>size</sub> = 2·10⁻⁴, 3×3 erosion with θ = 0.1, γ = 5.0).</p>
+      </div>
+      <div class="panel slim">
+        <svg class="glyph" viewBox="0 0 120 72" aria-hidden="true"><rect width="120" height="72" rx="6" fill="#000"/><path d="M38 58c-6-14 2-34 20-38 16-3 28 9 26 24-2 12-14 18-26 17-8 0-16 2-20-3z" fill="#fff"/></svg>
+        <h3>Referring</h3>
+        <p class="fine">Fig. 4 (c)/(d) template, white target on black, kept identical across training, inference and evaluation.</p>
+      </div>
+    </div>
+
+    <div class="recipe">
+      <div>
+        <h3>Training recipe</h3>
+        <p class="fine">Repository choices: the paper states none.</p>
+      </div>
       <table class="kv">
         <tr><td>Backbone</td><td>Qwen-Image-2.1 (source image as Qwen3-VL visual tokens + reference latents)</td></tr>
         <tr><td>Tuning</td><td>rsLoRA r32/α64 on attention + MLP, flow matching, AdamW 1e-4, cosine, 30 k steps, 512² canvas</td></tr>
         <tr><td>Mixture</td><td>six tasks; <code>vision_ratio</code> 0.5 (paper: "very low", no number) with OmniEdit edit-pair replay</td></tr>
         <tr><td>Augmentation</td><td>depth colormaps, four semantic prompt styles with 50 % legend re-colouring, aspect-preserving crops</td></tr>
         <tr><td>Zero-shot</td><td><code>--protocol strict</code>: path patterns + COCO image-id exclusion (RefCOCOg val/test live inside COCO train2014); Cityscapes train rejected</td></tr>
-        <tr><td>Inference</td><td>50 steps, CFG 4.0, seed 42, native-resolution scoring — pinned and written into every result JSON</td></tr>
+        <tr><td>Inference</td><td>50 steps, CFG 4.0, seed 42, native-resolution scoring, pinned and written into every result JSON</td></tr>
       </table>
     </div>
-  </div>
-</section>
+  </section>
 
-<section id="capabilities">
-  <h2 data-num="03">Capabilities</h2>
-  <p class="note">Hover (or tap) a tile to reveal the generated output. Tiles are populated from <code>data/gallery.json</code> by experiment E5; until then they show placeholders. Every tile records its checkpoint, prompt and seed.</p>
-  <div id="gallery"></div>
-</section>
+  <!-- Results -->
+  <section class="block" id="results">
+    <h2>Results</h2>
+    <p class="body wide">Charts and tables are rendered from <code>data/results.json</code>, which is generated from the evaluation JSONs (<code>scripts/render_results_tables.py</code>). "Base" is the untuned backbone with identical prompts and decoders; "paper" rows are the original paper's numbers for context only, on a different, closed base model.</p>
+    <div class="chart" id="chart"></div>
+    <div class="tables">
+      <div class="tables-head">
+        <h3>All rows</h3>
+        <div class="seg" role="tablist" aria-label="Result table" id="table-tabs"></div>
+      </div>
+      <div id="table-view"></div>
+      <p class="fine" id="protocol"></p>
+    </div>
+  </section>
 
-<section id="results">
-  <h2 data-num="04">Results</h2>
-  <p class="note">Bars and tables are rendered from <code>data/results.json</code>, which is generated from the evaluation JSONs (<code>scripts/render_results_tables.py</code>). Each table states its inference protocol; "base" is the untuned backbone with identical prompts and decoders; "paper" columns are the original paper's numbers for context only — a different, closed base model.</p>
-  <div id="results-charts" class="charts"></div>
-  <div id="results-tables"></div>
-  <div id="protocol-box" class="protocol"></div>
-</section>
-
-<section id="reproduce">
-  <h2 data-num="05">Reproduce</h2>
-  <pre><code># data: download -> prepare -> merge -> strict zero-shot audit -> gates   (CPU node)
+  <!-- Reproduce -->
+  <section class="exhibit top" id="reproduce">
+    <div class="rail">
+      <h2>Reproduce</h2>
+      <p class="fine">Full plan with research questions, per-experiment done-criteria and the report outline: <a href="https://github.com/isLinXu/open-vision-banana/blob/main/exp_setting.md">exp_setting.md</a>. Data sources: <a href="https://github.com/isLinXu/open-vision-banana/blob/main/docs/DATASETS.md">docs/DATASETS.md</a>.</p>
+    </div>
+    <div class="codebox">
+      <button type="button" class="copy" data-copy="repro">Copy</button>
+<pre id="repro"><code><span class="c"># data: download -> prepare -> merge -> strict zero-shot audit -> gates   (CPU node)</span>
 bash scripts/run_e1_full.sh --to merge
 
-# train 30k steps with auto-resume, then evaluate 5k/15k/30k with the pinned protocol   (GPU node)
-RUN_DIR=output/e1 nohup bash scripts/run_e1_full.sh --from train > output/e1.log 2>&1 &
+<span class="c"># train 30k steps with auto-resume, then evaluate 5k/15k/30k with the pinned protocol   (GPU node)</span>
+RUN_DIR=output/e1 nohup bash scripts/run_e1_full.sh --from train > output/e1.log 2>&amp;1 &amp;
 
-# machine-checked gates at every stage
+<span class="c"># machine-checked gates at every stage</span>
 python scripts/check_experiment_gates.py data|run|eval ...</code></pre>
-  <p>Full plan with research questions, per-experiment done-criteria and the report outline: <a href="https://github.com/isLinXu/open-vision-banana/blob/main/exp_setting.md">exp_setting.md</a> · <a href="https://github.com/isLinXu/open-vision-banana/blob/main/docs/DATASETS.md">docs/DATASETS.md</a>.</p>
-</section>
+    </div>
+  </section>
 
-<section id="alignment">
-  <h2 data-num="06">Paper alignment audit</h2>
-  <p>Every checkable statement in the paper (formulas, constants, prompt strings, Appendix A, evaluation protocols, data rules) was mapped to its implementation — <a href="https://github.com/isLinXu/open-vision-banana/blob/main/docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md">full table</a>.</p>
-  <div class="stats">
-    <div><span class="num">58</span><span class="lbl">checkable statements</span></div>
-    <div><span class="num">49</span><span class="lbl">identical</span></div>
-    <div><span class="num">6</span><span class="lbl">partial — all at points the paper leaves unspecified</span></div>
-    <div><span class="num">3</span><span class="lbl">missing — closed-source (base model, in-house data, human study)</span></div>
-    <div><span class="num">0</span><span class="lbl">implementation errors</span></div>
-  </div>
-  <p class="note">The paper contains no training section (optimizer, lr, steps, resolution, tuning method, inference steps, CFG); these are recorded repository choices and cannot be scored for agreement.</p>
-</section>
-
-<section id="boundaries">
-  <h2 data-num="07">Honest boundaries</h2>
-  <ul class="tight">
-    <li>The paper's absolute numbers are not a target: Nano Banana Pro is closed and our backbone is different.</li>
-    <li>Generation preservation is measured with a FID / LPIPS / CLIP <em>proxy</em> against the base model; the paper used a human pairwise study.</li>
-    <li>SA-Co/Gold and ReasonSeg protocol numbers need Gemini (presence filter / query rewrite); without it only diagnostic values are reported.</li>
-    <li>Training data are public human annotations (COCO, LVIS, ADE20K, RefCOCO) and public renders (Hypersim, TartanAir) — not the paper's in-house web annotations.</li>
-    <li>Licences: Hypersim is research-only and propagates to released checkpoints; see the model card.</li>
-  </ul>
-</section>
-
-<section id="cite">
-  <h2 data-num="08">Citation</h2>
-  <p>Please cite the original paper; cite this repository for the implementation and the reproduction study.</p>
-  <pre><code>@article{visionbanana2026,
+  <!-- Citation -->
+  <section class="exhibit top" id="cite">
+    <div class="rail">
+      <h2>Citation</h2>
+      <p class="fine">Please cite the original paper; cite this repository for the implementation and the reproduction study.</p>
+    </div>
+    <div class="codebox">
+      <button type="button" class="copy" data-copy="bib">Copy</button>
+<pre id="bib"><code>@article{visionbanana2026,
   title   = {Image Generators are Generalist Vision Learners},
   author  = {Gabeur, Valentin and Long, Shangbang and Peng, Songyou and others},
   journal = {arXiv preprint arXiv:2604.20329},
@@ -137,11 +217,12 @@ python scripts/check_experiment_gates.py data|run|eval ...</code></pre>
   year         = {2026},
   howpublished = {\url{https://github.com/isLinXu/open-vision-banana}}
 }</code></pre>
-</section>
+    </div>
+  </section>
 </main>
 
-<footer>
-  <p>Open-Vision-Banana · unofficial, community-driven · <a href="https://github.com/isLinXu/open-vision-banana">GitHub</a></p>
+<footer class="foot">
+  <p class="foot-row"><span>Open-Vision-Banana, unofficial and community-driven</span><span class="foot-links"><a href="https://github.com/isLinXu/open-vision-banana">GitHub</a><a href="demo/index.html">Interactive demo</a><a href="demo/results.html">Every run and ablation</a></span></p>
 </footer>
 <script src="app.js"></script>
 </body>
