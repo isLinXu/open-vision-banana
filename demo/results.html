@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open-Vision-Banana — an open reproduction study of "Image Generators are Generalist Vision Learners"</title>
+<meta name="description" content="Open-source reimplementation of the Vision Banana paradigm on Qwen-Image-2.1 and public data. Every number on this page is rendered from a published evaluation file.">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="results.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="index.html"><img src="assets/logo.svg" alt="" width="24" height="24">Open-Vision-Banana</a>
+    <nav aria-label="Sections">
+      <a href="#method">Method</a><a href="#results">Results</a><a href="#ablations">Ablations</a><a href="#samples">Samples</a><a href="#status">Status</a><a href="index.html">Showcase</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap" id="top">
+    <p class="kicker">Unofficial open reproduction · work in progress</p>
+    <h1>Open-Vision-Banana</h1>
+    <p class="lede">Re-implementing <em>Image Generators are Generalist Vision Learners</em> on an open image generator and public data. One adapter, five vision tasks, the prompt picks the task — and every number below is read from a published evaluation file.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/isLinXu/open-vision-banana">Code</a>
+      <a class="btn" href="https://arxiv.org/abs/2604.20329">Paper</a>
+      <a class="btn" href="https://vision-banana.github.io/">Original project page</a>
+      <a class="btn" href="https://huggingface.co/khazic?search_models=ovb-">Runs on Hugging Face</a>
+    </div>
+    <dl class="facts" id="facts"></dl>
+    <p class="disclaimer">Not affiliated with, endorsed by, or verified by the paper's authors or Google DeepMind. Nano Banana Pro, the paper's in-house data and its human study are closed; nothing here reproduces them.</p>
+  </section>
+
+  <section class="section wrap" id="method">
+    <header class="section-head"><span class="num">01</span><h2>Method as implemented</h2></header>
+    <p class="intro">Every vision output is an RGB image. The prompt carries the task and its colour code; a decoder turns the generated image back into depth in metres, normals or masks. Where the paper is explicit — formulas, constants, prompt strings, the Appendix A decoder — the code follows it line by line.</p>
+    <ol class="flow">
+      <li><b>Vision target</b><span>depth · normals · semantic · instance · referring</span></li>
+      <li><b>RGB encoding</b><span>Eq. 1 power transform, cube-edge colormap; legend in the prompt</span></li>
+      <li class="key"><b>Image generator</b><span>Qwen-Image-2.1 + rsLoRA, mixed with generation replay</span></li>
+      <li><b>Decoder</b><span>inverse colormap → metres; nearest legend colour; Appendix A clustering</span></li>
+      <li><b>Metric</b><span>official splits, native-resolution scoring, strict zero-shot</span></li>
+    </ol>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3>Depth is a colour, decoded to metres</h3>
+        <div class="cube-bar" role="img" aria-label="Cube-edge colormap from black through red, yellow, green, cyan, blue and magenta to white"></div>
+        <div class="cube-ticks"><span>0 m</span><span>0.8</span><span>1.8</span><span>3.2</span><span>5.3</span><span>8.7</span><span>16</span><span>∞</span></div>
+        <p class="small">λ = −3, c = 10/3, black → red → yellow → green → cyan → blue → magenta → white (paper Fig. 5, checked against the figure's metre labels). No camera intrinsics at training or test time.</p>
+        <h3 class="mt">Paper alignment audit</h3>
+        <div class="audit" id="audit"></div>
+        <p class="small">Statements the paper makes that can be checked in code. The partial items are all places the paper leaves open; the missing ones are closed (base model, in-house data, human study). <a href="https://github.com/isLinXu/open-vision-banana/blob/main/docs/PAPER_ALIGNMENT_AUDIT_2026-10-22.md">Full audit</a></p>
+      </div>
+      <div class="panel">
+        <h3>Main recipe (E1)</h3>
+        <table class="kv" id="recipe"></table>
+        <p class="small">The paper states no optimiser, learning rate, schedule, resolution, mixing ratio or inference settings; these are repository choices, read here from the run's <code>effective_config.json</code> and data audit.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section wrap" id="results">
+    <header class="section-head"><span class="num">02</span><h2>Where we stand</h2></header>
+    <p class="intro" id="unlock"></p>
+    <figure class="chart-card">
+      <figcaption>
+        <span class="chart-title">Untuned base → one fine-tuned adapter, against the paper</span>
+        <span class="legend"><span><i class="mk base"></i>Qwen-Image-2.1, untuned</span><span><i class="mk ours"></i><span id="ours-label">ours</span></span><span><i class="mk paper"></i>Vision Banana (paper)</span></span>
+      </figcaption>
+      <div id="dumbbell" class="dumbbell"></div>
+      <p class="small" id="protocol"></p>
+    </figure>
+
+    <div class="tabs" role="tablist" id="table-tabs"></div>
+    <div id="table-view"></div>
+  </section>
+
+  <section class="section wrap" id="learned">
+    <header class="section-head"><span class="num">03</span><h2>What the runs say</h2></header>
+    <div class="findings" id="findings"></div>
+    <figure class="chart-card">
+      <figcaption><span class="chart-title">E1, the six-task recipe, across training steps</span><span class="legend"><span><i class="mk line"></i>E1 checkpoint</span><span><i class="mk ring"></i><span id="curve-ref">E2b @ 10k</span></span><span><i class="mk ref"></i>untuned base</span></span></figcaption>
+      <div class="multiples" id="curve"></div>
+    </figure>
+  </section>
+
+  <section class="section wrap" id="ablations">
+    <header class="section-head"><span class="num">04</span><h2>Ablations</h2></header>
+    <p class="intro">Each group changes one thing. Bars are scaled within each column; the cell is the measured value on the full benchmark split. The generation proxy compares 200 GenAI-Bench generations against the untuned base's own outputs — lower means closer to the base; it is not the paper's human study.</p>
+    <div class="tabs" role="tablist" id="abl-tabs"></div>
+    <div id="abl-view"></div>
+  </section>
+
+  <section class="section wrap" id="samples">
+    <header class="section-head"><span class="num">05</span><h2>Samples</h2></header>
+    <p class="intro">The Qwen-Image-2.1 runs publish no images yet; experiment E5 builds that gallery with recorded prompt, seed and checkpoint. Shown here are outputs of the earlier SANA-1600M adapter trained with the same RGB interface, on held-out rows of its training manifest — not benchmark images.</p>
+    <div class="tabs" role="tablist" id="sample-tabs"></div>
+    <div class="samples" id="sample-view"></div>
+    <p class="small" id="sample-meta"></p>
+  </section>
+
+  <section class="section wrap" id="status">
+    <header class="section-head"><span class="num">06</span><h2>Status and next steps</h2></header>
+    <ul class="board" id="board"></ul>
+    <div class="grid2 mt-lg">
+      <div>
+        <h3>Next round (plan v2, #93)</h3>
+        <ul class="plain">
+          <li><b>Pin down what ran:</b> full-split evaluation of every 10k endpoint, a step-0 row on the same subset, a measured noise floor.</li>
+          <li><b>Full fine-tuning learning rate:</b> 3e-5 collapsed; scan downwards before judging capacity.</li>
+          <li><b>Segmentation resolution:</b> Cityscapes is generated on a ~256×512 canvas and scored at 1024×2048; test 768 / 1024 / native before changing the recipe.</li>
+          <li><b>Depth outdoors and colormap transfer:</b> where the cube-edge gain holds.</li>
+          <li><b>Leak audit and decoder scale calibration</b>, then the generation-preservation study.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Where the project is going</h3>
+        <ul class="plain">
+          <li><b>A public checkpoint</b> with full evaluation, metadata and checksums — the first release milestone.</li>
+          <li><b>Train on SenseNova-Vision-Corpus-50M</b> to close the gap to the paper.</li>
+          <li><b>Latent-space and conditioning research</b> on top of the baseline; it decides between a conference paper and a technical report.</li>
+          <li><b>More generators, more tasks</b> — FLUX, Z-Image, SANA and editing models under one framework; vision-centric agents later.</li>
+        </ul>
+      </div>
+    </div>
+    <details class="blueprint">
+      <summary>Framework blueprint from the first team discussion</summary>
+      <img src="assets/figures/ovb_framework.jpg" alt="Open-Vision-Banana framework blueprint: tasks, prompt builder, diffusion backbones, RGB outputs, decoders, data pipeline, training framework, evaluation and engineering" loading="lazy">
+      <p class="small">A plan, not a result: tasks marked speculative have encoders and decoders but no training data in the repository, and the generation-preservation figure in panel 3 is a target that has not been measured.</p>
+    </details>
+  </section>
+
+  <section class="section wrap" id="boundaries">
+    <header class="section-head"><span class="num">07</span><h2>Honest boundaries</h2></header>
+    <ul class="plain">
+      <li>The paper's absolute numbers are context, not a target: Nano Banana Pro is closed and our backbone is different.</li>
+      <li>ReasonSeg uses the original queries; the paper rewrites them with Gemini 2.5 Pro. SA-Co/Gold and normals are not scored yet.</li>
+      <li>Metric depth is reported without scale alignment; median-aligned δ1 is kept in the evaluation files as a diagnostic only.</li>
+      <li>Generation preservation is a pixel/perceptual proxy against the base model's own outputs, not a human pairwise study.</li>
+      <li>Training data are public annotations and renders (Hypersim, TartanAir, ADE20K, COCO, LVIS, RefCOCO, OmniEdit); Hypersim's research-only licence carries into checkpoints.</li>
+    </ul>
+  </section>
+
+  <section class="section wrap" id="cite">
+    <header class="section-head"><span class="num">08</span><h2>Citation</h2></header>
+    <p class="intro">Please cite the original paper; cite this repository for the implementation and the reproduction study.</p>
+    <pre><code>@article{visionbanana2026,
+  title   = {Image Generators are Generalist Vision Learners},
+  author  = {Gabeur, Valentin and Long, Shangbang and Peng, Songyou and others},
+  journal = {arXiv preprint arXiv:2604.20329},
+  year    = {2026}
+}</code></pre>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap"><span id="provenance"></span></div>
+</footer>
+<div class="tip" id="tip" role="status" hidden></div>
+<script src="results.js"></script>
+</body>
+</html>
