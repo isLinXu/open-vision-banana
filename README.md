@@ -6,7 +6,8 @@
 
 *Instruction-tune an open image generator so that depth, surface normals and segmentation all come out as RGB images — with open weights, public data and an auditable evaluation.*
 
-[![arXiv](https://img.shields.io/badge/arXiv-2604.20329-b31b1b.svg)](https://arxiv.org/abs/2604.20329)
+[![Vision Banana paper](https://img.shields.io/badge/Vision%20Banana%20%28original%29-arXiv%202604.20329-b31b1b.svg?logo=arxiv)](https://arxiv.org/abs/2604.20329)
+[![Our paper](https://img.shields.io/badge/OVB%20paper-coming%20soon-lightgrey.svg?logo=arxiv)](#citation)
 [![Checkpoints](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints-yellow.svg)](https://huggingface.co/khazic?search=ovb-)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -954,6 +955,8 @@ The gap to the paper is large and well understood, so there is real work for eve
 ---
 
 ## Citation
+
+> 📄 The Open-Vision-Banana paper is coming soon. Until it is out, please cite the original Vision Banana paper and, if this code helped, the repository entry below.
 
 If you use this codebase, please cite the original paper:
 
