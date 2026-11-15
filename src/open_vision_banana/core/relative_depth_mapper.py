@@ -102,9 +102,20 @@ def metric_target_inverse_depth(
     """
     from .depth_mapper import DepthRGBMapper
 
-    rgb = torch.from_numpy(np.ascontiguousarray(target_rgb, dtype=np.float32) / 255.0)
-    metric = DepthRGBMapper(colormap="cube_edge").rgb_to_depth(rgb.permute(2, 0, 1).unsqueeze(0))
-    metric = metric.reshape(target_rgb.shape[:2]).numpy()
+    if target_rgb.dtype != np.uint8 or target_rgb.ndim != 3 or target_rgb.shape[2] != 3:
+        raise ValueError("target_rgb must be uint8 [H, W, 3]")
+    # Stored targets hold a few thousand distinct colours: decode each once (the
+    # per-pixel curve projection costs seconds on a megapixel image).
+    packed = (
+        (target_rgb[..., 0].astype(np.int32) << 16)
+        | (target_rgb[..., 1].astype(np.int32) << 8)
+        | target_rgb[..., 2].astype(np.int32)
+    )
+    colors, index = np.unique(packed.reshape(-1), return_inverse=True)
+    unique_rgb = np.stack([(colors >> 16) & 255, (colors >> 8) & 255, colors & 255], -1)
+    rgb = torch.from_numpy(unique_rgb.astype(np.float32) / 255.0).T.reshape(1, 3, 1, -1)
+    decoded = DepthRGBMapper(colormap="cube_edge").rgb_to_depth(rgb).reshape(-1).numpy()
+    metric = decoded[index].reshape(target_rgb.shape[:2])
     valid = np.isfinite(metric) & (metric > _MIN_DEPTH_M)
     if valid_mask is not None:
         if valid_mask.shape != valid.shape:
