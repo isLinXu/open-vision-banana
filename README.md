@@ -885,7 +885,7 @@ open-vision-banana/
 
 </details>
 
-Project page: static GitHub Pages site in [`website/`](website/) (results and gallery render from `website/data/*.json`; publish with `bash scripts/publish_site.sh` to the `gh-pages` branch, then enable Pages from that branch).
+Project page: static GitHub Pages site in [`website/`](website/) (results and gallery render from `website/data/*.json`; publish website/ and demo/ with `bash scripts/publish_site.sh` to the `gh-pages` branch, then enable Pages from that branch).
 
 ---
 
