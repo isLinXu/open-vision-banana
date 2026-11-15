@@ -1,0 +1,281 @@
+{
+ "generated_at": "2026-11-02",
+ "commit": "7a41d27",
+ "source_count": 138,
+ "report_url": null,
+ "inference_protocol": {
+  "num_inference_steps": 50,
+  "guidance_scale": 4.0,
+  "strength": 0.85,
+  "seed": 42,
+  "canvas_resolution": 512,
+  "native_resolution_scoring": true,
+  "note": "Repository choice; the paper states no inference settings. Written into every evaluation JSON's metadata."
+ },
+ "tables": [
+  {
+   "title": "2D understanding (paper Tables 2, 4, 5)",
+   "note": "ReasonSeg uses the original queries; the paper rewrites them with Gemini 2.5 Pro, so this column is diagnostic.",
+   "columns": [
+    {
+     "key": "cityscapes_miou",
+     "label": "Cityscapes mIoU ↑",
+     "digits": 1
+    },
+    {
+     "key": "refcocog_ciou",
+     "label": "RefCOCOg cIoU ↑",
+     "digits": 1
+    },
+    {
+     "key": "reasonseg_giou",
+     "label": "ReasonSeg gIoU ↑",
+     "digits": 1
+    }
+   ],
+   "rows": [
+    {
+     "label": "Qwen-Image-2.1, untuned",
+     "kind": "base",
+     "run": "base",
+     "values": {
+      "cityscapes_miou": 21.4888,
+      "reasonseg_giou": 25.4363,
+      "refcocog_ciou": 37.6196
+     }
+    },
+    {
+     "label": "E1 @ 30k",
+     "kind": "ours",
+     "run": "e1_30k",
+     "values": {
+      "cityscapes_miou": 32.6803,
+      "reasonseg_giou": 29.6647,
+      "refcocog_ciou": 42.2701
+     }
+    },
+    {
+     "label": "E2b @ 10k",
+     "kind": "ours",
+     "run": "e2b",
+     "values": {
+      "cityscapes_miou": 34.1945,
+      "reasonseg_giou": 32.8133,
+      "refcocog_ciou": 49.808
+     }
+    },
+    {
+     "label": "C1 · depth only, cube-edge",
+     "kind": "ours",
+     "run": "c1",
+     "values": {
+      "cityscapes_miou": 34.5523,
+      "reasonseg_giou": 30.2876,
+      "refcocog_ciou": 42.3867
+     }
+    },
+    {
+     "label": "Parent + LoRA",
+     "kind": "ours",
+     "run": "ml",
+     "values": {
+      "cityscapes_miou": 35.4316,
+      "reasonseg_giou": 30.3596,
+      "refcocog_ciou": 48.9255
+     }
+    },
+    {
+     "label": "Base + LoRA",
+     "kind": "ours",
+     "run": "bl",
+     "values": {
+      "cityscapes_miou": 36.886,
+      "reasonseg_giou": 36.6029,
+      "refcocog_ciou": 52.9247
+     }
+    },
+    {
+     "label": "SAM 3 (+ Gemini 2.5 Pro for referring)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cityscapes_miou": 65.2,
+      "refcocog_ciou": 73.4,
+      "reasonseg_giou": 77.0
+     }
+    },
+    {
+     "label": "Vision Banana (paper)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cityscapes_miou": 69.9,
+      "refcocog_ciou": 73.8,
+      "reasonseg_giou": 79.3
+     }
+    }
+   ]
+  },
+  {
+   "title": "Metric depth (paper Table 6)",
+   "note": "No scale alignment, no camera intrinsics. DIODE AbsRel is omitted: near-zero ground-truth pixels make it unbounded for every run.",
+   "columns": [
+    {
+     "key": "nyu_d1",
+     "label": "NYUv2 δ1 ↑",
+     "digits": 3
+    },
+    {
+     "key": "nyu_absrel",
+     "label": "NYUv2 AbsRel ↓",
+     "digits": 3
+    },
+    {
+     "key": "eth3d_d1",
+     "label": "ETH3D δ1 ↑",
+     "digits": 3
+    },
+    {
+     "key": "eth3d_absrel",
+     "label": "ETH3D AbsRel ↓",
+     "digits": 3
+    },
+    {
+     "key": "diode_d1",
+     "label": "DIODE-Indoor δ1 ↑",
+     "digits": 3
+    }
+   ],
+   "rows": [
+    {
+     "label": "Qwen-Image-2.1, untuned",
+     "kind": "base",
+     "run": "base",
+     "values": {
+      "diode_d1": 0.077,
+      "eth3d_d1": 0.1193,
+      "eth3d_absrel": 2.5183,
+      "nyu_d1": 0.0723,
+      "nyu_absrel": 1.7228
+     }
+    },
+    {
+     "label": "E1 @ 30k",
+     "kind": "ours",
+     "run": "e1_30k",
+     "values": {
+      "diode_d1": 0.0862,
+      "eth3d_d1": 0.1278,
+      "eth3d_absrel": 1.5794,
+      "nyu_d1": 0.0456,
+      "nyu_absrel": 2.2374
+     }
+    },
+    {
+     "label": "E2b @ 10k",
+     "kind": "ours",
+     "run": "e2b",
+     "values": {
+      "diode_d1": 0.1087,
+      "eth3d_d1": 0.1225,
+      "eth3d_absrel": 4.9087,
+      "nyu_d1": 0.1344,
+      "nyu_absrel": 1.4682
+     }
+    },
+    {
+     "label": "C1 · depth only, cube-edge",
+     "kind": "ours",
+     "run": "c1",
+     "values": {
+      "diode_d1": 0.3205,
+      "eth3d_d1": 0.2329,
+      "eth3d_absrel": 0.5788,
+      "nyu_d1": 0.3483,
+      "nyu_absrel": 0.5846
+     }
+    },
+    {
+     "label": "Parent + LoRA",
+     "kind": "ours",
+     "run": "ml",
+     "values": {
+      "diode_d1": 0.2458,
+      "eth3d_d1": 0.227,
+      "eth3d_absrel": 0.9792,
+      "nyu_d1": 0.1686,
+      "nyu_absrel": 1.1157
+     }
+    },
+    {
+     "label": "Base + LoRA",
+     "kind": "ours",
+     "run": "bl",
+     "values": {
+      "diode_d1": 0.1273,
+      "eth3d_d1": 0.1595,
+      "eth3d_absrel": 2.1899,
+      "nyu_d1": 0.0799,
+      "nyu_absrel": 1.8483
+     }
+    },
+    {
+     "label": "Depth Anything 3",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "nyu_d1": 0.963,
+      "eth3d_d1": 0.917,
+      "diode_d1": 0.838
+     }
+    },
+    {
+     "label": "Vision Banana (paper)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "nyu_d1": 0.948,
+      "nyu_absrel": 0.081,
+      "eth3d_d1": 0.935,
+      "eth3d_absrel": 0.103,
+      "diode_d1": 0.917
+     }
+    }
+   ]
+  },
+  {
+   "title": "Instance segmentation — SA-Co/Gold (paper Table 3)",
+   "note": "Not measured yet: the SA-Co/Gold images are not on the evaluation machine, and the paper's IL_MCC needs a Gemini presence filter.",
+   "columns": [
+    {
+     "key": "cgf1",
+     "label": "cgF1 ↑",
+     "digits": 1
+    }
+   ],
+   "rows": [
+    {
+     "label": "Open-Vision-Banana",
+     "kind": "ours",
+     "values": {}
+    },
+    {
+     "label": "OWLv2",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cgf1": 24.6
+     }
+    },
+    {
+     "label": "Vision Banana (paper)",
+     "kind": "paper",
+     "source": "paper",
+     "values": {
+      "cgf1": 47.5
+     }
+    }
+   ]
+  }
+ ]
+}
