@@ -1,0 +1,267 @@
+{
+  "gates": {
+    "nyu_abs": 0.2947,
+    "nyu_d1": 0.4069,
+    "cs": 0.3467,
+    "rs": 0.4235,
+    "eth_abs": 0.5272,
+    "eth_d1": 0.1667,
+    "ref": 0.5082
+  },
+  "full": [
+    {
+      "model": "B17.5k_best",
+      "item": "B-017500-best",
+      "source": "control, scored here",
+      "values": {
+        "nyu_abs": 0.2944084060055504,
+        "nyu_d1": 0.40674288467809916,
+        "eth_abs": 0.5153555957999952,
+        "eth_d1": 0.17642170252640704,
+        "dio_abs": 0.5112343337329128,
+        "dio_d1": 0.27745635422175996,
+        "cs": 0.35510173439979553,
+        "rs": 0.4310132710334158,
+        "ref": 0.5182270616561313
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": true,
+        "ReasonSeg": true,
+        "ETH3D": true,
+        "RefCOCOg": true
+      }
+    },
+    {
+      "model": "B5k_best",
+      "item": "B-005000-best",
+      "source": "control, scored here",
+      "values": {
+        "nyu_abs": 0.34708104306000337,
+        "nyu_d1": 0.4111587081100261,
+        "eth_abs": 0.5136406590067915,
+        "eth_d1": 0.20487394507070872,
+        "dio_abs": 0.511920557022281,
+        "dio_d1": 0.31281677819545606,
+        "cs": 0.3728649914264679,
+        "rs": 0.3991070298463265,
+        "ref": null
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": true,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": null
+      }
+    },
+    {
+      "model": "B20k_best",
+      "item": "B-020000-best",
+      "source": "#120 record, same code and inputs",
+      "values": {
+        "nyu_abs": 0.3624404983120383,
+        "nyu_d1": 0.33985105844034647,
+        "eth_abs": 0.6001980490709943,
+        "eth_d1": 0.16637419814424703,
+        "dio_abs": 1.066396037747644,
+        "dio_d1": 0.2290779306530094,
+        "cs": 0.35323086380958557,
+        "rs": 0.4397912020734014,
+        "ref": null
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": true,
+        "ReasonSeg": true,
+        "ETH3D": false,
+        "RefCOCOg": null
+      }
+    },
+    {
+      "model": "B100k_best",
+      "item": "B-100000-best",
+      "source": "#120 record, same code and inputs",
+      "values": {
+        "nyu_abs": 0.2668692380021861,
+        "nyu_d1": 0.4850309809929916,
+        "eth_abs": 0.41830121941843296,
+        "eth_d1": 0.22141869205288625,
+        "dio_abs": 0.4720087792699503,
+        "dio_d1": 0.34483876384706286,
+        "cs": 0.29263126850128174,
+        "rs": 0.3327816223304484,
+        "ref": 0.48197696453071
+      },
+      "gates": {
+        "NYUv2": true,
+        "Cityscapes": false,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": false
+      }
+    },
+    {
+      "model": "B100k_final",
+      "item": "B-100000-final",
+      "source": "#120 record, same code and inputs",
+      "values": {
+        "nyu_abs": 0.2631481471107761,
+        "nyu_d1": 0.49665558334717785,
+        "eth_abs": 0.41230077887983224,
+        "eth_d1": 0.2249926376090118,
+        "dio_abs": 0.4229445787244517,
+        "dio_d1": 0.3531916396355464,
+        "cs": 0.2982157766819,
+        "rs": 0.3327300481114237,
+        "ref": 0.48092080414990496
+      },
+      "gates": {
+        "NYUv2": true,
+        "Cityscapes": false,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": false
+      }
+    },
+    {
+      "model": "P1",
+      "item": "P1",
+      "source": "merge",
+      "values": {
+        "nyu_abs": 0.29456390669162,
+        "nyu_d1": 0.4067501851065619,
+        "eth_abs": 0.4880623940489234,
+        "eth_d1": 0.19253197669205424,
+        "dio_abs": 0.5633438849062462,
+        "dio_d1": 0.2827321313186519,
+        "cs": 0.34607991576194763,
+        "rs": 0.3996606276512174,
+        "ref": 0.5152665626929192
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": false,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": true
+      }
+    },
+    {
+      "model": "P2",
+      "item": "P2",
+      "source": "merge",
+      "values": {
+        "nyu_abs": 0.2879636303393166,
+        "nyu_d1": 0.41862686055168935,
+        "eth_abs": 0.4733475688477996,
+        "eth_d1": 0.1976242922417534,
+        "dio_abs": 2.6875609826209885,
+        "dio_d1": 0.29309114939386155,
+        "cs": 0.33798131346702576,
+        "rs": 0.3797981024867503,
+        "ref": 0.5064225773637244
+      },
+      "gates": {
+        "NYUv2": true,
+        "Cityscapes": false,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": false
+      }
+    },
+    {
+      "model": "P3",
+      "item": "P3",
+      "source": "merge",
+      "values": {
+        "nyu_abs": 0.3106309629120728,
+        "nyu_d1": 0.4308688971238235,
+        "eth_abs": 0.4778018654461419,
+        "eth_d1": 0.21372586396687715,
+        "dio_abs": 1.132857096210983,
+        "dio_d1": 0.2823968516322332,
+        "cs": 0.34977126121520996,
+        "rs": 0.371179275291514,
+        "ref": 0.5047633225396047
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": true,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": false
+      }
+    },
+    {
+      "model": "P4",
+      "item": "P4",
+      "source": "merge",
+      "values": {
+        "nyu_abs": 0.31954805232227973,
+        "nyu_d1": 0.3936684454330468,
+        "eth_abs": 0.5062226248179437,
+        "eth_d1": 0.20268541996236972,
+        "dio_abs": 2.8760025887012475,
+        "dio_d1": 0.28426170830097164,
+        "cs": 0.338593989610672,
+        "rs": 0.3849858928699358,
+        "ref": 0.5168373237033588
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": false,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": true
+      }
+    },
+    {
+      "model": "P5",
+      "item": "P5",
+      "source": "merge",
+      "values": {
+        "nyu_abs": 0.3063479543922236,
+        "nyu_d1": 0.4055684130265795,
+        "eth_abs": 0.5041321297931305,
+        "eth_d1": 0.1935191941755704,
+        "dio_abs": 0.5027619854683664,
+        "dio_d1": 0.2622892932324183,
+        "cs": 0.36382535099983215,
+        "rs": 0.39483302273402593,
+        "ref": 0.5125948009201188
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": true,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": true
+      }
+    },
+    {
+      "model": "P6",
+      "item": "P6",
+      "source": "merge",
+      "values": {
+        "nyu_abs": 0.323875727262973,
+        "nyu_d1": 0.44861080986428253,
+        "eth_abs": 0.48251946230423604,
+        "eth_d1": 0.20022637045952527,
+        "dio_abs": 0.7520026724086778,
+        "dio_d1": 0.2987873037215413,
+        "cs": 0.3635859787464142,
+        "rs": 0.4003526798775107,
+        "ref": 0.5115163068308083
+      },
+      "gates": {
+        "NYUv2": false,
+        "Cityscapes": true,
+        "ReasonSeg": false,
+        "ETH3D": true,
+        "RefCOCOg": true
+      }
+    }
+  ],
+  "screening": []
+}

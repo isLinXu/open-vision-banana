@@ -43,6 +43,7 @@
 
 ## 📰 News
 
+- **[2026-11-15]** 🧪 Six exact LoRA merges of the I108 B arm, externally evaluated on all six benchmarks. None passes every gate; B `checkpoint-17500_best` stays the balanced pick ([#127](https://github.com/isLinXu/open-vision-banana/issues/127), [results](docs/evaluation/i127-merge-20261115/results.md)).
 - **[2026-11-14]** 🔥 Prepared for the public release: cleaned code and docs, new overview and task-contract figures, and the I108 Fusion r64 results from an external evaluation ([#122](https://github.com/isLinXu/open-vision-banana/pull/122), [#128](https://github.com/isLinXu/open-vision-banana/pull/128)).
 - **[2026-11-12]** 🎨 Interactive showcase in [`demo/`](demo/): normal-map relighting, depth point clouds and segmentation comparisons ([#121](https://github.com/isLinXu/open-vision-banana/pull/121)).
 - **[2026-11-11]** 🎲 Depth seed ensembles in evaluation (`--depth-seed-ensemble K`, [#117](https://github.com/isLinXu/open-vision-banana/pull/117)) and experimental post-training objectives, on-policy distillation and GRPO ([#114](https://github.com/isLinXu/open-vision-banana/pull/114)).
@@ -210,7 +211,24 @@ Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0
 | B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | pending | 0.333 |
 | *Vision Banana (closed reference, from the paper)* | *0.948* | *0.935* | *0.917* | *0.699* | *0.738* | *0.793* |
 
-Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg has not been scored for these runs yet.
+Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg is not in this snapshot; the merge evaluation below scores it for B 17.5k and B 100k.
+
+### LoRA merges of the B arm (I127, external evaluation)
+
+Six exact ΔW-weighted merges of B `_best` EMA adapters, built by concatenating LoRA factors into one rank-128 adapter (ΔW = Σ wᵢ · 8 · BᵢAᵢ). Same suite and settings as above, eval code `a8cc7e2`; RefCOCOg is UMD val n=4896. Results and adapters are in [`khazic/ovb-i127-merge-eval`](https://huggingface.co/khazic/ovb-i127-merge-eval), archived with per-file checksums in [`docs/evaluation/i127-merge-20261115/`](docs/evaluation/i127-merge-20261115/results.md).
+
+| Model (recipe) | NYU δ1 | NYU AbsRel | ETH3D δ1 | Cityscapes mIoU | RefCOCOg cIoU | ReasonSeg gIoU |
+|-----|-------:|-------:|---------:|----------------:|--------------:|---------------:|
+| B 17.5k (control, rescored) | 0.407 | 0.294 | 0.176 | 0.355 | **0.518** | **0.431** |
+| B 100k best | **0.485** | **0.267** | **0.221** | 0.293 | 0.482 | 0.333 |
+| P1: 17.5k 75 % + 100k 25 % | 0.407 | 0.295 | 0.193 | 0.346 | 0.515 | 0.400 |
+| P2: 17.5k 50 % + 100k 50 % | 0.419 | 0.288 | 0.198 | 0.338 | 0.506 | 0.380 |
+| P3: 5k 60 % + 100k 40 % | 0.431 | 0.311 | 0.214 | 0.350 | 0.505 | 0.371 |
+| P4: 20k 60 % + 100k 40 % | 0.394 | 0.320 | 0.203 | 0.339 | 0.517 | 0.385 |
+| P5: 5k 40 % + 17.5k 40 % + 100k 20 % | 0.406 | 0.306 | 0.194 | **0.364** | 0.513 | 0.395 |
+| P6: base 20 % + 17.5k 55 % + 100k 25 % | 0.449 | 0.324 | 0.200 | **0.364** | 0.512 | 0.400 |
+
+Every merge improves ETH3D, and the three-way merges recover Cityscapes. But every merge loses 3–6 pp of ReasonSeg against the control, so none passes the pre-registered gates, and B 17.5k remains the balanced checkpoint. P2, P3 and P4 also give unstable DIODE AbsRel (1.1–2.9).
 
 ### Earlier Qwen-Image-2.1 runs
 
