@@ -30,11 +30,9 @@ from urllib.parse import urlsplit
 
 BASE_REPO = "Qwen/Qwen-Image-2.1"
 BASE_REVISION = "d26bb61231c349cf6b7896fa83353113880e1ba3"
-LORA_REPO = "khazic/ovb-e2b_cap10k_s42_20261026_1016"
-LORA_REVISION = "036bc7285371e24b9e52ab1b0ad9aea9ea337f27"
-CHECKPOINT = "ckpt/checkpoint-10000_final"
-ADAPTER_SUBDIR = f"{CHECKPOINT}/lora_adapter"
-ADAPTER_SHA256 = "ee545bd71347c3929b4bb27d63afb1a12f4754f99933fd5a663fcbd6728dac47"
+DEFAULT_LORA_REPO = "khazic/ovb-e2b_cap10k_s42_20261026_1016"
+DEFAULT_LORA_REVISION = "036bc7285371e24b9e52ab1b0ad9aea9ea337f27"
+DEFAULT_CHECKPOINT = "ckpt/checkpoint-10000_final"
 COMPONENTS = ("processor", "scheduler", "text_encoder", "transformer", "vae")
 ROOT_FILES = ("model_index.json", "LICENSE", "README.md")
 TARGETS = {"to_q", "to_k", "to_v", "to_out.0", "img_mlp.proj",
@@ -167,8 +165,27 @@ def main() -> None:
                         default=root / "models" / "qwen21_merge_sources")
     parser.add_argument("--output-dir", type=Path,
                         default=root / "output" / "ovb-e2b_cap10k_s42_10000_merged")
+    parser.add_argument("--base-repo", default=BASE_REPO,
+                        help="Diffusers-layout base pipeline repository")
     parser.add_argument("--base-revision", default=BASE_REVISION,
                         help="Override only with a known compatible official base commit")
+    parser.add_argument("--lora-repo", default=DEFAULT_LORA_REPO)
+    parser.add_argument("--lora-revision", default=DEFAULT_LORA_REVISION)
+    parser.add_argument("--adapter-subdir", default=f"{DEFAULT_CHECKPOINT}/lora_adapter",
+                        help="Directory in --lora-repo containing adapter_config.json "
+                             "and adapter_model.safetensors")
+    parser.add_argument("--metadata-path", default=f"{DEFAULT_CHECKPOINT}/metadata.json",
+                        help="Optional metadata.json path in --lora-repo; "
+                             "pass an empty string to skip")
+    parser.add_argument("--adapter-sha256", default=None,
+                        help="Optional pinned SHA256 of adapter_model.safetensors")
+    parser.add_argument("--expected-r", type=int, default=32)
+    parser.add_argument("--expected-alpha", type=int, default=64)
+    parser.add_argument("--rslora", action=argparse.BooleanOptionalAction, default=True,
+                        help="Expected adapter scaling: rsLoRA alpha/sqrt(r), "
+                             "or standard alpha/r with --no-rslora")
+    parser.add_argument("--num-blocks", type=int, default=32,
+                        help="Transformer blocks; LoRA must hit every target on each")
     parser.add_argument("--validate-pipeline", action="store_true",
                         help="Also load the entire offline pipeline; recommend >=48 GiB RAM")
     parser.add_argument("--endpoint", default=os.environ.get("HF_ENDPOINT", "https://huggingface.co"),
@@ -205,7 +222,7 @@ def main() -> None:
     output = args.output_dir.expanduser().resolve()
     work = args.work_dir.expanduser().resolve()
     base = work / f"base_{args.base_revision[:12]}"
-    lora = work / f"lora_{LORA_REVISION[:12]}"
+    lora = work / f"lora_{args.lora_revision[:12]}"
     if output.exists() and not args.check_network:
         raise RuntimeError(f"Refusing to overwrite existing output: {output}")
     if sys.version_info < (3, 10):
@@ -234,22 +251,23 @@ def main() -> None:
     api = HfApi(endpoint=endpoint, token=False)
     base_info = network_call(
         "Read base model metadata", lambda: api.model_info(
-            BASE_REPO, revision=args.base_revision, files_metadata=True,
+            args.base_repo, revision=args.base_revision, files_metadata=True,
             timeout=args.api_timeout, token=False,
         ), args.network_attempts, endpoint,
     )
     lora_info = network_call(
         "Read LoRA metadata", lambda: api.model_info(
-            LORA_REPO, revision=LORA_REVISION, files_metadata=True,
+            args.lora_repo, revision=args.lora_revision, files_metadata=True,
             timeout=args.api_timeout, token=False,
         ), args.network_attempts, endpoint,
     )
-    if base_info.sha != args.base_revision or lora_info.sha != LORA_REVISION:
+    if base_info.sha != args.base_revision or lora_info.sha != args.lora_revision:
         raise RuntimeError("Hub/mirror returned a different commit than requested")
     base_names = [f.rfilename for f in base_info.siblings if selected_base_file(f.rfilename)]
-    lora_names = [f"{ADAPTER_SUBDIR}/adapter_config.json",
-                  f"{ADAPTER_SUBDIR}/adapter_model.safetensors",
-                  f"{CHECKPOINT}/metadata.json"]
+    lora_names = [f"{args.adapter_subdir}/adapter_config.json",
+                  f"{args.adapter_subdir}/adapter_model.safetensors"]
+    if args.metadata_path:
+        lora_names.append(args.metadata_path)
     if not set(lora_names).issubset({f.rfilename for f in lora_info.siblings}):
         raise RuntimeError("Hub/mirror is missing pinned LoRA files")
     if not set(ROOT_FILES).issubset(base_names) or any(
@@ -287,33 +305,39 @@ def main() -> None:
           f"standalone output about {output_bytes / 1e9:.2f} GB", flush=True)
     network_call(
         "Download base model", lambda: snapshot_download(
-            BASE_REPO, revision=base_info.sha, local_dir=base,
+            args.base_repo, revision=base_info.sha, local_dir=base,
             allow_patterns=base_names, max_workers=args.max_workers,
             endpoint=endpoint, token=False, etag_timeout=args.etag_timeout,
         ), args.network_attempts, endpoint,
     )
     network_call(
         "Download LoRA", lambda: snapshot_download(
-            LORA_REPO, revision=lora_info.sha, local_dir=lora,
+            args.lora_repo, revision=lora_info.sha, local_dir=lora,
             allow_patterns=lora_names, max_workers=args.max_workers,
             endpoint=endpoint, token=False, etag_timeout=args.etag_timeout,
         ), args.network_attempts, endpoint,
     )
     verify_download(base_info, base, selected_base_file)
     verify_download(lora_info, lora, lambda name: name in lora_names)
-    adapter = lora / ADAPTER_SUBDIR
-    if file_hash(adapter / "adapter_model.safetensors") != ADAPTER_SHA256:
+    adapter = lora / args.adapter_subdir
+    if args.adapter_sha256 and file_hash(adapter / "adapter_model.safetensors") != args.adapter_sha256:
         raise RuntimeError("Pinned adapter SHA256 mismatch")
     config = read_json(adapter / "adapter_config.json")
-    metadata = read_json(lora / CHECKPOINT / "metadata.json")
-    if (config.get("peft_type") != "LORA" or config.get("r") != 32
-            or config.get("lora_alpha") != 64 or not config.get("use_rslora")
+    metadata = read_json(lora / args.metadata_path) if args.metadata_path else {}
+    if (config.get("peft_type") != "LORA" or config.get("r") != args.expected_r
+            or config.get("lora_alpha") != args.expected_alpha
+            or bool(config.get("use_rslora")) != args.rslora
             or config.get("use_dora") or config.get("bias") != "none"
             or config.get("lora_bias") or config.get("modules_to_save")
             or config.get("rank_pattern") or config.get("alpha_pattern")
-            or set(config.get("target_modules", [])) != TARGETS
-            or metadata.get("model_name") != "qwen-image-2.1"):
-        raise RuntimeError("Adapter does not match the audited OVB rsLoRA configuration")
+            or set(config.get("target_modules", [])) != TARGETS):
+        raise RuntimeError("Adapter does not match the expected OVB LoRA configuration")
+    if metadata and metadata.get("model_name") not in (None, "qwen-image-2.1"):
+        raise RuntimeError(f"Adapter metadata names a different base: "
+                           f"{metadata.get('model_name')}")
+    import math
+    expected_scaling = args.expected_alpha / (math.sqrt(args.expected_r) if args.rslora
+                                              else args.expected_r)
     if read_json(base / "model_index.json").get("_class_name") != "QwenImage21Pipeline":
         raise RuntimeError("Wrong base pipeline class")
 
@@ -335,7 +359,8 @@ def main() -> None:
             if not isinstance(module, torch.nn.Linear):
                 raise RuntimeError(f"Adapter target is not a Linear: {module_name}")
             suffix = "A" if key.endswith(".lora_A.weight") else "B"
-            expected_shape = (32, module.in_features) if suffix == "A" else (module.out_features, 32)
+            expected_shape = ((args.expected_r, module.in_features) if suffix == "A"
+                              else (module.out_features, args.expected_r))
             if tuple(stream.get_slice(key).get_shape()) != expected_shape:
                 raise RuntimeError(f"Adapter/base shape mismatch: {key}")
             other = key.replace(f".lora_{suffix}.weight",
@@ -343,7 +368,7 @@ def main() -> None:
             if other not in keys:
                 raise RuntimeError(f"Missing LoRA matrix pair: {key}")
             pair_modules.add(module_name)
-        if len(pair_modules) != 32 * len(TARGETS):
+        if len(pair_modules) != args.num_blocks * len(TARGETS):
             raise RuntimeError(f"Expected 224 LoRA targets; got {len(pair_modules)}")
     del module
 
@@ -364,8 +389,9 @@ def main() -> None:
         layer = model.get_submodule(module_name)
         if not isinstance(layer, LoraLayer):
             raise RuntimeError(f"Missing PEFT layer: {module_name}")
-        if abs(layer.scaling[name] - 64 / (32**0.5)) > 1e-6:
-            raise RuntimeError(f"Wrong rsLoRA scaling in {module_name}")
+        if abs(layer.scaling[name] - expected_scaling) > 1e-6:
+            raise RuntimeError(f"Wrong LoRA scaling in {module_name}: "
+                               f"{layer.scaling[name]} != {expected_scaling}")
         with torch.no_grad():
             expected_weight = layer.get_base_layer().weight.detach().clone()
             # Match PEFT safe_merge's BF16 rounding order exactly.
@@ -439,10 +465,11 @@ def main() -> None:
         gc.collect()
     print("[6/6] Write provenance and successful validation status", flush=True)
     provenance = {
-        "base_repo": BASE_REPO, "base_revision": base_info.sha,
+        "base_repo": args.base_repo, "base_revision": base_info.sha,
         "training_base_revision_known": False,
-        "lora_repo": LORA_REPO, "lora_revision": lora_info.sha,
-        "checkpoint": CHECKPOINT, "adapter_sha256": ADAPTER_SHA256,
+        "lora_repo": args.lora_repo, "lora_revision": lora_info.sha,
+        "adapter_subdir": args.adapter_subdir,
+        "adapter_sha256": file_hash(adapter / "adapter_model.safetensors"),
         "training_metadata": metadata, "adapter_config": config,
         "dtype": "bfloat16", "merge_method": "PEFT merge_and_unload(safe_merge=True)",
         "merged_modules": len(pair_modules), "software_versions": versions,
