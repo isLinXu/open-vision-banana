@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import pytest
 import torch
-from diffusers import DPMSolverMultistepScheduler
 
-from open_vision_banana.training.sana_flow import (
+diffusers = pytest.importorskip("diffusers")
+DPMSolverMultistepScheduler = diffusers.DPMSolverMultistepScheduler
+
+from open_vision_banana.training.sana_flow import (  # noqa: E402
     denormalize_vae_latents,
     normalize_vae_latents,
     prepare_sana_flow_batch,
