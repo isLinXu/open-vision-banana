@@ -126,8 +126,8 @@ class TestPeftAdapterToDiffusers:
     def test_prepare_lora_load_converts_peft_adapter(self, tmp_path: Path):
         from types import SimpleNamespace
 
-        from safetensors.torch import save_file
         import torch
+        from safetensors.torch import save_file
 
         from open_vision_banana.inference.generator import BaseGenerator
 
@@ -151,8 +151,8 @@ class TestPeftAdapterToDiffusers:
     def test_prepare_lora_load_skips_peft_conversion_for_sana(self, tmp_path: Path):
         from types import SimpleNamespace
 
-        from safetensors.torch import save_file
         import torch
+        from safetensors.torch import save_file
 
         from open_vision_banana.inference.generator import BaseGenerator
 

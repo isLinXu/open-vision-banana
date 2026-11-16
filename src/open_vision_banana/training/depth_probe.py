@@ -739,10 +739,8 @@ class ScalarDepthProbeV5(nn.Module):
         current_width = width
         for stage in range(upsample_stages):
             next_width = max(16, current_width // 2)
-            if stage < len(skip_proj_indices):
-                skip_ch = width  # projected features all have `width` channels
-            else:
-                skip_ch = None
+            # projected features all have `width` channels
+            skip_ch = width if stage < len(skip_proj_indices) else None
             stages.append(_SkipDecoderStage(current_width, next_width, skip_ch))
             current_width = next_width
         self.decoder_stages = nn.ModuleList(stages)
@@ -899,7 +897,7 @@ class MultiTimestepFeatureExtractor:
             captures: dict[str, torch.Tensor] = {}
             handles: list[Any] = []
 
-            def capture(name: str):
+            def capture(name: str, captures: dict[str, torch.Tensor] = captures):
                 def hook(module: nn.Module, args: tuple[Any, ...], output: Any) -> None:
                     del module, args
                     captures[name] = _primary_tensor(output, name=name)
@@ -938,7 +936,6 @@ class MultiTimestepFeatureExtractor:
         for level_name in [f"down_{i}" for i in range(len(self.down_blocks))] + ["mid", "unet_output"]:
             ts_tensors = multi_ts_features[level_name]
             # All timesteps should have the same spatial shape for a given level
-            ref_shape = ts_tensors[0].shape
             concatenated = torch.cat(
                 [t.detach().float() for t in ts_tensors], dim=1,
             )
@@ -1022,7 +1019,7 @@ class LoRAAdaptedFeatureExtractor:
         )
         self.unet = get_peft_model(self.unet, lora_config)
         # Collect trainable LoRA params
-        for name, param in self.unet.named_parameters():
+        for _name, param in self.unet.named_parameters():
             if param.requires_grad:
                 self._lora_params.append(param)
 

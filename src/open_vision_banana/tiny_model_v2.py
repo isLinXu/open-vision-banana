@@ -20,24 +20,22 @@ Architecture::
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 from open_vision_banana.tiny_model import (
+    TINY_TASKS,
     ConvBlock,
     Downsample,
     Upsample,
     _group_count,
-    TINY_TASKS,
-    DEFAULT_TASK_INDEX,
     evaluate_tiny_predictions,
     tiny_overfit_gate_passed,
 )
-
 
 # ── Config ───────────────────────────────────────────────────────
 
@@ -155,7 +153,7 @@ class TinyVisionBananaV2(nn.Module):
         self.downsamplers = nn.ModuleList()
         self.encoder_widths: list[int] = []
         current_width = w
-        for stage in range(num_stages):
+        for _ in range(num_stages):
             out_width = current_width * 2
             self.encoder_blocks.append(ConvBlock(current_width, out_width, depth))
             self.downsamplers.append(Downsample(out_width))
@@ -275,7 +273,7 @@ class TinyVisionBananaV2(nn.Module):
             zip(self.upsamplers, self.decoder_blocks, self.film_modules, strict=True)
         ):
             x = up(x)
-            skip = skips[num_stages := self.config.num_stages - 1 - stage]
+            skip = skips[self.config.num_stages - 1 - stage]
             if x.shape[-2:] != skip.shape[-2:]:
                 x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
             x = torch.cat([x, skip], dim=1)

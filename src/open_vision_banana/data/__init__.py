@@ -18,7 +18,6 @@ Extended benchmarks (15+ datasets):
 - nuScenes (multi-task autonomous driving)
 """
 
-from .paper_eval_datasets import GenAIBenchDataset, ImgEditDataset, ReasonSegDataset
 from .datasets import (
     BaseVisionDataset,
     CityscapesSegDataset,
@@ -32,6 +31,7 @@ from .datasets import (
     IBimsDepthDataset,
     KITTIDataset,
     MapillaryVistasDataset,
+    NuScenesDepthDataset,
     NYUDepthDataset,
     NYUNormalDataset,
     OASISNormalDataset,
@@ -47,7 +47,6 @@ from .datasets import (
     build_dataset,
     build_v3_datasets,
     load_v3_train_val_split,
-    NuScenesDepthDataset,
     nuScenesDataset,
 )
 from .generation import GenerationDataset, build_generation_dataset
@@ -58,6 +57,7 @@ from .generation_builder import (
 )
 from .manifest import fingerprint_records, read_jsonl, resolve_manifest_path
 from .mixed import HomogeneousMixedBatchSampler, MixedVisionDataset
+from .paper_eval_datasets import GenAIBenchDataset, ImgEditDataset, ReasonSegDataset
 from .res_dataset import RESManifestDataset
 from .split import split_dataset, split_vision_datasets
 from .tar_dataset import SequentialMultiTaskDataset, TarArchiveDataset, TarTargetDataset

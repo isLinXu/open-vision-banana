@@ -15,7 +15,7 @@ import re
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 from urllib.request import Request, urlopen
 
 import numpy as np
@@ -26,7 +26,7 @@ DEFAULT_PRESENCE_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_REASONING_MODEL = "gemini-2.5-pro"
 
 Transport = Callable[[Request, float], bytes]
-ImageInput = Union[bytes, str, Path, Image.Image, torch.Tensor]
+ImageInput = bytes | str | Path | Image.Image | torch.Tensor
 
 
 def _default_transport(request: Request, timeout: float) -> bytes:

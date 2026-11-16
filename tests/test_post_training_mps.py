@@ -13,14 +13,14 @@ import numpy as np
 import pytest
 import torch
 from PIL import Image
+from test_trainer_system_all_tasks import FakeBackend
 
+import open_vision_banana.training.trainer as trainer_module
 from open_vision_banana.core.depth_mapper import DepthRGBMapper
 from open_vision_banana.training.config import TrainingConfig
 from open_vision_banana.training.post_training import SFT_GATE_PROTOCOL, write_sft_gate
 from open_vision_banana.training.trainer import Trainer
 from scripts.check_experiment_gates import check_run
-from test_trainer_system_all_tasks import FakeBackend
-import open_vision_banana.training.trainer as trainer_module
 
 pytestmark = pytest.mark.skipif(
     not torch.backends.mps.is_available(),

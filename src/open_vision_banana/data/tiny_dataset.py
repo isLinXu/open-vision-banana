@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -187,7 +187,7 @@ class TinyMultiTaskDataset(_Dataset):
         if balance and len(per_task_samples) > 1:
             max_count = max(len(s) for s in per_task_samples.values())
             balanced: list[TinySample] = []
-            for task, samples in per_task_samples.items():
+            for _, samples in per_task_samples.items():
                 if len(samples) == 0:
                     continue
                 # Repeat to match max_count

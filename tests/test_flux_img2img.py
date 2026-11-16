@@ -8,8 +8,8 @@ import torch
 from PIL import Image
 
 from open_vision_banana.inference.flux_img2img import (
-    flux_guidance_tensor,
     flow_matching_inference,
+    flux_guidance_tensor,
     images_to_flux_source,
     pack_flux_latents,
     unpack_flux_latents,
@@ -60,13 +60,15 @@ def test_generate_routes_flux_image_to_training_flow() -> None:
     generator.source_conditioning_config = None
 
     sentinel = torch.zeros(1, 3, 4, 4)
-    with patch.object(generator, "_generate_flux_img2img", return_value=sentinel) as mocked:
-        with patch.object(generator, "_get_i2i_pipe") as i2i:
-            out = generator.generate(
-                prompt="Generate a metric depth visualization of this image.",
-                image=torch.zeros(1, 3, 4, 4),
-                num_inference_steps=4,
-            )
+    with (
+        patch.object(generator, "_generate_flux_img2img", return_value=sentinel) as mocked,
+        patch.object(generator, "_get_i2i_pipe") as i2i,
+    ):
+        out = generator.generate(
+            prompt="Generate a metric depth visualization of this image.",
+            image=torch.zeros(1, 3, 4, 4),
+            num_inference_steps=4,
+        )
     assert out is sentinel
     mocked.assert_called_once()
     i2i.assert_not_called()

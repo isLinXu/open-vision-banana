@@ -17,8 +17,8 @@ Key design decisions:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
@@ -124,10 +124,7 @@ class ConvBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.layers(x)
-        if self.residual is not None:
-            out = out + self.residual(x)
-        else:
-            out = out + x
+        out = out + self.residual(x) if self.residual is not None else out + x
         return out
 
 
@@ -217,7 +214,7 @@ class TinyVisionBanana(nn.Module):
         self.downsamplers = nn.ModuleList()
         self.encoder_widths: list[int] = []  # output width of each encoder block (skip channels)
         current_width = w
-        for stage in range(num_stages):
+        for _ in range(num_stages):
             out_width = current_width * 2
             self.encoder_blocks.append(ConvBlock(current_width, out_width, depth))
             self.downsamplers.append(Downsample(out_width))

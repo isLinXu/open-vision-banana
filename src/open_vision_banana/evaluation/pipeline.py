@@ -208,10 +208,7 @@ class EvalPipeline:
 
         # Ensure image is on the right device and in [-1, 1] for the generator
         image_tensor = image_tensor.to(device=self.device, dtype=self.dtype)
-        if image_tensor.min() >= 0:
-            image_for_gen = image_tensor * 2.0 - 1.0
-        else:
-            image_for_gen = image_tensor
+        image_for_gen = image_tensor * 2.0 - 1.0 if image_tensor.min() >= 0 else image_tensor
 
         # Generate
         rgb_output = self.generator.generate(
@@ -279,10 +276,7 @@ class EvalPipeline:
             target_rgb = batch["target_rgb"].to(self.device, dtype=self.dtype)
 
             # Normalize image to [-1, 1] for generator
-            if image.min() >= 0:
-                image_for_gen = image * 2.0 - 1.0
-            else:
-                image_for_gen = image
+            image_for_gen = image * 2.0 - 1.0 if image.min() >= 0 else image
 
             # Generate predictions
             rgb_output = self.generator.generate(

@@ -23,6 +23,13 @@ from .benchmark import (
     apply_depth_benchmark_protocol,
     canonical_depth_dataset,
 )
+from .contract import (
+    DepthContract,
+    EncodingContract,
+    NormalContract,
+    SemanticContract,
+    load_encoding_contract,
+)
 from .depth import evaluate_depth
 from .edge import evaluate_edge, evaluate_edge_dataset
 from .evaluator import VisionEvaluator
@@ -49,15 +56,8 @@ from .paper_capabilities import (
     capability_for_benchmark,
     paper_reference,
 )
-from .referring import ReferringAccumulator, evaluate_referring
-from .contract import (
-    DepthContract,
-    EncodingContract,
-    NormalContract,
-    SemanticContract,
-    load_encoding_contract,
-)
 from .pipeline import EvalPipeline
+from .referring import ReferringAccumulator, evaluate_referring
 from .semantic import evaluate_semantic
 
 __all__ = [

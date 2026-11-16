@@ -39,10 +39,10 @@ from .edit_forward import (
     edit_latent_layout,
     flux2_edit_forward,
     flux3_edit_forward,
-    moss_panel_edit_forward,
     hunyuan_edit_forward,
     joy_edit_forward,
     longcat_edit_forward,
+    moss_panel_edit_forward,
     qwen21_edit_forward,
     qwen_edit_forward,
 )

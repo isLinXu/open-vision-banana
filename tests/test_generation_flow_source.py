@@ -16,7 +16,6 @@ import torch
 from open_vision_banana.training.flow_matching import FlowScheduler
 from open_vision_banana.training.model_backend import ModelBackend
 
-
 FAMILY = "flux"  # rectified flow: v = target - source (SANA uses the opposite sign; the mask logic is identical)
 
 

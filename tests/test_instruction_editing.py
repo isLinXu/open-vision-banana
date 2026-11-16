@@ -7,11 +7,9 @@ to editors that set in_context_conditioning.
 import json
 
 import pytest
-import torch
 from PIL import Image
 
 from open_vision_banana.model_registry import _auto_detect_family, get_model_config
-
 
 EDIT_MODELS = (
     "qwen-image-edit",

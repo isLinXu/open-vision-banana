@@ -1,11 +1,11 @@
 import importlib.util
 import json
-from pathlib import Path
 import sys
 import types
+from pathlib import Path
 
-from PIL import Image
 import pytest
+from PIL import Image
 
 from open_vision_banana.referring_contract import build_binary_referring_prompt
 

@@ -465,6 +465,6 @@ def test_train_loop_logs_the_grad_norm_of_every_step(group, tmp_path):
     norms = [row["grad_norm"] for row in rows]
     assert all(norm > 0 for norm in norms)
     assert [step for step, _ in logged] == [2, 4]
-    for (_, metrics), window in zip(logged, (norms[:2], norms[2:])):
+    for (_, metrics), window in zip(logged, (norms[:2], norms[2:]), strict=False):
         assert metrics["grad_norm_mean"] == pytest.approx(sum(window) / len(window))
         assert metrics["grad_norm_max"] == max(window)
