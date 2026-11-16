@@ -225,6 +225,7 @@ Two 100k-step LoRA arms on the fused Qwen-Image-2.1 base (`Melo111/Fusion-C1-KQ0
 | A, step 60k | 0.469 (0.901) | 0.258 (0.958) | 0.316 (0.890) | 0.276 | 0.438 | 0.357 |
 | B, step 20k | 0.340 (0.903) | 0.166 (0.910) | 0.229 (0.888) | 0.353 | — | **0.440** |
 | B, step 100k (final) | **0.497** (0.926) | 0.225 (0.974) | **0.353** (0.926) | 0.298 | **0.481** | 0.333 |
+| [P6 fusion](https://huggingface.co/Melo111/Fusion-I108-P6) (per-metric best of two evaluations) | 0.450 (0.902) | 0.200 (0.950) | 0.300 (0.898) | 0.364 | 0.512 | 0.400 |
 | *Vision Banana (closed reference, from the paper)* | *0.948* | *0.935* | *0.917* | *0.699* | *0.738* | *0.793* |
 
 Longer training keeps raising NYU and DIODE δ1 while Cityscapes and ReasonSeg fall; no checkpoint beats the fused base on every benchmark. RefCOCOg is UMD val n=4896 from the same external evaluation (—: not scored). B 20k has no RefCOCOg score; B 17.5k, the balanced checkpoint, scores 0.518 in the merge evaluation below.
