@@ -116,7 +116,9 @@ def evaluate_trivial_baselines(
         gt, valid = _batch_tensors(batch)
         base_mask = _valid_pixels(gt, valid)
 
-        def score(name: str, pred: torch.Tensor) -> None:
+        def score(
+            name: str, pred: torch.Tensor, gt: torch.Tensor = gt, valid: torch.Tensor = valid
+        ) -> None:
             pred_p, gt_p, mask_p = apply_depth_benchmark_protocol(dataset_name, pred, gt, valid)
             accumulators[name].update(pred_p, gt_p, mask_p)
 

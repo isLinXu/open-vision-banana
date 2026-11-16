@@ -397,7 +397,7 @@ def _merged_upload_manifest(folder: Path) -> dict[str, tuple[int, str]]:
         if name not in root_files and not (relative.parts[0] in components
                 and path.suffix in {".json", ".safetensors", ".txt", ".jinja"}):
             continue
-        if path.resolve() != path.absolute():
+        if path.is_symlink() or path.resolve() != folder.resolve() / relative:
             raise ValueError(f"Refusing symlink in standalone pipeline: {name}")
         if not name.endswith(".safetensors"):
             if path.stat().st_size > 128 * 1024 * 1024:

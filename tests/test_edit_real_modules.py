@@ -5,9 +5,9 @@ import torch
 
 diffusers = pytest.importorskip("diffusers")
 
-from open_vision_banana.model_registry import get_model_config
-from open_vision_banana.training.flow_matching import FlowScheduler
-from open_vision_banana.training.model_backend import ModelBackend
+from open_vision_banana.model_registry import get_model_config  # noqa: E402
+from open_vision_banana.training.flow_matching import FlowScheduler  # noqa: E402
+from open_vision_banana.training.model_backend import ModelBackend  # noqa: E402
 
 
 def _backend(name, module):

@@ -35,6 +35,6 @@ def test_each_category_keeps_a_train_and_val_row():
     categories = ["gqa-seg"] * 10 + ["reasonseg"] * 5
     splits = assign_splits(categories, val_fraction=0.2, seed=42)
     for name in ("gqa-seg", "reasonseg"):
-        group = [split for split, category in zip(splits, categories) if category == name]
+        group = [split for split, category in zip(splits, categories, strict=False) if category == name]
         assert "train" in group
         assert "val" in group

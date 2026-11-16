@@ -326,20 +326,6 @@ def test_get_device_prefers_mps_and_falls_back_from_cuda(monkeypatch):
         TrainingConfig(device="mps").get_device()
 
 
-def test_get_device_prefers_mps_and_falls_back_from_cuda(monkeypatch):
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
-    assert TrainingConfig(device=None).get_device().type == "mps"
-    assert TrainingConfig(device="cuda").get_device().type == "mps"
-    assert TrainingConfig(device="cpu").get_device().type == "cpu"
-    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
-    assert TrainingConfig(device=None).get_device().type == "cpu"
-    with pytest.raises(ValueError, match="CUDA is not available"):
-        TrainingConfig(device="cuda").get_device()
-    with pytest.raises(ValueError, match="MPS is not available"):
-        TrainingConfig(device="mps").get_device()
-
-
 def test_unknown_post_training_yaml_field_is_rejected(tmp_path: Path):
     path = tmp_path / "bad.yaml"
     path.write_text(yaml.safe_dump({"post_training": {"foo": 1}}))

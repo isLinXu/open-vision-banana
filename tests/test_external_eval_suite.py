@@ -1,8 +1,8 @@
 """Portable plan generation must not load weights or launch GPU processes."""
 import importlib.util
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -57,6 +57,7 @@ def test_reject_incomplete_or_nonfinite_result(tmp_path):
 
 def test_invalid_semantic_predictions_cannot_reduce_denominator():
     import torch
+
     from open_vision_banana.evaluation.benchmark import SemanticAccumulator
 
     accumulator = SemanticAccumulator(2)
@@ -70,6 +71,7 @@ def test_invalid_semantic_predictions_cannot_reduce_denominator():
 
 def test_semantic_smoke_allows_absent_classes_but_not_invalid_headline(tmp_path):
     import torch
+
     from open_vision_banana.evaluation.benchmark import SemanticAccumulator
     from open_vision_banana.evaluation.results_io import write_results
 

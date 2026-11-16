@@ -42,6 +42,15 @@ from .benchmark import (
     depth_report,
 )
 from .depth import evaluate_depth
+from .edge import evaluate_edge
+from .flow import evaluate_flow
+from .generation_preservation import evaluate_generation_preservation
+from .instance import SACoAccumulator, evaluate_instance
+from .keypoint import evaluate_keypoints
+from .normal import evaluate_normals
+from .object_detection import evaluate_object_detection
+from .referring import ReferringAccumulator, evaluate_referring
+from .semantic import evaluate_semantic
 from .shards import accumulator_state
 
 
@@ -130,15 +139,6 @@ def oracle_depth_decode(
     best = stacked_errors.argmin(dim=0)  # [B]
     batch = torch.arange(rgb.shape[0], device=rgb.device)
     return stacked_decoded[best, batch], [names[int(b)] for b in best]
-from .edge import evaluate_edge
-from .flow import evaluate_flow
-from .generation_preservation import evaluate_generation_preservation
-from .instance import SACoAccumulator, evaluate_instance
-from .keypoint import evaluate_keypoints
-from .normal import evaluate_normals
-from .object_detection import evaluate_object_detection
-from .referring import ReferringAccumulator, evaluate_referring
-from .semantic import evaluate_semantic
 
 logger = logging.getLogger(__name__)
 

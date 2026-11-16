@@ -9,6 +9,7 @@ The contract file is at ``configs/encoding_contract.yaml``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -224,10 +225,8 @@ def _load_contract_fallback(contract_path: str | Path | None) -> EncodingContrac
         elif stripped.startswith("palette_path:"):
             semantic_palette_path = stripped.split(":", 1)[1].strip().split("#")[0].strip()
         elif stripped.startswith("n_classes:"):
-            try:
+            with contextlib.suppress(ValueError):
                 semantic_n_classes = int(stripped.split(":", 1)[1].strip().split("#")[0].strip())
-            except ValueError:
-                pass
 
     # Extract prompts (simple parse)
     prompts: dict[str, str] = {}

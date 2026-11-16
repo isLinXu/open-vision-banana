@@ -39,6 +39,7 @@ import time
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
+from typing import Iterator
 
 import torch
 import torch.nn.functional as F

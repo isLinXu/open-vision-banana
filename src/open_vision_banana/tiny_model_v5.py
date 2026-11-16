@@ -39,29 +39,22 @@ Architecture (unchanged U-Net skeleton):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 from open_vision_banana.tiny_model import (
+    TINY_TASKS,
     ConvBlock,
     Downsample,
     Upsample,
     _group_count,
-    TINY_TASKS,
-    DEFAULT_TASK_INDEX,
     evaluate_tiny_predictions,
     tiny_overfit_gate_passed,
 )
-from open_vision_banana.tiny_model_v2 import (
-    FiLMModulation,
-    _dice_loss,
-    _ssim_loss,
-)
-
 
 # ── Config ───────────────────────────────────────────────────────
 
@@ -162,7 +155,7 @@ class DeepTaskHead(nn.Module):
         self.depth = depth
 
         layers = []
-        for i in range(depth):
+        for _ in range(depth):
             layers.append(nn.Conv2d(in_width, in_width, 3, padding=1, bias=False))
             layers.append(nn.GroupNorm(_group_count(in_width), in_width))
             layers.append(nn.SiLU())
@@ -223,7 +216,7 @@ class TinyVisionBananaV5(nn.Module):
         self.downsamplers = nn.ModuleList()
         self.encoder_widths: list[int] = []
         current_width = w
-        for stage in range(num_stages):
+        for _ in range(num_stages):
             out_width = current_width * 2
             self.encoder_blocks.append(ConvBlock(current_width, out_width, depth))
             self.downsamplers.append(Downsample(out_width))
@@ -346,7 +339,7 @@ class TinyVisionBananaV5(nn.Module):
             zip(self.upsamplers, self.decoder_blocks, self.film_modules, strict=True)
         ):
             x = up(x)
-            skip = skips[num_stages := self.config.num_stages - 1 - stage]
+            skip = skips[self.config.num_stages - 1 - stage]
             if x.shape[-2:] != skip.shape[-2:]:
                 x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
             x = torch.cat([x, skip], dim=1)
@@ -400,16 +393,17 @@ class TinyVisionBananaV5(nn.Module):
 # histogram, ordinal, palette CE/projection). V5's architectural changes
 # complement the V4 loss without requiring loss modifications.
 
-from open_vision_banana.tiny_model_v4 import (  # noqa: E402, F401
-    tiny_vision_loss_v4 as tiny_vision_loss_v5,
+from open_vision_banana.tiny_model_v4 import (  # noqa: E402
     _extract_palette,
+    _histogram_loss,
+    _multi_scale_gradient_loss,
+    _ordinal_loss,
     _palette_ce_loss,
     _palette_projection_loss,
-    _multi_scale_gradient_loss,
-    _histogram_loss,
-    _ordinal_loss,
 )
-
+from open_vision_banana.tiny_model_v4 import (  # noqa: E402, F401
+    tiny_vision_loss_v4 as tiny_vision_loss_v5,
+)
 
 __all__ = [
     "TinyVisionBananaV5",

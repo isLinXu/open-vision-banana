@@ -22,32 +22,22 @@ Loss function, output activation, and initialization are modified.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Sequence
-
 import torch
 import torch.nn.functional as F
-from torch import nn
 
 from open_vision_banana.tiny_model import (
-    ConvBlock,
-    Downsample,
-    Upsample,
-    _group_count,
     TINY_TASKS,
-    DEFAULT_TASK_INDEX,
     evaluate_tiny_predictions,
     tiny_overfit_gate_passed,
 )
 from open_vision_banana.tiny_model_v2 import (
-    TinyVisionBananaV2,
-    TinyVisionBananaV2Config,
     FiLMModulation,
     TaskSpecificHead,
+    TinyVisionBananaV2,
+    TinyVisionBananaV2Config,
     _dice_loss,
     _ssim_loss,
 )
-
 
 # -- Palette-constrained semantic loss -----------------------------
 

@@ -2,8 +2,8 @@
 import csv
 import importlib.util
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 import torch

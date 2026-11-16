@@ -141,8 +141,8 @@ def test_cityscapes_subset_prompt_expands_to_canonical_legend() -> None:
 
 def test_manifest_cityscapes_prompt_matches_inference_contract(tmp_path) -> None:
     """A prompt omitted from a manifest must use the full Cityscapes legend."""
-    from scripts.train_sana_512 import ManifestVisionDataset
     from open_vision_banana.data.datasets import CityscapesSegDataset
+    from scripts.train_sana_512 import ManifestVisionDataset
 
     image = tmp_path / "input.png"
     target = tmp_path / "target.png"

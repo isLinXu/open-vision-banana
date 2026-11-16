@@ -1924,8 +1924,8 @@ def _register_remote_pipeline_module(model_source: str, module_name: str) -> Non
     component loader resolves the library name in ``sys.modules``, so a local
     checkout must have the module imported under that exact name first.
     """
-    import sys
     import importlib.util
+    import sys
 
     if module_name in sys.modules:
         return

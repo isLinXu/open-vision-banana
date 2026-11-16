@@ -2,10 +2,10 @@
 
 import importlib.util
 import json
-from pathlib import Path
 import struct
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "publish_to_hub.py"
 SPEC = importlib.util.spec_from_file_location("publish_merged_test", SCRIPT)

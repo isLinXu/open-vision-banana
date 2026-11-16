@@ -21,11 +21,8 @@ import io
 import json
 import logging
 import os
-import struct
-import time
-from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import torch
@@ -43,7 +40,7 @@ def _round_block(n: int) -> int:
 
 # ── Multi-file reader ─────────────────────────────────────────────────────
 
-                                                                        
+
 class MultiFileReader(io.RawIOBase):
     """Treat multiple files as a single virtual file for sequential reading."""
 
@@ -716,7 +713,7 @@ class TarArchiveDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         last_err = None
-        for attempt in range(3):
+        for _ in range(3):
             try:
                 return self._load_sample(idx)
             except Exception as e:
@@ -935,7 +932,7 @@ class TarTargetDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         last_err = None
-        for attempt in range(3):
+        for _ in range(3):
             try:
                 return self._load_sample(idx)
             except Exception as e:

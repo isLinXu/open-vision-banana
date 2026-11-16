@@ -117,7 +117,7 @@ def test_generate_kontext_uses_official_pipeline_conventions():
     assert kw["num_inference_steps"] == 30  # 1 means "unspecified": model default, never single step
     assert kw["guidance_scale"] == 2.5
     assert out.shape == (1, 3, 50, 70)  # resized back to the input raster
-    assert 0.0 <= float(out.min()) and float(out.max()) <= 1.0
+    assert float(out.min()) >= 0.0 and float(out.max()) <= 1.0
 
 
 def test_generate_kontext_prompt_count_mismatch():

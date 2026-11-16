@@ -331,7 +331,10 @@ class TestHypersimMultiTaskExport:
         from open_vision_banana.core.normal_mapper import NormalRGBMapper
         from open_vision_banana.core.segmentation import SegmentationDecoder
         from open_vision_banana.data.hypersim import INVALID_NORMAL_RGB
-        from open_vision_banana.training.trainer import ManifestVisionDataset, parse_semantic_legend_from_prompt
+        from open_vision_banana.training.trainer import (
+            ManifestVisionDataset,
+            parse_semantic_legend_from_prompt,
+        )
 
         raw = self._scene(tmp_path)
         out = tmp_path / "prepared"

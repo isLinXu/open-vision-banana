@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import torch
 
-
 from .benchmark import as_batch_hw_labels
 
 

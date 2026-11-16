@@ -16,7 +16,7 @@ import torch
 from PIL import Image
 
 from ..inference.prompt import PromptBuilder
-from .datasets import BaseVisionDataset, _fill_polygon, _pil_to_tensor
+from .datasets import BaseVisionDataset, _fill_polygon
 
 logger = logging.getLogger(__name__)
 

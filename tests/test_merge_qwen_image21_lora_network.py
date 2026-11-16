@@ -6,9 +6,9 @@ No network requests, downloads or torch imports are performed.
 """
 
 import importlib.util
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
-import unittest
 from unittest.mock import Mock, patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "merge_qwen_image21_lora.py"

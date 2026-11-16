@@ -83,7 +83,7 @@ def _fill_polygon(mask: np.ndarray, pts: np.ndarray) -> None:
 
 
 def _init_native_normal(dataset: object, native_gt: bool) -> None:
-    setattr(dataset, "native_gt", bool(native_gt))
+    dataset.native_gt = bool(native_gt)
 
 
 def _pack_normal_sample(dataset, normal: torch.Tensor, valid: torch.Tensor) -> dict:
@@ -3047,7 +3047,7 @@ class MapillaryVistasDataset(BaseVisionDataset):
         }
 
 
-class nuScenesDataset(_NativeGTMixin, BaseVisionDataset):
+class nuScenesDataset(_NativeGTMixin, BaseVisionDataset):  # noqa: N801
     """nuScenes dataset for multi-task autonomous driving perception.
 
     nuScenes provides 1,000 scenes with 360° camera coverage, LiDAR,
