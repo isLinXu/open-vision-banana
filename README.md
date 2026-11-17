@@ -44,6 +44,7 @@
 
 ## 📰 News
 
+- **[2026-11-17]** 📦 Five **full merged pipelines** are on the Hub under [`gatilin/ovb-*-full`](https://huggingface.co/gatilin?search=ovb-): exact PEFT merges of the I108-B, I127-P6 and I102-i1 adapters into their bases, 165.7 GB in total, each with a provenance-checked model card ([Checkpoints](#checkpoints)).
 - **[2026-11-15]** 📌 Open release: the five key findings so far are summarized in [Key findings](#-key-findings).
 - **[2026-11-15]** 🧪 Six exact LoRA merges of the I108 B arm, externally evaluated on all six benchmarks. None passes every gate; B `checkpoint-17500_best` stays the balanced pick ([#127](https://github.com/isLinXu/open-vision-banana/issues/127), [results](docs/evaluation/i127-merge-20261115/results.md)).
 - **[2026-11-14]** 🔥 Prepared for the public release: cleaned code and docs, new overview and task-contract figures, and the I108 Fusion r64 results from an external evaluation ([#122](https://github.com/isLinXu/open-vision-banana/pull/122), [#128](https://github.com/isLinXu/open-vision-banana/pull/128)).
@@ -678,6 +679,25 @@ SANA / FLUX task-matched runs (as of 2026-11-15 these `ovb-fix_*` and `ovb-flux3
 - Semantic / referring: [`ovb-fix_ctrl_seg`](https://huggingface.co/khazic/ovb-fix_ctrl_seg), [`ovb-fix_seg_plus_gcg`](https://huggingface.co/khazic/ovb-fix_seg_plus_gcg), [`ovb-flux3_ctrl_seg_nominsnr_15k`](https://huggingface.co/khazic/ovb-flux3_ctrl_seg_nominsnr_15k)
 
 The `fix_*` depth LoRAs were trained as closer-brighter grayscale. Decode them with `--depth-colormap grayscale --invert-depth`. A separate local SANA-1600M Hypersim run (cube-edge metric metres, not a Hub `ovb-*` repo) is listed separately.
+
+### Released full pipelines (`gatilin/ovb-*-full`)
+
+The five checkpoints below are **complete Diffusers `QwenImage21Pipeline` directories**, not adapters: the LoRA delta is folded into the base weights with `merge_and_unload(safe_merge=True)` over 224 target modules, and every copied component (text encoder, VAE, processor, scheduler) is byte-identical to the pinned base revision. **Do not re-apply the source adapter on top of them.** Each repository is about 33.1 GB and ships `merge_metadata.json` (base and adapter revisions, per-tensor adapter SHA-256, toolchain versions) plus a `MERGE_VALIDATED` record.
+
+| Repository | Base | Merged adapter | Recipe | Selected for |
+|------------|------|----------------|--------|--------------|
+| [`ovb-b-17500-best-full`](https://huggingface.co/gatilin/ovb-b-17500-best-full) | [`Melo111/Fusion-C1-KQ0r128-60-40`](https://huggingface.co/Melo111/Fusion-C1-KQ0r128-60-40) @ `9d5b9b8` | `khazic/ovb-i108-b-…r3` @ `ckpt/checkpoint-17500_best`, r64 rsLoRA | single adapter (EMA) | the balanced B arm: RefCOCOg **0.518**, ReasonSeg **0.431** |
+| [`ovb-b-20000-best-full`](https://huggingface.co/gatilin/ovb-b-20000-best-full) | same | same repo @ `ckpt/checkpoint-20000_best`, r64 rsLoRA | single adapter (EMA) | ReasonSeg **0.440**, the highest of the arm |
+| [`ovb-b-100000-final-full`](https://huggingface.co/gatilin/ovb-b-100000-final-full) | same | same repo @ `ckpt/checkpoint-100000_final`, r64 rsLoRA | single adapter | depth: NYU **0.497**, DIODE **0.353** |
+| [`ovb-p6-merge-full`](https://huggingface.co/gatilin/ovb-p6-merge-full) | same | `khazic/ovb-i127-merge-eval` @ `merged/P6`, r128 | ΔW merge: base 20 % + 17.5k 55 % + 100k 25 % | the merge with the highest Cityscapes mIoU (0.364), ETH3D 0.200 |
+| [`ovb-i102i1-full`](https://huggingface.co/gatilin/ovb-i102i1-full) | [`Qwen/Qwen-Image-2.1`](https://huggingface.co/Qwen/Qwen-Image-2.1) @ `d26bb61` | `khazic/ovb-ft_bl_i102i1-…` @ `ckpt/checkpoint-10000_final`, r32 rsLoRA | single adapter | RefCOCOg **0.547**, the best referring number in this repository |
+
+Scores are the **source checkpoint's** external evaluation from the two tables in [Results](#-results) (same suite and protocol; I102-i1 starts from the untuned backbone, the other four from the fused base). The merged exports themselves were **not re-scored**, and no image inference was run on them: the merge pipeline verified weight hashes, the merge formula per module, and offline component loading only. Treat a first forward pass as an unvalidated reproduction.
+
+```bash
+# 33.1 GB each; repeat for ovb-b-20000-best-full, ovb-b-100000-final-full, ovb-p6-merge-full, ovb-i102i1-full
+hf download gatilin/ovb-b-17500-best-full --local-dir ovb-b-17500-best-full
+```
 
 ---
 
