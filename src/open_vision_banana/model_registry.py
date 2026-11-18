@@ -3272,8 +3272,9 @@ def _qwen_image21_latent_stats(vae, like: torch.Tensor) -> tuple[torch.Tensor, t
 
 
 # FLUX.2-VAE families whose transformer consumes the 2x2-patchified, batch-norm
-# normalised latents [B, 4C, H/16, W/16] (MOSSImagePipeline, Flux3 modular pipeline).
-_FLUX2_VAE_PATCHIFIED_FAMILIES = frozenset({"moss", "flux3"})
+# normalised latents [B, 4C, H/16, W/16] (Flux2KleinPipeline, MOSSImagePipeline, Flux3 modular
+# pipeline). Without it FLUX.2 [klein] gets the raw 32-channel latents its x_embedder rejects.
+_FLUX2_VAE_PATCHIFIED_FAMILIES = frozenset({"flux2", "moss", "flux3"})
 
 
 def _flux2_vae_bn_stats(vae: torch.nn.Module, latents: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
