@@ -348,6 +348,9 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxKontextPipeline",
+            # T5 length used by training (_flux_encode_text) and the pipeline; the manifest
+            # preflight checks semantic legends against it (CLIP's 77 only feeds the pooled vector)
+            text_encoder_max_length=512,
             default_resolution=512,
             default_guidance_scale=2.5,
             default_lora_rank=32,
