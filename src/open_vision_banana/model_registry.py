@@ -872,6 +872,7 @@ def _build_registry() -> None:
             vae_downsample_factor=8,
             memory_budget_gb=16.0,
             pipeline_class="Flux2KleinPipeline",
+            text_encoder_max_length=512,  # the pipeline's max_sequence_length
             default_resolution=1024,
             default_guidance_scale=4.0,
             default_num_inference_steps=50,
@@ -2324,6 +2325,22 @@ def encode_text(
     def _pooled(output: Any) -> torch.Tensor | None:
         candidate = getattr(output, "text_embeds", None)
         return candidate if isinstance(candidate, torch.Tensor) else None
+
+    # ── FLUX.2 [klein]: Qwen3 chat template, hidden states of layers 9/18/27 stacked ──
+    # The generic path below would return Qwen3ForCausalLM logits truncated to 77 tokens; the
+    # transformer's context_embedder expects 3 x hidden_size features, exactly what the pipeline builds.
+    if config.pipeline_class == "Flux2KleinPipeline":
+        from diffusers.pipelines.flux2.pipeline_flux2_klein import Flux2KleinPipeline
+
+        prompt_embeds = Flux2KleinPipeline._get_qwen3_prompt_embeds(
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            prompt=list(prompts),
+            dtype=dtype,
+            device=device,
+            max_sequence_length=max_length,
+        )
+        return prompt_embeds, None
 
     # ── MOSS-Image: Qwen3.5 chat template, one unpadded forward per prompt ──
     if config.family == "moss":
