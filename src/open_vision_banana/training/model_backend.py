@@ -131,6 +131,26 @@ def reject_unimplemented_instruction_edit(model_config) -> None:
         )
 
 
+def flux_pipeline_from_components(components, pipeline_class: str):
+    """Rebuild a FLUX.1 diffusers pipeline around already loaded components.
+
+    FLUX.1 prompts go through ``pipe.encode_prompt`` (CLIP pooled vector + T5 sequence). Without a
+    pipeline, ``encode_text`` falls back to the generic registry path, which tokenizes with the CLIP
+    tokenizer only and feeds those ids to T5 as well.
+    """
+    import diffusers
+
+    return getattr(diffusers, pipeline_class)(
+        scheduler=components.scheduler,
+        vae=components.vae,
+        text_encoder=components.text_encoder,
+        tokenizer=components.tokenizer,
+        text_encoder_2=components.text_encoder_2,
+        tokenizer_2=components.tokenizer_2,
+        transformer=components.unet,
+    )
+
+
 class ModelBackend:
     """Unified model interface for training.
 
@@ -221,6 +241,11 @@ class ModelBackend:
             )
         elif layout == "qwen_packed" and self.pipe is None:
             self.pipe = qwen_image21.build_qwen_edit_pipeline(
+                self.components, self.model_config.pipeline_class
+            )
+        elif self.family == "flux" and self.pipe is None:
+            # bf16 loading keeps only the components; encode_text needs the pipeline
+            self.pipe = flux_pipeline_from_components(
                 self.components, self.model_config.pipeline_class
             )
 
