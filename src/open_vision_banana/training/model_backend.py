@@ -131,26 +131,6 @@ def reject_unimplemented_instruction_edit(model_config) -> None:
         )
 
 
-def flux_pipeline_from_components(components, pipeline_class: str):
-    """Rebuild a FLUX.1 diffusers pipeline around already loaded components.
-
-    FLUX.1 prompts go through ``pipe.encode_prompt`` (CLIP pooled vector + T5 sequence). Without a
-    pipeline, ``encode_text`` falls back to the generic registry path, which tokenizes with the CLIP
-    tokenizer only and feeds those ids to T5 as well.
-    """
-    import diffusers
-
-    return getattr(diffusers, pipeline_class)(
-        scheduler=components.scheduler,
-        vae=components.vae,
-        text_encoder=components.text_encoder,
-        tokenizer=components.tokenizer,
-        text_encoder_2=components.text_encoder_2,
-        tokenizer_2=components.tokenizer_2,
-        transformer=components.unet,
-    )
-
-
 class ModelBackend:
     """Unified model interface for training.
 
@@ -231,7 +211,8 @@ class ModelBackend:
         # Store references
         self.backbone = self.components.unet  # backbone stored as 'unet' for compat
         self.vae = self.components.vae
-        self.pipe = getattr(self, "_pipe", None)  # Full pipe for FLUX encode_prompt
+        # Full pipe for encode_prompt: the 4-bit loader keeps its own, load_pipeline returns the loaded one
+        self.pipe = getattr(self, "_pipe", None) or getattr(self.components, "pipe", None)
         layout = edit_latent_layout(self.model_config)
         if layout == "qwen21":
             # Its prompt encoder takes the source image; built once around the loaded parts.
@@ -241,11 +222,6 @@ class ModelBackend:
             )
         elif layout == "qwen_packed" and self.pipe is None:
             self.pipe = qwen_image21.build_qwen_edit_pipeline(
-                self.components, self.model_config.pipeline_class
-            )
-        elif self.family == "flux" and self.pipe is None:
-            # bf16 loading keeps only the components; encode_text needs the pipeline
-            self.pipe = flux_pipeline_from_components(
                 self.components, self.model_config.pipeline_class
             )
 
@@ -481,9 +457,7 @@ class ModelBackend:
 
         return result
 
-    def _flux_encode_text(
-        self, prompts: list[str], device: torch.device, dtype: torch.dtype, max_length: int = 512
-    ) -> dict:
+    def _flux_encode_text(self, prompts: list[str], device: torch.device, dtype: torch.dtype) -> dict:
         """FLUX dual text encoding via pipeline.encode_prompt (CLIP + T5)."""
         pipe = self.pipe
         with torch.no_grad():
@@ -492,7 +466,7 @@ class ModelBackend:
                 prompt_2=prompts,
                 device=device,
                 num_images_per_prompt=1,
-                max_sequence_length=max_length,
+                max_sequence_length=self.model_config.text_encoder_max_length,
             )
 
         prompt_embeds = outputs[0]

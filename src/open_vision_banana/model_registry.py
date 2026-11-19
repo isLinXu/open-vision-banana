@@ -2059,6 +2059,8 @@ class PipelineComponents:
     text_encoder_4: torch.nn.Module | None = None  # HiDream uses 4 text encoders
     tokenizer_4: object | None = None
     processor: object | None = None  # NucleusMoE/LongCat use processor instead of tokenizer
+    # The loaded diffusers pipeline (it holds these same modules), for prompt encoders that need it
+    pipe: object | None = None
 
     @property
     def transformer(self):
@@ -2263,6 +2265,7 @@ def load_pipeline(
         text_encoder_4=text_encoder_4,
         tokenizer_4=tokenizer_4,
         processor=processor,
+        pipe=pipe,
     )
 
 

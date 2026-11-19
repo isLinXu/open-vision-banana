@@ -1,47 +1,37 @@
-"""The FLUX.1 Kontext prompt length the preflight checks is the one training encodes with."""
+"""FLUX.1 training encodes prompts through the pipeline load_pipeline built, at the registry T5 length."""
 
-import inspect
+from types import SimpleNamespace
+
+import torch
 
 from open_vision_banana.model_registry import get_model_config
-from open_vision_banana.training.model_backend import ModelBackend
+from open_vision_banana.training import model_backend
 
 
-def test_kontext_length_matches_the_t5_encoding_used_in_training():
-    t5_length = inspect.signature(ModelBackend._flux_encode_text).parameters["max_length"].default
-    assert get_model_config("flux-kontext").text_encoder_max_length == t5_length == 512
+class FakePipe:
+    def __init__(self):
+        self.calls = []
+
+    def encode_prompt(self, **kwargs):
+        self.calls.append(kwargs)
+        n = len(kwargs["prompt"])
+        return torch.zeros(n, 3, 4), torch.zeros(n, 4), torch.zeros(3, 3)
 
 
-def test_flux_pipeline_is_rebuilt_from_loaded_components(monkeypatch):
-    import diffusers
+def test_backend_keeps_the_pipeline_load_pipeline_built(monkeypatch):
+    pipe = FakePipe()
 
-    from open_vision_banana.model_registry import PipelineComponents
-    from open_vision_banana.training.model_backend import flux_pipeline_from_components
+    def load_pipeline(config, **kwargs):
+        return SimpleNamespace(unet=torch.nn.Linear(2, 2), vae=None, config=config, pipe=pipe)
 
-    seen = {}
+    monkeypatch.setattr(model_backend, "load_pipeline", load_pipeline)
+    monkeypatch.setattr(model_backend, "apply_lora", lambda backbone, *args, **kwargs: backbone)
+    backend = model_backend.ModelBackend("flux-kontext", torch.device("cpu"), dtype=torch.float32)
+    assert backend.pipe is pipe
 
-    class FakePipeline:
-        def __init__(self, **kwargs):
-            seen.update(kwargs)
-
-    monkeypatch.setattr(diffusers, "FluxKontextPipeline", FakePipeline, raising=False)
-    parts = {k: object() for k in ("transformer", "vae", "clip", "t5", "tok", "tok2", "sched")}
-    components = PipelineComponents(
-        unet=parts["transformer"],
-        vae=parts["vae"],
-        text_encoder=parts["clip"],
-        text_encoder_2=parts["t5"],
-        tokenizer=parts["tok"],
-        tokenizer_2=parts["tok2"],
-        scheduler=parts["sched"],
-    )
-    pipe = flux_pipeline_from_components(components, "FluxKontextPipeline")
-    assert isinstance(pipe, FakePipeline)
-    assert seen == {
-        "scheduler": parts["sched"],
-        "vae": parts["vae"],
-        "text_encoder": parts["clip"],
-        "tokenizer": parts["tok"],
-        "text_encoder_2": parts["t5"],
-        "tokenizer_2": parts["tok2"],
-        "transformer": parts["transformer"],
-    }
+    cond = backend.encode_text(["depth", "segment"], torch.device("cpu"), torch.float32)
+    # T5 at the registry length, which the manifest preflight checks legends against
+    assert pipe.calls[0]["max_sequence_length"] == 512
+    assert get_model_config("flux-kontext").text_encoder_max_length == 512
+    assert cond["encoder_hidden_states"].shape == (2, 3, 4)
+    assert cond["pooled_projections"].shape == (2, 4)
