@@ -964,6 +964,8 @@ def _build_registry() -> None:
             vae_downsample_factor=8,
             memory_budget_gb=12.0,
             pipeline_class="MOSSImagePipeline",
+            # encode_text truncates MOSS prompts at 4096 tokens (one unpadded forward each)
+            text_encoder_max_length=4096,
             default_resolution=1024,
             default_guidance_scale=3.0,
             default_num_inference_steps=50,
