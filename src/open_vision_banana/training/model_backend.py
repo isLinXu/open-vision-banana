@@ -105,6 +105,14 @@ def _tensors_to_pils(images: torch.Tensor):
     return [Image.fromarray(pixels[index].permute(1, 2, 0).numpy()) for index in range(pixels.shape[0])]
 
 
+def _pad_sequence(tensor: torch.Tensor, length: int) -> torch.Tensor:
+    """Zero-pad dim 1 (the token axis) to ``length``; padded mask entries are False."""
+    if tensor.shape[1] >= length:
+        return tensor
+    pad = tensor.new_zeros(tensor.shape[0], length - tensor.shape[1], *tensor.shape[2:])
+    return torch.cat([tensor, pad], dim=1)
+
+
 def _attach_full_ft_save(module: torch.nn.Module) -> None:
     """Give a non-PEFT backbone the ``save_pretrained`` the checkpoint callback calls."""
 
@@ -911,6 +919,11 @@ class ModelBackend:
                 result[key] = val
                 continue
             if isinstance(val, torch.Tensor) and isinstance(uncond_val, torch.Tensor):
+                same_rank = val.dim() >= 2 and uncond_val.dim() == val.dim()
+                if same_rank and uncond_val.shape[1] != val.shape[1]:
+                    # unpadded encoders (MOSS-Image) size the sequence to the longest prompt
+                    length = max(val.shape[1], uncond_val.shape[1])
+                    val, uncond_val = _pad_sequence(val, length), _pad_sequence(uncond_val, length)
                 drop = drop_mask.view(-1, *([1] * (val.dim() - 1)))
                 result[key] = torch.where(drop, uncond_val, val)
             else:
