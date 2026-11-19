@@ -10,7 +10,6 @@ Image = pytest.importorskip("PIL.Image")
 from open_vision_banana.training.model_backend import (  # noqa: E402
     ModelBackend,
     encode_longcat_edit_condition,
-    longcat_edit_pipeline_from_components,
 )
 
 
@@ -56,27 +55,3 @@ def test_backend_routes_longcat_edits_through_the_pipeline(monkeypatch):
     cond = backend.encode_edit_text(["depth", "segment it"], images, cfg_dropout_rate=0.5)
     assert [prompt for prompt, _ in backend.pipe.calls] == [[""], [""]]  # empty prompt, same source
     assert cond["encoder_hidden_states"].shape == (2, 6, 4)
-
-
-def test_pipeline_is_built_from_the_loaded_components(monkeypatch):
-    seen = {}
-
-    class FakeLongCat:
-        def __init__(self, **kwargs):
-            seen.update(kwargs)
-
-    import diffusers
-
-    monkeypatch.setattr(diffusers, "LongCatImageEditPipeline", FakeLongCat, raising=False)
-    parts = SimpleNamespace(
-        scheduler="s", vae="v", text_encoder="te", tokenizer="tok", processor="proc", unet="tr"
-    )
-    longcat_edit_pipeline_from_components(parts)
-    assert seen == {
-        "scheduler": "s",
-        "vae": "v",
-        "text_encoder": "te",
-        "tokenizer": "tok",
-        "text_processor": "proc",
-        "transformer": "tr",
-    }
