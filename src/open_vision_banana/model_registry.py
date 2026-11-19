@@ -966,6 +966,8 @@ def _build_registry() -> None:
             vae_downsample_factor=8,
             memory_budget_gb=12.0,
             pipeline_class="MOSSImagePipeline",
+            # encode_text truncates MOSS prompts at 4096 tokens (one unpadded forward each)
+            text_encoder_max_length=4096,
             default_resolution=1024,
             default_guidance_scale=3.0,
             default_num_inference_steps=50,
@@ -3313,6 +3315,11 @@ def vae_encode(
     CogView4: vae.encode(img).latent_dist.mode() * scaling
     Qwen-Image-2.1: RGBA [B, 4, 1, H, W] (opaque alpha), (mode() - mean) / std per channel
     """
+    # Encode in the VAE's own dtype (the remote-code MOSS pipeline keeps it in float32); the
+    # decoder casts its input the same way.
+    vae_dtype = getattr(vae, "dtype", None)
+    if isinstance(vae_dtype, torch.dtype):
+        images = images.to(vae_dtype)
     if config.family == "qwen-image-2.1":
         rgba = torch.cat([images, torch.ones_like(images[:, :1])], dim=1).unsqueeze(2)
         latents = vae.encode(rgba).latent_dist.mode()
