@@ -105,6 +105,29 @@ def _tensors_to_pils(images: torch.Tensor):
     return [Image.fromarray(pixels[index].permute(1, 2, 0).numpy()) for index in range(pixels.shape[0])]
 
 
+def encode_longcat_edit_condition(pipe, prompts, images, device, dtype) -> dict[str, Any]:
+    """LongCat-Image-Edit condition as its pipeline builds it: the editing system template with the
+    source image as Qwen2.5-VL vision tokens, then the prompt. The pipeline sizes that image itself,
+    independent of the requested canvas: the source's aspect ratio at a 1024x1024 area, halved.
+
+    The pipeline encodes one (prompt, image) pair per call; every sample of a batch shares the
+    canvas size, so the per-sample embeddings have equal length and concatenate.
+    """
+    from diffusers.pipelines.longcat_image.pipeline_longcat_image_edit import calculate_dimensions
+
+    embeds, text_ids = [], None
+    with torch.no_grad():
+        for prompt, image in zip(prompts, images, strict=True):
+            width, height = calculate_dimensions(1024 * 1024, image.size[0] / image.size[1])
+            small = pipe.image_processor.resize(image, height // 2, width // 2)
+            embed, text_ids = pipe.encode_prompt(prompt=[prompt], image=small)
+            embeds.append(embed)
+    return {
+        "encoder_hidden_states": torch.cat(embeds).to(device=device, dtype=dtype),
+        "text_ids": text_ids.to(device=device),
+    }
+
+
 def _attach_full_ft_save(module: torch.nn.Module) -> None:
     """Give a non-PEFT backbone the ``save_pretrained`` the checkpoint callback calls."""
 
@@ -211,7 +234,8 @@ class ModelBackend:
         # Store references
         self.backbone = self.components.unet  # backbone stored as 'unet' for compat
         self.vae = self.components.vae
-        self.pipe = getattr(self, "_pipe", None)  # Full pipe for FLUX encode_prompt
+        # Full pipe for encode_prompt: the 4-bit loader keeps its own, load_pipeline returns the loaded one
+        self.pipe = getattr(self, "_pipe", None) or getattr(self.components, "pipe", None)
         layout = edit_latent_layout(self.model_config)
         if layout == "qwen21":
             # Its prompt encoder takes the source image; built once around the loaded parts.
@@ -456,9 +480,7 @@ class ModelBackend:
 
         return result
 
-    def _flux_encode_text(
-        self, prompts: list[str], device: torch.device, dtype: torch.dtype, max_length: int = 512
-    ) -> dict:
+    def _flux_encode_text(self, prompts: list[str], device: torch.device, dtype: torch.dtype) -> dict:
         """FLUX dual text encoding via pipeline.encode_prompt (CLIP + T5)."""
         pipe = self.pipe
         with torch.no_grad():
@@ -467,7 +489,7 @@ class ModelBackend:
                 prompt_2=prompts,
                 device=device,
                 num_images_per_prompt=1,
-                max_sequence_length=max_length,
+                max_sequence_length=self.model_config.text_encoder_max_length,
             )
 
         prompt_embeds = outputs[0]
@@ -514,6 +536,13 @@ class ModelBackend:
             },
         }
 
+    def _drop_prompts(self, prompts: list[str], rate: float) -> list[str]:
+        """CFG dropout for editors whose condition also reads the source: blank the prompt only."""
+        if rate <= 0:
+            return prompts
+        drop = torch.rand(len(prompts), device=self.device) < rate
+        return ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+
     def encode_edit_text(
         self, prompts: list[str], images: torch.Tensor, cfg_dropout_rate: float = 0.0
     ) -> dict[str, Any]:
@@ -528,9 +557,7 @@ class ModelBackend:
         if layout == "hunyuan":
             return self.encode_hunyuan_edit(prompts, images)
         if layout == "qwen21":
-            if cfg_dropout_rate > 0:
-                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
-                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            prompts = self._drop_prompts(prompts, cfg_dropout_rate)
             text_cond = qwen_image21.encode_condition(
                 self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
@@ -547,10 +574,14 @@ class ModelBackend:
         if layout == "qwen_packed" and getattr(self, "pipe", None) is not None and hasattr(
             self.pipe, "_get_qwen_prompt_embeds"
         ):
-            if cfg_dropout_rate > 0:
-                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
-                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            prompts = self._drop_prompts(prompts, cfg_dropout_rate)
             return qwen_image21.encode_qwen_edit_condition(
+                self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
+            )
+        if layout == "longcat_packed":
+            # unconditional branch = empty prompt with the same source, as the pipeline's CFG
+            prompts = self._drop_prompts(prompts, cfg_dropout_rate)
+            return encode_longcat_edit_condition(
                 self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
         text_cond = self.encode_text(prompts, self.device, self.dtype)

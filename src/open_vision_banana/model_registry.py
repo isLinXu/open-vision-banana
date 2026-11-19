@@ -312,6 +312,7 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxPipeline",
+            text_encoder_max_length=512,  # T5 length of _flux_encode_text (CLIP feeds only the pooled vector)
             default_resolution=512,
             default_guidance_scale=3.5,
             default_lora_rank=32,
@@ -348,6 +349,9 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxKontextPipeline",
+            # T5 length used by training (_flux_encode_text) and the pipeline; the manifest
+            # preflight checks semantic legends against it (CLIP's 77 only feeds the pooled vector)
+            text_encoder_max_length=512,
             default_resolution=512,
             default_guidance_scale=2.5,
             default_lora_rank=32,
@@ -390,6 +394,7 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxPipeline",
+            text_encoder_max_length=512,  # T5 length of _flux_encode_text (CLIP feeds only the pooled vector)
             default_resolution=512,
             default_guidance_scale=0.0,
             default_num_inference_steps=4,
@@ -2057,6 +2062,8 @@ class PipelineComponents:
     text_encoder_4: torch.nn.Module | None = None  # HiDream uses 4 text encoders
     tokenizer_4: object | None = None
     processor: object | None = None  # NucleusMoE/LongCat use processor instead of tokenizer
+    # The loaded diffusers pipeline (it holds these same modules), for prompt encoders that need it
+    pipe: object | None = None
 
     @property
     def transformer(self):
@@ -2261,6 +2268,7 @@ def load_pipeline(
         text_encoder_4=text_encoder_4,
         tokenizer_4=tokenizer_4,
         processor=processor,
+        pipe=pipe,
     )
 
 
