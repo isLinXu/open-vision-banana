@@ -80,6 +80,15 @@ def file_id(image_id) -> str:
     )
 
 
+def pool_map(fn, items, workers, chunksize):
+    """ProcessPoolExecutor.map, or the builtin map for one worker (no pickling, e.g. in tests)."""
+    if workers <= 1:
+        yield from map(fn, items)
+        return
+    with ProcessPoolExecutor(workers) as pool:
+        yield from pool.map(fn, items, chunksize=chunksize)
+
+
 # ── coconut ───────────────────────────────────────────────────────────────────
 
 
@@ -370,11 +379,10 @@ def audit(args):
     for spec in args.eval_root:
         name, path = spec.split("=", 1)
         evals[name] = sorted(p for p in Path(path).rglob("*") if p.suffix.lower() in IMAGE_SUFFIXES)
-    with ProcessPoolExecutor(args.workers) as pool:
-        mine = dict(pool.map(_hash_job, sorted(inputs), chunksize=64))
-        theirs = {
-            name: dict(pool.map(_hash_job, paths, chunksize=16)) for name, paths in evals.items()
-        }
+    mine = dict(pool_map(_hash_job, sorted(inputs), args.workers, 64))
+    theirs = {
+        name: dict(pool_map(_hash_job, paths, args.workers, 16)) for name, paths in evals.items()
+    }
     keys = [k for k, v in mine.items() if v is not None]
     hashes = np.array([mine[k] for k in keys], dtype=np.uint64)
     report = {
