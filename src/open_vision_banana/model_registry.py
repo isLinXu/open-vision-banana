@@ -3287,7 +3287,9 @@ def vae_encode(
     """
     # Encode in the VAE's own dtype (the remote-code MOSS pipeline keeps it in float32); the
     # decoder casts its input the same way.
-    images = images.to(getattr(vae, "dtype", images.dtype))
+    vae_dtype = getattr(vae, "dtype", None)
+    if isinstance(vae_dtype, torch.dtype):
+        images = images.to(vae_dtype)
     if config.family == "qwen-image-2.1":
         rgba = torch.cat([images, torch.ones_like(images[:, :1])], dim=1).unsqueeze(2)
         latents = vae.encode(rgba).latent_dist.mode()
