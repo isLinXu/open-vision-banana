@@ -3313,7 +3313,8 @@ def vae_encode(
         return ((latents - mean) / std).squeeze(2)
 
     if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
-        latents = vae.encode(images).latent_dist.mode()
+        # the remote-code MOSS pipeline leaves its VAE in float32; decode already casts likewise
+        latents = vae.encode(images.to(vae.dtype)).latent_dist.mode()
         b, c, h, w = latents.shape
         latents = latents.reshape(b, c, h // 2, 2, w // 2, 2).permute(0, 1, 3, 5, 2, 4)
         latents = latents.reshape(b, c * 4, h // 2, w // 2)
