@@ -3285,6 +3285,9 @@ def vae_encode(
     CogView4: vae.encode(img).latent_dist.mode() * scaling
     Qwen-Image-2.1: RGBA [B, 4, 1, H, W] (opaque alpha), (mode() - mean) / std per channel
     """
+    # Encode in the VAE's own dtype (the remote-code MOSS pipeline keeps it in float32); the
+    # decoder casts its input the same way.
+    images = images.to(getattr(vae, "dtype", images.dtype))
     if config.family == "qwen-image-2.1":
         rgba = torch.cat([images, torch.ones_like(images[:, :1])], dim=1).unsqueeze(2)
         latents = vae.encode(rgba).latent_dist.mode()
@@ -3292,8 +3295,7 @@ def vae_encode(
         return ((latents - mean) / std).squeeze(2)
 
     if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
-        # the remote-code MOSS pipeline leaves its VAE in float32; decode already casts likewise
-        latents = vae.encode(images.to(vae.dtype)).latent_dist.mode()
+        latents = vae.encode(images).latent_dist.mode()
         b, c, h, w = latents.shape
         latents = latents.reshape(b, c, h // 2, 2, w // 2, 2).permute(0, 1, 3, 5, 2, 4)
         latents = latents.reshape(b, c * 4, h // 2, w // 2)

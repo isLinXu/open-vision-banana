@@ -187,6 +187,11 @@ def test_flux2_vae_patchified_encode_decode_roundtrip():
         up_block_types=("UpDecoderBlock2D", "UpDecoderBlock2D"),
     ).eval()
     image = torch.rand(1, 3, 64, 64) * 2 - 1
+    # bf16 images against the float32 VAE (as MOSS loads it) must encode too
+    assert (
+        vae_encode(vae, image.to(torch.bfloat16), get_model_config("moss-image")).dtype
+        == torch.float32
+    )
     for name in ("moss-image", "flux3-klein"):
         cfg = get_model_config(name)
         with torch.no_grad():
