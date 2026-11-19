@@ -51,7 +51,7 @@ def test_audit_checks_raw_output_and_actual_prompt(tmp_path, monkeypatch, size, 
 @pytest.mark.parametrize("height,valid", [(512, True), (768, False)])
 def test_audit_intercepts_the_requested_editor_pipeline(tmp_path, monkeypatch, height, valid):
     class Pipeline:
-        def __call__(self, **kwargs):
+        def __call__(self, prompt=None, height=None, width=None, **kwargs):
             return types.SimpleNamespace(images=[Image.new("RGB", (512, 512))])
 
     original = Pipeline.__call__
