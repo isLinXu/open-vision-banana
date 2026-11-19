@@ -144,11 +144,8 @@ def coconut(args):
         records = records[: args.max_images]
     counts, hashes = Counter(), set()
     jobs = ((r, str(args.media_root), str(out), {}, args.val_fraction) for r in records)
-    with (
-        ProcessPoolExecutor(args.workers) as pool,
-        (out / "pairs.jsonl").open("w", encoding="utf-8") as fh,
-    ):
-        for result in pool.map(worker, jobs, chunksize=16):
+    with (out / "pairs.jsonl").open("w", encoding="utf-8") as fh:
+        for result in pool_map(worker, jobs, args.workers, 16):
             rows = relabel_coconut_rows(result.pop("rows", []), args.subset)
             if "error" in result:
                 rejected.append(
@@ -197,10 +194,9 @@ def parse_gcg_phrases(row):
 
 
 def unique_phrases(phrases):
-    """Keep phrases whose category (the label without an -N instance suffix) occurs once."""
-    base = [re.sub(r"-\d+$", "", p) for p, _ in phrases]
-    count = Counter(base)
-    return [(b, rgb) for b, (_, rgb) in zip(base, phrases, strict=True) if count[b] == 1]
+    """Keep phrases that name one region. An -N suffix (person-1) means the source numbered several
+    instances of that category, captioned or not, so the bare category would be ambiguous."""
+    return [(p, rgb) for p, rgb in phrases if not re.search(r"-\d+$", p)]
 
 
 def gcg_work(job):
@@ -290,12 +286,17 @@ def gcg(args):
     exclude = (
         set(json.loads(args.exclude_image_ids.read_text())) if args.exclude_image_ids else set()
     )
-    records, rejected = [], []
+    records, rejected, seen = [], [], set()
     for row in read_jsonl(args.source_root / GCG_MANIFEST):
         idx = coco_image_id_from_path(row["image"])
         if idx is not None and idx in exclude:
             rejected.append({"id": idx, "reason": "heldout_image_id"})
+        elif (
+            idx in seen
+        ):  # output files are named by image id: a second caption row would overwrite them
+            rejected.append({"id": idx, "reason": "duplicate_image_id"})
         else:
+            seen.add(idx)
             records.append(row)
     if args.max_images:
         records = records[: args.max_images]
@@ -304,11 +305,8 @@ def gcg(args):
         (r, str(args.media_root), str(out), args.val_fraction, args.max_phrases, 64, 2e-4)
         for r in records
     )
-    with (
-        ProcessPoolExecutor(args.workers) as pool,
-        (out / "pairs.jsonl").open("w", encoding="utf-8") as fh,
-    ):
-        for result in pool.map(gcg_work, jobs, chunksize=16):
+    with (out / "pairs.jsonl").open("w", encoding="utf-8") as fh:
+        for result in pool_map(gcg_work, jobs, args.workers, 16):
             rows = result.pop("rows", [])
             if "error" in result:
                 rejected.append(
@@ -372,7 +370,7 @@ def hamming(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def audit(args):
     inputs = set()
     for manifest in args.manifest:
-        root = Path(manifest).parent
+        root = Path(manifest).resolve().parent
         inputs |= {
             str(root / r["input"]) for r in read_jsonl(manifest) if r.get("split") == "train"
         }
@@ -424,28 +422,40 @@ def audit(args):
 # ── compose ───────────────────────────────────────────────────────────────────
 
 
-def absolute_rows(manifest: Path, drop: set[str]):
-    root = manifest.parent
+def absolute(row: dict, root: Path) -> dict:
+    """input/target resolved against the manifest's directory (absolute paths stay as they are)."""
+    return dict(row, input=str(root / row["input"]), target=str(root / row["target"]))
+
+
+def absolute_rows(manifest: Path, drop: set[str], dropped: set[str]):
+    root = manifest.resolve().parent
     for row in read_jsonl(manifest):
         if row.get("split") != "train":
             continue
-        row = dict(row, input=str(root / row["input"]), target=str(root / row["target"]))
+        row = absolute(row, root)
         if row["input"] in drop:
+            dropped.add(row["input"])
             continue
         yield row
 
 
 def compose(args):
     drop = set(json.loads(args.drop.read_text())) if args.drop else set()
-    counts = defaultdict(Counter)
+    counts, dropped = defaultdict(Counter), set()
+    base_root = args.base.resolve().parent
     with args.output.open("w", encoding="utf-8") as fh:
         for row in read_jsonl(args.base):
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            fh.write(json.dumps(absolute(row, base_root), ensure_ascii=False) + "\n")
             counts["base"][f"{row['task']}/{row.get('split', 'train')}"] += 1
         for manifest in args.add:
-            for row in absolute_rows(manifest, drop):
+            for row in absolute_rows(manifest, drop, dropped):
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
                 counts[row["source_dataset"]][row["task"]] += 1
+    if drop - dropped:  # an audited leak that matches no converted row means mismatched paths
+        args.output.unlink()
+        raise ValueError(
+            f"{len(drop - dropped)} audited inputs match no row, e.g. {sorted(drop - dropped)[:3]}"
+        )
     summary = {
         "output": str(args.output),
         "sha256": sha256_file(args.output),

@@ -56,7 +56,7 @@ def _source(tmp_path, colors, legend):
     return row, media, out, mask
 
 
-def test_unique_phrases_drop_repeated_categories():
+def test_numbered_phrases_are_ambiguous():
     phrases = [
         ("person-1", PERSON1),
         ("person-2", PERSON2),
@@ -64,10 +64,8 @@ def test_unique_phrases_drop_repeated_categories():
         ("grass", GRASS),
     ]
     assert convert.unique_phrases(phrases) == [("umbrella", UMBRELLA), ("grass", GRASS)]
-    assert convert.unique_phrases([("person-1", PERSON1), ("tree", GRASS)]) == [
-        ("person", PERSON1),
-        ("tree", GRASS),
-    ]
+    # a lone person-1 still means the source numbered several people
+    assert convert.unique_phrases([("person-1", PERSON1), ("tree", GRASS)]) == [("tree", GRASS)]
 
 
 def test_parse_rejects_malformed_or_black_legends():
@@ -189,3 +187,45 @@ def test_coconut_rows_are_named_after_their_subset():
     )
     assert rows[0]["sample_id"] == "coconut_l:4441588:semantic:0"
     assert rows[0]["source_dataset"] == "coconut_l"
+
+
+def test_compose_refuses_a_drop_list_that_matches_nothing(tmp_path):
+    root = tmp_path / "conv"
+    root.mkdir()
+    row = dict(
+        task="referring",
+        input="images/2.png",
+        target="t2.png",
+        split="train",
+        source_dataset="psg_gcg",
+    )
+    (root / "pairs.jsonl").write_text(json.dumps(row) + "\n")
+    base = tmp_path / "base.jsonl"
+    base.write_text(
+        json.dumps(dict(task="depth", input="i.png", target="t.png", split="train")) + "\n"
+    )
+    drop = tmp_path / "drop.json"
+    drop.write_text(json.dumps(["/elsewhere/images/2.png"]))
+    out = tmp_path / "train.jsonl"
+    with pytest.raises(ValueError, match="match no row"):
+        convert.main(["compose", "--base", str(base), "--add", str(root / "pairs.jsonl"), "--drop", str(drop),
+                      "--output", str(out)])  # fmt: skip
+    drop.write_text("[]")
+    convert.main(["compose", "--base", str(base), "--add", str(root / "pairs.jsonl"), "--drop", str(drop),
+                  "--output", str(out)])  # fmt: skip
+    first = json.loads(out.read_text().splitlines()[0])
+    assert first["input"] == str(tmp_path / "i.png")  # base rows resolved against the base manifest
+
+
+def test_gcg_skips_a_second_caption_row_of_the_same_image(tmp_path, monkeypatch):
+    rows = [
+        dict(image="coco2017/train2017/000000000001.jpg"),
+        dict(image="coco2017/train2017/000000000001.jpg"),
+    ]
+    monkeypatch.setattr(convert, "read_jsonl", lambda path: iter(rows))
+    monkeypatch.setattr(convert, "pool_map", lambda fn, items, workers, chunksize: iter(()))
+    out = tmp_path / "out"
+    convert.main(["gcg", "--source-root", str(tmp_path), "--media-root", str(tmp_path), "--output-dir", str(out),
+                  "--workers", "1"])  # fmt: skip
+    report = json.loads((out / "build_report.json").read_text())
+    assert report["converted_images"] == 1 and report["rejections"] == {"duplicate_image_id": 1}
