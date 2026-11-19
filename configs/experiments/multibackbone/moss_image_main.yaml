@@ -1,6 +1,7 @@
 # OVB #143 multi-backbone: MOSS-Image-Base (42 single-stream layers, in-context [source | target] panel).
 # Generated from fusion_r64_large_scale.yaml; only model.name, lora.target_modules and
-# checkpoint.output_dir differ. Targets mirror the main recipe: attention q/k/v/o and the MLP of every
+# checkpoint.output_dir differ, plus gradient checkpointing off (unsupported by the remote-code transformer;
+# it changes memory, not the update). Targets mirror the main recipe: attention q/k/v/o and the MLP of every
 # main layer; the text-refinement blocks and the embedders are left untouched.
 model:
   name: moss-image
@@ -62,7 +63,7 @@ training:
   max_grad_norm: 1.0
   drop_grad_norm: 10.0
   seed: 42
-  gradient_checkpointing: true
+  gradient_checkpointing: false  # MOSSImageTransformer has no checkpointing support; memory only
 optimizer:
   weight_decay: 0.01
   beta1: 0.9
