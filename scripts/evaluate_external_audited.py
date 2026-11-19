@@ -7,6 +7,7 @@ resolution (``output_resolution`` for Qwen-Image-2.1, ``height``/``width`` for t
 editors) and return canvases of that size, and referring calls must carry query_v2 prompts.
 """
 import functools
+import inspect
 import json
 from pathlib import Path
 import runpy
@@ -26,8 +27,8 @@ def main():
     from open_vision_banana.model_registry import get_model_config
     from open_vision_banana.referring_contract import BINARY_REFERRING_TEMPLATE
 
-    def option(name):
-        return argv[argv.index(name) + 1]
+    def option(name, default=None):
+        return argv[argv.index(name) + 1] if name in argv else default
 
     resolution = int(option("--resolution"))
     referring = option("--benchmark") == "referring"
@@ -35,16 +36,21 @@ def main():
         raise ValueError("This audited suite requires query_v2")
     prefix, suffix = BINARY_REFERRING_TEMPLATE.split("{query}")
     output = Path(option("--output-json"))
-    model_name = option("--model-name") if "--model-name" in argv else "qwen-image-2.1"
-    pipeline_class = getattr(diffusers, get_model_config(model_name).pipeline_class)
+    model_name = option("--model-name", "qwen-image-2.1")
+    class_name = get_model_config(model_name).pipeline_class
+    pipeline_class = getattr(diffusers, class_name, None)
+    if pipeline_class is None:
+        raise ValueError(f"{model_name}: {class_name} is not a diffusers pipeline the audit can intercept")
+    # The canvas argument is the pipeline's own: Qwen-Image-2.1 takes output_resolution, the others height/width
+    by_side = "output_resolution" in inspect.signature(pipeline_class.__call__).parameters
     sizes, prompt_count = [], 0
     original = pipeline_class.__call__
 
     @functools.wraps(original)
     def checked(pipeline, *positional, **kwargs):
         nonlocal prompt_count
-        if "output_resolution" in kwargs:
-            requested, wanted = kwargs["output_resolution"], resolution
+        if by_side:
+            requested, wanted = kwargs.get("output_resolution"), resolution
         else:
             requested, wanted = (kwargs.get("height"), kwargs.get("width")), (resolution, resolution)
         if requested != wanted:
