@@ -409,6 +409,14 @@ _ATTENTION_LORA_MARKERS = (
     "img_attn_qkv",
     "txt_attn_qkv",
 )
+# Backbones that name the projections themselves (MOSS-Image: layers.N.proj.q / .k / .v; fused qkv).
+_ATTENTION_LORA_LEAVES = frozenset({"q", "k", "v", "qkv"})
+
+
+def _is_attention_lora_target(target: str) -> bool:
+    return any(marker in target for marker in _ATTENTION_LORA_MARKERS) or (
+        target.rsplit(".", 1)[-1] in _ATTENTION_LORA_LEAVES
+    )
 
 
 def validate_manifest_contract(
@@ -452,10 +460,7 @@ def validate_manifest_contract(
 
     model_cfg = resolve_model_config(model_name)
     effective_targets = list(lora_targets) if lora_targets is not None else list(model_cfg.lora_target_modules)
-    has_attn_lora = any(
-        any(marker in target for marker in _ATTENTION_LORA_MARKERS)
-        for target in effective_targets
-    )
+    has_attn_lora = any(_is_attention_lora_target(target) for target in effective_targets)
     if not has_attn_lora:
         report.issues.append(
             ValidationIssue(
