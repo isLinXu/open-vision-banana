@@ -49,7 +49,16 @@ from open_vision_banana.res_bundle import safe_path, sha256_file  # noqa: E402
 SEGMENTATION = "training/cleaned_manifests/segmentation"
 COCONUT_MANIFEST = SEGMENTATION + "/{subset}_total_unified_genseg_edit_regenerated.jsonl"
 GCG_MANIFEST = SEGMENTATION + "/PSG_total_unified_gcg_edit_regenerated.jsonl"
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+IMAGE_SUFFIXES = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".webp",
+    ".h5",
+}  # .h5: NYUv2 test set
 
 
 def read_jsonl(path):
@@ -341,14 +350,27 @@ def gcg(args):
 _DCT = None
 
 
+def load_rgb(path) -> Image.Image:
+    """An image file, or the ``rgb`` array (3 x H x W) of an NYUv2 test ``.h5`` sample."""
+    if Path(path).suffix.lower() != ".h5":
+        with Image.open(path) as im:
+            return im.convert("RGB")
+    import h5py
+
+    with h5py.File(path, "r") as f:
+        rgb = np.asarray(f["rgb"])
+    return Image.fromarray((rgb.transpose(1, 2, 0) if rgb.shape[0] == 3 else rgb).astype(np.uint8))
+
+
 def phash(path) -> int:
     """64-bit DCT perceptual hash (32x32 grey, unnormalised DCT-II, 8x8 low band above its median)."""
     global _DCT
     if _DCT is None:
         n = np.arange(32)
         _DCT = 2 * np.cos(np.pi * np.outer(n, 2 * n + 1) / 64)
-    with Image.open(path) as im:
-        pixels = np.asarray(im.convert("L").resize((32, 32), Image.LANCZOS), dtype=np.float64)
+    pixels = np.asarray(
+        load_rgb(path).convert("L").resize((32, 32), Image.LANCZOS), dtype=np.float64
+    )
     low = (_DCT @ pixels @ _DCT.T)[:8, :8]
     bits = (low > np.median(low)).flatten()
     return int("".join("1" if b else "0" for b in bits), 2)

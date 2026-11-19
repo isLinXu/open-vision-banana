@@ -229,3 +229,12 @@ def test_gcg_skips_a_second_caption_row_of_the_same_image(tmp_path, monkeypatch)
                   "--workers", "1"])  # fmt: skip
     report = json.loads((out / "build_report.json").read_text())
     assert report["converted_images"] == 1 and report["rejections"] == {"duplicate_image_id": 1}
+
+
+def test_phash_reads_nyu_h5_samples(tmp_path):
+    h5py = pytest.importorskip("h5py")
+    rgb = np.random.default_rng(3).integers(0, 255, (48, 64, 3), dtype=np.uint8)
+    with h5py.File(tmp_path / "00001.h5", "w") as f:
+        f["rgb"] = rgb.transpose(2, 0, 1)
+    Image.fromarray(rgb).save(tmp_path / "same.png")
+    assert convert.phash(tmp_path / "00001.h5") == convert.phash(tmp_path / "same.png")
