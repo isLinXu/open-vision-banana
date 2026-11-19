@@ -114,6 +114,7 @@ def test_generate_kontext_uses_official_pipeline_conventions():
     kw = calls[0]
     assert kw["_auto_resize"] is False  # keep the input raster; no preferred-size resize
     assert (kw["height"], kw["width"]) == (48, 64)
+    assert kw["max_area"] == 48 * 64  # else the pipe rescales the canvas to a 1024**2 area
     assert kw["num_inference_steps"] == 30  # 1 means "unspecified": model default, never single step
     assert kw["guidance_scale"] == 2.5
     assert out.shape == (1, 3, 50, 70)  # resized back to the input raster

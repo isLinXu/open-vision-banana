@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Qwen suite entry point: assert native generated canvas size before any resize.
+"""Suite entry point: assert native generated canvas size before any resize.
 
-The generic evaluator remains usable with other model families. This wrapper is
-deliberately QwenImage21-specific and verifies query_v2 prompts at the pipeline.
+Wraps the generic evaluator and intercepts the editing pipeline of ``--model-name``
+(default qwen-image-2.1, i.e. QwenImage21Pipeline): every call must request the suite
+resolution (``output_resolution`` for Qwen-Image-2.1, ``height``/``width`` for the other
+editors) and return canvases of that size, and referring calls must carry query_v2 prompts.
 """
 import functools
+import inspect
 import json
 from pathlib import Path
 import runpy
@@ -21,10 +24,11 @@ def main():
         runpy.run_path(str(SOURCE / "scripts/evaluate_paper_benchmarks.py"), run_name="__main__")
         return
     import diffusers
+    from open_vision_banana.model_registry import get_model_config
     from open_vision_banana.referring_contract import BINARY_REFERRING_TEMPLATE
 
-    def option(name):
-        return argv[argv.index(name) + 1]
+    def option(name, default=None):
+        return argv[argv.index(name) + 1] if name in argv else default
 
     resolution = int(option("--resolution"))
     referring = option("--benchmark") == "referring"
@@ -32,21 +36,36 @@ def main():
         raise ValueError("This audited suite requires query_v2")
     prefix, suffix = BINARY_REFERRING_TEMPLATE.split("{query}")
     output = Path(option("--output-json"))
+    model_name = option("--model-name", "qwen-image-2.1")
+    class_name = get_model_config(model_name).pipeline_class
+    pipeline_class = getattr(diffusers, class_name, None)
+    if pipeline_class is None:
+        raise ValueError(f"{model_name}: {class_name} is not a diffusers pipeline the audit can intercept")
+    # The canvas argument is the pipeline's own: Qwen-Image-2.1 takes output_resolution, the others height/width
+    parameters = inspect.signature(pipeline_class.__call__).parameters
+    by_side = "output_resolution" in parameters
+    # LongCat-Image-Edit takes no canvas argument: it always renders the source's aspect at a 1024**2
+    # area, so only the native output is recorded and the generator resizes it, as in inference
+    native = not by_side and not {"height", "width"} <= set(parameters)
     sizes, prompt_count = [], 0
-    original = diffusers.QwenImage21Pipeline.__call__
+    original = pipeline_class.__call__
 
     @functools.wraps(original)
     def checked(pipeline, *positional, **kwargs):
         nonlocal prompt_count
-        if kwargs.get("output_resolution") != resolution:
-            raise ValueError("Wrong requested Qwen pipeline resolution")
+        if by_side:
+            requested, wanted = kwargs.get("output_resolution"), resolution
+        else:
+            requested, wanted = (kwargs.get("height"), kwargs.get("width")), (resolution, resolution)
+        if not native and requested != wanted:
+            raise ValueError(f"Wrong requested {model_name} pipeline resolution: {requested}")
         prompts = kwargs.get("prompt", positional[0] if positional else None)
         prompts = [prompts] if isinstance(prompts, str) else prompts
         if referring and (not prompts or not all(isinstance(p, str) and p.startswith(prefix) and p.endswith(suffix) for p in prompts)):
-            raise ValueError("Unexpected referring prompt at Qwen pipeline")
+            raise ValueError("Unexpected referring prompt at the pipeline")
         result = original(pipeline, *positional, **kwargs)
         for picture in result.images:
-            if picture.size != (resolution, resolution):
+            if not native and picture.size != (resolution, resolution):
                 raise ValueError(f"Wrong raw pipeline output size: {picture.size}")
             sizes.append(picture.size)
         if referring:
@@ -55,21 +74,22 @@ def main():
             prompt_count += len(prompts)
         return result
 
-    diffusers.QwenImage21Pipeline.__call__ = checked
+    pipeline_class.__call__ = checked
     try:
         entry = runpy.run_path(str(SOURCE / "scripts/evaluate_paper_benchmarks.py"))
         status = entry["main"]()
         if status:
             raise SystemExit(status)
         if not sizes:
-            raise ValueError("No Qwen outputs were verified")
+            raise ValueError(f"No {model_name} pipeline outputs were verified")
         data = json.loads(output.read_text())
-        data["metadata"]["resolution_verification"] = dict(raw_pipeline_output=[resolution, resolution], every_prediction_checked=True)
+        raw = "pipeline_native" if native else [resolution, resolution]
+        data["metadata"]["resolution_verification"] = dict(raw_pipeline_output=raw, every_prediction_checked=True)
         if referring:
             data["metadata"]["referring_prompt_verification"] = dict(version="query_v2", every_prediction_checked=True)
         output.write_text(json.dumps(data, indent=2, allow_nan=False))
     finally:
-        diffusers.QwenImage21Pipeline.__call__ = original
+        pipeline_class.__call__ = original
         output.parent.mkdir(parents=True, exist_ok=True)
         output.with_suffix(".resolution-audit.json").write_text(json.dumps(dict(
             predictions_verified=len(sizes), raw_pipeline_sizes=sorted(set(sizes)),
