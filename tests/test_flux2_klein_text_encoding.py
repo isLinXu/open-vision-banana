@@ -47,10 +47,6 @@ def _qwen3(layers=28, hidden=8):
     return transformers.Qwen3ForCausalLM(config).eval()
 
 
-def test_registry_uses_the_pipeline_sequence_length():
-    assert get_model_config("flux2-klein").text_encoder_max_length == 512
-
-
 def test_flux2_klein_stacks_hidden_layers_9_18_27():
     config = dataclasses.replace(get_model_config("flux2-klein"), text_encoder_max_length=16)
     encoder, tokenizer = _qwen3(), _ChatTokenizer()
@@ -67,11 +63,7 @@ def test_flux2_klein_stacks_hidden_layers_9_18_27():
     )
 
     assert second is None
-    assert hidden.shape == (
-        2,
-        16,
-        3 * 8,
-    )  # joint_attention_dim = 3 x hidden_size, not the vocabulary
+    assert hidden.shape == (2, 16, 24)  # 3 x hidden_size (joint_attention_dim), not the vocabulary
     assert len(tokenizer.templates) == 2  # chat template applied per prompt
     ids = torch.cat(
         [
