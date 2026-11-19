@@ -46,3 +46,30 @@ def test_audit_checks_raw_output_and_actual_prompt(tmp_path, monkeypatch, size, 
         with pytest.raises(ValueError):
             audit.main()
     assert Pipeline.__call__ is original
+
+
+@pytest.mark.parametrize("height,valid", [(512, True), (768, False)])
+def test_audit_intercepts_the_requested_editor_pipeline(tmp_path, monkeypatch, height, valid):
+    class Pipeline:
+        def __call__(self, **kwargs):
+            return types.SimpleNamespace(images=[Image.new("RGB", (512, 512))])
+
+    original = Pipeline.__call__
+    monkeypatch.setitem(sys.modules, "diffusers", types.SimpleNamespace(Flux2KleinPipeline=Pipeline))
+    output = tmp_path / "result.json"
+
+    def evaluate():
+        Pipeline()(prompt="depth", height=height, width=512)
+        output.write_text(json.dumps(dict(metadata={})))
+        return 0
+
+    monkeypatch.setattr(audit.runpy, "run_path", lambda *args, **kwargs: {"main": evaluate})
+    monkeypatch.setattr(sys, "argv", ["audit", "--model-name", "flux2-klein", "--resolution", "512",
+                                    "--benchmark", "depth", "--output-json", str(output)])
+    if valid:
+        audit.main()
+        assert json.loads(output.read_text())["metadata"]["resolution_verification"]["every_prediction_checked"]
+    else:
+        with pytest.raises(ValueError, match="flux2-klein"):
+            audit.main()
+    assert Pipeline.__call__ is original

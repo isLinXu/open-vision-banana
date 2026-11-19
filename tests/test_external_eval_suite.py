@@ -26,6 +26,10 @@ def test_dry_run_inventory_and_arguments(tmp_path, monkeypatch, capsys):
     assert args[args.index("--reasonseg-annotation-mode") + 1] == "lisa_v1"
     assert args[args.index("--split") + 1] == "val"
     assert args[args.index("--batch-size") + 1] == "1"
+    assert args[args.index("--model-name") + 1] == "qwen-image-2.1"  # default backbone
+    other = dict(config["models"][0], model_name="longcat-image-edit")
+    args = suite.command(config, other, "nyu", tmp_path / "result.json")
+    assert args[args.index("--model-name") + 1] == "longcat-image-edit"
 
 
 def test_reject_incomplete_or_nonfinite_result(tmp_path):
