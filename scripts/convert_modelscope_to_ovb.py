@@ -97,6 +97,7 @@ def _prepare_coconut_module():
         "prepare_coconut", ROOT / "scripts/prepare_coconut.py"
     )
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # pool workers unpickle prepare_coconut.work by module name
     spec.loader.exec_module(module)
     return module
 
