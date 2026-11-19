@@ -1270,11 +1270,14 @@ class BaseGenerator:
             generator = None
             if seed is not None:
                 generator = torch.Generator(device=self.device).manual_seed(seed + index)
+            canvas_h, canvas_w = max(16, height // 16 * 16), max(16, width // 16 * 16)
             result = pipe(
                 image=pil,
                 prompt=text,
-                height=max(16, height // 16 * 16),
-                width=max(16, width // 16 * 16),
+                height=canvas_h,
+                width=canvas_w,
+                # without it the pipeline rescales height/width to its 1024**2 default area
+                max_area=canvas_h * canvas_w,
                 num_inference_steps=steps,
                 guidance_scale=guidance,
                 generator=generator,
