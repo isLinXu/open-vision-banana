@@ -39,7 +39,7 @@ def finite_metrics(value):
 def command(config, model, dataset, output):
     task, split, _, _ = SPECS[dataset]
     args = [sys.executable, str(SOURCE / "scripts/evaluate_external_audited.py"),
-            "--model-name", "qwen-image-2.1", "--benchmark", task,
+            "--model-name", model.get("model_name", "qwen-image-2.1"), "--benchmark", task,
             f"--{dataset}-root", config["data_roots"][dataset], "--split", split,
             "--device", "cuda", "--dtype", "bfloat16", "--batch-size", "1",
             "--resolution", str(config.get("resolution", 512)), "--native-resolution",
