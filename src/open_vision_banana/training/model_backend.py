@@ -105,21 +105,6 @@ def _tensors_to_pils(images: torch.Tensor):
     return [Image.fromarray(pixels[index].permute(1, 2, 0).numpy()) for index in range(pixels.shape[0])]
 
 
-def longcat_edit_pipeline_from_components(components):
-    """LongCatImageEditPipeline around already loaded components (its text_processor is
-    ``components.processor``), so training encodes prompts exactly as inference does."""
-    import diffusers
-
-    return diffusers.LongCatImageEditPipeline(
-        scheduler=components.scheduler,
-        vae=components.vae,
-        text_encoder=components.text_encoder,
-        tokenizer=components.tokenizer,
-        text_processor=components.processor,
-        transformer=components.unet,
-    )
-
-
 def encode_longcat_edit_condition(pipe, prompts, images, device, dtype) -> dict[str, Any]:
     """LongCat-Image-Edit condition as its pipeline builds it: the editing system template with the
     source image, resized to half the generation size, as Qwen2.5-VL vision tokens, then the prompt.
@@ -259,9 +244,6 @@ class ModelBackend:
             self.pipe = qwen_image21.build_qwen_edit_pipeline(
                 self.components, self.model_config.pipeline_class
             )
-        elif layout == "longcat_packed" and self.pipe is None:
-            # its prompt encoder reads the source image (Qwen2.5-VL), like inference
-            self.pipe = longcat_edit_pipeline_from_components(self.components)
 
         if tune_mode not in {"lora", "full"}:
             raise ValueError("tune_mode must be lora or full")
@@ -551,6 +533,13 @@ class ModelBackend:
             },
         }
 
+    def _drop_prompts(self, prompts: list[str], rate: float) -> list[str]:
+        """CFG dropout for editors whose condition also reads the source: blank the prompt only."""
+        if rate <= 0:
+            return prompts
+        drop = torch.rand(len(prompts), device=self.device) < rate
+        return ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+
     def encode_edit_text(
         self, prompts: list[str], images: torch.Tensor, cfg_dropout_rate: float = 0.0
     ) -> dict[str, Any]:
@@ -565,9 +554,7 @@ class ModelBackend:
         if layout == "hunyuan":
             return self.encode_hunyuan_edit(prompts, images)
         if layout == "qwen21":
-            if cfg_dropout_rate > 0:
-                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
-                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            prompts = self._drop_prompts(prompts, cfg_dropout_rate)
             text_cond = qwen_image21.encode_condition(
                 self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
@@ -584,17 +571,13 @@ class ModelBackend:
         if layout == "qwen_packed" and getattr(self, "pipe", None) is not None and hasattr(
             self.pipe, "_get_qwen_prompt_embeds"
         ):
-            if cfg_dropout_rate > 0:
-                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
-                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            prompts = self._drop_prompts(prompts, cfg_dropout_rate)
             return qwen_image21.encode_qwen_edit_condition(
                 self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
-        if layout == "longcat_packed" and getattr(self, "pipe", None) is not None:
+        if layout == "longcat_packed":
             # unconditional branch = empty prompt with the same source, as the pipeline's CFG
-            if cfg_dropout_rate > 0:
-                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
-                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            prompts = self._drop_prompts(prompts, cfg_dropout_rate)
             return encode_longcat_edit_condition(
                 self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
