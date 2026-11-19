@@ -37,9 +37,10 @@ def test_each_sample_is_encoded_with_its_half_size_source():
     cond = encode_longcat_edit_condition(
         pipe, ["depth", "segment it"], _images(2), torch.device("cpu"), torch.float32
     )
-    assert pipe.calls == [(["depth"], (32, 32)), (["segment it"], (32, 32))]
+    # the pipeline sizes the VL image itself: aspect ratio at a 1024x1024 area, halved
+    assert pipe.calls == [(["depth"], (512, 512)), (["segment it"], (512, 512))]
     assert cond["encoder_hidden_states"].shape == (2, 6, 4)
-    assert cond["encoder_hidden_states"][1, 0, 0].item() == len("segment it") + 32
+    assert cond["encoder_hidden_states"][1, 0, 0].item() == len("segment it") + 512
     assert torch.equal(cond["text_ids"], torch.arange(18.0).reshape(6, 3))
 
 

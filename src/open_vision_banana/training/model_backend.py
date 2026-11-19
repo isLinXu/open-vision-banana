@@ -107,15 +107,18 @@ def _tensors_to_pils(images: torch.Tensor):
 
 def encode_longcat_edit_condition(pipe, prompts, images, device, dtype) -> dict[str, Any]:
     """LongCat-Image-Edit condition as its pipeline builds it: the editing system template with the
-    source image, resized to half the generation size, as Qwen2.5-VL vision tokens, then the prompt.
+    source image as Qwen2.5-VL vision tokens, then the prompt. The pipeline sizes that image itself,
+    independent of the requested canvas: the source's aspect ratio at a 1024x1024 area, halved.
 
     The pipeline encodes one (prompt, image) pair per call; every sample of a batch shares the
     canvas size, so the per-sample embeddings have equal length and concatenate.
     """
+    from diffusers.pipelines.longcat_image.pipeline_longcat_image_edit import calculate_dimensions
+
     embeds, text_ids = [], None
     with torch.no_grad():
         for prompt, image in zip(prompts, images, strict=True):
-            width, height = image.size
+            width, height = calculate_dimensions(1024 * 1024, image.size[0] / image.size[1])
             small = pipe.image_processor.resize(image, height // 2, width // 2)
             embed, text_ids = pipe.encode_prompt(prompt=[prompt], image=small)
             embeds.append(embed)
