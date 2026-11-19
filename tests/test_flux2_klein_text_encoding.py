@@ -80,3 +80,20 @@ def test_flux2_klein_stacks_hidden_layers_9_18_27():
         ).hidden_states
     expected = torch.cat([states[9], states[18], states[27]], dim=-1)
     torch.testing.assert_close(hidden, expected)
+
+
+def test_only_klein_gets_patchified_latents():
+    from open_vision_banana.model_registry import _flux2_vae_patchified
+
+    assert _flux2_vae_patchified(get_model_config("flux2-klein"))
+    assert not _flux2_vae_patchified(
+        get_model_config("flux2-dev")
+    )  # its forward packs 32-ch latents
+
+
+def test_text_positions_stay_exact_beyond_bf16_range():
+    from open_vision_banana.training.edit_forward import _flux2_text_ids
+
+    ids = _flux2_text_ids({}, torch.zeros(1, 512, 8, dtype=torch.bfloat16))
+    assert ids.dtype == torch.long
+    assert ids[0, :, 3].tolist() == list(range(512))

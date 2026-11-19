@@ -3271,10 +3271,14 @@ def _qwen_image21_latent_stats(vae, like: torch.Tensor) -> tuple[torch.Tensor, t
     return mean, std
 
 
-# FLUX.2-VAE families whose transformer consumes the 2x2-patchified, batch-norm
-# normalised latents [B, 4C, H/16, W/16] (Flux2KleinPipeline, MOSSImagePipeline, Flux3 modular
-# pipeline). Without it FLUX.2 [klein] gets the raw 32-channel latents its x_embedder rejects.
-_FLUX2_VAE_PATCHIFIED_FAMILIES = frozenset({"flux2", "moss", "flux3"})
+# FLUX.2-VAE backbones whose transformer consumes the 2x2-patchified, batch-norm normalised latents
+# [B, 4C, H/16, W/16]: Flux2KleinPipeline (flattened as edit tokens), MOSSImagePipeline and the Flux3 modular
+# pipeline. FLUX.2-dev is not one of them: its training forward packs the raw 32-channel latents itself.
+_FLUX2_VAE_PATCHIFIED_FAMILIES = frozenset({"moss", "flux3"})
+
+
+def _flux2_vae_patchified(config: ModelConfig) -> bool:
+    return config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES or config.pipeline_class == "Flux2KleinPipeline"
 
 
 def _flux2_vae_bn_stats(vae: torch.nn.Module, latents: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -3307,7 +3311,7 @@ def vae_encode(
         mean, std = _qwen_image21_latent_stats(vae, latents)
         return ((latents - mean) / std).squeeze(2)
 
-    if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
+    if _flux2_vae_patchified(config):
         latents = vae.encode(images).latent_dist.mode()
         b, c, h, w = latents.shape
         latents = latents.reshape(b, c, h // 2, 2, w // 2, 2).permute(0, 1, 3, 5, 2, 4)
@@ -3355,7 +3359,7 @@ def vae_decode(
         mean, std = _qwen_image21_latent_stats(vae, latents)
         return vae.decode(latents * std + mean, return_dict=False)[0][:, :3, 0]
 
-    if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
+    if _flux2_vae_patchified(config):
         latents = latents.to(vae.dtype)
         mean, std = _flux2_vae_bn_stats(vae, latents)
         z = latents * std + mean

@@ -277,8 +277,10 @@ def _flux2_text_ids(text_cond: dict[str, Any], text: torch.Tensor) -> torch.Tens
     if provided is not None:
         return provided
     batch, length, _ = text.shape
-    ids = torch.zeros(batch, length, 4, device=text.device, dtype=text.dtype)
-    ids[..., 3] = torch.arange(length, device=text.device, dtype=text.dtype)
+    # integer positions, as Flux2KleinPipeline._prepare_text_ids builds them: in bf16 positions above 256
+    # would round onto their neighbours
+    ids = torch.zeros(batch, length, 4, device=text.device, dtype=torch.long)
+    ids[..., 3] = torch.arange(length, device=text.device)
     return ids
 
 
