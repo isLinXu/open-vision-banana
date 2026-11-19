@@ -105,6 +105,41 @@ def _tensors_to_pils(images: torch.Tensor):
     return [Image.fromarray(pixels[index].permute(1, 2, 0).numpy()) for index in range(pixels.shape[0])]
 
 
+def longcat_edit_pipeline_from_components(components):
+    """LongCatImageEditPipeline around already loaded components (its text_processor is
+    ``components.processor``), so training encodes prompts exactly as inference does."""
+    import diffusers
+
+    return diffusers.LongCatImageEditPipeline(
+        scheduler=components.scheduler,
+        vae=components.vae,
+        text_encoder=components.text_encoder,
+        tokenizer=components.tokenizer,
+        text_processor=components.processor,
+        transformer=components.unet,
+    )
+
+
+def encode_longcat_edit_condition(pipe, prompts, images, device, dtype) -> dict[str, Any]:
+    """LongCat-Image-Edit condition as its pipeline builds it: the editing system template with the
+    source image, resized to half the generation size, as Qwen2.5-VL vision tokens, then the prompt.
+
+    The pipeline encodes one (prompt, image) pair per call; every sample of a batch shares the
+    canvas size, so the per-sample embeddings have equal length and concatenate.
+    """
+    embeds, text_ids = [], None
+    with torch.no_grad():
+        for prompt, image in zip(prompts, images, strict=True):
+            width, height = image.size
+            small = pipe.image_processor.resize(image, height // 2, width // 2)
+            embed, text_ids = pipe.encode_prompt(prompt=[prompt], image=small)
+            embeds.append(embed)
+    return {
+        "encoder_hidden_states": torch.cat(embeds).to(device=device, dtype=dtype),
+        "text_ids": text_ids.to(device=device),
+    }
+
+
 def _attach_full_ft_save(module: torch.nn.Module) -> None:
     """Give a non-PEFT backbone the ``save_pretrained`` the checkpoint callback calls."""
 
@@ -223,6 +258,9 @@ class ModelBackend:
             self.pipe = qwen_image21.build_qwen_edit_pipeline(
                 self.components, self.model_config.pipeline_class
             )
+        elif layout == "longcat_packed" and self.pipe is None:
+            # its prompt encoder reads the source image (Qwen2.5-VL), like inference
+            self.pipe = longcat_edit_pipeline_from_components(self.components)
 
         if tune_mode not in {"lora", "full"}:
             raise ValueError("tune_mode must be lora or full")
@@ -551,6 +589,14 @@ class ModelBackend:
                 drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
                 prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
             return qwen_image21.encode_qwen_edit_condition(
+                self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
+            )
+        if layout == "longcat_packed" and getattr(self, "pipe", None) is not None:
+            # unconditional branch = empty prompt with the same source, as the pipeline's CFG
+            if cfg_dropout_rate > 0:
+                drop = torch.rand(len(prompts), device=self.device) < cfg_dropout_rate
+                prompts = ["" if d else p for p, d in zip(prompts, drop.tolist(), strict=True)]
+            return encode_longcat_edit_condition(
                 self.pipe, prompts, _tensors_to_pils(images), self.device, self.dtype
             )
         text_cond = self.encode_text(prompts, self.device, self.dtype)
