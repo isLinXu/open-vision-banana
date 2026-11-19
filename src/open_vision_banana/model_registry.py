@@ -312,6 +312,7 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxPipeline",
+            text_encoder_max_length=512,  # T5 length of _flux_encode_text (CLIP feeds only the pooled vector)
             default_resolution=512,
             default_guidance_scale=3.5,
             default_lora_rank=32,
@@ -348,6 +349,9 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxKontextPipeline",
+            # T5 length used by training (_flux_encode_text) and the pipeline; the manifest
+            # preflight checks semantic legends against it (CLIP's 77 only feeds the pooled vector)
+            text_encoder_max_length=512,
             default_resolution=512,
             default_guidance_scale=2.5,
             default_lora_rank=32,
@@ -390,6 +394,7 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxPipeline",
+            text_encoder_max_length=512,  # T5 length of _flux_encode_text (CLIP feeds only the pooled vector)
             default_resolution=512,
             default_guidance_scale=0.0,
             default_num_inference_steps=4,
@@ -872,6 +877,7 @@ def _build_registry() -> None:
             vae_downsample_factor=8,
             memory_budget_gb=16.0,
             pipeline_class="Flux2KleinPipeline",
+            text_encoder_max_length=512,  # the pipeline's max_sequence_length
             default_resolution=1024,
             default_guidance_scale=4.0,
             default_num_inference_steps=50,
@@ -2058,6 +2064,8 @@ class PipelineComponents:
     text_encoder_4: torch.nn.Module | None = None  # HiDream uses 4 text encoders
     tokenizer_4: object | None = None
     processor: object | None = None  # NucleusMoE/LongCat use processor instead of tokenizer
+    # The loaded diffusers pipeline (it holds these same modules), for prompt encoders that need it
+    pipe: object | None = None
 
     @property
     def transformer(self):
@@ -2262,6 +2270,7 @@ def load_pipeline(
         text_encoder_4=text_encoder_4,
         tokenizer_4=tokenizer_4,
         processor=processor,
+        pipe=pipe,
     )
 
 
@@ -2326,6 +2335,22 @@ def encode_text(
     def _pooled(output: Any) -> torch.Tensor | None:
         candidate = getattr(output, "text_embeds", None)
         return candidate if isinstance(candidate, torch.Tensor) else None
+
+    # ── FLUX.2 [klein]: Qwen3 chat template, hidden states of layers 9/18/27 stacked ──
+    # The generic path below would return Qwen3ForCausalLM logits truncated to 77 tokens; the
+    # transformer's context_embedder expects 3 x hidden_size features, exactly what the pipeline builds.
+    if getattr(config, "pipeline_class", None) == "Flux2KleinPipeline":
+        from diffusers.pipelines.flux2.pipeline_flux2_klein import Flux2KleinPipeline
+
+        prompt_embeds = Flux2KleinPipeline._get_qwen3_prompt_embeds(
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            prompt=list(prompts),
+            dtype=dtype,
+            device=device,
+            max_sequence_length=max_length,
+        )
+        return prompt_embeds, None
 
     # ── MOSS-Image: Qwen3.5 chat template, one unpadded forward per prompt ──
     if config.family == "moss":
@@ -3256,9 +3281,16 @@ def _qwen_image21_latent_stats(vae, like: torch.Tensor) -> tuple[torch.Tensor, t
     return mean, std
 
 
-# FLUX.2-VAE families whose transformer consumes the 2x2-patchified, batch-norm
-# normalised latents [B, 4C, H/16, W/16] (MOSSImagePipeline, Flux3 modular pipeline).
+# FLUX.2-VAE backbones whose transformer consumes the 2x2-patchified, batch-norm normalised latents
+# [B, 4C, H/16, W/16]: Flux2KleinPipeline (flattened as edit tokens), MOSSImagePipeline and the Flux3 modular
+# pipeline. FLUX.2-dev is not one of them: its training forward packs the raw 32-channel latents itself.
 _FLUX2_VAE_PATCHIFIED_FAMILIES = frozenset({"moss", "flux3"})
+
+
+def _flux2_vae_patchified(config: ModelConfig) -> bool:
+    # getattr: the depth probe passes config stand-ins that carry only ``family``
+    klein = getattr(config, "pipeline_class", None) == "Flux2KleinPipeline"
+    return config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES or klein
 
 
 def _flux2_vae_bn_stats(vae: torch.nn.Module, latents: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -3296,7 +3328,7 @@ def vae_encode(
         mean, std = _qwen_image21_latent_stats(vae, latents)
         return ((latents - mean) / std).squeeze(2)
 
-    if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
+    if _flux2_vae_patchified(config):
         latents = vae.encode(images).latent_dist.mode()
         b, c, h, w = latents.shape
         latents = latents.reshape(b, c, h // 2, 2, w // 2, 2).permute(0, 1, 3, 5, 2, 4)
@@ -3344,7 +3376,7 @@ def vae_decode(
         mean, std = _qwen_image21_latent_stats(vae, latents)
         return vae.decode(latents * std + mean, return_dict=False)[0][:, :3, 0]
 
-    if config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES:
+    if _flux2_vae_patchified(config):
         latents = latents.to(vae.dtype)
         mean, std = _flux2_vae_bn_stats(vae, latents)
         z = latents * std + mean

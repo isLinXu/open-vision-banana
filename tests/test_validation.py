@@ -176,10 +176,14 @@ class TestValidateManifestContract:
             + "\n",
             encoding="utf-8",
         )
-        # flux-dev has default text_encoder_max_length=77 (CLIP truncation)
+        # sd15 conditions on CLIP alone: legends past 77 tokens are truncated
+        report_clip = validate_manifest_contract(manifest, data_root=tmp_path, model_name="sd15")
+        assert not report_clip.ok
+        assert any("exceed sd15 text_encoder_max_length=77" in i.message for i in report_clip.errors)
+
+        # FLUX.1 trains on T5 at 512 tokens (CLIP only feeds the pooled vector): the legend fits
         report_flux = validate_manifest_contract(manifest, data_root=tmp_path, model_name="flux-dev")
-        assert not report_flux.ok
-        assert any("exceed flux-dev text_encoder_max_length=77" in i.message for i in report_flux.errors)
+        assert not any("exceed" in i.message for i in report_flux.errors)
 
         # Fixed sana-1600m has text_encoder_max_length=300 and attention LoRA targets
         report_sana = validate_manifest_contract(manifest, data_root=tmp_path, model_name="sana-1600m")

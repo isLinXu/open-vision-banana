@@ -219,7 +219,8 @@ class ModelBackend:
         # Store references
         self.backbone = self.components.unet  # backbone stored as 'unet' for compat
         self.vae = self.components.vae
-        self.pipe = getattr(self, "_pipe", None)  # Full pipe for FLUX encode_prompt
+        # Full pipe for encode_prompt: the 4-bit loader keeps its own, load_pipeline returns the loaded one
+        self.pipe = getattr(self, "_pipe", None) or getattr(self.components, "pipe", None)
         layout = edit_latent_layout(self.model_config)
         if layout == "qwen21":
             # Its prompt encoder takes the source image; built once around the loaded parts.
@@ -464,9 +465,7 @@ class ModelBackend:
 
         return result
 
-    def _flux_encode_text(
-        self, prompts: list[str], device: torch.device, dtype: torch.dtype, max_length: int = 512
-    ) -> dict:
+    def _flux_encode_text(self, prompts: list[str], device: torch.device, dtype: torch.dtype) -> dict:
         """FLUX dual text encoding via pipeline.encode_prompt (CLIP + T5)."""
         pipe = self.pipe
         with torch.no_grad():
@@ -475,7 +474,7 @@ class ModelBackend:
                 prompt_2=prompts,
                 device=device,
                 num_images_per_prompt=1,
-                max_sequence_length=max_length,
+                max_sequence_length=self.model_config.text_encoder_max_length,
             )
 
         prompt_embeds = outputs[0]

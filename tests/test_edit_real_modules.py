@@ -175,7 +175,7 @@ def test_moss_panel_edit_forward_plumbing():
 
 
 def test_flux2_vae_patchified_encode_decode_roundtrip():
-    """moss/flux3 share AutoencoderKLFlux2: latents are 2x2-patchified to 128
+    """flux2/moss/flux3 share AutoencoderKLFlux2: latents are 2x2-patchified to 128
     channels and normalised by the VAE's running BN stats."""
     from open_vision_banana.model_registry import vae_decode, vae_encode
 
