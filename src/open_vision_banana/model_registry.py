@@ -2329,7 +2329,7 @@ def encode_text(
     # ── FLUX.2 [klein]: Qwen3 chat template, hidden states of layers 9/18/27 stacked ──
     # The generic path below would return Qwen3ForCausalLM logits truncated to 77 tokens; the
     # transformer's context_embedder expects 3 x hidden_size features, exactly what the pipeline builds.
-    if config.pipeline_class == "Flux2KleinPipeline":
+    if getattr(config, "pipeline_class", None) == "Flux2KleinPipeline":
         from diffusers.pipelines.flux2.pipeline_flux2_klein import Flux2KleinPipeline
 
         prompt_embeds = Flux2KleinPipeline._get_qwen3_prompt_embeds(
@@ -3278,7 +3278,9 @@ _FLUX2_VAE_PATCHIFIED_FAMILIES = frozenset({"moss", "flux3"})
 
 
 def _flux2_vae_patchified(config: ModelConfig) -> bool:
-    return config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES or config.pipeline_class == "Flux2KleinPipeline"
+    # getattr: the depth probe passes config stand-ins that carry only ``family``
+    klein = getattr(config, "pipeline_class", None) == "Flux2KleinPipeline"
+    return config.family in _FLUX2_VAE_PATCHIFIED_FAMILIES or klein
 
 
 def _flux2_vae_bn_stats(vae: torch.nn.Module, latents: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
