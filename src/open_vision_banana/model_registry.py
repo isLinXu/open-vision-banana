@@ -312,6 +312,7 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxPipeline",
+            text_encoder_max_length=512,  # T5 length of _flux_encode_text (CLIP feeds only the pooled vector)
             default_resolution=512,
             default_guidance_scale=3.5,
             default_lora_rank=32,
@@ -393,6 +394,7 @@ def _build_registry() -> None:
             vae_downsample_factor=16,
             memory_budget_gb=24.0,
             pipeline_class="FluxPipeline",
+            text_encoder_max_length=512,  # T5 length of _flux_encode_text (CLIP feeds only the pooled vector)
             default_resolution=512,
             default_guidance_scale=0.0,
             default_num_inference_steps=4,

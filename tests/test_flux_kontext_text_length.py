@@ -35,3 +35,8 @@ def test_backend_keeps_the_pipeline_load_pipeline_built(monkeypatch):
     assert get_model_config("flux-kontext").text_encoder_max_length == 512
     assert cond["encoder_hidden_states"].shape == (2, 3, 4)
     assert cond["pooled_projections"].shape == (2, 4)
+
+
+def test_every_flux1_model_registers_the_t5_length_training_used():
+    for name in ("flux-dev", "flux-schnell", "flux-kontext"):
+        assert get_model_config(name).text_encoder_max_length == 512, name
