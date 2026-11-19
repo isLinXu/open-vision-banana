@@ -80,7 +80,8 @@ def validate(path, dataset, count, *, fingerprint=None, config=None):
     if config is not None:
         meta = data["metadata"]
         resolution = config.get("resolution", 512)
-        if meta.get("resolution_verification") != dict(raw_pipeline_output=[resolution, resolution], every_prediction_checked=True):
+        verified = [dict(raw_pipeline_output=raw, every_prediction_checked=True) for raw in ([resolution, resolution], "pipeline_native")]
+        if meta.get("resolution_verification") not in verified:
             raise ValueError(f"Raw pipeline resolution not verified: {path}")
         if dataset in {"reasonseg", "refcocog"} and meta.get("referring_prompt_verification") != dict(version="query_v2", every_prediction_checked=True):
             raise ValueError(f"Actual referring prompt not verified: {path}")

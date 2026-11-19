@@ -94,3 +94,24 @@ def test_backbones_outside_diffusers_are_refused(tmp_path, monkeypatch):
                                     "--benchmark", "depth", "--output-json", str(tmp_path / "r.json")])
     with pytest.raises(ValueError, match="MOSSImagePipeline is not a diffusers pipeline"):
         audit.main()
+
+
+def test_pipelines_without_a_canvas_argument_record_the_native_output(tmp_path, monkeypatch):
+    class Pipeline:  # LongCat-Image-Edit: the pipeline picks its own canvas
+        def __call__(self, image=None, prompt=None, num_inference_steps=50, guidance_scale=4.0):
+            return types.SimpleNamespace(images=[Image.new("RGB", (1024, 1024))])
+
+    monkeypatch.setitem(sys.modules, "diffusers", types.SimpleNamespace(LongCatImageEditPipeline=Pipeline))
+    output = tmp_path / "result.json"
+
+    def evaluate():
+        Pipeline()(prompt="depth")
+        output.write_text(json.dumps(dict(metadata={})))
+        return 0
+
+    monkeypatch.setattr(audit.runpy, "run_path", lambda *a, **k: {"main": evaluate})
+    monkeypatch.setattr(sys, "argv", ["audit", "--model-name", "longcat-image-edit", "--resolution", "512",
+                                    "--benchmark", "depth", "--output-json", str(output)])
+    audit.main()
+    meta = json.loads(output.read_text())["metadata"]
+    assert meta["resolution_verification"] == {"raw_pipeline_output": "pipeline_native", "every_prediction_checked": True}

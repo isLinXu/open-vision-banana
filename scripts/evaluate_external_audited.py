@@ -42,7 +42,11 @@ def main():
     if pipeline_class is None:
         raise ValueError(f"{model_name}: {class_name} is not a diffusers pipeline the audit can intercept")
     # The canvas argument is the pipeline's own: Qwen-Image-2.1 takes output_resolution, the others height/width
-    by_side = "output_resolution" in inspect.signature(pipeline_class.__call__).parameters
+    parameters = inspect.signature(pipeline_class.__call__).parameters
+    by_side = "output_resolution" in parameters
+    # LongCat-Image-Edit takes no canvas argument: it always renders the source's aspect at a 1024**2
+    # area, so only the native output is recorded and the generator resizes it, as in inference
+    native = not by_side and not {"height", "width"} <= set(parameters)
     sizes, prompt_count = [], 0
     original = pipeline_class.__call__
 
@@ -53,7 +57,7 @@ def main():
             requested, wanted = kwargs.get("output_resolution"), resolution
         else:
             requested, wanted = (kwargs.get("height"), kwargs.get("width")), (resolution, resolution)
-        if requested != wanted:
+        if not native and requested != wanted:
             raise ValueError(f"Wrong requested {model_name} pipeline resolution: {requested}")
         prompts = kwargs.get("prompt", positional[0] if positional else None)
         prompts = [prompts] if isinstance(prompts, str) else prompts
@@ -61,7 +65,7 @@ def main():
             raise ValueError("Unexpected referring prompt at the pipeline")
         result = original(pipeline, *positional, **kwargs)
         for picture in result.images:
-            if picture.size != (resolution, resolution):
+            if not native and picture.size != (resolution, resolution):
                 raise ValueError(f"Wrong raw pipeline output size: {picture.size}")
             sizes.append(picture.size)
         if referring:
@@ -79,7 +83,8 @@ def main():
         if not sizes:
             raise ValueError(f"No {model_name} pipeline outputs were verified")
         data = json.loads(output.read_text())
-        data["metadata"]["resolution_verification"] = dict(raw_pipeline_output=[resolution, resolution], every_prediction_checked=True)
+        raw = "pipeline_native" if native else [resolution, resolution]
+        data["metadata"]["resolution_verification"] = dict(raw_pipeline_output=raw, every_prediction_checked=True)
         if referring:
             data["metadata"]["referring_prompt_verification"] = dict(version="query_v2", every_prediction_checked=True)
         output.write_text(json.dumps(data, indent=2, allow_nan=False))
