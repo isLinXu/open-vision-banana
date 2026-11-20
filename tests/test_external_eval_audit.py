@@ -90,10 +90,55 @@ def test_qwen_calls_must_request_output_resolution(tmp_path, monkeypatch):
 
 def test_backbones_outside_diffusers_are_refused(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "diffusers", types.SimpleNamespace())
-    monkeypatch.setattr(sys, "argv", ["audit", "--model-name", "moss-image", "--resolution", "512",
+    monkeypatch.setattr(sys, "argv", ["audit", "--model-name", "flux2-klein", "--resolution", "512",
                                     "--benchmark", "depth", "--output-json", str(tmp_path / "r.json")])
-    with pytest.raises(ValueError, match="MOSSImagePipeline is not a diffusers pipeline"):
+    with pytest.raises(ValueError, match="Flux2KleinPipeline is not a diffusers pipeline"):
         audit.main()
+
+
+class _Panel:  # the decoded [B, C, H, W] batch the generator returns
+    def __init__(self, sizes):
+        self.sizes = sizes
+
+    def dim(self):
+        return 4
+
+    def __len__(self):
+        return len(self.sizes)
+
+    def __iter__(self):
+        return iter(types.SimpleNamespace(shape=(3, h, w)) for w, h in self.sizes)
+
+
+@pytest.mark.parametrize("sizes,valid", [([(512, 512)], True), ([(512, 512), (768, 512)], False)])
+def test_moss_is_audited_at_the_generator_it_actually_uses(tmp_path, monkeypatch, sizes, valid):
+    # MOSS-Image never calls a pipeline __call__: the generator denoises the right half of an
+    # in-context panel itself, so the audit has to intercept that method instead.
+    from open_vision_banana.inference.generator import BaseGenerator
+
+    assert hasattr(BaseGenerator, "_generate_moss_panel"), "the audited generator method was renamed"
+    monkeypatch.setitem(sys.modules, "diffusers", types.SimpleNamespace())
+    monkeypatch.setattr(BaseGenerator, "_generate_moss_panel", lambda self, **kwargs: _Panel(sizes))
+    stub = BaseGenerator._generate_moss_panel
+    output = tmp_path / "result.json"
+
+    def evaluate():
+        BaseGenerator._generate_moss_panel(object(), prompt=["depth"] * len(sizes))
+        output.write_text(json.dumps(dict(metadata={})))
+        return 0
+
+    monkeypatch.setattr(audit.runpy, "run_path", lambda *a, **k: {"main": evaluate})
+    monkeypatch.setattr(sys, "argv", ["audit", "--model-name", "moss-image", "--resolution", "512",
+                                    "--benchmark", "depth", "--output-json", str(output)])
+    if valid:
+        audit.main()
+        meta = json.loads(output.read_text())["metadata"]
+        assert meta["resolution_verification"] == {"raw_pipeline_output": [512, 512], "every_prediction_checked": True}
+        assert json.loads(output.with_suffix(".resolution-audit.json").read_text())["predictions_verified"] == 1
+    else:
+        with pytest.raises(ValueError, match="Wrong raw moss-image output size"):
+            audit.main()
+    assert BaseGenerator._generate_moss_panel is stub  # the audit put the method back
 
 
 def test_pipelines_without_a_canvas_argument_record_the_native_output(tmp_path, monkeypatch):
