@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open-Vision-Banana — every vision task is a picture</title>
+<meta name="description" content="An open reproduction of Vision Banana: image generators instruction-tuned to paint depth, surface normals and segmentation as RGB images.">
+<meta name="theme-color" content="#0c0d1a">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="showcase.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<!-- Scroll depth, painted with the paper's depth code: the further down the page, the further along the cube edges. -->
+<div class="depthbar" id="depthbar" aria-hidden="true"></div>
+
+<header class="nav">
+  <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="24" height="24">Open-Vision-Banana</a>
+  <nav aria-label="Sections">
+    <a href="#scan">Compare</a><a href="#lift">3D</a><a href="#code">Encoding</a><a href="#numbers">Numbers</a>
+    <a class="out" href="results.html">All results</a>
+  </nav>
+</header>
+
+<main id="main">
+  <!-- 1 · Relight -------------------------------------------------------- -->
+  <section class="hero" id="top">
+    <div class="hero-copy">
+      <p class="note">An open reproduction of <a href="https://arxiv.org/abs/2604.20329">Vision Banana</a> — our paper: <a href="https://arxiv.org/abs/2611.28489">arXiv:2611.28489</a></p>
+      <h1 id="headline">Every vision task is a picture.</h1>
+      <p class="lede">An image generator, instruction-tuned to paint depth, surface normals and masks. Move your cursor: it is the light. The scene is shaded with the normals the model painted.</p>
+      <div class="seg modes" role="group" aria-label="What the canvas shows">
+        <button data-mode="0" aria-pressed="true">Relit clay</button>
+        <button data-mode="1" aria-pressed="false">Relit photo</button>
+        <button data-mode="2" aria-pressed="false">Painted normals</button>
+        <button data-mode="3" aria-pressed="false">Input photo</button>
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/isLinXu/open-vision-banana">View the code</a>
+        <a class="link" href="results.html">All results</a>
+        <a class="link" href="https://huggingface.co/khazic?search_models=ovb-">Checkpoints</a>
+      </div>
+    </div>
+    <figure class="stage">
+      <canvas id="relight" width="1024" height="1024" aria-label="Scene relit with model-predicted surface normals"></canvas>
+      <div class="thumbs" id="relight-thumbs"></div>
+      <figcaption>SANA-1600M adapter on a held-out image. Normals decoded with <code>R = (1−x)/2, G = (1+y)/2, B = (1+z)/2</code>.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 2 · Scan ------------------------------------------------------------- -->
+  <section class="exhibit" id="scan">
+    <div class="rail">
+      <h2>One adapter, three kinds of picture.</h2>
+      <p class="body">The prompt picks the task. Drag across the image to wipe from the photo to what the model painted.</p>
+      <div class="tasks" id="scan-tasks" role="tablist" aria-label="Task"></div>
+      <label class="switch"><input type="checkbox" id="scan-gt"><span>Show ground truth instead of the model</span></label>
+      <div class="strip" id="scan-thumbs"></div>
+    </div>
+    <div class="scanner" id="scanner">
+      <img class="under" id="scan-under" alt="input photo">
+      <img class="over" id="scan-over" alt="model output">
+      <div class="handle" id="scan-handle" role="slider" tabindex="0" aria-label="Reveal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><span></span></div>
+      <span class="tag left">Input photo</span><span class="tag right" id="scan-tag">Model output</span>
+    </div>
+  </section>
+
+  <!-- 3 · Lift to 3D -------------------------------------------------------- -->
+  <section class="exhibit" id="lift">
+    <div class="rail">
+      <h2>Depth is just another picture, until you lift it into 3D.</h2>
+      <p class="body">Each point is a pixel of the photo, pushed back by the depth the model painted. Drag to orbit.</p>
+      <div class="strip" id="cloud-thumbs"></div>
+      <p class="fine">Relative depth (brighter is closer) with an illustrative pinhole camera. No intrinsics are used or predicted.</p>
+    </div>
+    <div class="cloud-wrap"><canvas id="cloud" width="1200" height="900" aria-label="Point cloud from predicted depth"></canvas><span class="hint">Drag to orbit</span></div>
+  </section>
+
+  <section class="exhibit" id="fail">
+    <div class="rail">
+      <h2 class="warn">Where it breaks: right shape, wrong direction.</h2>
+      <p class="body" id="fail-text"></p>
+    </div>
+    <div class="fail-row" id="fail-row"></div>
+  </section>
+
+  <!-- 4 · Encoding ---------------------------------------------------------- -->
+  <section class="block" id="code">
+    <div class="head">
+      <h2>The trick: geometry, written in colour.</h2>
+      <p class="body">The model never outputs a number. It paints a colour, and a fixed rule turns that colour back into metres or a direction.</p>
+    </div>
+    <div class="duo">
+      <div class="panel">
+        <h3>A distance is a colour</h3>
+        <div class="swatch" id="d-swatch"><b id="d-m">3.2 m</b><span id="d-rgb"></span></div>
+        <input type="range" id="d-slider" min="0" max="1000" value="520" aria-label="Distance">
+        <div class="cube" id="d-cube"><i id="d-mark"></i></div>
+        <div class="ticks"><span>0</span><span>0.8</span><span>1.8</span><span>3.2</span><span>5.3</span><span>8.7</span><span>16 m</span><span>∞</span></div>
+        <p class="fine"><code>f(d) = 1 − (1 − d / λc)<sup>λ+1</sup></code> with λ = −3 and c = 10/3, walked along the edges of the RGB cube. The map is one-to-one, so the model's colour decodes back to metres. The bar at the top of this page uses the same ramp for how far you have scrolled.</p>
+      </div>
+      <div class="panel">
+        <h3>A direction is a colour</h3>
+        <canvas id="sphere" width="520" height="520" aria-label="Normal sphere"></canvas>
+        <p class="vec" id="n-read">Hover the sphere</p>
+        <p class="fine">Camera frame: +x right, +y up, +z toward you. A surface facing you is always <span class="chip"></span> <code>rgb(128, 128, 255)</code>, which is why normal maps look periwinkle. The same rule lights the scene at the top.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · Numbers ----------------------------------------------------------- -->
+  <section class="block" id="numbers">
+    <div class="head">
+      <h2>Measured, not claimed.</h2>
+      <p class="body" id="num-sub"></p>
+    </div>
+    <div class="chart" id="chart"></div>
+    <p class="audit" id="audit"></p>
+    <p><a class="btn" href="results.html">See every run and table</a></p>
+  </section>
+
+  <!-- 6 · Close ------------------------------------------------------------- -->
+  <section class="block close">
+    <div class="closing">
+      <div>
+        <h3>Where the project is</h3>
+        <ol class="road" id="road"></ol>
+      </div>
+      <div>
+        <h3>What this page does not show</h3>
+        <ul class="honest">
+          <li>The pictures come from the earlier SANA-1600M adapter. The current Qwen-Image-2.1 runs publish numbers but no images yet (experiment E5).</li>
+          <li>The paper's absolute numbers are context, not a target: Nano Banana Pro and its in-house data are closed.</li>
+          <li>Metric depth is scored without scale alignment. ReasonSeg uses the original queries, so it is diagnostic.</li>
+          <li>Generation preservation is a pixel and perceptual proxy, not the paper's human study.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Not affiliated with, endorsed by, or verified by the paper's authors or Google DeepMind. Our paper: Lin et al., <em>Open Vision Banana: An Open Framework for Unified Visual Perception through Generation in RGB Space</em>, <a href="https://arxiv.org/abs/2611.28489">arXiv:2611.28489</a>. Original paper: Gabeur et al., <em>Image Generators are Generalist Vision Learners</em>, <a href="https://arxiv.org/abs/2604.20329">arXiv:2604.20329</a>.</p>
+  <p class="foot-row"><span id="prov"></span><span class="foot-links"><a href="https://github.com/isLinXu/open-vision-banana">Code</a><a href="results.html">Results</a><a href="https://huggingface.co/khazic?search_models=ovb-">Checkpoints</a></span></p>
+</footer>
+<script src="showcase.js"></script>
+</body>
+</html>
