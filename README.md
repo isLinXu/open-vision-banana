@@ -18,6 +18,11 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
 [![Help wanted](https://img.shields.io/badge/help%20wanted-open%20problems-orange.svg)](#where-we-need-help)
 
+[![Papers with Code: #3 on RefCOCOg referring expression segmentation](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge.svg?eval=50762&live=1)](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge-link?eval=50762)
+[![Papers with Code: #10 on ReasonSeg](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge.svg?eval=50761&live=1)](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge-link?eval=50761)
+[![Papers with Code: #31 on NYUv2 (metric)](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge.svg?eval=50759&live=1)](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge-link?eval=50759)
+[![Papers with Code: #61 on CityScapes](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge.svg?eval=50760&live=1)](https://paperswithcode.co/api/v1/papers/133804/leaderboard-badge-link?eval=50760)
+
 [News](#-news) · [Results](#-results) · [Quick Start](#-quick-start) · [Training](#training) · [Contributing](#-contributing) · [Datasets](docs/DATASETS.md) · [Paper alignment](#paper-alignment-statement)
 
 <br>
