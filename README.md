@@ -7,7 +7,7 @@
 *Instruction-tune an open image generator so that depth, surface normals and segmentation all come out as RGB images — with open weights, public data and an auditable evaluation.*
 
 [![Vision Banana paper](https://img.shields.io/badge/Vision%20Banana%20%28original%29-arXiv%202604.20329-b31b1b.svg?logo=arxiv)](https://arxiv.org/abs/2604.20329)
-[![Our paper](https://img.shields.io/badge/OVB%20paper-coming%20soon-lightgrey.svg?logo=arxiv)](#citation)
+[![Our paper](https://img.shields.io/badge/OVB%20paper-arXiv%202611.28489-b31b1b.svg?logo=arxiv)](https://arxiv.org/abs/2611.28489)
 [![Checkpoints](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints-yellow.svg)](https://huggingface.co/khazic?search=ovb-)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -44,6 +44,7 @@
 
 ## 📰 News
 
+- **[2026-11-25]** 📄 Our paper is out: *Open Vision Banana: An Open Framework for Unified Visual Perception through Generation in RGB Space* ([arXiv:2611.28489](https://arxiv.org/abs/2611.28489)). Also on the Hub: six **multi-backbone merged transformers** under [`gatilin/ovb-mb-*`](https://huggingface.co/gatilin?search=ovb-mb-) from the 10k-step pilot runs on FLUX.2-Klein, FLUX.1-Kontext, MOSS-Image, LongCat-Image-Edit and the Fusion-r64 base ([Checkpoints](#checkpoints)).
 - **[2026-11-17]** 📦 Five **full merged pipelines** are on the Hub under [`gatilin/ovb-*-full`](https://huggingface.co/gatilin?search=ovb-): exact PEFT merges of the I108-B, I127-P6 and I102-i1 adapters into their bases, 165.7 GB in total, each with a provenance-checked model card ([Checkpoints](#checkpoints)).
 - **[2026-11-15]** 📌 Open release: the five key findings so far are summarized in [Key findings](#-key-findings).
 - **[2026-11-15]** 🧪 Six exact LoRA merges of the I108 B arm, externally evaluated on all six benchmarks. None passes every gate; B `checkpoint-17500_best` stays the balanced pick ([#127](https://github.com/isLinXu/open-vision-banana/issues/127), [results](docs/evaluation/i127-merge-20261115/results.md)).
@@ -700,6 +701,19 @@ Scores are the **source checkpoint's** external evaluation from the two tables i
 hf download gatilin/ovb-b-17500-best-full --local-dir ovb-b-17500-best-full
 ```
 
+### Multi-backbone merged transformers (`gatilin/ovb-mb-*`)
+
+The six repositories below fold the **10k-step pilot rsLoRA r64/α64 adapters** from the multi-backbone runs (`ovb-mb_<backbone>_pilot_s42`) into the base transformer with `W' = W + (alpha/sqrt(r))·BA`. Each repo contains **only the merged transformer** — load the VAE, text encoder and tokenizer from the listed base. These are pilot checkpoints: no external benchmark scores are published for them yet.
+
+| Repository | Backbone | Merged modules |
+|------------|----------|---------------:|
+| [`ovb-mb-flux2-klein-10000-merged`](https://huggingface.co/gatilin/ovb-mb-flux2-klein-10000-merged) | [`black-forest-labs/FLUX.2-klein-base-4B`](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B) | 70 |
+| [`ovb-mb-flux-kontext-10000-merged`](https://huggingface.co/gatilin/ovb-mb-flux-kontext-10000-merged) | [`black-forest-labs/FLUX.1-Kontext-dev`](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev) | 304 |
+| [`ovb-mb-base-fusion-r64-10000-merged`](https://huggingface.co/gatilin/ovb-mb-base-fusion-r64-10000-merged) | [`Melo111/Fusion-C1-KQ0r128-60-40`](https://huggingface.co/Melo111/Fusion-C1-KQ0r128-60-40) | 224 |
+| [`ovb-mb-ms-fusion-r64-10000-merged`](https://huggingface.co/gatilin/ovb-mb-ms-fusion-r64-10000-merged) | [`Melo111/Fusion-C1-KQ0r128-60-40`](https://huggingface.co/Melo111/Fusion-C1-KQ0r128-60-40) | 224 |
+| [`ovb-mb-moss-image-10000-merged`](https://huggingface.co/gatilin/ovb-mb-moss-image-10000-merged) | [`OpenMOSS-Team/MOSS-Image-Base`](https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base) | 252 |
+| [`ovb-mb-longcat-image-edit-10000-merged`](https://huggingface.co/gatilin/ovb-mb-longcat-image-edit-10000-merged) | [`meituan-longcat/LongCat-Image-Edit`](https://huggingface.co/meituan-longcat/LongCat-Image-Edit) | 160 |
+
 ---
 
 ## Paper Alignment Statement
@@ -981,9 +995,20 @@ Thanks to everyone who has contributed code, experiments and reviews:
 
 ## Citation
 
-> 📄 The Open-Vision-Banana paper is coming soon. Until it is out, please cite the original Vision Banana paper and, if this code helped, the repository entry below.
+If you use this codebase, please cite our paper:
 
-If you use this codebase, please cite the original paper:
+```bibtex
+@article{lin2026ovb,
+  title   = {Open Vision Banana: An Open Framework for Unified Visual Perception
+             through Generation in {RGB} Space},
+  author  = {Lin, Xu and Yao, Ruilin and Xu, Haoran and Wang, Zixiang and Ma, Ming and
+             Zhao, Yu and Miao, Pu and Liu, Chonghan},
+  journal = {arXiv preprint arXiv:2611.28489},
+  year    = {2026}
+}
+```
+
+and the original Vision Banana paper:
 
 ```bibtex
 @article{gabeur2026image,

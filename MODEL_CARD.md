@@ -243,4 +243,13 @@ downloading.
   eprint={2604.20329},
   archivePrefix={arXiv}
 }
+
+@article{lin2026ovb,
+  title   = {Open Vision Banana: An Open Framework for Unified Visual Perception
+             through Generation in {RGB} Space},
+  author  = {Lin, Xu and Yao, Ruilin and Xu, Haoran and Wang, Zixiang and Ma, Ming and
+             Zhao, Yu and Miao, Pu and Liu, Chonghan},
+  journal = {arXiv preprint arXiv:2611.28489},
+  year    = {2026}
+}
 ```
